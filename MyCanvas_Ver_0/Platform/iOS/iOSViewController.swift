@@ -154,10 +154,10 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
             return
         }
 
-        itemProvider.loadFileRepresentation(forTypeIdentifier: UTType.image.identifier) { [weak self] url, _ in
+        itemProvider.loadDataRepresentation(forTypeIdentifier: UTType.image.identifier) { [weak self] data, _ in
             guard
-                let url,
-                let imageSource = CGImageSourceCreateWithURL(url as CFURL, nil),
+                let data,
+                let imageSource = CGImageSourceCreateWithData(data as CFData, nil),
                 let cgImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil)
             else {
                 return
