@@ -8,6 +8,9 @@
 import UIKit
 
 final class iOSViewController: UIViewController {
+    private let scene = CanvasScene()
+    private var camera = CanvasCamera()
+    private let renderer = CanvasRenderer()
     private let canvasHostView: UIView = {
         let view = UIView()
         view.translatesAutoresizingMaskIntoConstraints = false
@@ -23,6 +26,11 @@ final class iOSViewController: UIViewController {
         setupViewHierarchy()
         setupConstraints()
         setupCanvasViewport()
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        updateCameraViewportSizeIfNeeded()
     }
 
     // Future canvas viewport views should always be mounted through this host.
@@ -57,8 +65,40 @@ final class iOSViewController: UIViewController {
     }
 
     private func setupCanvasViewport() {
+        canvasViewportView.onPan = { [weak self] translation in
+            self?.handlePan(translation)
+        }
+        canvasViewportView.onZoom = { [weak self] scaleDelta, anchor in
+            self?.handleZoom(scaleDelta, around: anchor)
+        }
+
         installCanvasContentView(canvasViewportView)
-        canvasViewportView.apply(.empty)
+        refreshCanvas()
+    }
+
+    private func updateCameraViewportSizeIfNeeded() {
+        let viewportSize = canvasViewportView.bounds.size
+        guard viewportSize != camera.viewportSize else {
+            return
+        }
+
+        camera.setViewportSize(viewportSize)
+        refreshCanvas()
+    }
+
+    private func handlePan(_ translation: CGPoint) {
+        camera.pan(by: translation)
+        refreshCanvas()
+    }
+
+    private func handleZoom(_ scaleDelta: CGFloat, around anchor: CGPoint) {
+        camera.zoom(by: scaleDelta, around: anchor)
+        refreshCanvas()
+    }
+
+    private func refreshCanvas() {
+        let snapshot = renderer.makeSnapshot(scene: scene, camera: camera)
+        canvasViewportView.apply(snapshot)
     }
 }
 #endif

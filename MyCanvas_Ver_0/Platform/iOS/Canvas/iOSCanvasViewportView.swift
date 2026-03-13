@@ -1,12 +1,26 @@
 #if canImport(UIKit) && !os(watchOS)
 import UIKit
 
-final class iOSCanvasViewportView: UIView {
+final class iOSCanvasViewportView: UIView, UIGestureRecognizerDelegate {
     private let backgroundLayer = CALayer()
     private let itemsLayer = CALayer()
     private let overlayLayer = CALayer()
     private var imageLayers: [CanvasImageItemID: CanvasImageLayer] = [:]
     private var snapshot: CanvasRenderSnapshot = .empty
+    var onPan: ((CGPoint) -> Void)?
+    var onZoom: ((CGFloat, CGPoint) -> Void)?
+
+    private lazy var panGestureRecognizer: UIPanGestureRecognizer = {
+        let gestureRecognizer = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
+        gestureRecognizer.delegate = self
+        return gestureRecognizer
+    }()
+
+    private lazy var pinchGestureRecognizer: UIPinchGestureRecognizer = {
+        let gestureRecognizer = UIPinchGestureRecognizer(target: self, action: #selector(handlePinch(_:)))
+        gestureRecognizer.delegate = self
+        return gestureRecognizer
+    }()
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -46,6 +60,8 @@ final class iOSCanvasViewportView: UIView {
         layer.addSublayer(backgroundLayer)
         layer.addSublayer(itemsLayer)
         layer.addSublayer(overlayLayer)
+        addGestureRecognizer(panGestureRecognizer)
+        addGestureRecognizer(pinchGestureRecognizer)
 
         updateBackgroundAppearance()
     }
@@ -85,6 +101,45 @@ final class iOSCanvasViewportView: UIView {
         itemsLayer.addSublayer(imageLayer)
         imageLayers[itemID] = imageLayer
         return imageLayer
+    }
+
+    @objc
+    private func handlePan(_ gestureRecognizer: UIPanGestureRecognizer) {
+        switch gestureRecognizer.state {
+        case .began, .changed:
+            let translation = gestureRecognizer.translation(in: self)
+            guard translation != .zero else {
+                return
+            }
+
+            onPan?(translation)
+            gestureRecognizer.setTranslation(.zero, in: self)
+        default:
+            break
+        }
+    }
+
+    @objc
+    private func handlePinch(_ gestureRecognizer: UIPinchGestureRecognizer) {
+        switch gestureRecognizer.state {
+        case .began, .changed:
+            let scaleDelta = gestureRecognizer.scale
+            guard scaleDelta.isFinite, scaleDelta > 0 else {
+                return
+            }
+
+            onZoom?(scaleDelta, gestureRecognizer.location(in: self))
+            gestureRecognizer.scale = 1
+        default:
+            break
+        }
+    }
+
+    func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+    ) -> Bool {
+        true
     }
 }
 #endif
