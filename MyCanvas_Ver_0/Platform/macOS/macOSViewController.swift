@@ -18,6 +18,7 @@ final class macOSViewController: NSViewController {
         view.layer?.masksToBounds = true
         return view
     }()
+    private let canvasViewportView = macOSCanvasViewportView()
     private var canvasContentView: NSView?
 
     override func loadView() {
@@ -31,6 +32,7 @@ final class macOSViewController: NSViewController {
         super.viewDidLoad()
         setupViewHierarchy()
         setupConstraints()
+        setupCanvasViewport()
     }
 
     // Future canvas viewport views should always be mounted through this host.
@@ -61,6 +63,11 @@ final class macOSViewController: NSViewController {
             canvasHostView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             canvasHostView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
+    }
+
+    private func setupCanvasViewport() {
+        installCanvasContentView(canvasViewportView)
+        canvasViewportView.apply(.empty)
     }
 }
 #endif

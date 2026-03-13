@@ -15,12 +15,14 @@ final class iOSViewController: UIViewController {
         view.clipsToBounds = true
         return view
     }()
+    private let canvasViewportView = iOSCanvasViewportView()
     private var canvasContentView: UIView?
 
     override func viewDidLoad() {
         super.viewDidLoad()
         setupViewHierarchy()
         setupConstraints()
+        setupCanvasViewport()
     }
 
     // Future canvas viewport views should always be mounted through this host.
@@ -52,6 +54,11 @@ final class iOSViewController: UIViewController {
             canvasHostView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             canvasHostView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
+    }
+
+    private func setupCanvasViewport() {
+        installCanvasContentView(canvasViewportView)
+        canvasViewportView.apply(.empty)
     }
 }
 #endif
