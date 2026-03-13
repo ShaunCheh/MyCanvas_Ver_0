@@ -9,7 +9,7 @@
 import UIKit
 
 @main
-final class AppDelegate: UIResponder, UIApplicationDelegate {
+final class iOSAppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
     
     #if os(iOS)
