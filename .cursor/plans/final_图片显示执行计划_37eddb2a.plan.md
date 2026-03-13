@@ -219,10 +219,16 @@ flowchart TD
 
 ### 第六阶段：接入测试图片，打通画板页显示链路
 
-- 暂不依赖存储系统，使用测试 `CGImage`、临时资源或内存生成图片验证链路。
-- 在 `CanvasHostPage` 中喂入少量测试图片，验证不同世界坐标下的显示与层级。
-- 验证链路为：`CanvasHostPage -> CanvasScene / CanvasCamera -> CanvasRenderer -> CanvasViewportView -> CanvasImageLayer`。
-- 这一阶段完成后，应用虽然还没有真正的画板列表功能，但“具体画板页”的图片显示、平移、缩放能力已具备。
+- `UI 入口`：在 `[MyCanvas_Ver_0/Platform/iOS/iOSViewController.swift](MyCanvas_Ver_0/Platform/iOS/iOSViewController.swift)` 和 `[MyCanvas_Ver_0/Platform/macOS/macOSViewController.swift](MyCanvas_Ver_0/Platform/macOS/macOSViewController.swift)` 中新增一个屏幕空间固定的悬浮 `+` 按钮，按钮挂在控制器视图层级中，而不是挂到 `CanvasViewportView` 的 layer 树里，确保它不会跟随画布平移或缩放。
+- `iOS 选图`：iOS 侧通过 `PhotosUI` 的 `PHPickerViewController` 打开系统相册选择图片。第一版优先支持单张选择，避免在阶段六把多选、批量布局和权限管理一起引入。基于当前工程，优先选用 `PHPickerViewController` 而不是旧的 `UIImagePickerController`。
+- `macOS 选图`：macOS 侧通过 `NSOpenPanel` 以 sheet 形式打开 Finder 选图，限制 `allowedContentTypes = [.image]`。当前 target 已开启 `ENABLE_USER_SELECTED_FILES = readonly`，这条路径与现有沙盒配置相匹配。
+- `解码策略`：两端选择完成后，都在各自控制器中先把平台图片对象解码成 `CGImage`。iOS 侧从 `PHPickerResult` 异步加载 `UIImage` 再转 `CGImage`；macOS 侧从选中的文件 URL 解码 `NSImage` 或直接使用 `CGImageSource` 得到 `CGImage`。第一版可以先把这些解码 helper 放在各自控制器私有方法中，不急着抽独立文件。
+- `数据注入`：解码成功后，在 `CanvasHostPage` 中构造 `CanvasImageItem` 并写入 `CanvasScene`。当前共享模型 `[MyCanvas_Ver_0/Canvas/Core/CanvasImageItem.swift](MyCanvas_Ver_0/Canvas/Core/CanvasImageItem.swift)` 和 `[MyCanvas_Ver_0/Canvas/Core/CanvasScene.swift](MyCanvas_Ver_0/Canvas/Core/CanvasScene.swift)` 已经支持 `CGImage + 世界坐标 + 尺寸 + 层级` 这一最小注入模型。
+- `初始落点`：第一版把新导入图片默认放在 `camera.center`，保证用户选完图后能立即在当前视口中心看到它，而不是还要再去寻找图片。若同一轮导入多张图片，后续可在 `camera.center` 周围做轻微偏移，避免完全重叠；但第一版可以先只做单张导入。
+- `显示尺寸归一化`：不要直接把原始像素尺寸当作世界坐标尺寸写进 `CanvasImageItem.size`。阶段六应增加一个初始显示尺寸策略，例如将图片最长边压到一个固定显示范围内并保持宽高比，避免超大图片第一次导入就占满整个画布。
+- `刷新链路`：控制器在 `scene.append(item)` 或 `scene.upsert(item)` 后，立即调用现有的 `refreshCanvas()`，让链路保持为 `CanvasHostPage -> CanvasScene / CanvasCamera -> CanvasRenderer -> CanvasViewportView -> CanvasImageLayer`。不在 `CanvasViewportView` 里直接写导入逻辑，继续保持“平台选图在控制器、渲染在共享层和视口层”的边界。
+- `阶段六的最小交付`：用户进入画板页后能看到悬浮 `+` 按钮；iOS 点击后能从相册选图，macOS 点击后能从 Finder 选图；选完后图片以正确比例出现在当前视口中心；此后仍可继续平移和缩放查看该图片。
+- `阶段六仍不做的事`：不做存储和持久化、不做画板列表联动、不做图片资源去重、不做多选或批量导入布局优化；阶段六的目标只是把“平台选图 -> 共享场景 -> 渲染显示”这条最小闭环跑通。
 
 ### 第七阶段：为未来列表与恢复策略预留扩展点
 
