@@ -35,6 +35,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
     }()
     private let canvasViewportView = iOSCanvasViewportView()
     private var canvasContentView: UIView?
+    private var pendingRefreshReason: String?
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -46,7 +47,10 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        updateCameraViewportSizeIfNeeded()
+        syncCameraViewportSizeIfNeeded(
+            canvasViewportView.bounds.size,
+            source: "controller layout fallback"
+        )
     }
 
     // Future canvas viewport views should always be mounted through this host.
@@ -97,34 +101,105 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         canvasViewportView.onZoom = { [weak self] scaleDelta, anchor in
             self?.handleZoom(scaleDelta, around: anchor)
         }
+        canvasViewportView.onViewportSizeChange = { [weak self] viewportSize in
+            self?.syncCameraViewportSizeIfNeeded(
+                viewportSize,
+                source: "viewport layout"
+            )
+        }
 
         installCanvasContentView(canvasViewportView)
-        refreshCanvas()
+        requestCanvasRefresh(reason: "initial setup")
     }
 
-    private func updateCameraViewportSizeIfNeeded() {
+    private func syncCameraViewportSizeIfNeeded(
+        _ viewportSize: CGSize,
+        source: String
+    ) {
+        guard isRenderable(viewportSize: viewportSize) else {
+            return
+        }
+
+        let sizeChanged = viewportSize != camera.viewportSize
+        let deferredReason = pendingRefreshReason
+        guard sizeChanged || deferredReason != nil else {
+            return
+        }
+
+        if sizeChanged {
+            camera.setViewportSize(viewportSize)
+        }
+
+        pendingRefreshReason = nil
+
+        if let deferredReason {
+            performCanvasRefresh(
+                reason: "flush deferred refresh (\(deferredReason)) after \(source) size=\(describe(size: viewportSize))"
+            )
+        } else {
+            performCanvasRefresh(
+                reason: "viewport size changed to \(describe(size: viewportSize)) via \(source)"
+            )
+        }
+    }
+
+    private func handlePan(_ translation: CGPoint) {
+        syncCameraViewportSizeFromCurrentBoundsIfPossible()
+        guard hasRenderableViewportSize else {
+            logIgnoredCanvasInput("pan \(describe(point: translation))")
+            return
+        }
+
+        camera.pan(by: translation)
+        requestCanvasRefresh(reason: "pan \(describe(point: translation))")
+    }
+
+    private func handleZoom(_ scaleDelta: CGFloat, around anchor: CGPoint) {
+        syncCameraViewportSizeFromCurrentBoundsIfPossible()
+        guard hasRenderableViewportSize else {
+            logIgnoredCanvasInput(
+                "zoom scaleDelta=\(String(format: "%.4f", scaleDelta)) anchor=\(describe(point: anchor))"
+            )
+            return
+        }
+
+        camera.zoom(by: scaleDelta, around: anchor)
+        requestCanvasRefresh(
+            reason: "zoom scaleDelta=\(String(format: "%.4f", scaleDelta)) anchor=\(describe(point: anchor))"
+        )
+    }
+
+    private func requestCanvasRefresh(reason: String) {
+        syncCameraViewportSizeFromCurrentBoundsIfPossible()
+        guard hasRenderableViewportSize else {
+            pendingRefreshReason = reason
+            logDeferredCanvasRefresh(
+                reason: reason,
+                actualViewportSize: canvasViewportView.bounds.size
+            )
+            return
+        }
+
+        pendingRefreshReason = nil
+        performCanvasRefresh(reason: reason)
+    }
+
+    private func syncCameraViewportSizeFromCurrentBoundsIfPossible() {
         let viewportSize = canvasViewportView.bounds.size
-        guard viewportSize != camera.viewportSize else {
+        guard
+            isRenderable(viewportSize: viewportSize),
+            viewportSize != camera.viewportSize
+        else {
             return
         }
 
         camera.setViewportSize(viewportSize)
-        refreshCanvas()
     }
 
-    private func handlePan(_ translation: CGPoint) {
-        camera.pan(by: translation)
-        refreshCanvas()
-    }
-
-    private func handleZoom(_ scaleDelta: CGFloat, around anchor: CGPoint) {
-        camera.zoom(by: scaleDelta, around: anchor)
-        refreshCanvas()
-    }
-
-    private func refreshCanvas() {
+    private func performCanvasRefresh(reason: String) {
         let snapshot = renderer.makeSnapshot(scene: scene, camera: camera)
         canvasViewportView.apply(snapshot)
+        logCanvasState(reason: reason, snapshot: snapshot)
     }
 
     @objc
@@ -164,6 +239,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
             }
 
             Task { @MainActor [weak self] in
+                self?.logImport(dataCount: data.count, cgImage: cgImage)
                 self?.appendImportedImage(cgImage)
             }
         }
@@ -178,7 +254,9 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         )
 
         scene.append(item)
-        refreshCanvas()
+        requestCanvasRefresh(
+            reason: "append image size=\(describe(size: item.size)) center=\(describe(point: item.center))"
+        )
     }
 
     private func normalizedDisplaySize(for cgImage: CGImage) -> CGSize {
@@ -198,6 +276,70 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
 
     private func nextImageZIndex() -> CGFloat {
         (scene.orderedItems().last?.zIndex ?? -1) + 1
+    }
+
+    private func logImport(dataCount: Int, cgImage: CGImage) {
+        print(
+            "[Canvas iOS] loaded image data bytes=\(dataCount) " +
+            "pixelSize=\(cgImage.width)x\(cgImage.height)"
+        )
+    }
+
+    private func logCanvasState(reason: String, snapshot: CanvasRenderSnapshot) {
+        let orderedItems = scene.orderedItems()
+        let firstWorldFrame = orderedItems.first.map { describe(rect: $0.worldFrame) } ?? "nil"
+        let firstScreenFrame = snapshot.items.first.map { describe(rect: $0.screenFrame) } ?? "nil"
+
+        print(
+            "[Canvas iOS] \(reason) " +
+            "cameraCenter=\(describe(point: camera.center)) " +
+            "zoom=\(String(format: "%.4f", camera.zoomScale)) " +
+            "viewportSize=\(describe(size: camera.viewportSize)) " +
+            "visibleWorldRect=\(describe(rect: camera.visibleWorldRect)) " +
+            "sceneItems=\(orderedItems.count) " +
+            "visibleItems=\(snapshot.items.count) " +
+            "firstWorldFrame=\(firstWorldFrame) " +
+            "firstScreenFrame=\(firstScreenFrame)"
+        )
+    }
+
+    private func logDeferredCanvasRefresh(
+        reason: String,
+        actualViewportSize: CGSize
+    ) {
+        print(
+            "[Canvas iOS] deferred refresh reason=\(reason) " +
+            "cameraViewportSize=\(describe(size: camera.viewportSize)) " +
+            "viewBoundsSize=\(describe(size: actualViewportSize))"
+        )
+    }
+
+    private func logIgnoredCanvasInput(_ input: String) {
+        print(
+            "[Canvas iOS] ignored input=\(input) " +
+            "cameraViewportSize=\(describe(size: camera.viewportSize)) " +
+            "viewBoundsSize=\(describe(size: canvasViewportView.bounds.size))"
+        )
+    }
+
+    private var hasRenderableViewportSize: Bool {
+        isRenderable(viewportSize: camera.viewportSize)
+    }
+
+    private func isRenderable(viewportSize: CGSize) -> Bool {
+        viewportSize.width > 0 && viewportSize.height > 0
+    }
+
+    private func describe(point: CGPoint) -> String {
+        NSCoder.string(for: point)
+    }
+
+    private func describe(size: CGSize) -> String {
+        NSCoder.string(for: size)
+    }
+
+    private func describe(rect: CGRect) -> String {
+        NSCoder.string(for: rect)
     }
 }
 #endif

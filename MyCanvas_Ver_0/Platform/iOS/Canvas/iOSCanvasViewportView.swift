@@ -6,9 +6,11 @@ final class iOSCanvasViewportView: UIView, UIGestureRecognizerDelegate {
     private let itemsLayer = CALayer()
     private let overlayLayer = CALayer()
     private var imageLayers: [CanvasImageItemID: CanvasImageLayer] = [:]
+    private var lastReportedViewportSize: CGSize?
     private var snapshot: CanvasRenderSnapshot = .empty
     var onPan: ((CGPoint) -> Void)?
     var onZoom: ((CGFloat, CGPoint) -> Void)?
+    var onViewportSizeChange: ((CGSize) -> Void)?
 
     private lazy var panGestureRecognizer: UIPanGestureRecognizer = {
         let gestureRecognizer = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
@@ -34,6 +36,7 @@ final class iOSCanvasViewportView: UIView, UIGestureRecognizerDelegate {
     override func layoutSubviews() {
         super.layoutSubviews()
         updateLayerFrames()
+        reportViewportSizeIfNeeded()
     }
 
     override func didMoveToWindow() {
@@ -70,6 +73,16 @@ final class iOSCanvasViewportView: UIView, UIGestureRecognizerDelegate {
         backgroundLayer.frame = bounds
         itemsLayer.frame = bounds
         overlayLayer.frame = bounds
+    }
+
+    private func reportViewportSizeIfNeeded() {
+        let viewportSize = bounds.size
+        guard viewportSize != lastReportedViewportSize else {
+            return
+        }
+
+        lastReportedViewportSize = viewportSize
+        onViewportSizeChange?(viewportSize)
     }
 
     private func updateBackgroundAppearance() {
