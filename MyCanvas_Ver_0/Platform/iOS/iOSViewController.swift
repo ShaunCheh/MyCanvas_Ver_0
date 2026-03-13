@@ -11,6 +11,13 @@ import UniformTypeIdentifiers
 import UIKit
 
 final class iOSViewController: UIViewController, PHPickerViewControllerDelegate {
+    private enum PointerDragState {
+        case idle
+        case pressed(pressedItemID: CanvasImageItemID?, pressedItemWasSelected: Bool)
+        case draggingSelectedItem(itemID: CanvasImageItemID)
+        case draggingCanvas
+    }
+
     private static let isDiagnosticLoggingEnabled = false
     private let scene = CanvasScene()
     private var camera = CanvasCamera()
@@ -37,6 +44,9 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
     private let canvasViewportView = iOSCanvasViewportView()
     private var canvasContentView: UIView?
     private var pendingRefreshReason: String?
+    private var interactionState = CanvasInteractionState()
+    private var lastRenderSnapshot: CanvasRenderSnapshot = .empty
+    private var pointerDragState: PointerDragState = .idle
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -96,8 +106,17 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
     }
 
     private func setupCanvasViewport() {
-        canvasViewportView.onPan = { [weak self] translation in
-            self?.handlePan(translation)
+        canvasViewportView.onPointerDown = { [weak self] location in
+            self?.handlePrimaryPointerDown(at: location)
+        }
+        canvasViewportView.onPointerMove = { [weak self] location, previousLocation in
+            self?.handlePrimaryPointerMove(to: location, from: previousLocation)
+        }
+        canvasViewportView.onPointerUp = { [weak self] location in
+            self?.handlePrimaryPointerUp(at: location)
+        }
+        canvasViewportView.onPointerCancel = { [weak self] in
+            self?.handlePrimaryPointerCancel()
         }
         canvasViewportView.onZoom = { [weak self] scaleDelta, anchor in
             self?.handleZoom(scaleDelta, around: anchor)
@@ -144,21 +163,64 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         }
     }
 
-    private func handlePan(_ translation: CGPoint) {
+    private func handlePrimaryPointerDown(at location: CGPoint) {
         syncCameraViewportSizeFromCurrentBoundsIfPossible()
         guard hasRenderableViewportSize else {
-            logIgnoredCanvasInput("pan \(describe(point: translation))")
+            logIgnoredCanvasInput("pointer down \(describe(point: location))")
             return
         }
 
-        let cameraCenterBeforePan = camera.center
-        camera.pan(by: translation)
-        logPanDispatch(
-            translation: translation,
-            cameraCenterBeforePan: cameraCenterBeforePan,
-            cameraCenterAfterPan: camera.center
+        let pressedItemID = hitTestItemID(at: location)
+        pointerDragState = .pressed(
+            pressedItemID: pressedItemID,
+            pressedItemWasSelected: pressedItemID == interactionState.selectedItemID
         )
-        requestCanvasRefresh(reason: "pan \(describe(point: translation))")
+    }
+
+    private func handlePrimaryPointerMove(to location: CGPoint, from previousLocation: CGPoint) {
+        syncCameraViewportSizeFromCurrentBoundsIfPossible()
+        guard hasRenderableViewportSize else {
+            logIgnoredCanvasInput("pointer move \(describe(point: location))")
+            return
+        }
+
+        switch pointerDragState {
+        case let .pressed(pressedItemID, pressedItemWasSelected):
+            if pressedItemWasSelected, let pressedItemID {
+                pointerDragState = .draggingSelectedItem(itemID: pressedItemID)
+                moveSelectedItem(withID: pressedItemID, from: previousLocation, to: location)
+            } else {
+                pointerDragState = .draggingCanvas
+                panCanvas(from: previousLocation, to: location)
+            }
+        case let .draggingSelectedItem(itemID):
+            moveSelectedItem(withID: itemID, from: previousLocation, to: location)
+        case .draggingCanvas:
+            panCanvas(from: previousLocation, to: location)
+        case .idle:
+            break
+        }
+    }
+
+    private func handlePrimaryPointerUp(at location: CGPoint) {
+        defer {
+            pointerDragState = .idle
+        }
+
+        switch pointerDragState {
+        case let .pressed(pressedItemID, _):
+            guard let pressedItemID, hitTestItemID(at: location) == pressedItemID else {
+                return
+            }
+
+            selectItem(withID: pressedItemID)
+        case .draggingSelectedItem, .draggingCanvas, .idle:
+            break
+        }
+    }
+
+    private func handlePrimaryPointerCancel() {
+        pointerDragState = .idle
     }
 
     private func handleZoom(_ scaleDelta: CGFloat, around anchor: CGPoint) {
@@ -204,7 +266,12 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
     }
 
     private func performCanvasRefresh(reason: String) {
-        let snapshot = renderer.makeSnapshot(scene: scene, camera: camera)
+        let snapshot = renderer.makeSnapshot(
+            scene: scene,
+            camera: camera,
+            interactionState: interactionState
+        )
+        lastRenderSnapshot = snapshot
         canvasViewportView.apply(snapshot)
         logCanvasState(reason: reason, snapshot: snapshot)
     }
@@ -283,6 +350,60 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
 
     private func nextImageZIndex() -> CGFloat {
         (scene.orderedItems().last?.zIndex ?? -1) + 1
+    }
+
+    private func selectItem(withID itemID: CanvasImageItemID) {
+        guard interactionState.selectedItemID != itemID else {
+            return
+        }
+
+        interactionState.selectedItemID = itemID
+        requestCanvasRefresh(reason: "select item \(itemID.uuidString)")
+    }
+
+    private func hitTestItemID(at viewportLocation: CGPoint) -> CanvasImageItemID? {
+        lastRenderSnapshot.items
+            .reversed()
+            .first(where: { $0.screenFrame.contains(viewportLocation) })?
+            .id
+    }
+
+    private func moveSelectedItem(
+        withID itemID: CanvasImageItemID,
+        from previousLocation: CGPoint,
+        to location: CGPoint
+    ) {
+        let previousWorldLocation = camera.viewportToWorld(previousLocation)
+        let currentWorldLocation = camera.viewportToWorld(location)
+        let deltaInWorld = CGPoint(
+            x: currentWorldLocation.x - previousWorldLocation.x,
+            y: currentWorldLocation.y - previousWorldLocation.y
+        )
+        guard deltaInWorld != .zero else {
+            return
+        }
+
+        scene.moveItem(withID: itemID, by: deltaInWorld)
+        requestCanvasRefresh(reason: "move selected item by \(describe(point: deltaInWorld))")
+    }
+
+    private func panCanvas(from previousLocation: CGPoint, to location: CGPoint) {
+        let translation = CGPoint(
+            x: location.x - previousLocation.x,
+            y: location.y - previousLocation.y
+        )
+        guard translation != .zero else {
+            return
+        }
+
+        let cameraCenterBeforePan = camera.center
+        camera.pan(by: translation)
+        logPanDispatch(
+            translation: translation,
+            cameraCenterBeforePan: cameraCenterBeforePan,
+            cameraCenterAfterPan: camera.center
+        )
+        requestCanvasRefresh(reason: "pan \(describe(point: translation))")
     }
 
     private func logImport(dataCount: Int, cgImage: CGImage) {

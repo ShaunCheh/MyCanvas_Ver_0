@@ -12,6 +12,13 @@ import ImageIO
 import UniformTypeIdentifiers
 
 final class macOSViewController: NSViewController {
+    private enum PointerDragState {
+        case idle
+        case pressed(pressedItemID: CanvasImageItemID?, pressedItemWasSelected: Bool)
+        case draggingSelectedItem(itemID: CanvasImageItemID)
+        case draggingCanvas
+    }
+
     private let scene = CanvasScene()
     private var camera = CanvasCamera()
     private let renderer = CanvasRenderer()
@@ -38,6 +45,9 @@ final class macOSViewController: NSViewController {
     }()
     private let canvasViewportView = macOSCanvasViewportView()
     private var canvasContentView: NSView?
+    private var interactionState = CanvasInteractionState()
+    private var lastRenderSnapshot: CanvasRenderSnapshot = .empty
+    private var pointerDragState: PointerDragState = .idle
 
     override func loadView() {
         let rootView = NSView()
@@ -100,8 +110,20 @@ final class macOSViewController: NSViewController {
     }
 
     private func setupCanvasViewport() {
+        canvasViewportView.onPointerDown = { [weak self] location in
+            self?.handlePrimaryPointerDown(at: location)
+        }
+        canvasViewportView.onPointerMove = { [weak self] location, previousLocation in
+            self?.handlePrimaryPointerMove(to: location, from: previousLocation)
+        }
+        canvasViewportView.onPointerUp = { [weak self] location in
+            self?.handlePrimaryPointerUp(at: location)
+        }
+        canvasViewportView.onPointerCancel = { [weak self] in
+            self?.handlePrimaryPointerCancel()
+        }
         canvasViewportView.onPan = { [weak self] translation in
-            self?.handlePan(translation)
+            self?.handleIndirectPan(translation)
         }
         canvasViewportView.onZoom = { [weak self] scaleDelta, anchor in
             self?.handleZoom(scaleDelta, around: anchor)
@@ -121,7 +143,55 @@ final class macOSViewController: NSViewController {
         refreshCanvas()
     }
 
-    private func handlePan(_ translation: CGPoint) {
+    private func handlePrimaryPointerDown(at location: CGPoint) {
+        let pressedItemID = hitTestItemID(at: location)
+        pointerDragState = .pressed(
+            pressedItemID: pressedItemID,
+            pressedItemWasSelected: pressedItemID == interactionState.selectedItemID
+        )
+    }
+
+    private func handlePrimaryPointerMove(to location: CGPoint, from previousLocation: CGPoint) {
+        switch pointerDragState {
+        case let .pressed(pressedItemID, pressedItemWasSelected):
+            if pressedItemWasSelected, let pressedItemID {
+                pointerDragState = .draggingSelectedItem(itemID: pressedItemID)
+                moveSelectedItem(withID: pressedItemID, from: previousLocation, to: location)
+            } else {
+                pointerDragState = .draggingCanvas
+                panCanvas(from: previousLocation, to: location)
+            }
+        case let .draggingSelectedItem(itemID):
+            moveSelectedItem(withID: itemID, from: previousLocation, to: location)
+        case .draggingCanvas:
+            panCanvas(from: previousLocation, to: location)
+        case .idle:
+            break
+        }
+    }
+
+    private func handlePrimaryPointerUp(at location: CGPoint) {
+        defer {
+            pointerDragState = .idle
+        }
+
+        switch pointerDragState {
+        case let .pressed(pressedItemID, _):
+            guard let pressedItemID, hitTestItemID(at: location) == pressedItemID else {
+                return
+            }
+
+            selectItem(withID: pressedItemID)
+        case .draggingSelectedItem, .draggingCanvas, .idle:
+            break
+        }
+    }
+
+    private func handlePrimaryPointerCancel() {
+        pointerDragState = .idle
+    }
+
+    private func handleIndirectPan(_ translation: CGPoint) {
         camera.pan(by: translation)
         refreshCanvas()
     }
@@ -132,7 +202,12 @@ final class macOSViewController: NSViewController {
     }
 
     private func refreshCanvas() {
-        let snapshot = renderer.makeSnapshot(scene: scene, camera: camera)
+        let snapshot = renderer.makeSnapshot(
+            scene: scene,
+            camera: camera,
+            interactionState: interactionState
+        )
+        lastRenderSnapshot = snapshot
         canvasViewportView.apply(snapshot)
     }
 
@@ -191,6 +266,54 @@ final class macOSViewController: NSViewController {
 
     private func nextImageZIndex() -> CGFloat {
         (scene.orderedItems().last?.zIndex ?? -1) + 1
+    }
+
+    private func selectItem(withID itemID: CanvasImageItemID) {
+        guard interactionState.selectedItemID != itemID else {
+            return
+        }
+
+        interactionState.selectedItemID = itemID
+        refreshCanvas()
+    }
+
+    private func hitTestItemID(at viewportLocation: CGPoint) -> CanvasImageItemID? {
+        lastRenderSnapshot.items
+            .reversed()
+            .first(where: { $0.screenFrame.contains(viewportLocation) })?
+            .id
+    }
+
+    private func moveSelectedItem(
+        withID itemID: CanvasImageItemID,
+        from previousLocation: CGPoint,
+        to location: CGPoint
+    ) {
+        let previousWorldLocation = camera.viewportToWorld(previousLocation)
+        let currentWorldLocation = camera.viewportToWorld(location)
+        let deltaInWorld = CGPoint(
+            x: currentWorldLocation.x - previousWorldLocation.x,
+            y: currentWorldLocation.y - previousWorldLocation.y
+        )
+        guard deltaInWorld != .zero else {
+            return
+        }
+
+        scene.moveItem(withID: itemID, by: deltaInWorld)
+        refreshCanvas()
+    }
+
+    private func panCanvas(from previousLocation: CGPoint, to location: CGPoint) {
+        let translation = CGPoint(
+            x: location.x - previousLocation.x,
+            y: location.y - previousLocation.y
+        )
+        guard translation != .zero else {
+            return
+        }
+
+        camera.pan(by: translation)
+        refreshCanvas()
     }
 }
 #endif

@@ -2,11 +2,20 @@ import CoreGraphics
 import QuartzCore
 
 final class CanvasImageLayer: CALayer {
+    private static let selectionBorderColor = CGColor(
+        red: 0,
+        green: 122.0 / 255.0,
+        blue: 1,
+        alpha: 1
+    )
+    private static let selectionBorderWidth: CGFloat = 2
+
     let itemID: CanvasImageItemID
     private var lastAppliedFrame: CGRect
     private var lastAppliedImage: CGImage?
     private var lastAppliedZIndex: CGFloat
     private var lastAppliedContentsScale: CGFloat
+    private var lastAppliedIsSelected: Bool?
 
     init(itemID: CanvasImageItemID) {
         self.itemID = itemID
@@ -14,6 +23,7 @@ final class CanvasImageLayer: CALayer {
         lastAppliedImage = nil
         lastAppliedZIndex = .nan
         lastAppliedContentsScale = .nan
+        lastAppliedIsSelected = nil
         super.init()
         configureLayer()
     }
@@ -25,12 +35,14 @@ final class CanvasImageLayer: CALayer {
             lastAppliedImage = imageLayer.lastAppliedImage
             lastAppliedZIndex = imageLayer.lastAppliedZIndex
             lastAppliedContentsScale = imageLayer.lastAppliedContentsScale
+            lastAppliedIsSelected = imageLayer.lastAppliedIsSelected
         } else {
             itemID = UUID()
             lastAppliedFrame = .null
             lastAppliedImage = nil
             lastAppliedZIndex = .nan
             lastAppliedContentsScale = .nan
+            lastAppliedIsSelected = nil
         }
 
         super.init(layer: layer)
@@ -65,12 +77,20 @@ final class CanvasImageLayer: CALayer {
             lastAppliedContentsScale = contentsScale
         }
 
+        if lastAppliedIsSelected != item.isSelected {
+            borderWidth = item.isSelected ? Self.selectionBorderWidth : 0
+            borderColor = item.isSelected ? Self.selectionBorderColor : nil
+            lastAppliedIsSelected = item.isSelected
+        }
+
         CATransaction.commit()
     }
 
     private func configureLayer() {
         contentsGravity = .resize
         masksToBounds = true
+        borderWidth = 0
+        borderColor = nil
     }
 
     private func isDisplayingImage(_ cgImage: CGImage) -> Bool {

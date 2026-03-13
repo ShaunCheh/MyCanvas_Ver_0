@@ -28,6 +28,25 @@ final class CanvasScene {
         items.removeAll(where: { $0.id == id })
     }
 
+    func item(withID id: CanvasImageItemID) -> CanvasImageItem? {
+        items.first(where: { $0.id == id })
+    }
+
+    func topmostItem(containing worldPoint: CGPoint) -> CanvasImageItem? {
+        orderedItems().reversed().first(where: { $0.worldFrame.contains(worldPoint) })
+    }
+
+    func moveItem(withID id: CanvasImageItemID, by deltaInWorld: CGPoint) {
+        guard deltaInWorld != .zero else {
+            return
+        }
+
+        updateItem(withID: id) { item in
+            item.center.x += deltaInWorld.x
+            item.center.y += deltaInWorld.y
+        }
+    }
+
     func visibleItems(in worldRect: CGRect) -> [CanvasImageItem] {
         orderedItems(from: items.filter { $0.worldFrame.intersects(worldRect) })
     }
@@ -44,5 +63,16 @@ final class CanvasScene {
 
             return lhs.zIndex < rhs.zIndex
         }
+    }
+
+    private func updateItem(
+        withID id: CanvasImageItemID,
+        _ mutate: (inout CanvasImageItem) -> Void
+    ) {
+        guard let index = items.firstIndex(where: { $0.id == id }) else {
+            return
+        }
+
+        mutate(&items[index])
     }
 }

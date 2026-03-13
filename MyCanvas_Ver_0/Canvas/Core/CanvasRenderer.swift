@@ -4,7 +4,8 @@ import Foundation
 struct CanvasRenderer {
     func makeSnapshot(
         scene: CanvasScene,
-        camera: CanvasCamera
+        camera: CanvasCamera,
+        interactionState: CanvasInteractionState = CanvasInteractionState()
     ) -> CanvasRenderSnapshot {
         let visibleWorldRect = camera.visibleWorldRect
         // Avoid turning an invalid zero-sized viewport into point-based culling.
@@ -20,7 +21,8 @@ struct CanvasRenderer {
                 id: item.id,
                 screenFrame: camera.worldToViewport(item.worldFrame),
                 cgImage: item.cgImage,
-                zIndex: item.zIndex
+                zIndex: item.zIndex,
+                isSelected: interactionState.selectedItemID == item.id
             )
         }
 

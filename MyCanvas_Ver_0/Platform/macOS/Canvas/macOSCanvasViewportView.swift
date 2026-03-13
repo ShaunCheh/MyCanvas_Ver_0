@@ -7,7 +7,11 @@ final class macOSCanvasViewportView: NSView {
     private let overlayLayer = CALayer()
     private var imageLayers: [CanvasImageItemID: CanvasImageLayer] = [:]
     private var snapshot: CanvasRenderSnapshot = .empty
-    private var lastDragLocation: CGPoint?
+    private var lastPrimaryPointerLocation: CGPoint?
+    var onPointerDown: ((CGPoint) -> Void)?
+    var onPointerMove: ((CGPoint, CGPoint) -> Void)?
+    var onPointerUp: ((CGPoint) -> Void)?
+    var onPointerCancel: (() -> Void)?
     var onPan: ((CGPoint) -> Void)?
     var onZoom: ((CGFloat, CGPoint) -> Void)?
 
@@ -118,27 +122,26 @@ final class macOSCanvasViewportView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
-        lastDragLocation = convert(event.locationInWindow, from: nil)
+        let location = convert(event.locationInWindow, from: nil)
+        lastPrimaryPointerLocation = location
+        onPointerDown?(location)
     }
 
     override func mouseDragged(with event: NSEvent) {
         let currentLocation = convert(event.locationInWindow, from: nil)
-        let previousLocation = lastDragLocation ?? currentLocation
-        let delta = CGPoint(
-            x: currentLocation.x - previousLocation.x,
-            y: currentLocation.y - previousLocation.y
-        )
-
-        lastDragLocation = currentLocation
-        guard delta != .zero else {
+        let previousLocation = lastPrimaryPointerLocation ?? currentLocation
+        lastPrimaryPointerLocation = currentLocation
+        guard currentLocation != previousLocation else {
             return
         }
 
-        onPan?(delta)
+        onPointerMove?(currentLocation, previousLocation)
     }
 
     override func mouseUp(with event: NSEvent) {
-        lastDragLocation = nil
+        let location = convert(event.locationInWindow, from: nil)
+        lastPrimaryPointerLocation = nil
+        onPointerUp?(location)
     }
 
     override func scrollWheel(with event: NSEvent) {

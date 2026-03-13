@@ -4,7 +4,7 @@ import UIKit
 final class iOSCanvasViewportView: UIView {
     private enum TouchInteractionState {
         case idle
-        case singleFingerPan(trackedTouch: UITouch, lastLocation: CGPoint)
+        case trackingPrimaryPointer(trackedTouch: UITouch, lastLocation: CGPoint)
         case awaitingPinch
         case pinching
     }
@@ -17,7 +17,10 @@ final class iOSCanvasViewportView: UIView {
     private var snapshot: CanvasRenderSnapshot = .empty
     private var interactionState: TouchInteractionState = .idle
     private var activeTouchesByID: [ObjectIdentifier: UITouch] = [:]
-    var onPan: ((CGPoint) -> Void)?
+    var onPointerDown: ((CGPoint) -> Void)?
+    var onPointerMove: ((CGPoint, CGPoint) -> Void)?
+    var onPointerUp: ((CGPoint) -> Void)?
+    var onPointerCancel: (() -> Void)?
     var onZoom: ((CGFloat, CGPoint) -> Void)?
     var onViewportSizeChange: ((CGSize) -> Void)?
 
@@ -55,13 +58,15 @@ final class iOSCanvasViewportView: UIView {
         registerActiveTouches(touches)
 
         guard !isPinchGestureActive else {
+            cancelPrimaryPointerIfNeeded()
             interactionState = .pinching
             return
         }
 
         switch interactionState {
-        case let .singleFingerPan(trackedTouch, lastLocation):
+        case let .trackingPrimaryPointer(trackedTouch, lastLocation):
             guard activeTouchCount == 1 else {
+                cancelPrimaryPointerIfNeeded()
                 interactionState = .awaitingPinch
                 return
             }
@@ -71,20 +76,16 @@ final class iOSCanvasViewportView: UIView {
             }
 
             let currentLocation = currentTouch.location(in: self)
-            interactionState = .singleFingerPan(
+            interactionState = .trackingPrimaryPointer(
                 trackedTouch: trackedTouch,
                 lastLocation: currentLocation
             )
 
-            let translation = CGPoint(
-                x: currentLocation.x - lastLocation.x,
-                y: currentLocation.y - lastLocation.y
-            )
-            guard translation != .zero else {
+            guard currentLocation != lastLocation else {
                 return
             }
 
-            onPan?(translation)
+            onPointerMove?(currentLocation, lastLocation)
         case .idle, .awaitingPinch, .pinching:
             reconcileTouchInteractionState()
         }
@@ -92,6 +93,7 @@ final class iOSCanvasViewportView: UIView {
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
         super.touchesEnded(touches, with: event)
+        let pointerUpLocation = trackedPointerLocation(in: touches)
         unregisterActiveTouches(touches)
 
         guard !isPinchGestureActive else {
@@ -99,11 +101,16 @@ final class iOSCanvasViewportView: UIView {
             return
         }
 
+        if let pointerUpLocation {
+            onPointerUp?(pointerUpLocation)
+        }
+
         reconcileTouchInteractionState()
     }
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
         super.touchesCancelled(touches, with: event)
+        cancelPrimaryPointerIfNeeded()
         activeTouchesByID.removeAll()
         interactionState = .idle
     }
@@ -218,6 +225,7 @@ final class iOSCanvasViewportView: UIView {
 
     private func reconcileTouchInteractionState() {
         guard !isPinchGestureActive else {
+            cancelPrimaryPointerIfNeeded()
             interactionState = .pinching
             return
         }
@@ -231,21 +239,47 @@ final class iOSCanvasViewportView: UIView {
                 return
             }
 
-            beginSingleFingerPan(with: touch)
+            if case let .trackingPrimaryPointer(trackedTouch, _) = interactionState, trackedTouch === touch {
+                return
+            }
+
+            beginPrimaryPointerTracking(with: touch)
         default:
+            cancelPrimaryPointerIfNeeded()
             interactionState = .awaitingPinch
         }
     }
 
-    private func beginSingleFingerPan(with touch: UITouch) {
-        interactionState = .singleFingerPan(
+    private func beginPrimaryPointerTracking(with touch: UITouch) {
+        let location = touch.location(in: self)
+        interactionState = .trackingPrimaryPointer(
             trackedTouch: touch,
-            lastLocation: touch.location(in: self)
+            lastLocation: location
         )
+        onPointerDown?(location)
     }
 
     private func touchMatching(_ trackedTouch: UITouch, in touches: Set<UITouch>) -> UITouch? {
         touches.first(where: { $0 === trackedTouch })
+    }
+
+    private func trackedPointerLocation(in touches: Set<UITouch>) -> CGPoint? {
+        guard
+            case let .trackingPrimaryPointer(trackedTouch, _) = interactionState,
+            let touch = touchMatching(trackedTouch, in: touches)
+        else {
+            return nil
+        }
+
+        return touch.location(in: self)
+    }
+
+    private func cancelPrimaryPointerIfNeeded() {
+        guard case .trackingPrimaryPointer = interactionState else {
+            return
+        }
+
+        onPointerCancel?()
     }
 
     private var activeTouchCount: Int {
@@ -273,6 +307,7 @@ final class iOSCanvasViewportView: UIView {
     private func handlePinch(_ gestureRecognizer: UIPinchGestureRecognizer) {
         switch gestureRecognizer.state {
         case .began, .changed:
+            cancelPrimaryPointerIfNeeded()
             interactionState = .pinching
 
             let scaleDelta = gestureRecognizer.scale
