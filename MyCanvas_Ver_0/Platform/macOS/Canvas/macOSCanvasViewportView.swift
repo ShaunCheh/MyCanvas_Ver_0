@@ -30,19 +30,25 @@ final class macOSCanvasViewportView: NSView {
 
     override func layout() {
         super.layout()
-        updateLayerFrames()
+        performWithoutLayerActions {
+            updateLayerFrames()
+        }
     }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         updateBackgroundAppearance()
-        refreshImageLayers()
+        performWithoutLayerActions {
+            refreshImageLayers()
+        }
     }
 
     func apply(_ snapshot: CanvasRenderSnapshot) {
         self.snapshot = snapshot
-        updateLayerFrames()
-        refreshImageLayers()
+        performWithoutLayerActions {
+            updateLayerFrames()
+            refreshImageLayers()
+        }
     }
 
     private func setupLayers() {
@@ -59,9 +65,17 @@ final class macOSCanvasViewportView: NSView {
     }
 
     private func updateLayerFrames() {
-        backgroundLayer.frame = bounds
-        itemsLayer.frame = bounds
-        overlayLayer.frame = bounds
+        if backgroundLayer.frame != bounds {
+            backgroundLayer.frame = bounds
+        }
+
+        if itemsLayer.frame != bounds {
+            itemsLayer.frame = bounds
+        }
+
+        if overlayLayer.frame != bounds {
+            overlayLayer.frame = bounds
+        }
     }
 
     private func updateBackgroundAppearance() {
@@ -82,6 +96,13 @@ final class macOSCanvasViewportView: NSView {
             let imageLayer = imageLayer(for: item.id)
             imageLayer.update(with: item, contentsScale: contentsScale)
         }
+    }
+
+    private func performWithoutLayerActions(_ updates: () -> Void) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        updates()
+        CATransaction.commit()
     }
 
     private func imageLayer(for itemID: CanvasImageItemID) -> CanvasImageLayer {

@@ -4,16 +4,16 @@ overview: 把 iOS 画布的单指平移从 `UIPanGestureRecognizer` 改成 raw t
 todos:
   - id: replace-pan-recognizer
     content: 在 iOSCanvasViewportView 内移除 UIPanGestureRecognizer，改由 raw touches 输出单指平移
-    status: pending
+    status: completed
   - id: build-touch-state-machine
     content: 实现单指拖动、等待缩放、双指缩放、剩余单指续拖的输入状态机
-    status: pending
+    status: completed
   - id: preserve-controller-contract
     content: 保持 iOSViewController 和 CanvasCamera 的 onPan/onZoom 接口与几何语义不变
-    status: pending
+    status: completed
   - id: verify-gesture-transitions
     content: 验证单指首帧响应、第二指接管、pinch 结束续拖、touchesCancelled 恢复等关键路径
-    status: pending
+    status: completed
 isProject: false
 ---
 

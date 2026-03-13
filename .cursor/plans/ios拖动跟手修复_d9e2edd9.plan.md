@@ -4,16 +4,16 @@ overview: 修复 iOS 画布在 raw touch 接入后仍然不跟手的问题，优
 todos:
   - id: trace-layer-sync
     content: 确认拖动问题本轮只处理 layer 同步链路，不再改 raw touch 状态机和相机几何
-    status: pending
+    status: completed
   - id: disable-implicit-actions
     content: 在 iOS 视口层和共享图片层双层兜底关闭高频同步属性的隐式动画
-    status: pending
+    status: completed
   - id: trim-redundant-layer-writes
     content: 减少纯平移场景下对 contents、zPosition、contentsScale 的重复提交
-    status: pending
+    status: completed
   - id: verify-drag-follow
     content: 验证 iOS 跟手性恢复，并检查 macOS 是否无回归
-    status: pending
+    status: completed
 isProject: false
 ---
 

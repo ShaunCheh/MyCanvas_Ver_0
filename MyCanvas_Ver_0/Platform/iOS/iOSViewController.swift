@@ -11,6 +11,7 @@ import UniformTypeIdentifiers
 import UIKit
 
 final class iOSViewController: UIViewController, PHPickerViewControllerDelegate {
+    private static let isDiagnosticLoggingEnabled = false
     private let scene = CanvasScene()
     private var camera = CanvasCamera()
     private let renderer = CanvasRenderer()
@@ -150,7 +151,13 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
             return
         }
 
+        let cameraCenterBeforePan = camera.center
         camera.pan(by: translation)
+        logPanDispatch(
+            translation: translation,
+            cameraCenterBeforePan: cameraCenterBeforePan,
+            cameraCenterAfterPan: camera.center
+        )
         requestCanvasRefresh(reason: "pan \(describe(point: translation))")
     }
 
@@ -279,6 +286,10 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
     }
 
     private func logImport(dataCount: Int, cgImage: CGImage) {
+        guard Self.isDiagnosticLoggingEnabled else {
+            return
+        }
+
         print(
             "[Canvas iOS] loaded image data bytes=\(dataCount) " +
             "pixelSize=\(cgImage.width)x\(cgImage.height)"
@@ -286,6 +297,10 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
     }
 
     private func logCanvasState(reason: String, snapshot: CanvasRenderSnapshot) {
+        guard Self.isDiagnosticLoggingEnabled else {
+            return
+        }
+
         let orderedItems = scene.orderedItems()
         let firstWorldFrame = orderedItems.first.map { describe(rect: $0.worldFrame) } ?? "nil"
         let firstScreenFrame = snapshot.items.first.map { describe(rect: $0.screenFrame) } ?? "nil"
@@ -307,6 +322,10 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         reason: String,
         actualViewportSize: CGSize
     ) {
+        guard Self.isDiagnosticLoggingEnabled else {
+            return
+        }
+
         print(
             "[Canvas iOS] deferred refresh reason=\(reason) " +
             "cameraViewportSize=\(describe(size: camera.viewportSize)) " +
@@ -315,8 +334,32 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
     }
 
     private func logIgnoredCanvasInput(_ input: String) {
+        guard Self.isDiagnosticLoggingEnabled else {
+            return
+        }
+
         print(
             "[Canvas iOS] ignored input=\(input) " +
+            "cameraViewportSize=\(describe(size: camera.viewportSize)) " +
+            "viewBoundsSize=\(describe(size: canvasViewportView.bounds.size))"
+        )
+    }
+
+    private func logPanDispatch(
+        translation: CGPoint,
+        cameraCenterBeforePan: CGPoint,
+        cameraCenterAfterPan: CGPoint
+    ) {
+        guard Self.isDiagnosticLoggingEnabled else {
+            return
+        }
+
+        print(
+            "[Canvas iOS][ControllerPan] " +
+            "translation=\(describe(point: translation)) " +
+            "cameraCenterBefore=\(describe(point: cameraCenterBeforePan)) " +
+            "cameraCenterAfter=\(describe(point: cameraCenterAfterPan)) " +
+            "zoom=\(String(format: "%.4f", camera.zoomScale)) " +
             "cameraViewportSize=\(describe(size: camera.viewportSize)) " +
             "viewBoundsSize=\(describe(size: canvasViewportView.bounds.size))"
         )
