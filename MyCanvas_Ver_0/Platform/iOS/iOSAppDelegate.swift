@@ -20,7 +20,7 @@ final class iOSAppDelegate: UIResponder, UIApplicationDelegate {
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         let window = UIWindow(frame: UIScreen.main.bounds)
-        window.rootViewController = iOSViewController()
+        window.rootViewController = iOSAppRootViewController()
         // 需要设置背景色
         // window.rootViewController = UINavigationController(rootViewController: iOSViewController())
         // 不设置背景色，甚至不会触发-[UIApplication sendEvent:]
