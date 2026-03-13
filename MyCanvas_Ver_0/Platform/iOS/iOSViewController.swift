@@ -24,8 +24,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
     private let importButton: UIButton = {
         let button = UIButton(type: .system)
         button.translatesAutoresizingMaskIntoConstraints = false
-        button.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 20, weight: .bold)
         var configuration = UIButton.Configuration.filled()
+        configuration.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 20, weight: .bold)
         configuration.image = UIImage(systemName: "plus")
         configuration.baseBackgroundColor = .systemBlue
         configuration.baseForegroundColor = .white
