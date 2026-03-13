@@ -9,14 +9,21 @@ struct CanvasRenderItem {
     let isSelected: Bool
 }
 
+struct CanvasBoardRenderOverlay {
+    let worldRect: CGRect
+    let screenRect: CGRect
+}
+
 struct CanvasRenderSnapshot {
     let viewportBounds: CGRect
     let visibleWorldRect: CGRect
+    let boardOverlay: CanvasBoardRenderOverlay?
     let items: [CanvasRenderItem]
 
     static let empty = CanvasRenderSnapshot(
         viewportBounds: .zero,
         visibleWorldRect: .zero,
+        boardOverlay: nil,
         items: []
     )
 }

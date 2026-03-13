@@ -2,9 +2,17 @@
 import AppKit
 
 final class macOSCanvasViewportView: NSView {
+    private static let boardStrokeColor = CGColor(
+        red: 1,
+        green: 149.0 / 255.0,
+        blue: 0,
+        alpha: 0.9
+    )
+
     private let backgroundLayer = CALayer()
     private let itemsLayer = CALayer()
     private let overlayLayer = CALayer()
+    private let boardHighlightLayer = CAShapeLayer()
     private var imageLayers: [CanvasImageItemID: CanvasImageLayer] = [:]
     private var snapshot: CanvasRenderSnapshot = .empty
     private var lastPrimaryPointerLocation: CGPoint?
@@ -44,6 +52,7 @@ final class macOSCanvasViewportView: NSView {
         updateBackgroundAppearance()
         performWithoutLayerActions {
             refreshImageLayers()
+            refreshBoardHighlight()
         }
     }
 
@@ -52,6 +61,7 @@ final class macOSCanvasViewportView: NSView {
         performWithoutLayerActions {
             updateLayerFrames()
             refreshImageLayers()
+            refreshBoardHighlight()
         }
     }
 
@@ -60,11 +70,14 @@ final class macOSCanvasViewportView: NSView {
         layer?.addSublayer(backgroundLayer)
         layer?.addSublayer(itemsLayer)
         layer?.addSublayer(overlayLayer)
+        overlayLayer.addSublayer(boardHighlightLayer)
 
         backgroundLayer.isGeometryFlipped = true
         itemsLayer.isGeometryFlipped = true
         overlayLayer.isGeometryFlipped = true
+        boardHighlightLayer.isGeometryFlipped = true
 
+        configureBoardHighlightLayer()
         updateBackgroundAppearance()
     }
 
@@ -79,6 +92,10 @@ final class macOSCanvasViewportView: NSView {
 
         if overlayLayer.frame != bounds {
             overlayLayer.frame = bounds
+        }
+
+        if boardHighlightLayer.frame != bounds {
+            boardHighlightLayer.frame = bounds
         }
     }
 
@@ -100,6 +117,26 @@ final class macOSCanvasViewportView: NSView {
             let imageLayer = imageLayer(for: item.id)
             imageLayer.update(with: item, contentsScale: contentsScale)
         }
+    }
+
+    private func configureBoardHighlightLayer() {
+        boardHighlightLayer.fillColor = nil
+        boardHighlightLayer.strokeColor = Self.boardStrokeColor
+        boardHighlightLayer.lineWidth = 2
+        boardHighlightLayer.lineDashPattern = [10, 6]
+        boardHighlightLayer.isHidden = true
+    }
+
+    private func refreshBoardHighlight() {
+        guard let boardOverlay = snapshot.boardOverlay else {
+            boardHighlightLayer.path = nil
+            boardHighlightLayer.isHidden = true
+            return
+        }
+
+        boardHighlightLayer.path = CGPath(rect: boardOverlay.screenRect, transform: nil)
+        boardHighlightLayer.isHidden = false
+        boardHighlightLayer.contentsScale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
     }
 
     private func performWithoutLayerActions(_ updates: () -> Void) {

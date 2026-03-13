@@ -2,6 +2,13 @@
 import UIKit
 
 final class iOSCanvasViewportView: UIView {
+    private static let boardStrokeColor = CGColor(
+        red: 1,
+        green: 149.0 / 255.0,
+        blue: 0,
+        alpha: 0.9
+    )
+
     private enum TouchInteractionState {
         case idle
         case trackingPrimaryPointer(trackedTouch: UITouch, lastLocation: CGPoint)
@@ -12,6 +19,7 @@ final class iOSCanvasViewportView: UIView {
     private let backgroundLayer = CALayer()
     private let itemsLayer = CALayer()
     private let overlayLayer = CALayer()
+    private let boardHighlightLayer = CAShapeLayer()
     private var imageLayers: [CanvasImageItemID: CanvasImageLayer] = [:]
     private var lastReportedViewportSize: CGSize?
     private var snapshot: CanvasRenderSnapshot = .empty
@@ -120,6 +128,7 @@ final class iOSCanvasViewportView: UIView {
         updateBackgroundAppearance()
         performWithoutLayerActions {
             refreshImageLayers()
+            refreshBoardHighlight()
         }
     }
 
@@ -133,6 +142,7 @@ final class iOSCanvasViewportView: UIView {
         performWithoutLayerActions {
             updateLayerFrames()
             refreshImageLayers()
+            refreshBoardHighlight()
         }
     }
 
@@ -144,8 +154,10 @@ final class iOSCanvasViewportView: UIView {
         layer.addSublayer(backgroundLayer)
         layer.addSublayer(itemsLayer)
         layer.addSublayer(overlayLayer)
+        overlayLayer.addSublayer(boardHighlightLayer)
         addGestureRecognizer(pinchGestureRecognizer)
 
+        configureBoardHighlightLayer()
         updateBackgroundAppearance()
     }
 
@@ -160,6 +172,10 @@ final class iOSCanvasViewportView: UIView {
 
         if overlayLayer.frame != bounds {
             overlayLayer.frame = bounds
+        }
+
+        if boardHighlightLayer.frame != bounds {
+            boardHighlightLayer.frame = bounds
         }
     }
 
@@ -191,6 +207,26 @@ final class iOSCanvasViewportView: UIView {
             let imageLayer = imageLayer(for: item.id)
             imageLayer.update(with: item, contentsScale: contentsScale)
         }
+    }
+
+    private func configureBoardHighlightLayer() {
+        boardHighlightLayer.fillColor = nil
+        boardHighlightLayer.strokeColor = Self.boardStrokeColor
+        boardHighlightLayer.lineWidth = 2
+        boardHighlightLayer.lineDashPattern = [10, 6]
+        boardHighlightLayer.isHidden = true
+    }
+
+    private func refreshBoardHighlight() {
+        guard let boardOverlay = snapshot.boardOverlay else {
+            boardHighlightLayer.path = nil
+            boardHighlightLayer.isHidden = true
+            return
+        }
+
+        boardHighlightLayer.path = CGPath(rect: boardOverlay.screenRect, transform: nil)
+        boardHighlightLayer.isHidden = false
+        boardHighlightLayer.contentsScale = window?.screen.scale ?? UIScreen.main.scale
     }
 
     private func performWithoutLayerActions(_ updates: () -> Void) {

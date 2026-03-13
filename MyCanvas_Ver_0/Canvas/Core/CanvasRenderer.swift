@@ -4,6 +4,7 @@ import Foundation
 struct CanvasRenderer {
     func makeSnapshot(
         scene: CanvasScene,
+        boardState: CanvasBoardState? = nil,
         camera: CanvasCamera,
         interactionState: CanvasInteractionState = CanvasInteractionState()
     ) -> CanvasRenderSnapshot {
@@ -26,9 +27,17 @@ struct CanvasRenderer {
             )
         }
 
+        let boardOverlay = boardState.map { boardState in
+            CanvasBoardRenderOverlay(
+                worldRect: boardState.worldRect,
+                screenRect: camera.worldToViewport(boardState.worldRect)
+            )
+        }
+
         return CanvasRenderSnapshot(
             viewportBounds: camera.viewportBounds,
             visibleWorldRect: visibleWorldRect,
+            boardOverlay: boardOverlay,
             items: renderItems
         )
     }

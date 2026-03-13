@@ -44,6 +44,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
     private let canvasViewportView = iOSCanvasViewportView()
     private var canvasContentView: UIView?
     private var pendingRefreshReason: String?
+    private var boardState: CanvasBoardState?
     private var interactionState = CanvasInteractionState()
     private var lastRenderSnapshot: CanvasRenderSnapshot = .empty
     private var pointerDragState: PointerDragState = .idle
@@ -141,8 +142,9 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         }
 
         let sizeChanged = viewportSize != camera.viewportSize
+        let didConfigureBoardState = configureBoardStateIfNeeded(for: viewportSize)
         let deferredReason = pendingRefreshReason
-        guard sizeChanged || deferredReason != nil else {
+        guard sizeChanged || deferredReason != nil || didConfigureBoardState else {
             return
         }
 
@@ -263,11 +265,13 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         }
 
         camera.setViewportSize(viewportSize)
+        _ = configureBoardStateIfNeeded(for: viewportSize)
     }
 
     private func performCanvasRefresh(reason: String) {
         let snapshot = renderer.makeSnapshot(
             scene: scene,
+            boardState: boardState,
             camera: camera,
             interactionState: interactionState
         )
@@ -328,6 +332,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         )
 
         scene.append(item)
+        expandBoardIfNeeded(toInclude: item.worldFrame)
         requestCanvasRefresh(
             reason: "append image size=\(describe(size: item.size)) center=\(describe(point: item.center))"
         )
@@ -384,6 +389,9 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         }
 
         scene.moveItem(withID: itemID, by: deltaInWorld)
+        if let movedItem = scene.item(withID: itemID) {
+            expandBoardIfNeeded(toInclude: movedItem.worldFrame)
+        }
         requestCanvasRefresh(reason: "move selected item by \(describe(point: deltaInWorld))")
     }
 
@@ -404,6 +412,28 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
             cameraCenterAfterPan: camera.center
         )
         requestCanvasRefresh(reason: "pan \(describe(point: translation))")
+    }
+
+    private func expandBoardIfNeeded(toInclude worldFrame: CGRect) {
+        guard var boardState else {
+            return
+        }
+
+        if boardState.expandIfNeeded(toInclude: worldFrame) {
+            self.boardState = boardState
+        }
+    }
+
+    private func configureBoardStateIfNeeded(for viewportSize: CGSize) -> Bool {
+        guard boardState == nil else {
+            return false
+        }
+
+        boardState = CanvasBoardState(
+            baseSize: viewportSize,
+            centeredAt: camera.center
+        )
+        return true
     }
 
     private func logImport(dataCount: Int, cgImage: CGImage) {

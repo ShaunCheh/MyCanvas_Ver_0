@@ -45,6 +45,7 @@ final class macOSViewController: NSViewController {
     }()
     private let canvasViewportView = macOSCanvasViewportView()
     private var canvasContentView: NSView?
+    private var boardState: CanvasBoardState?
     private var interactionState = CanvasInteractionState()
     private var lastRenderSnapshot: CanvasRenderSnapshot = .empty
     private var pointerDragState: PointerDragState = .idle
@@ -135,11 +136,20 @@ final class macOSViewController: NSViewController {
 
     private func updateCameraViewportSizeIfNeeded() {
         let viewportSize = canvasViewportView.bounds.size
-        guard viewportSize != camera.viewportSize else {
+        guard viewportSize.width > 0, viewportSize.height > 0 else {
             return
         }
 
-        camera.setViewportSize(viewportSize)
+        let sizeChanged = viewportSize != camera.viewportSize
+        if sizeChanged {
+            camera.setViewportSize(viewportSize)
+        }
+
+        let didConfigureBoardState = configureBoardStateIfNeeded(for: viewportSize)
+        guard sizeChanged || didConfigureBoardState else {
+            return
+        }
+
         refreshCanvas()
     }
 
@@ -204,6 +214,7 @@ final class macOSViewController: NSViewController {
     private func refreshCanvas() {
         let snapshot = renderer.makeSnapshot(
             scene: scene,
+            boardState: boardState,
             camera: camera,
             interactionState: interactionState
         )
@@ -246,6 +257,7 @@ final class macOSViewController: NSViewController {
         )
 
         scene.append(item)
+        expandBoardIfNeeded(toInclude: item.worldFrame)
         refreshCanvas()
     }
 
@@ -300,6 +312,9 @@ final class macOSViewController: NSViewController {
         }
 
         scene.moveItem(withID: itemID, by: deltaInWorld)
+        if let movedItem = scene.item(withID: itemID) {
+            expandBoardIfNeeded(toInclude: movedItem.worldFrame)
+        }
         refreshCanvas()
     }
 
@@ -314,6 +329,28 @@ final class macOSViewController: NSViewController {
 
         camera.pan(by: translation)
         refreshCanvas()
+    }
+
+    private func expandBoardIfNeeded(toInclude worldFrame: CGRect) {
+        guard var boardState else {
+            return
+        }
+
+        if boardState.expandIfNeeded(toInclude: worldFrame) {
+            self.boardState = boardState
+        }
+    }
+
+    private func configureBoardStateIfNeeded(for viewportSize: CGSize) -> Bool {
+        guard boardState == nil else {
+            return false
+        }
+
+        boardState = CanvasBoardState(
+            baseSize: viewportSize,
+            centeredAt: camera.center
+        )
+        return true
     }
 }
 #endif

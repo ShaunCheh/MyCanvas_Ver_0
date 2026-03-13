@@ -4,19 +4,19 @@ overview: 按方案二新增独立的 `CanvasBoardState` 来表达逻辑画布�
 todos:
   - id: add-board-state
     content: 新增 CanvasBoardState，建模基础尺寸、当前 worldRect 和四向扩张规则
-    status: pending
+    status: completed
   - id: snapshot-board-overlay
     content: 扩展 CanvasRenderSnapshot 和 CanvasRenderer，把 board overlay 纳入统一渲染快照
-    status: pending
+    status: completed
   - id: viewport-board-highlight
     content: 在 iOS/macOS viewport 的 overlayLayer 上新增 board highlight layer 并消费 snapshot.boardOverlay
-    status: pending
+    status: completed
   - id: controller-board-integration
     content: 在 iOS/macOS controller 中持有 CanvasBoardState，并在导图和拖图后触发边界扩张与刷新
-    status: pending
+    status: completed
   - id: verify-board-highlight
     content: 验证边界高亮、四向扩张、平移缩放跟随和双平台构建
-    status: pending
+    status: completed
 isProject: false
 ---
 
