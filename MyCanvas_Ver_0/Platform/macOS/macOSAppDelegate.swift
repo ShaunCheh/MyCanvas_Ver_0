@@ -21,6 +21,7 @@ final class macOSAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        FolderBookmarkStore.logStoredBookmarkPresence()
         let viewController = macOSAppRootViewController()
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
