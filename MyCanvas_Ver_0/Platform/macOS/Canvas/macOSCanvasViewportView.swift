@@ -72,11 +72,6 @@ final class macOSCanvasViewportView: NSView {
         layer?.addSublayer(overlayLayer)
         overlayLayer.addSublayer(boardHighlightLayer)
 
-        backgroundLayer.isGeometryFlipped = true
-        itemsLayer.isGeometryFlipped = true
-        overlayLayer.isGeometryFlipped = true
-        boardHighlightLayer.isGeometryFlipped = true
-
         configureBoardHighlightLayer()
         updateBackgroundAppearance()
     }
@@ -92,10 +87,6 @@ final class macOSCanvasViewportView: NSView {
 
         if overlayLayer.frame != bounds {
             overlayLayer.frame = bounds
-        }
-
-        if boardHighlightLayer.frame != bounds {
-            boardHighlightLayer.frame = bounds
         }
     }
 
@@ -130,11 +121,18 @@ final class macOSCanvasViewportView: NSView {
     private func refreshBoardHighlight() {
         guard let boardOverlay = snapshot.boardOverlay else {
             boardHighlightLayer.path = nil
+            boardHighlightLayer.frame = .zero
             boardHighlightLayer.isHidden = true
             return
         }
 
-        boardHighlightLayer.path = CGPath(rect: boardOverlay.screenRect, transform: nil)
+        // Use the same frame-based placement semantics as image layers.
+        let boardFrame = boardOverlay.screenRect.standardized
+        boardHighlightLayer.frame = boardFrame
+        boardHighlightLayer.path = CGPath(
+            rect: CGRect(origin: .zero, size: boardFrame.size),
+            transform: nil
+        )
         boardHighlightLayer.isHidden = false
         boardHighlightLayer.contentsScale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
     }
