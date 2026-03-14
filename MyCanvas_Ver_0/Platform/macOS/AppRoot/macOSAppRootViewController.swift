@@ -34,7 +34,11 @@ final class macOSAppRootViewController: NSViewController {
     private func makeViewController(for destination: AppLaunchDestination) -> NSViewController {
         switch destination {
         case .boardList:
-            return macOSBoardListViewController()
+            let viewController = macOSBoardListViewController()
+            viewController.onOpenCanvas = { [weak self] in
+                self?.display(.canvas)
+            }
+            return viewController
         case .canvas:
             return macOSViewController()
         }

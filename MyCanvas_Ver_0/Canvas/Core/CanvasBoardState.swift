@@ -9,16 +9,28 @@ struct CanvasBoardState {
         baseSize: CGSize,
         centeredAt center: CGPoint = .zero
     ) {
-        let sanitizedBaseSize = CGSize(
-            width: max(baseSize.width, 1),
-            height: max(baseSize.height, 1)
-        )
+        let sanitizedBaseSize = Self.sanitizedBaseSize(from: baseSize)
         self.baseSize = sanitizedBaseSize
         worldRect = CGRect(
             x: center.x - sanitizedBaseSize.width / 2,
             y: center.y - sanitizedBaseSize.height / 2,
             width: sanitizedBaseSize.width,
             height: sanitizedBaseSize.height
+        )
+    }
+
+    init(
+        baseSize: CGSize,
+        worldRect: CGRect
+    ) {
+        let sanitizedBaseSize = Self.sanitizedBaseSize(from: baseSize)
+        let standardizedWorldRect = worldRect.standardized
+        self.baseSize = sanitizedBaseSize
+        self.worldRect = CGRect(
+            x: standardizedWorldRect.origin.x,
+            y: standardizedWorldRect.origin.y,
+            width: max(standardizedWorldRect.width, sanitizedBaseSize.width),
+            height: max(standardizedWorldRect.height, sanitizedBaseSize.height)
         )
     }
 
@@ -50,5 +62,12 @@ struct CanvasBoardState {
         }
 
         return didExpand
+    }
+
+    private static func sanitizedBaseSize(from baseSize: CGSize) -> CGSize {
+        CGSize(
+            width: max(baseSize.width, 1),
+            height: max(baseSize.height, 1)
+        )
     }
 }

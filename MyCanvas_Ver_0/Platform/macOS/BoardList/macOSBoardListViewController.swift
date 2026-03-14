@@ -2,6 +2,8 @@
 import AppKit
 
 final class macOSBoardListViewController: NSViewController {
+    var onOpenCanvas: (() -> Void)?
+
     private let titleLabel: NSTextField = {
         let label = NSTextField(labelWithString: "Board List")
         label.translatesAutoresizingMaskIntoConstraints = false
@@ -18,6 +20,13 @@ final class macOSBoardListViewController: NSViewController {
         return button
     }()
 
+    private let openCanvasButton: NSButton = {
+        let button = NSButton(title: "Open Canvas", target: nil, action: nil)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.bezelStyle = .rounded
+        return button
+    }()
+
     private let bookmarkStatusLabel: NSTextField = {
         let label = NSTextField(wrappingLabelWithString: "")
         label.translatesAutoresizingMaskIntoConstraints = false
@@ -29,7 +38,7 @@ final class macOSBoardListViewController: NSViewController {
     }()
 
     private let subtitleLabel: NSTextField = {
-        let label = NSTextField(labelWithString: "Placeholder scene for a future board list.")
+        let label = NSTextField(labelWithString: "Select a storage folder, then open the canvas.")
         label.translatesAutoresizingMaskIntoConstraints = false
         label.font = .systemFont(ofSize: 16)
         label.textColor = .secondaryLabelColor
@@ -55,6 +64,7 @@ final class macOSBoardListViewController: NSViewController {
         view.addSubview(titleLabel)
         view.addSubview(subtitleLabel)
         view.addSubview(selectFolderButton)
+        view.addSubview(openCanvasButton)
         view.addSubview(bookmarkStatusLabel)
     }
 
@@ -66,7 +76,9 @@ final class macOSBoardListViewController: NSViewController {
             subtitleLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             selectFolderButton.topAnchor.constraint(equalTo: subtitleLabel.bottomAnchor, constant: 24),
             selectFolderButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            bookmarkStatusLabel.topAnchor.constraint(equalTo: selectFolderButton.bottomAnchor, constant: 12),
+            openCanvasButton.topAnchor.constraint(equalTo: selectFolderButton.bottomAnchor, constant: 12),
+            openCanvasButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            bookmarkStatusLabel.topAnchor.constraint(equalTo: openCanvasButton.bottomAnchor, constant: 12),
             bookmarkStatusLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             bookmarkStatusLabel.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 24),
             bookmarkStatusLabel.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -24)
@@ -76,10 +88,20 @@ final class macOSBoardListViewController: NSViewController {
     private func setupActions() {
         selectFolderButton.target = self
         selectFolderButton.action = #selector(handleSelectFolderButtonClick)
+        openCanvasButton.target = self
+        openCanvasButton.action = #selector(handleOpenCanvasButtonClick)
     }
 
     private func refreshBookmarkStatus() {
-        bookmarkStatusLabel.stringValue = FolderBookmarkStore.statusText()
+        let bookmarkText = FolderBookmarkStore.statusText()
+        do {
+            let boardCount = try BoardStore.listBoards().count
+            bookmarkStatusLabel.stringValue = "\(bookmarkText)\n\nBoards available: \(boardCount)"
+        } catch FolderBookmarkStoreError.missingBookmarkData {
+            bookmarkStatusLabel.stringValue = bookmarkText
+        } catch {
+            bookmarkStatusLabel.stringValue = "\(bookmarkText)\n\nStorage error: \(error.localizedDescription)"
+        }
     }
 
     @objc
@@ -96,6 +118,11 @@ final class macOSBoardListViewController: NSViewController {
             print("[FolderBookmark][macOS] Failed to create bookmark: \(error)")
             presentSelectionError(error)
         }
+    }
+
+    @objc
+    private func handleOpenCanvasButtonClick() {
+        onOpenCanvas?()
     }
 
     private func presentSelectionError(_ error: Error) {

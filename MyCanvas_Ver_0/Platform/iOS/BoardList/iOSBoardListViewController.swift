@@ -3,6 +3,7 @@ import UIKit
 
 final class iOSBoardListViewController: UIViewController {
     private let folderPicker = FolderPicker()
+    var onOpenCanvas: (() -> Void)?
 
     private let titleLabel: UILabel = {
         let label = UILabel()
@@ -17,7 +18,7 @@ final class iOSBoardListViewController: UIViewController {
     private let subtitleLabel: UILabel = {
         let label = UILabel()
         label.translatesAutoresizingMaskIntoConstraints = false
-        label.text = "Placeholder scene for a future board list."
+        label.text = "Select a storage folder, then open the canvas."
         label.font = .systemFont(ofSize: 16)
         label.textColor = .secondaryLabel
         label.textAlignment = .center
@@ -30,6 +31,16 @@ final class iOSBoardListViewController: UIViewController {
         button.translatesAutoresizingMaskIntoConstraints = false
         var configuration = UIButton.Configuration.filled()
         configuration.title = "Select Folder"
+        configuration.cornerStyle = .medium
+        button.configuration = configuration
+        return button
+    }()
+
+    private let openCanvasButton: UIButton = {
+        let button = UIButton(type: .system)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        var configuration = UIButton.Configuration.tinted()
+        configuration.title = "Open Canvas"
         configuration.cornerStyle = .medium
         button.configuration = configuration
         return button
@@ -58,6 +69,7 @@ final class iOSBoardListViewController: UIViewController {
         view.addSubview(titleLabel)
         view.addSubview(subtitleLabel)
         view.addSubview(selectFolderButton)
+        view.addSubview(openCanvasButton)
         view.addSubview(bookmarkStatusLabel)
     }
 
@@ -71,7 +83,9 @@ final class iOSBoardListViewController: UIViewController {
             subtitleLabel.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -24),
             selectFolderButton.topAnchor.constraint(equalTo: subtitleLabel.bottomAnchor, constant: 24),
             selectFolderButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            bookmarkStatusLabel.topAnchor.constraint(equalTo: selectFolderButton.bottomAnchor, constant: 12),
+            openCanvasButton.topAnchor.constraint(equalTo: selectFolderButton.bottomAnchor, constant: 12),
+            openCanvasButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            bookmarkStatusLabel.topAnchor.constraint(equalTo: openCanvasButton.bottomAnchor, constant: 12),
             bookmarkStatusLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             bookmarkStatusLabel.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 24),
             bookmarkStatusLabel.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -24)
@@ -80,10 +94,19 @@ final class iOSBoardListViewController: UIViewController {
 
     private func setupActions() {
         selectFolderButton.addTarget(self, action: #selector(handleSelectFolderButtonTap), for: .touchUpInside)
+        openCanvasButton.addTarget(self, action: #selector(handleOpenCanvasButtonTap), for: .touchUpInside)
     }
 
     private func refreshBookmarkStatus() {
-        bookmarkStatusLabel.text = FolderBookmarkStore.statusText()
+        let bookmarkText = FolderBookmarkStore.statusText()
+        do {
+            let boardCount = try BoardStore.listBoards().count
+            bookmarkStatusLabel.text = "\(bookmarkText)\n\nBoards available: \(boardCount)"
+        } catch FolderBookmarkStoreError.missingBookmarkData {
+            bookmarkStatusLabel.text = bookmarkText
+        } catch {
+            bookmarkStatusLabel.text = "\(bookmarkText)\n\nStorage error: \(error.localizedDescription)"
+        }
     }
 
     @objc
@@ -99,6 +122,11 @@ final class iOSBoardListViewController: UIViewController {
                 self?.presentSelectionError(error)
             }
         }
+    }
+
+    @objc
+    private func handleOpenCanvasButtonTap() {
+        onOpenCanvas?()
     }
 
     private func presentSelectionError(_ error: Error) {

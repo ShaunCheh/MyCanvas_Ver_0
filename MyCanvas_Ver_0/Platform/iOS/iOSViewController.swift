@@ -41,6 +41,21 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         button.configuration = configuration
         return button
     }()
+    private let saveButton: UIButton = {
+        let button = UIButton(type: .system)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        var configuration = UIButton.Configuration.filled()
+        configuration.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
+        configuration.image = UIImage(systemName: "square.and.arrow.down")
+        configuration.imagePlacement = .leading
+        configuration.imagePadding = 6
+        configuration.title = "Save"
+        configuration.baseBackgroundColor = .systemGreen
+        configuration.baseForegroundColor = .white
+        configuration.cornerStyle = .capsule
+        button.configuration = configuration
+        return button
+    }()
     private let canvasViewportView = iOSCanvasViewportView()
     private var canvasContentView: UIView?
     private var pendingRefreshReason: String?
@@ -48,12 +63,19 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
     private var interactionState = CanvasInteractionState()
     private var lastRenderSnapshot: CanvasRenderSnapshot = .empty
     private var pointerDragState: PointerDragState = .idle
+    private var activeBoardID: UUID?
+    private var activeBoardTitle = BoardDocument.defaultTitle
+    private var activeBoardCreatedAt: Date?
+    private var pendingAutosaveWorkItem: DispatchWorkItem?
+    private var saveButtonResetWorkItem: DispatchWorkItem?
 
     override func viewDidLoad() {
         super.viewDidLoad()
         setupViewHierarchy()
         setupConstraints()
         setupImportButton()
+        setupSaveButton()
+        restorePersistedBoardIfPossible()
         setupCanvasViewport()
     }
 
@@ -85,6 +107,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
     private func setupViewHierarchy() {
         view.backgroundColor = .systemBackground
         view.addSubview(canvasHostView)
+        view.addSubview(saveButton)
         view.addSubview(importButton)
     }
 
@@ -95,15 +118,21 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
             canvasHostView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             canvasHostView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             canvasHostView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            saveButton.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -20),
+            saveButton.bottomAnchor.constraint(equalTo: importButton.topAnchor, constant: -12),
             importButton.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -20),
             importButton.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -20),
-            importButton.widthAnchor.constraint(equalToConstant: 56),
+            saveButton.heightAnchor.constraint(equalToConstant: 40),
             importButton.heightAnchor.constraint(equalToConstant: 56)
         ])
     }
 
     private func setupImportButton() {
         importButton.addTarget(self, action: #selector(handleImportButtonTap), for: .touchUpInside)
+    }
+
+    private func setupSaveButton() {
+        saveButton.addTarget(self, action: #selector(handleSaveButtonTap), for: .touchUpInside)
     }
 
     private func setupCanvasViewport() {
@@ -162,6 +191,10 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
             performCanvasRefresh(
                 reason: "viewport size changed to \(describe(size: viewportSize)) via \(source)"
             )
+        }
+
+        if didConfigureBoardState {
+            scheduleAutosave(reason: "configure board state")
         }
     }
 
@@ -238,6 +271,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         requestCanvasRefresh(
             reason: "zoom scaleDelta=\(String(format: "%.4f", scaleDelta)) anchor=\(describe(point: anchor))"
         )
+        scheduleAutosave(reason: "zoom canvas")
     }
 
     private func requestCanvasRefresh(reason: String) {
@@ -291,6 +325,39 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         present(pickerViewController, animated: true)
     }
 
+    @objc
+    private func handleSaveButtonTap() {
+        pendingAutosaveWorkItem?.cancel()
+
+        do {
+            guard try persistBoardNow(reason: "manual save", createBoardIfNeeded: true) else {
+                throw FolderBookmarkStoreError.missingBookmarkData
+            }
+
+            showSaveButtonFeedback(
+                title: "Saved",
+                systemImageName: "checkmark",
+                backgroundColor: .systemGreen
+            )
+        } catch FolderBookmarkStoreError.missingBookmarkData {
+            showSaveButtonFeedback(
+                title: "No Folder",
+                systemImageName: "exclamationmark.triangle",
+                backgroundColor: .systemOrange
+            )
+            presentSaveError(
+                message: "Select a folder from the board list before saving."
+            )
+        } catch {
+            showSaveButtonFeedback(
+                title: "Failed",
+                systemImageName: "xmark",
+                backgroundColor: .systemRed
+            )
+            presentSaveError(message: error.localizedDescription)
+        }
+    }
+
     func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
         picker.dismiss(animated: true)
 
@@ -336,6 +403,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         requestCanvasRefresh(
             reason: "append image size=\(describe(size: item.size)) center=\(describe(point: item.center))"
         )
+        scheduleAutosave(reason: "append image")
     }
 
     private func normalizedDisplaySize(for cgImage: CGImage) -> CGSize {
@@ -364,6 +432,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
 
         interactionState.selectedItemID = itemID
         requestCanvasRefresh(reason: "select item \(itemID.uuidString)")
+        scheduleAutosave(reason: "select item")
     }
 
     private func hitTestItemID(at viewportLocation: CGPoint) -> CanvasImageItemID? {
@@ -393,6 +462,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
             expandBoardIfNeeded(toInclude: movedItem.worldFrame)
         }
         requestCanvasRefresh(reason: "move selected item by \(describe(point: deltaInWorld))")
+        scheduleAutosave(reason: "move item")
     }
 
     private func panCanvas(from previousLocation: CGPoint, to location: CGPoint) {
@@ -412,6 +482,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
             cameraCenterAfterPan: camera.center
         )
         requestCanvasRefresh(reason: "pan \(describe(point: translation))")
+        scheduleAutosave(reason: "pan canvas")
     }
 
     private func expandBoardIfNeeded(toInclude worldFrame: CGRect) {
@@ -434,6 +505,162 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
             centeredAt: camera.center
         )
         return true
+    }
+
+    private func restorePersistedBoardIfPossible() {
+        do {
+            applyBoardRuntimeState(try BoardStore.loadOrCreateInitialBoard())
+        } catch FolderBookmarkStoreError.missingBookmarkData {
+            return
+        } catch {
+            print("[BoardStore][iOS] Failed to restore board: \(error)")
+        }
+    }
+
+    private func applyBoardRuntimeState(_ runtimeState: BoardRuntimeState) {
+        activeBoardID = runtimeState.boardID
+        activeBoardTitle = runtimeState.title
+        activeBoardCreatedAt = runtimeState.createdAt
+        scene.setItems(runtimeState.items)
+        boardState = runtimeState.boardState
+        camera = runtimeState.camera
+        interactionState = runtimeState.interactionState
+    }
+
+    private func scheduleAutosave(reason: String) {
+        guard currentBoardRuntimeState() != nil else {
+            return
+        }
+
+        pendingAutosaveWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.performAutosave(reason: reason)
+        }
+        pendingAutosaveWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: workItem)
+    }
+
+    private func performAutosave(reason: String) {
+        do {
+            _ = try persistBoardNow(reason: reason)
+        } catch FolderBookmarkStoreError.missingBookmarkData {
+            return
+        } catch {
+            return
+        }
+    }
+
+    @discardableResult
+    private func persistBoardNow(
+        reason: String,
+        createBoardIfNeeded: Bool = false
+    ) throws -> Bool {
+        guard let runtimeState = currentBoardRuntimeState(createBoardIfNeeded: createBoardIfNeeded) else {
+            return false
+        }
+
+        pendingAutosaveWorkItem = nil
+
+        do {
+            try BoardStore.saveBoard(runtimeState)
+            return true
+        } catch {
+            print("[BoardStore][iOS] Failed to save board (\(reason)): \(error)")
+            throw error
+        }
+    }
+
+    private func currentBoardRuntimeState(
+        createBoardIfNeeded: Bool = false
+    ) -> BoardRuntimeState? {
+        if createBoardIfNeeded, ensureActiveBoardIdentityIfNeeded() == false {
+            return nil
+        }
+
+        guard
+            let activeBoardID,
+            let activeBoardCreatedAt
+        else {
+            return nil
+        }
+
+        return BoardRuntimeState(
+            boardID: activeBoardID,
+            title: activeBoardTitle,
+            createdAt: activeBoardCreatedAt,
+            updatedAt: Date(),
+            items: scene.orderedItems(),
+            boardState: boardState,
+            camera: camera,
+            interactionState: interactionState
+        )
+    }
+
+    private func ensureActiveBoardIdentityIfNeeded() -> Bool {
+        guard activeBoardID == nil || activeBoardCreatedAt == nil else {
+            return true
+        }
+
+        guard FolderBookmarkStore.hasStoredBookmarkData() else {
+            return false
+        }
+
+        let now = Date()
+        activeBoardID = activeBoardID ?? UUID()
+        activeBoardCreatedAt = activeBoardCreatedAt ?? now
+        if activeBoardTitle.isEmpty {
+            activeBoardTitle = BoardDocument.defaultTitle
+        }
+        return true
+    }
+
+    private func showSaveButtonFeedback(
+        title: String,
+        systemImageName: String,
+        backgroundColor: UIColor
+    ) {
+        applySaveButtonAppearance(
+            title: title,
+            systemImageName: systemImageName,
+            backgroundColor: backgroundColor
+        )
+
+        saveButtonResetWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.applyDefaultSaveButtonAppearance()
+        }
+        saveButtonResetWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2, execute: workItem)
+    }
+
+    private func applyDefaultSaveButtonAppearance() {
+        applySaveButtonAppearance(
+            title: "Save",
+            systemImageName: "square.and.arrow.down",
+            backgroundColor: .systemGreen
+        )
+    }
+
+    private func applySaveButtonAppearance(
+        title: String,
+        systemImageName: String,
+        backgroundColor: UIColor
+    ) {
+        var configuration = saveButton.configuration ?? UIButton.Configuration.filled()
+        configuration.title = title
+        configuration.image = UIImage(systemName: systemImageName)
+        configuration.baseBackgroundColor = backgroundColor
+        saveButton.configuration = configuration
+    }
+
+    private func presentSaveError(message: String) {
+        let alertController = UIAlertController(
+            title: "Unable to Save Board",
+            message: message,
+            preferredStyle: .alert
+        )
+        alertController.addAction(UIAlertAction(title: "OK", style: .default))
+        present(alertController, animated: true)
     }
 
     private func logImport(dataCount: Int, cgImage: CGImage) {

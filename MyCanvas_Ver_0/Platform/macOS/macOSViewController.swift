@@ -43,12 +43,27 @@ final class macOSViewController: NSViewController {
         }
         return button
     }()
+    private let saveButton: NSButton = {
+        let button = NSButton(title: "Save", target: nil, action: nil)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.bezelStyle = .rounded
+        button.imagePosition = .imageLeading
+        if let image = NSImage(systemSymbolName: "square.and.arrow.down", accessibilityDescription: "Save board") {
+            button.image = image
+        }
+        return button
+    }()
     private let canvasViewportView = macOSCanvasViewportView()
     private var canvasContentView: NSView?
     private var boardState: CanvasBoardState?
     private var interactionState = CanvasInteractionState()
     private var lastRenderSnapshot: CanvasRenderSnapshot = .empty
     private var pointerDragState: PointerDragState = .idle
+    private var activeBoardID: UUID?
+    private var activeBoardTitle = BoardDocument.defaultTitle
+    private var activeBoardCreatedAt: Date?
+    private var pendingAutosaveWorkItem: DispatchWorkItem?
+    private var saveButtonResetWorkItem: DispatchWorkItem?
 
     override func loadView() {
         let rootView = NSView()
@@ -62,6 +77,8 @@ final class macOSViewController: NSViewController {
         setupViewHierarchy()
         setupConstraints()
         setupImportButton()
+        setupSaveButton()
+        restorePersistedBoardIfPossible()
         setupCanvasViewport()
     }
 
@@ -89,6 +106,7 @@ final class macOSViewController: NSViewController {
 
     private func setupViewHierarchy() {
         view.addSubview(canvasHostView)
+        view.addSubview(saveButton)
         view.addSubview(importButton)
     }
 
@@ -98,9 +116,10 @@ final class macOSViewController: NSViewController {
             canvasHostView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             canvasHostView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             canvasHostView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            saveButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+            saveButton.bottomAnchor.constraint(equalTo: importButton.topAnchor, constant: -12),
             importButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
             importButton.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -20),
-            importButton.widthAnchor.constraint(equalToConstant: 44),
             importButton.heightAnchor.constraint(equalToConstant: 44)
         ])
     }
@@ -108,6 +127,11 @@ final class macOSViewController: NSViewController {
     private func setupImportButton() {
         importButton.target = self
         importButton.action = #selector(handleImportButtonClick)
+    }
+
+    private func setupSaveButton() {
+        saveButton.target = self
+        saveButton.action = #selector(handleSaveButtonClick)
     }
 
     private func setupCanvasViewport() {
@@ -151,6 +175,10 @@ final class macOSViewController: NSViewController {
         }
 
         refreshCanvas()
+
+        if didConfigureBoardState {
+            scheduleAutosave(reason: "configure board state")
+        }
     }
 
     private func handlePrimaryPointerDown(at location: CGPoint) {
@@ -204,11 +232,13 @@ final class macOSViewController: NSViewController {
     private func handleIndirectPan(_ translation: CGPoint) {
         camera.pan(by: translation)
         refreshCanvas()
+        scheduleAutosave(reason: "pan canvas")
     }
 
     private func handleZoom(_ scaleDelta: CGFloat, around anchor: CGPoint) {
         camera.zoom(by: scaleDelta, around: anchor)
         refreshCanvas()
+        scheduleAutosave(reason: "zoom canvas")
     }
 
     private func refreshCanvas() {
@@ -248,6 +278,39 @@ final class macOSViewController: NSViewController {
         }
     }
 
+    @objc
+    private func handleSaveButtonClick() {
+        pendingAutosaveWorkItem?.cancel()
+
+        do {
+            guard try persistBoardNow(reason: "manual save", createBoardIfNeeded: true) else {
+                throw FolderBookmarkStoreError.missingBookmarkData
+            }
+
+            showSaveButtonFeedback(
+                title: "Saved",
+                systemImageName: "checkmark",
+                tintColor: .systemGreen
+            )
+        } catch FolderBookmarkStoreError.missingBookmarkData {
+            showSaveButtonFeedback(
+                title: "No Folder",
+                systemImageName: "exclamationmark.triangle",
+                tintColor: .systemOrange
+            )
+            presentSaveError(
+                message: "Select a folder from the board list before saving."
+            )
+        } catch {
+            showSaveButtonFeedback(
+                title: "Failed",
+                systemImageName: "xmark",
+                tintColor: .systemRed
+            )
+            presentSaveError(message: error.localizedDescription)
+        }
+    }
+
     private func appendImportedImage(_ cgImage: CGImage) {
         let item = CanvasImageItem(
             cgImage: cgImage,
@@ -259,6 +322,7 @@ final class macOSViewController: NSViewController {
         scene.append(item)
         expandBoardIfNeeded(toInclude: item.worldFrame)
         refreshCanvas()
+        scheduleAutosave(reason: "append image")
     }
 
     private func normalizedDisplaySize(for cgImage: CGImage) -> CGSize {
@@ -287,6 +351,7 @@ final class macOSViewController: NSViewController {
 
         interactionState.selectedItemID = itemID
         refreshCanvas()
+        scheduleAutosave(reason: "select item")
     }
 
     private func hitTestItemID(at viewportLocation: CGPoint) -> CanvasImageItemID? {
@@ -316,6 +381,7 @@ final class macOSViewController: NSViewController {
             expandBoardIfNeeded(toInclude: movedItem.worldFrame)
         }
         refreshCanvas()
+        scheduleAutosave(reason: "move item")
     }
 
     private func panCanvas(from previousLocation: CGPoint, to location: CGPoint) {
@@ -329,6 +395,7 @@ final class macOSViewController: NSViewController {
 
         camera.pan(by: translation)
         refreshCanvas()
+        scheduleAutosave(reason: "drag canvas")
     }
 
     private func expandBoardIfNeeded(toInclude worldFrame: CGRect) {
@@ -351,6 +418,167 @@ final class macOSViewController: NSViewController {
             centeredAt: camera.center
         )
         return true
+    }
+
+    private func restorePersistedBoardIfPossible() {
+        do {
+            applyBoardRuntimeState(try BoardStore.loadOrCreateInitialBoard())
+        } catch FolderBookmarkStoreError.missingBookmarkData {
+            return
+        } catch {
+            print("[BoardStore][macOS] Failed to restore board: \(error)")
+        }
+    }
+
+    private func applyBoardRuntimeState(_ runtimeState: BoardRuntimeState) {
+        activeBoardID = runtimeState.boardID
+        activeBoardTitle = runtimeState.title
+        activeBoardCreatedAt = runtimeState.createdAt
+        scene.setItems(runtimeState.items)
+        boardState = runtimeState.boardState
+        camera = runtimeState.camera
+        interactionState = runtimeState.interactionState
+    }
+
+    private func scheduleAutosave(reason: String) {
+        guard currentBoardRuntimeState() != nil else {
+            return
+        }
+
+        pendingAutosaveWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.performAutosave(reason: reason)
+        }
+        pendingAutosaveWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: workItem)
+    }
+
+    private func performAutosave(reason: String) {
+        do {
+            _ = try persistBoardNow(reason: reason)
+        } catch FolderBookmarkStoreError.missingBookmarkData {
+            return
+        } catch {
+            return
+        }
+    }
+
+    @discardableResult
+    private func persistBoardNow(
+        reason: String,
+        createBoardIfNeeded: Bool = false
+    ) throws -> Bool {
+        guard let runtimeState = currentBoardRuntimeState(createBoardIfNeeded: createBoardIfNeeded) else {
+            return false
+        }
+
+        pendingAutosaveWorkItem = nil
+
+        do {
+            try BoardStore.saveBoard(runtimeState)
+            return true
+        } catch {
+            print("[BoardStore][macOS] Failed to save board (\(reason)): \(error)")
+            throw error
+        }
+    }
+
+    private func currentBoardRuntimeState(
+        createBoardIfNeeded: Bool = false
+    ) -> BoardRuntimeState? {
+        if createBoardIfNeeded, ensureActiveBoardIdentityIfNeeded() == false {
+            return nil
+        }
+
+        guard
+            let activeBoardID,
+            let activeBoardCreatedAt
+        else {
+            return nil
+        }
+
+        return BoardRuntimeState(
+            boardID: activeBoardID,
+            title: activeBoardTitle,
+            createdAt: activeBoardCreatedAt,
+            updatedAt: Date(),
+            items: scene.orderedItems(),
+            boardState: boardState,
+            camera: camera,
+            interactionState: interactionState
+        )
+    }
+
+    private func ensureActiveBoardIdentityIfNeeded() -> Bool {
+        guard activeBoardID == nil || activeBoardCreatedAt == nil else {
+            return true
+        }
+
+        guard FolderBookmarkStore.hasStoredBookmarkData() else {
+            return false
+        }
+
+        let now = Date()
+        activeBoardID = activeBoardID ?? UUID()
+        activeBoardCreatedAt = activeBoardCreatedAt ?? now
+        if activeBoardTitle.isEmpty {
+            activeBoardTitle = BoardDocument.defaultTitle
+        }
+        return true
+    }
+
+    private func showSaveButtonFeedback(
+        title: String,
+        systemImageName: String,
+        tintColor: NSColor
+    ) {
+        applySaveButtonAppearance(
+            title: title,
+            systemImageName: systemImageName,
+            tintColor: tintColor
+        )
+
+        saveButtonResetWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.applyDefaultSaveButtonAppearance()
+        }
+        saveButtonResetWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2, execute: workItem)
+    }
+
+    private func applyDefaultSaveButtonAppearance() {
+        applySaveButtonAppearance(
+            title: "Save",
+            systemImageName: "square.and.arrow.down",
+            tintColor: .controlAccentColor
+        )
+    }
+
+    private func applySaveButtonAppearance(
+        title: String,
+        systemImageName: String,
+        tintColor: NSColor
+    ) {
+        saveButton.title = title
+        saveButton.image = NSImage(
+            systemSymbolName: systemImageName,
+            accessibilityDescription: title
+        )
+        saveButton.contentTintColor = tintColor
+    }
+
+    private func presentSaveError(message: String) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Unable to Save Board"
+        alert.informativeText = message
+        alert.addButton(withTitle: "OK")
+
+        if let window = view.window {
+            alert.beginSheetModal(for: window)
+        } else {
+            alert.runModal()
+        }
     }
 }
 #endif

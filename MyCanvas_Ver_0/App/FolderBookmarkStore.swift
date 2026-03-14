@@ -1,6 +1,22 @@
 import Foundation
 
+enum FolderBookmarkStoreError: LocalizedError {
+    case missingBookmarkData
+
+    var errorDescription: String? {
+        switch self {
+        case .missingBookmarkData:
+            return "No folder bookmark has been saved yet."
+        }
+    }
+}
+
 enum FolderBookmarkStore {
+    struct ResolvedFolderBookmark {
+        let url: URL
+        let isStale: Bool
+    }
+
     private static let bookmarkDefaultsKey = "SelectedFolderBookmarkData"
 
     static func save(_ bookmarkData: Data, userDefaults: UserDefaults = .standard) {
@@ -15,23 +31,31 @@ enum FolderBookmarkStore {
         storedBookmarkData(userDefaults: userDefaults) != nil
     }
 
-    static func storedFolderPath(userDefaults: UserDefaults = .standard) -> String? {
+    static func resolveStoredFolderBookmark(
+        userDefaults: UserDefaults = .standard
+    ) throws -> ResolvedFolderBookmark {
         guard let bookmarkData = storedBookmarkData(userDefaults: userDefaults) else {
-            return nil
+            throw FolderBookmarkStoreError.missingBookmarkData
         }
 
+        var isStale = false
+        let url = try URL(
+            resolvingBookmarkData: bookmarkData,
+            options: bookmarkResolutionOptions,
+            relativeTo: nil,
+            bookmarkDataIsStale: &isStale
+        )
+        if isStale {
+            print("[FolderBookmark] Resolved bookmark is stale.")
+        }
+        return ResolvedFolderBookmark(url: url, isStale: isStale)
+    }
+
+    static func storedFolderPath(userDefaults: UserDefaults = .standard) -> String? {
         do {
-            var isStale = false
-            let url = try URL(
-                resolvingBookmarkData: bookmarkData,
-                options: bookmarkResolutionOptions,
-                relativeTo: nil,
-                bookmarkDataIsStale: &isStale
-            )
-            if isStale {
-                print("[FolderBookmark] Resolved bookmark is stale.")
-            }
-            return url.path
+            return try resolveStoredFolderBookmark(userDefaults: userDefaults).url.path
+        } catch FolderBookmarkStoreError.missingBookmarkData {
+            return nil
         } catch {
             print("[FolderBookmark] Failed to resolve bookmark path: \(error)")
             return nil
