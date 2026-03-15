@@ -62,7 +62,10 @@ final class macOSViewController: NSViewController {
     private var activeBoardID: UUID?
     private var activeBoardTitle = BoardDocument.defaultTitle
     private var activeBoardCreatedAt: Date?
-    private var pendingAutosaveWorkItem: DispatchWorkItem?
+    private let saveCoordinator = BoardSaveCoordinator(
+        queueLabel: "MyCanvas.BoardSave.macOS",
+        logPrefix: "[BoardStore][macOS]"
+    )
     private var saveButtonResetWorkItem: DispatchWorkItem?
 
     override func loadView() {
@@ -280,34 +283,41 @@ final class macOSViewController: NSViewController {
 
     @objc
     private func handleSaveButtonClick() {
-        pendingAutosaveWorkItem?.cancel()
-
-        do {
-            guard try persistBoardNow(reason: "manual save", createBoardIfNeeded: true) else {
-                throw FolderBookmarkStoreError.missingBookmarkData
+        beginSaveButtonSaveState()
+        saveBoardNow(
+            reason: "manual save",
+            createBoardIfNeeded: true
+        ) { [weak self] result in
+            guard let self else {
+                return
             }
 
-            showSaveButtonFeedback(
-                title: "Saved",
-                systemImageName: "checkmark",
-                tintColor: .systemGreen
-            )
-        } catch FolderBookmarkStoreError.missingBookmarkData {
-            showSaveButtonFeedback(
-                title: "No Folder",
-                systemImageName: "exclamationmark.triangle",
-                tintColor: .systemOrange
-            )
-            presentSaveError(
-                message: "Select a folder from the board list before saving."
-            )
-        } catch {
-            showSaveButtonFeedback(
-                title: "Failed",
-                systemImageName: "xmark",
-                tintColor: .systemRed
-            )
-            presentSaveError(message: error.localizedDescription)
+            switch result {
+            case .success:
+                self.showSaveButtonFeedback(
+                    title: "Saved",
+                    systemImageName: "checkmark",
+                    tintColor: .systemGreen
+                )
+            case let .failure(error):
+                if case FolderBookmarkStoreError.missingBookmarkData = error {
+                    self.showSaveButtonFeedback(
+                        title: "No Folder",
+                        systemImageName: "exclamationmark.triangle",
+                        tintColor: .systemOrange
+                    )
+                    self.presentSaveError(
+                        message: "Select a folder from the board list before saving."
+                    )
+                } else {
+                    self.showSaveButtonFeedback(
+                        title: "Failed",
+                        systemImageName: "xmark",
+                        tintColor: .systemRed
+                    )
+                    self.presentSaveError(message: error.localizedDescription)
+                }
+            }
         }
     }
 
@@ -351,7 +361,6 @@ final class macOSViewController: NSViewController {
 
         interactionState.selectedItemID = itemID
         refreshCanvas()
-        scheduleAutosave(reason: "select item")
     }
 
     private func hitTestItemID(at viewportLocation: CGPoint) -> CanvasImageItemID? {
@@ -441,46 +450,31 @@ final class macOSViewController: NSViewController {
     }
 
     private func scheduleAutosave(reason: String) {
-        guard currentBoardRuntimeState() != nil else {
+        guard let snapshot = currentBoardRuntimeState() else {
             return
         }
 
-        pendingAutosaveWorkItem?.cancel()
-        let workItem = DispatchWorkItem { [weak self] in
-            self?.performAutosave(reason: reason)
-        }
-        pendingAutosaveWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: workItem)
+        saveCoordinator.scheduleAutosave(
+            snapshot: snapshot,
+            reason: reason
+        )
     }
 
-    private func performAutosave(reason: String) {
-        do {
-            _ = try persistBoardNow(reason: reason)
-        } catch FolderBookmarkStoreError.missingBookmarkData {
-            return
-        } catch {
-            return
-        }
-    }
-
-    @discardableResult
-    private func persistBoardNow(
+    private func saveBoardNow(
         reason: String,
-        createBoardIfNeeded: Bool = false
-    ) throws -> Bool {
-        guard let runtimeState = currentBoardRuntimeState(createBoardIfNeeded: createBoardIfNeeded) else {
-            return false
+        createBoardIfNeeded: Bool = false,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
+        guard let snapshot = currentBoardRuntimeState(createBoardIfNeeded: createBoardIfNeeded) else {
+            completion(.failure(FolderBookmarkStoreError.missingBookmarkData))
+            return
         }
 
-        pendingAutosaveWorkItem = nil
-
-        do {
-            try BoardStore.saveBoard(runtimeState)
-            return true
-        } catch {
-            print("[BoardStore][macOS] Failed to save board (\(reason)): \(error)")
-            throw error
-        }
+        saveCoordinator.saveImmediately(
+            snapshot: snapshot,
+            reason: reason,
+            completion: completion
+        )
     }
 
     private func currentBoardRuntimeState(
@@ -527,11 +521,22 @@ final class macOSViewController: NSViewController {
         return true
     }
 
+    private func beginSaveButtonSaveState() {
+        saveButtonResetWorkItem?.cancel()
+        saveButton.isEnabled = false
+        applySaveButtonAppearance(
+            title: "Saving",
+            systemImageName: "square.and.arrow.down",
+            tintColor: .controlAccentColor
+        )
+    }
+
     private func showSaveButtonFeedback(
         title: String,
         systemImageName: String,
         tintColor: NSColor
     ) {
+        saveButton.isEnabled = true
         applySaveButtonAppearance(
             title: title,
             systemImageName: systemImageName,
@@ -547,6 +552,7 @@ final class macOSViewController: NSViewController {
     }
 
     private func applyDefaultSaveButtonAppearance() {
+        saveButton.isEnabled = true
         applySaveButtonAppearance(
             title: "Save",
             systemImageName: "square.and.arrow.down",
