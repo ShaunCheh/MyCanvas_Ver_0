@@ -218,11 +218,12 @@ final class macOSViewController: NSViewController {
 
         switch pointerDragState {
         case let .pressed(pressedItemID, _):
-            guard let pressedItemID, hitTestItemID(at: location) == pressedItemID else {
-                return
+            let releasedItemID = hitTestItemID(at: location)
+            if let pressedItemID, releasedItemID == pressedItemID {
+                selectItem(withID: pressedItemID)
+            } else if pressedItemID == nil, releasedItemID == nil {
+                clearSelectionIfNeeded()
             }
-
-            selectItem(withID: pressedItemID)
         case .draggingSelectedItem, .draggingCanvas, .idle:
             break
         }
@@ -360,6 +361,15 @@ final class macOSViewController: NSViewController {
         }
 
         interactionState.selectedItemID = itemID
+        refreshCanvas()
+    }
+
+    private func clearSelectionIfNeeded() {
+        guard interactionState.selectedItemID != nil else {
+            return
+        }
+
+        interactionState.selectedItemID = nil
         refreshCanvas()
     }
 
