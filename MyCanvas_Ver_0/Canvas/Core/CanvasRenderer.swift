@@ -6,7 +6,8 @@ struct CanvasRenderer {
         scene: CanvasScene,
         boardState: CanvasBoardState? = nil,
         camera: CanvasCamera,
-        interactionState: CanvasInteractionState = CanvasInteractionState()
+        interactionState: CanvasInteractionState = CanvasInteractionState(),
+        inlineEditState: CanvasInlineEditState? = nil
     ) -> CanvasRenderSnapshot {
         let visibleWorldRect = camera.visibleWorldRect
         // Avoid turning an invalid zero-sized viewport into point-based culling.
@@ -18,7 +19,11 @@ struct CanvasRenderer {
         }
 
         let renderItems = visibleItems.map { item in
-            makeRenderItem(for: item, camera: camera)
+            makeRenderItem(
+                for: item,
+                camera: camera,
+                inlineEditState: inlineEditState
+            )
         }
 
         let boardOverlay = boardState.map { boardState in
@@ -31,7 +36,13 @@ struct CanvasRenderer {
         let selectionOverlay = makeSelectionOverlay(
             scene: scene,
             camera: camera,
-            interactionState: interactionState
+            interactionState: interactionState,
+            inlineEditState: inlineEditState
+        )
+        let cropOverlay = makeCropOverlay(
+            scene: scene,
+            camera: camera,
+            inlineEditState: inlineEditState
         )
 
         return CanvasRenderSnapshot(
@@ -39,7 +50,8 @@ struct CanvasRenderer {
             visibleWorldRect: visibleWorldRect,
             boardOverlay: boardOverlay,
             items: renderItems,
-            selectionOverlay: selectionOverlay
+            selectionOverlay: selectionOverlay,
+            cropOverlay: cropOverlay
         )
     }
 
@@ -48,8 +60,13 @@ struct CanvasRenderer {
     private func makeSelectionOverlay(
         scene: CanvasScene,
         camera: CanvasCamera,
-        interactionState: CanvasInteractionState
+        interactionState: CanvasInteractionState,
+        inlineEditState: CanvasInlineEditState?
     ) -> CanvasSelectionRenderOverlay? {
+        guard inlineEditState?.mode != .crop else {
+            return nil
+        }
+
         guard
             let selectedItemID = interactionState.selectedItemID,
             let selectedItem = scene.item(withID: selectedItemID)
@@ -74,22 +91,69 @@ struct CanvasRenderer {
 
     private func makeRenderItem(
         for item: CanvasImageItem,
-        camera: CanvasCamera
+        camera: CanvasCamera,
+        inlineEditState: CanvasInlineEditState?
     ) -> CanvasRenderItem {
-        let screenQuad = camera.worldToViewport(item.worldQuad)
+        let isEditingCropItem =
+            inlineEditState?.mode == .crop &&
+            inlineEditState?.itemID == item.id
+        let worldQuad = isEditingCropItem ? item.fullImageWorldQuad : item.worldQuad
+        let renderCenter = isEditingCropItem
+            ? item.worldPoint(fromLocal: CGPoint(
+                x: item.fullImageLocalFrame.midX,
+                y: item.fullImageLocalFrame.midY
+            ))
+            : item.center
+        let renderSize = isEditingCropItem
+            ? item.fullImageLocalFrame.size
+            : item.size
+        let contentsRect = isEditingCropItem
+            ? CanvasImageCropRect.fullImage.cgRect
+            : item.imageContentsRect
+        let screenQuad = camera.worldToViewport(worldQuad)
         return CanvasRenderItem(
             id: item.id,
             screenFrame: screenQuad.boundingRect.standardized,
             screenQuad: screenQuad,
-            screenCenter: camera.worldToViewport(item.center),
+            screenCenter: camera.worldToViewport(renderCenter),
             screenBoundsSize: CGSize(
-                width: item.size.width * camera.zoomScale,
-                height: item.size.height * camera.zoomScale
+                width: renderSize.width * camera.zoomScale,
+                height: renderSize.height * camera.zoomScale
             ),
-            contentsRect: item.imageContentsRect,
+            contentsRect: contentsRect,
             rotationRadians: item.rotationRadians,
             cgImage: item.cgImage,
             zIndex: item.zIndex
+        )
+    }
+
+    private func makeCropOverlay(
+        scene: CanvasScene,
+        camera: CanvasCamera,
+        inlineEditState: CanvasInlineEditState?
+    ) -> CanvasCropRenderOverlay? {
+        guard
+            let inlineEditState,
+            inlineEditState.mode == .crop,
+            let item = scene.item(withID: inlineEditState.itemID)
+        else {
+            return nil
+        }
+
+        let fullImageWorldQuad = item.fullImageWorldQuad
+        let cropWorldQuad = item.worldQuad(forNormalizedCropRect: inlineEditState.draftCropRectNormalized)
+        let fullImageScreenQuad = camera.worldToViewport(fullImageWorldQuad)
+        let cropScreenQuad = camera.worldToViewport(cropWorldQuad)
+
+        return CanvasCropRenderOverlay(
+            itemID: item.id,
+            mode: inlineEditState.mode,
+            fullImageWorldQuad: fullImageWorldQuad,
+            fullImageScreenQuad: fullImageScreenQuad,
+            cropRectNormalized: inlineEditState.draftCropRectNormalized,
+            cropWorldQuad: cropWorldQuad,
+            cropScreenQuad: cropScreenQuad,
+            handles: makeCropHandles(for: cropScreenQuad)
         )
     }
 
@@ -102,8 +166,33 @@ struct CanvasRenderer {
         }
     }
 
+    private func makeCropHandles(for screenQuad: CanvasQuad) -> [CanvasCropHandleGeometry] {
+        CanvasCropHandleRole.allCases.map { role in
+            CanvasCropHandleGeometry(
+                role: role,
+                screenCenter: cropHandleCenter(for: role, in: screenQuad)
+            )
+        }
+    }
+
     private func selectionHandleCenter(
         for role: CanvasSelectionHandleRole,
+        in screenQuad: CanvasQuad
+    ) -> CGPoint {
+        switch role {
+        case .topLeading:
+            return screenQuad.topLeading
+        case .topTrailing:
+            return screenQuad.topTrailing
+        case .bottomLeading:
+            return screenQuad.bottomLeading
+        case .bottomTrailing:
+            return screenQuad.bottomTrailing
+        }
+    }
+
+    private func cropHandleCenter(
+        for role: CanvasCropHandleRole,
         in screenQuad: CanvasQuad
     ) -> CGPoint {
         switch role {

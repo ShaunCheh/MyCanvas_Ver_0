@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-enum CanvasInlineEditMode {
+enum CanvasInlineEditMode: Equatable {
     case crop
     case rotate
 }

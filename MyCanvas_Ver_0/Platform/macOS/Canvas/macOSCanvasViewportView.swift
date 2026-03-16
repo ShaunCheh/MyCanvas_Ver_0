@@ -18,6 +18,17 @@ final class macOSCanvasViewportView: NSView {
     private static let selectionOutlineLineWidth: CGFloat = 2
     private static let selectionHandleLineWidth: CGFloat = 2
     private static let selectionHandleSize: CGFloat = 10
+    private static let cropMaskFillColor = CGColor(gray: 0, alpha: 0.4)
+    private static let cropOutlineStrokeColor = CGColor(
+        red: 1,
+        green: 149.0 / 255.0,
+        blue: 0,
+        alpha: 1
+    )
+    private static let cropHandleFillColor = CGColor(gray: 1, alpha: 1)
+    private static let cropOutlineLineWidth: CGFloat = 2
+    private static let cropHandleLineWidth: CGFloat = 2
+    private static let cropHandleSize: CGFloat = 10
 
     private let backgroundLayer = CALayer()
     private let itemsLayer = CALayer()
@@ -25,6 +36,9 @@ final class macOSCanvasViewportView: NSView {
     private let boardHighlightLayer = CAShapeLayer()
     private let selectionOutlineLayer = CAShapeLayer()
     private var selectionHandleLayers: [CanvasSelectionHandleRole: CAShapeLayer] = [:]
+    private let cropMaskLayer = CAShapeLayer()
+    private let cropOutlineLayer = CAShapeLayer()
+    private var cropHandleLayers: [CanvasCropHandleRole: CAShapeLayer] = [:]
     private var imageLayers: [CanvasImageItemID: CanvasImageLayer] = [:]
     private var snapshot: CanvasRenderSnapshot = .empty
     private var lastPrimaryPointerLocation: CGPoint?
@@ -66,6 +80,7 @@ final class macOSCanvasViewportView: NSView {
             refreshImageLayers()
             refreshBoardHighlight()
             refreshSelectionOverlay()
+            refreshCropOverlay()
         }
     }
 
@@ -76,6 +91,7 @@ final class macOSCanvasViewportView: NSView {
             refreshImageLayers()
             refreshBoardHighlight()
             refreshSelectionOverlay()
+            refreshCropOverlay()
         }
     }
 
@@ -86,10 +102,15 @@ final class macOSCanvasViewportView: NSView {
         layer?.addSublayer(overlayLayer)
         overlayLayer.addSublayer(boardHighlightLayer)
         overlayLayer.addSublayer(selectionOutlineLayer)
+        overlayLayer.addSublayer(cropMaskLayer)
+        overlayLayer.addSublayer(cropOutlineLayer)
 
         configureBoardHighlightLayer()
         configureSelectionOutlineLayer()
         configureSelectionHandleLayers()
+        configureCropMaskLayer()
+        configureCropOutlineLayer()
+        configureCropHandleLayers()
         updateBackgroundAppearance()
     }
 
@@ -104,6 +125,14 @@ final class macOSCanvasViewportView: NSView {
 
         if overlayLayer.frame != bounds {
             overlayLayer.frame = bounds
+        }
+
+        if cropMaskLayer.frame != bounds {
+            cropMaskLayer.frame = bounds
+        }
+
+        if cropOutlineLayer.frame != bounds {
+            cropOutlineLayer.frame = bounds
         }
     }
 
@@ -151,6 +180,31 @@ final class macOSCanvasViewportView: NSView {
             handleLayer.isHidden = true
             overlayLayer.addSublayer(handleLayer)
             selectionHandleLayers[role] = handleLayer
+        }
+    }
+
+    private func configureCropMaskLayer() {
+        cropMaskLayer.fillColor = Self.cropMaskFillColor
+        cropMaskLayer.fillRule = .evenOdd
+        cropMaskLayer.isHidden = true
+    }
+
+    private func configureCropOutlineLayer() {
+        cropOutlineLayer.fillColor = nil
+        cropOutlineLayer.strokeColor = Self.cropOutlineStrokeColor
+        cropOutlineLayer.lineWidth = Self.cropOutlineLineWidth
+        cropOutlineLayer.isHidden = true
+    }
+
+    private func configureCropHandleLayers() {
+        for role in CanvasCropHandleRole.allCases {
+            let handleLayer = CAShapeLayer()
+            handleLayer.fillColor = Self.cropHandleFillColor
+            handleLayer.strokeColor = Self.cropOutlineStrokeColor
+            handleLayer.lineWidth = Self.cropHandleLineWidth
+            handleLayer.isHidden = true
+            overlayLayer.addSublayer(handleLayer)
+            cropHandleLayers[role] = handleLayer
         }
     }
 
@@ -212,12 +266,66 @@ final class macOSCanvasViewportView: NSView {
         }
     }
 
+    private func refreshCropOverlay() {
+        guard let cropOverlay = snapshot.cropOverlay else {
+            hideCropOverlay()
+            return
+        }
+
+        // Crop chrome stays platform-owned; shared renderer only provides the
+        // full-image and crop quads needed to dim, outline, and hit-test here.
+        let maskPath = CGMutablePath()
+        maskPath.addPath(Self.quadPath(for: cropOverlay.fullImageScreenQuad))
+        maskPath.addPath(Self.quadPath(for: cropOverlay.cropScreenQuad))
+        cropMaskLayer.path = maskPath
+        cropMaskLayer.isHidden = false
+        cropMaskLayer.contentsScale = currentContentsScale
+
+        cropOutlineLayer.path = Self.quadPath(for: cropOverlay.cropScreenQuad)
+        cropOutlineLayer.isHidden = false
+        cropOutlineLayer.contentsScale = currentContentsScale
+
+        for role in CanvasCropHandleRole.allCases {
+            guard
+                let handleLayer = cropHandleLayers[role],
+                let handle = cropOverlay.handles.first(where: { $0.role == role })
+            else {
+                cropHandleLayers[role]?.path = nil
+                cropHandleLayers[role]?.frame = .zero
+                cropHandleLayers[role]?.isHidden = true
+                continue
+            }
+
+            let handleRect = Self.cropHandleRect(centeredAt: handle.screenCenter)
+            handleLayer.frame = handleRect
+            handleLayer.path = CGPath(
+                rect: CGRect(origin: .zero, size: handleRect.size),
+                transform: nil
+            )
+            handleLayer.isHidden = false
+            handleLayer.contentsScale = currentContentsScale
+        }
+    }
+
     private func hideSelectionOverlay() {
         selectionOutlineLayer.path = nil
         selectionOutlineLayer.frame = .zero
         selectionOutlineLayer.isHidden = true
 
         for handleLayer in selectionHandleLayers.values {
+            handleLayer.path = nil
+            handleLayer.frame = .zero
+            handleLayer.isHidden = true
+        }
+    }
+
+    private func hideCropOverlay() {
+        cropMaskLayer.path = nil
+        cropMaskLayer.isHidden = true
+        cropOutlineLayer.path = nil
+        cropOutlineLayer.isHidden = true
+
+        for handleLayer in cropHandleLayers.values {
             handleLayer.path = nil
             handleLayer.frame = .zero
             handleLayer.isHidden = true
@@ -231,6 +339,25 @@ final class macOSCanvasViewportView: NSView {
             width: selectionHandleSize,
             height: selectionHandleSize
         ).standardized
+    }
+
+    private static func cropHandleRect(centeredAt center: CGPoint) -> CGRect {
+        CGRect(
+            x: center.x - cropHandleSize / 2,
+            y: center.y - cropHandleSize / 2,
+            width: cropHandleSize,
+            height: cropHandleSize
+        ).standardized
+    }
+
+    private static func quadPath(for quad: CanvasQuad) -> CGPath {
+        let path = CGMutablePath()
+        path.move(to: quad.topLeading)
+        path.addLine(to: quad.topTrailing)
+        path.addLine(to: quad.bottomTrailing)
+        path.addLine(to: quad.bottomLeading)
+        path.closeSubpath()
+        return path
     }
 
     private var currentContentsScale: CGFloat {

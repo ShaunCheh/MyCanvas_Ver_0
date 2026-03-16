@@ -78,6 +78,35 @@ final class CanvasScene {
         }
     }
 
+    @discardableResult
+    // Crop writes remain centralized in Scene so controller drag previews can
+    // stay platform-specific while the committed document geometry stays shared.
+    func cropItem(
+        withID id: CanvasImageItemID,
+        toNormalizedCropRect normalizedCropRect: CanvasImageCropRect
+    ) -> CanvasImageItem? {
+        updateItem(withID: id) { item in
+            let updatedLocalFrame = item.localFrame(forNormalizedCropRect: normalizedCropRect).standardized
+            guard
+                updatedLocalFrame.width > 0,
+                updatedLocalFrame.height > 0
+            else {
+                return item
+            }
+
+            let updatedCenter = item.worldPoint(
+                fromLocal: CGPoint(
+                    x: updatedLocalFrame.midX,
+                    y: updatedLocalFrame.midY
+                )
+            )
+            item.cropRectNormalized = normalizedCropRect
+            item.center = updatedCenter
+            item.size = updatedLocalFrame.size
+            return item
+        }
+    }
+
     func visibleItems(in worldRect: CGRect) -> [CanvasImageItem] {
         let standardizedWorldRect = worldRect.standardized
         return orderedItems(from: items.filter { item in

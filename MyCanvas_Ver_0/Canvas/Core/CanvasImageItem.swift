@@ -86,6 +86,30 @@ struct CanvasImageItem {
         CanvasQuad(rect: localFrame)
     }
 
+    // Reconstruct the uncropped image extent in the item's local space so crop
+    // editing can preview and adjust against the original full image footprint.
+    var fullImageLocalFrame: CGRect {
+        let normalizedCropRect = cropRectNormalized.cgRect
+        let fullImageSize = CGSize(
+            width: size.width / normalizedCropRect.width,
+            height: size.height / normalizedCropRect.height
+        )
+        return CGRect(
+            x: localFrame.minX - (normalizedCropRect.minX * fullImageSize.width),
+            y: localFrame.minY - (normalizedCropRect.minY * fullImageSize.height),
+            width: fullImageSize.width,
+            height: fullImageSize.height
+        )
+    }
+
+    var fullImageLocalQuad: CanvasQuad {
+        CanvasQuad(rect: fullImageLocalFrame)
+    }
+
+    var fullImageWorldQuad: CanvasQuad {
+        fullImageLocalQuad.map(worldPoint(fromLocal:))
+    }
+
     var worldQuad: CanvasQuad {
         localQuad.map(worldPoint(fromLocal:))
     }
@@ -108,6 +132,44 @@ struct CanvasImageItem {
 
     var imageContentsRect: CGRect {
         cropRectNormalized.cgRect
+    }
+
+    func localFrame(forNormalizedCropRect normalizedCropRect: CanvasImageCropRect) -> CGRect {
+        let cropRect = normalizedCropRect.cgRect
+        let fullImageFrame = fullImageLocalFrame
+        return CGRect(
+            x: fullImageFrame.minX + (cropRect.minX * fullImageFrame.width),
+            y: fullImageFrame.minY + (cropRect.minY * fullImageFrame.height),
+            width: fullImageFrame.width * cropRect.width,
+            height: fullImageFrame.height * cropRect.height
+        )
+    }
+
+    func localQuad(forNormalizedCropRect normalizedCropRect: CanvasImageCropRect) -> CanvasQuad {
+        CanvasQuad(rect: localFrame(forNormalizedCropRect: normalizedCropRect))
+    }
+
+    func worldQuad(forNormalizedCropRect normalizedCropRect: CanvasImageCropRect) -> CanvasQuad {
+        localQuad(forNormalizedCropRect: normalizedCropRect).map(worldPoint(fromLocal:))
+    }
+
+    func normalizedCropRect(fromLocalFrame localCropFrame: CGRect) -> CanvasImageCropRect {
+        let fullImageFrame = fullImageLocalFrame
+        guard
+            fullImageFrame.width > 0,
+            fullImageFrame.height > 0
+        else {
+            return .fullImage
+        }
+
+        return CanvasImageCropRect(
+            CGRect(
+                x: (localCropFrame.minX - fullImageFrame.minX) / fullImageFrame.width,
+                y: (localCropFrame.minY - fullImageFrame.minY) / fullImageFrame.height,
+                width: localCropFrame.width / fullImageFrame.width,
+                height: localCropFrame.height / fullImageFrame.height
+            )
+        )
     }
 
     func contains(worldPoint: CGPoint) -> Bool {

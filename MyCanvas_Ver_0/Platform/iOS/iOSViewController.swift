@@ -12,6 +12,7 @@ import UIKit
 
 final class iOSViewController: UIViewController, PHPickerViewControllerDelegate {
     private enum PointerPressTarget {
+        case cropHandle(role: CanvasCropHandleRole, itemID: CanvasImageItemID)
         case handle(role: CanvasSelectionHandleRole, itemID: CanvasImageItemID)
         case selectedBody(itemID: CanvasImageItemID)
         case unselectedItem(itemID: CanvasImageItemID)
@@ -19,7 +20,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
 
         var itemID: CanvasImageItemID? {
             switch self {
-            case let .handle(_, itemID), let .selectedBody(itemID), let .unselectedItem(itemID):
+            case let .cropHandle(_, itemID), let .handle(_, itemID), let .selectedBody(itemID), let .unselectedItem(itemID):
                 return itemID
             case .blank:
                 return nil
@@ -35,12 +36,21 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         let minimumScale: CGFloat
     }
 
+    private struct PointerCropState {
+        let itemID: CanvasImageItemID
+        let handleRole: CanvasCropHandleRole
+        let fullImageLocalFrame: CGRect
+        let fixedOppositeLocalCorner: CGPoint
+        let minimumLocalSize: CGSize
+    }
+
     private enum PointerDragState {
         case idle
         case pressed(
             pressedLocation: CGPoint,
             pressTarget: PointerPressTarget
         )
+        case croppingSelectedItem(PointerCropState)
         case draggingSelectedItem(itemID: CanvasImageItemID)
         case resizingSelectedItem(PointerResizeState)
         case draggingCanvas
@@ -50,6 +60,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
     private static let pointerDragActivationDistance: CGFloat = 4
     private static let selectionHandleHitTargetSize: CGFloat = 28
     private static let minimumResizeViewportDimension: CGFloat = 28
+    private static let cropHandleHitTargetSize: CGFloat = 28
+    private static let minimumCropViewportDimension: CGFloat = 28
     private let scene = CanvasScene()
     private var camera = CanvasCamera()
     private let renderer = CanvasRenderer()
@@ -87,11 +99,17 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         button.configuration = configuration
         return button
     }()
+    private let cropButton: UIButton = {
+        let button = UIButton(type: .system)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }()
     private let canvasViewportView = iOSCanvasViewportView()
     private var canvasContentView: UIView?
     private var pendingRefreshReason: String?
     private var boardState: CanvasBoardState?
     private var interactionState = CanvasInteractionState()
+    private var inlineEditState: CanvasInlineEditState?
     private var lastRenderSnapshot: CanvasRenderSnapshot = .empty
     private var pointerDragState: PointerDragState = .idle
     private var activeBoardID: UUID?
@@ -110,6 +128,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         setupConstraints()
         setupImportButton()
         setupSaveButton()
+        setupCropButton()
         restorePersistedBoardIfPossible()
         setupCanvasViewport()
     }
@@ -142,6 +161,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
     private func setupViewHierarchy() {
         view.backgroundColor = .systemBackground
         view.addSubview(canvasHostView)
+        view.addSubview(cropButton)
         view.addSubview(saveButton)
         view.addSubview(importButton)
     }
@@ -153,10 +173,13 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
             canvasHostView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             canvasHostView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             canvasHostView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            cropButton.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -20),
+            cropButton.bottomAnchor.constraint(equalTo: saveButton.topAnchor, constant: -12),
             saveButton.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -20),
             saveButton.bottomAnchor.constraint(equalTo: importButton.topAnchor, constant: -12),
             importButton.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -20),
             importButton.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -20),
+            cropButton.heightAnchor.constraint(equalToConstant: 40),
             saveButton.heightAnchor.constraint(equalToConstant: 40),
             importButton.heightAnchor.constraint(equalToConstant: 56)
         ])
@@ -168,6 +191,11 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
 
     private func setupSaveButton() {
         saveButton.addTarget(self, action: #selector(handleSaveButtonTap), for: .touchUpInside)
+    }
+
+    private func setupCropButton() {
+        cropButton.addTarget(self, action: #selector(handleCropButtonTap), for: .touchUpInside)
+        updateCropButtonAppearance()
     }
 
     private func setupCanvasViewport() {
@@ -262,6 +290,15 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
             }
 
             switch pressTarget {
+            case let .cropHandle(handleRole, itemID):
+                guard let cropState = makePointerCropState(itemID: itemID, handleRole: handleRole) else {
+                    historyController.cancelPendingTransaction()
+                    pointerDragState = .idle
+                    return
+                }
+
+                pointerDragState = .croppingSelectedItem(cropState)
+                updateCropDraft(using: cropState, to: location)
             case let .handle(handleRole, itemID):
                 guard let resizeState = makePointerResizeState(itemID: itemID, handleRole: handleRole) else {
                     pointerDragState = .idle
@@ -277,6 +314,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
                 pointerDragState = .draggingCanvas
                 panCanvas(from: pressedLocation, to: location)
             }
+        case let .croppingSelectedItem(cropState):
+            updateCropDraft(using: cropState, to: location)
         case let .draggingSelectedItem(itemID):
             moveSelectedItem(withID: itemID, from: previousLocation, to: location)
         case let .resizingSelectedItem(resizeState):
@@ -295,6 +334,11 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
 
         switch pointerDragState {
         case let .pressed(_, pressTarget):
+            if isInlineCropModeActive {
+                historyController.cancelPendingTransaction()
+                return
+            }
+
             let pressedItemID = pressTarget.itemID
             let releasedHandleHit = hitTestSelectionHandle(at: location)
             let releasedItemID = hitTestItemID(at: location) ?? releasedHandleHit?.itemID
@@ -304,6 +348,9 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
             var affectedItemID: CanvasImageItemID?
 
             switch pressTarget {
+            case let .cropHandle(_, itemID):
+                clickTarget = "crop_handle"
+                affectedItemID = itemID
             case let .handle(_, itemID):
                 clickTarget = "handle"
                 affectedItemID = itemID
@@ -345,6 +392,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
                 affectedItemID: affectedItemID
             )
             historyController.cancelPendingTransaction()
+        case .croppingSelectedItem:
+            commitCropDraftIfNeeded()
         case .draggingSelectedItem:
             commitPendingPointerHistoryTransaction(autosaveReason: "move item")
         case .resizingSelectedItem:
@@ -356,6 +405,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
 
     private func handlePrimaryPointerCancel() {
         switch pointerDragState {
+        case .croppingSelectedItem:
+            commitCropDraftIfNeeded()
         case .draggingSelectedItem:
             commitPendingPointerHistoryTransaction(autosaveReason: "move item")
         case .resizingSelectedItem:
@@ -427,7 +478,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
             scene: scene,
             boardState: boardState,
             camera: camera,
-            interactionState: interactionState
+            interactionState: interactionState,
+            inlineEditState: inlineEditState
         )
         lastRenderSnapshot = snapshot
         canvasViewportView.apply(snapshot)
@@ -482,6 +534,15 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
                     self.presentSaveError(message: error.localizedDescription)
                 }
             }
+        }
+    }
+
+    @objc
+    private func handleCropButtonTap() {
+        if isInlineCropModeActive {
+            endInlineEditMode(reason: "exit crop mode")
+        } else {
+            beginCropModeIfPossible()
         }
     }
 
@@ -567,6 +628,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
 
         let beforeSnapshot = recordHistory ? currentBoardHistorySnapshot() : nil
         interactionState.selectedItemID = itemID
+        syncInlineEditStateWithSelection()
         requestCanvasRefresh(reason: "select item \(itemID.uuidString)")
 
         if let beforeSnapshot {
@@ -584,6 +646,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
 
         let beforeSnapshot = recordHistory ? currentBoardHistorySnapshot() : nil
         interactionState.selectedItemID = nil
+        syncInlineEditStateWithSelection()
         requestCanvasRefresh(reason: "clear selection")
 
         if let beforeSnapshot {
@@ -634,9 +697,29 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         }
     }
 
+    private func hitTestCropHandle(at viewportLocation: CGPoint) -> (role: CanvasCropHandleRole, itemID: CanvasImageItemID)? {
+        guard let cropOverlay = lastRenderSnapshot.cropOverlay else {
+            return nil
+        }
+
+        return cropOverlay.handles.first(where: { handle in
+            Self.cropHandleHitRect(centeredAt: handle.screenCenter).contains(viewportLocation)
+        }).map { handle in
+            (role: handle.role, itemID: cropOverlay.itemID)
+        }
+    }
+
     // Keep interaction priority aligned with common editors: resize handles win
     // over body hits so a visible handle is always the first-class press target.
     private func pointerPressTarget(at viewportLocation: CGPoint) -> PointerPressTarget {
+        if isInlineCropModeActive {
+            if let cropHandleHit = hitTestCropHandle(at: viewportLocation) {
+                return .cropHandle(role: cropHandleHit.role, itemID: cropHandleHit.itemID)
+            }
+
+            return .blank
+        }
+
         if let handleHit = hitTestSelectionHandle(at: viewportLocation) {
             return .handle(role: handleHit.role, itemID: handleHit.itemID)
         }
@@ -650,6 +733,107 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         }
 
         return .unselectedItem(itemID: itemID)
+    }
+
+    private func makePointerCropState(
+        itemID: CanvasImageItemID,
+        handleRole: CanvasCropHandleRole
+    ) -> PointerCropState? {
+        guard
+            let item = scene.item(withID: itemID),
+            let inlineEditState,
+            inlineEditState.mode == .crop,
+            inlineEditState.itemID == itemID
+        else {
+            return nil
+        }
+
+        let fullImageLocalFrame = item.fullImageLocalFrame.standardized
+        let draftLocalFrame = item.localFrame(
+            forNormalizedCropRect: inlineEditState.draftCropRectNormalized
+        ).standardized
+        let minimumLocalDimension = Self.minimumCropViewportDimension / camera.zoomScale
+
+        return PointerCropState(
+            itemID: itemID,
+            handleRole: handleRole,
+            fullImageLocalFrame: fullImageLocalFrame,
+            fixedOppositeLocalCorner: fixedOppositeLocalCorner(
+                for: handleRole,
+                in: draftLocalFrame
+            ),
+            minimumLocalSize: CGSize(
+                width: min(minimumLocalDimension, fullImageLocalFrame.width),
+                height: min(minimumLocalDimension, fullImageLocalFrame.height)
+            )
+        )
+    }
+
+    private func updateCropDraft(
+        using cropState: PointerCropState,
+        to viewportLocation: CGPoint
+    ) {
+        guard
+            var inlineEditState,
+            inlineEditState.mode == .crop,
+            inlineEditState.itemID == cropState.itemID,
+            let item = scene.item(withID: cropState.itemID)
+        else {
+            return
+        }
+
+        let draggedWorldPoint = camera.viewportToWorld(viewportLocation)
+        let draggedLocalPoint = item.localPoint(fromWorld: draggedWorldPoint)
+        let constrainedLocalPoint = constrainedDraggedCropLocalCorner(
+            draggedLocalPoint,
+            for: cropState.handleRole,
+            oppositeCorner: cropState.fixedOppositeLocalCorner,
+            fullImageLocalFrame: cropState.fullImageLocalFrame,
+            minimumLocalSize: cropState.minimumLocalSize
+        )
+        let cropLocalFrame = CGRect(
+            x: min(constrainedLocalPoint.x, cropState.fixedOppositeLocalCorner.x),
+            y: min(constrainedLocalPoint.y, cropState.fixedOppositeLocalCorner.y),
+            width: abs(constrainedLocalPoint.x - cropState.fixedOppositeLocalCorner.x),
+            height: abs(constrainedLocalPoint.y - cropState.fixedOppositeLocalCorner.y)
+        ).standardized
+        let draftCropRectNormalized = item.normalizedCropRect(fromLocalFrame: cropLocalFrame)
+        guard inlineEditState.draftCropRectNormalized != draftCropRectNormalized else {
+            return
+        }
+
+        inlineEditState.draftCropRectNormalized = draftCropRectNormalized
+        self.inlineEditState = inlineEditState
+        requestCanvasRefresh(reason: "update crop draft")
+    }
+
+    private func commitCropDraftIfNeeded() {
+        guard
+            let inlineEditState,
+            inlineEditState.mode == .crop,
+            let item = scene.item(withID: inlineEditState.itemID)
+        else {
+            historyController.cancelPendingTransaction()
+            return
+        }
+
+        guard item.cropRectNormalized != inlineEditState.draftCropRectNormalized else {
+            historyController.cancelPendingTransaction()
+            return
+        }
+
+        guard let croppedItem = scene.cropItem(
+            withID: inlineEditState.itemID,
+            toNormalizedCropRect: inlineEditState.draftCropRectNormalized
+        ) else {
+            historyController.cancelPendingTransaction()
+            return
+        }
+
+        expandBoardIfNeeded(toInclude: croppedItem.worldBounds)
+        self.inlineEditState = CanvasInlineEditState(item: croppedItem, mode: .crop)
+        requestCanvasRefresh(reason: "commit crop item")
+        commitPendingPointerHistoryTransaction(autosaveReason: "crop item")
     }
 
     private func moveSelectedItem(
@@ -858,6 +1042,86 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         ).standardized
     }
 
+    private static func cropHandleHitRect(centeredAt center: CGPoint) -> CGRect {
+        CGRect(
+            x: center.x - cropHandleHitTargetSize / 2,
+            y: center.y - cropHandleHitTargetSize / 2,
+            width: cropHandleHitTargetSize,
+            height: cropHandleHitTargetSize
+        ).standardized
+    }
+
+    private func fixedOppositeLocalCorner(
+        for handleRole: CanvasCropHandleRole,
+        in localFrame: CGRect
+    ) -> CGPoint {
+        switch handleRole {
+        case .topLeading:
+            return CGPoint(x: localFrame.maxX, y: localFrame.maxY)
+        case .topTrailing:
+            return CGPoint(x: localFrame.minX, y: localFrame.maxY)
+        case .bottomLeading:
+            return CGPoint(x: localFrame.maxX, y: localFrame.minY)
+        case .bottomTrailing:
+            return CGPoint(x: localFrame.minX, y: localFrame.minY)
+        }
+    }
+
+    private func constrainedDraggedCropLocalCorner(
+        _ draggedLocalCorner: CGPoint,
+        for handleRole: CanvasCropHandleRole,
+        oppositeCorner: CGPoint,
+        fullImageLocalFrame: CGRect,
+        minimumLocalSize: CGSize
+    ) -> CGPoint {
+        switch handleRole {
+        case .topLeading:
+            return CGPoint(
+                x: min(
+                    max(draggedLocalCorner.x, fullImageLocalFrame.minX),
+                    oppositeCorner.x - minimumLocalSize.width
+                ),
+                y: min(
+                    max(draggedLocalCorner.y, fullImageLocalFrame.minY),
+                    oppositeCorner.y - minimumLocalSize.height
+                )
+            )
+        case .topTrailing:
+            return CGPoint(
+                x: max(
+                    min(draggedLocalCorner.x, fullImageLocalFrame.maxX),
+                    oppositeCorner.x + minimumLocalSize.width
+                ),
+                y: min(
+                    max(draggedLocalCorner.y, fullImageLocalFrame.minY),
+                    oppositeCorner.y - minimumLocalSize.height
+                )
+            )
+        case .bottomLeading:
+            return CGPoint(
+                x: min(
+                    max(draggedLocalCorner.x, fullImageLocalFrame.minX),
+                    oppositeCorner.x - minimumLocalSize.width
+                ),
+                y: max(
+                    min(draggedLocalCorner.y, fullImageLocalFrame.maxY),
+                    oppositeCorner.y + minimumLocalSize.height
+                )
+            )
+        case .bottomTrailing:
+            return CGPoint(
+                x: max(
+                    min(draggedLocalCorner.x, fullImageLocalFrame.maxX),
+                    oppositeCorner.x + minimumLocalSize.width
+                ),
+                y: max(
+                    min(draggedLocalCorner.y, fullImageLocalFrame.maxY),
+                    oppositeCorner.y + minimumLocalSize.height
+                )
+            )
+        }
+    }
+
     private func panCanvas(from previousLocation: CGPoint, to location: CGPoint) {
         let translation = CGPoint(
             x: location.x - previousLocation.x,
@@ -920,6 +1184,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         boardState = runtimeState.boardState
         camera = runtimeState.camera
         interactionState = runtimeState.interactionState
+        inlineEditState = nil
+        updateCropButtonAppearance()
     }
 
     private func currentBoardHistorySnapshot() -> BoardHistorySnapshot {
@@ -949,6 +1215,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
     ) {
         let reason: String
         switch pressTarget {
+        case .cropHandle:
+            reason = "crop item"
         case .handle:
             reason = "resize item"
         case .selectedBody:
@@ -989,6 +1257,51 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         if let autosaveReason {
             scheduleAutosave(reason: autosaveReason)
         }
+    }
+
+    private var isInlineCropModeActive: Bool {
+        inlineEditState?.mode == .crop
+    }
+
+    private func beginCropModeIfPossible() {
+        guard
+            let selectedItemID = interactionState.selectedItemID,
+            let item = scene.item(withID: selectedItemID)
+        else {
+            return
+        }
+
+        inlineEditState = CanvasInlineEditState(item: item, mode: .crop)
+        updateCropButtonAppearance()
+        requestCanvasRefresh(reason: "enter crop mode")
+    }
+
+    private func endInlineEditMode(reason: String) {
+        guard inlineEditState != nil else {
+            return
+        }
+
+        inlineEditState = nil
+        updateCropButtonAppearance()
+        requestCanvasRefresh(reason: reason)
+    }
+
+    private func syncInlineEditStateWithSelection() {
+        guard let inlineEditState else {
+            updateCropButtonAppearance()
+            return
+        }
+
+        guard interactionState.selectedItemID == inlineEditState.itemID else {
+            self.inlineEditState = nil
+            updateCropButtonAppearance()
+            return
+        }
+
+        if let item = scene.item(withID: inlineEditState.itemID) {
+            self.inlineEditState = CanvasInlineEditState(item: item, mode: inlineEditState.mode)
+        }
+        updateCropButtonAppearance()
     }
 
     private func scheduleAutosave(reason: String) {
@@ -1102,6 +1415,17 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         )
     }
 
+    private func updateCropButtonAppearance() {
+        let isActive = isInlineCropModeActive
+        let isEnabled = isActive || interactionState.selectedItemID != nil
+        applyCropButtonAppearance(
+            title: isActive ? "Done" : "Crop",
+            systemImageName: isActive ? "checkmark" : "crop",
+            backgroundColor: isActive ? .systemOrange : .systemIndigo,
+            isEnabled: isEnabled
+        )
+    }
+
     private func applySaveButtonAppearance(
         title: String,
         systemImageName: String,
@@ -1112,6 +1436,25 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         configuration.image = UIImage(systemName: systemImageName)
         configuration.baseBackgroundColor = backgroundColor
         saveButton.configuration = configuration
+    }
+
+    private func applyCropButtonAppearance(
+        title: String,
+        systemImageName: String,
+        backgroundColor: UIColor,
+        isEnabled: Bool
+    ) {
+        cropButton.isEnabled = isEnabled
+        var configuration = cropButton.configuration ?? UIButton.Configuration.filled()
+        configuration.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
+        configuration.imagePlacement = .leading
+        configuration.imagePadding = 6
+        configuration.cornerStyle = .capsule
+        configuration.baseForegroundColor = .white
+        configuration.title = title
+        configuration.image = UIImage(systemName: systemImageName)
+        configuration.baseBackgroundColor = isEnabled ? backgroundColor : .systemGray3
+        cropButton.configuration = configuration
     }
 
     private func presentSaveError(message: String) {

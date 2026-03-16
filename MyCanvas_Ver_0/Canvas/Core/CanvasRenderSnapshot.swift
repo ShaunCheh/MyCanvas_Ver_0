@@ -43,18 +43,46 @@ struct CanvasSelectionRenderOverlay {
     let handles: [CanvasSelectionHandleGeometry]
 }
 
+enum CanvasCropHandleRole: CaseIterable {
+    case topLeading
+    case topTrailing
+    case bottomLeading
+    case bottomTrailing
+}
+
+struct CanvasCropHandleGeometry {
+    let role: CanvasCropHandleRole
+    let screenCenter: CGPoint
+}
+
+// Crop overlay stays semantic and neutral: renderer describes the full image
+// extent plus the active crop rect, while each platform decides how to dim and
+// decorate that geometry for inline editing.
+struct CanvasCropRenderOverlay {
+    let itemID: CanvasImageItemID
+    let mode: CanvasInlineEditMode
+    let fullImageWorldQuad: CanvasQuad
+    let fullImageScreenQuad: CanvasQuad
+    let cropRectNormalized: CanvasImageCropRect
+    let cropWorldQuad: CanvasQuad
+    let cropScreenQuad: CanvasQuad
+    let handles: [CanvasCropHandleGeometry]
+}
+
 struct CanvasRenderSnapshot {
     let viewportBounds: CGRect
     let visibleWorldRect: CGRect
     let boardOverlay: CanvasBoardRenderOverlay?
     let items: [CanvasRenderItem]
     let selectionOverlay: CanvasSelectionRenderOverlay?
+    let cropOverlay: CanvasCropRenderOverlay?
 
     static let empty = CanvasRenderSnapshot(
         viewportBounds: .zero,
         visibleWorldRect: .zero,
         boardOverlay: nil,
         items: [],
-        selectionOverlay: nil
+        selectionOverlay: nil,
+        cropOverlay: nil
     )
 }
