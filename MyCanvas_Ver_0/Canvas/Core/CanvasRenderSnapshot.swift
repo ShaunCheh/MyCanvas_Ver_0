@@ -6,7 +6,6 @@ struct CanvasRenderItem {
     let screenFrame: CGRect
     let cgImage: CGImage
     let zIndex: CGFloat
-    let isSelected: Bool
 }
 
 struct CanvasBoardRenderOverlay {

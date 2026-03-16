@@ -8,6 +8,16 @@ final class iOSCanvasViewportView: UIView {
         blue: 0,
         alpha: 0.9
     )
+    private static let selectionStrokeColor = CGColor(
+        red: 0,
+        green: 122.0 / 255.0,
+        blue: 1,
+        alpha: 1
+    )
+    private static let selectionHandleFillColor = CGColor(gray: 1, alpha: 1)
+    private static let selectionOutlineLineWidth: CGFloat = 2
+    private static let selectionHandleLineWidth: CGFloat = 2
+    private static let selectionHandleSize: CGFloat = 12
 
     private enum TouchInteractionState {
         case idle
@@ -20,6 +30,8 @@ final class iOSCanvasViewportView: UIView {
     private let itemsLayer = CALayer()
     private let overlayLayer = CALayer()
     private let boardHighlightLayer = CAShapeLayer()
+    private let selectionOutlineLayer = CAShapeLayer()
+    private var selectionHandleLayers: [CanvasSelectionHandleRole: CAShapeLayer] = [:]
     private var imageLayers: [CanvasImageItemID: CanvasImageLayer] = [:]
     private var lastReportedViewportSize: CGSize?
     private var snapshot: CanvasRenderSnapshot = .empty
@@ -129,6 +141,7 @@ final class iOSCanvasViewportView: UIView {
         performWithoutLayerActions {
             refreshImageLayers()
             refreshBoardHighlight()
+            refreshSelectionOverlay()
         }
     }
 
@@ -143,6 +156,7 @@ final class iOSCanvasViewportView: UIView {
             updateLayerFrames()
             refreshImageLayers()
             refreshBoardHighlight()
+            refreshSelectionOverlay()
         }
     }
 
@@ -155,9 +169,12 @@ final class iOSCanvasViewportView: UIView {
         layer.addSublayer(itemsLayer)
         layer.addSublayer(overlayLayer)
         overlayLayer.addSublayer(boardHighlightLayer)
+        overlayLayer.addSublayer(selectionOutlineLayer)
         addGestureRecognizer(pinchGestureRecognizer)
 
         configureBoardHighlightLayer()
+        configureSelectionOutlineLayer()
+        configureSelectionHandleLayers()
         updateBackgroundAppearance()
     }
 
@@ -217,6 +234,25 @@ final class iOSCanvasViewportView: UIView {
         boardHighlightLayer.isHidden = true
     }
 
+    private func configureSelectionOutlineLayer() {
+        selectionOutlineLayer.fillColor = nil
+        selectionOutlineLayer.strokeColor = Self.selectionStrokeColor
+        selectionOutlineLayer.lineWidth = Self.selectionOutlineLineWidth
+        selectionOutlineLayer.isHidden = true
+    }
+
+    private func configureSelectionHandleLayers() {
+        for role in CanvasSelectionHandleRole.allCases {
+            let handleLayer = CAShapeLayer()
+            handleLayer.fillColor = Self.selectionHandleFillColor
+            handleLayer.strokeColor = Self.selectionStrokeColor
+            handleLayer.lineWidth = Self.selectionHandleLineWidth
+            handleLayer.isHidden = true
+            overlayLayer.addSublayer(handleLayer)
+            selectionHandleLayers[role] = handleLayer
+        }
+    }
+
     private func refreshBoardHighlight() {
         guard let boardOverlay = snapshot.boardOverlay else {
             boardHighlightLayer.path = nil
@@ -227,6 +263,68 @@ final class iOSCanvasViewportView: UIView {
         boardHighlightLayer.path = CGPath(rect: boardOverlay.screenRect, transform: nil)
         boardHighlightLayer.isHidden = false
         boardHighlightLayer.contentsScale = window?.screen.scale ?? UIScreen.main.scale
+    }
+
+    private func refreshSelectionOverlay() {
+        guard let selectionOverlay = snapshot.selectionOverlay else {
+            hideSelectionOverlay()
+            return
+        }
+
+        let selectionFrame = selectionOverlay.screenFrame.standardized
+        selectionOutlineLayer.frame = selectionFrame
+        selectionOutlineLayer.path = CGPath(
+            rect: CGRect(origin: .zero, size: selectionFrame.size),
+            transform: nil
+        )
+        selectionOutlineLayer.isHidden = false
+        selectionOutlineLayer.contentsScale = currentContentsScale
+
+        for role in CanvasSelectionHandleRole.allCases {
+            guard
+                let handleLayer = selectionHandleLayers[role],
+                let handle = selectionOverlay.handles.first(where: { $0.role == role })
+            else {
+                selectionHandleLayers[role]?.path = nil
+                selectionHandleLayers[role]?.frame = .zero
+                selectionHandleLayers[role]?.isHidden = true
+                continue
+            }
+
+            let handleRect = Self.selectionHandleRect(centeredAt: handle.screenCenter)
+            handleLayer.frame = handleRect
+            handleLayer.path = CGPath(
+                rect: CGRect(origin: .zero, size: handleRect.size),
+                transform: nil
+            )
+            handleLayer.isHidden = false
+            handleLayer.contentsScale = currentContentsScale
+        }
+    }
+
+    private func hideSelectionOverlay() {
+        selectionOutlineLayer.path = nil
+        selectionOutlineLayer.frame = .zero
+        selectionOutlineLayer.isHidden = true
+
+        for handleLayer in selectionHandleLayers.values {
+            handleLayer.path = nil
+            handleLayer.frame = .zero
+            handleLayer.isHidden = true
+        }
+    }
+
+    private static func selectionHandleRect(centeredAt center: CGPoint) -> CGRect {
+        CGRect(
+            x: center.x - selectionHandleSize / 2,
+            y: center.y - selectionHandleSize / 2,
+            width: selectionHandleSize,
+            height: selectionHandleSize
+        ).standardized
+    }
+
+    private var currentContentsScale: CGFloat {
+        window?.screen.scale ?? UIScreen.main.scale
     }
 
     private func performWithoutLayerActions(_ updates: () -> Void) {

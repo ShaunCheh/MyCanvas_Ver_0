@@ -22,8 +22,7 @@ struct CanvasRenderer {
                 id: item.id,
                 screenFrame: camera.worldToViewport(item.worldFrame),
                 cgImage: item.cgImage,
-                zIndex: item.zIndex,
-                isSelected: interactionState.selectedItemID == item.id
+                zIndex: item.zIndex
             )
         }
 
