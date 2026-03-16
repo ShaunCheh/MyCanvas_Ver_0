@@ -98,6 +98,7 @@ final class macOSViewController: NSViewController {
         queueLabel: "MyCanvas.BoardSave.macOS",
         logPrefix: "[BoardStore][macOS]"
     )
+    private let historyController = BoardHistoryController()
     private var saveButtonResetWorkItem: DispatchWorkItem?
 
     override func loadView() {
@@ -217,10 +218,12 @@ final class macOSViewController: NSViewController {
     }
 
     private func handlePrimaryPointerDown(at location: CGPoint) {
+        let pressTarget = pointerPressTarget(at: location)
         pointerDragState = .pressed(
             pressedLocation: location,
-            pressTarget: pointerPressTarget(at: location)
+            pressTarget: pressTarget
         )
+        beginPointerHistoryTransactionIfNeeded(for: pressTarget)
     }
 
     private func handlePrimaryPointerMove(to location: CGPoint, from previousLocation: CGPoint) {
@@ -280,7 +283,10 @@ final class macOSViewController: NSViewController {
                 if releasedItemID == itemID {
                     clickTarget = "image"
                     affectedItemID = itemID
-                    selectItem(withID: itemID)
+                    selectItem(
+                        withID: itemID,
+                        recordHistory: true
+                    )
                     if previousSelectedItemID != itemID {
                         clickResult = "image_selected"
                     }
@@ -291,7 +297,7 @@ final class macOSViewController: NSViewController {
             case .blank:
                 if releasedItemID == nil {
                     affectedItemID = previousSelectedItemID
-                    clearSelectionIfNeeded()
+                    clearSelectionIfNeeded(recordHistory: true)
                     if previousSelectedItemID != nil {
                         clickResult = "image_deselected"
                     }
@@ -310,12 +316,26 @@ final class macOSViewController: NSViewController {
                 currentSelectedItemID: interactionState.selectedItemID,
                 affectedItemID: affectedItemID
             )
-        case .draggingSelectedItem, .resizingSelectedItem, .draggingCanvas, .idle:
+            historyController.cancelPendingTransaction()
+        case .draggingSelectedItem:
+            commitPendingPointerHistoryTransaction(autosaveReason: "move item")
+        case .resizingSelectedItem:
+            commitPendingPointerHistoryTransaction(autosaveReason: "resize item")
+        case .draggingCanvas, .idle:
             break
         }
     }
 
     private func handlePrimaryPointerCancel() {
+        switch pointerDragState {
+        case .draggingSelectedItem:
+            commitPendingPointerHistoryTransaction(autosaveReason: "move item")
+        case .resizingSelectedItem:
+            commitPendingPointerHistoryTransaction(autosaveReason: "resize item")
+        case .pressed, .draggingCanvas, .idle:
+            historyController.cancelPendingTransaction()
+        }
+
         pointerDragState = .idle
     }
 
@@ -420,6 +440,7 @@ final class macOSViewController: NSViewController {
     }
 
     private func appendImportedImage(_ cgImage: CGImage) {
+        let beforeSnapshot = currentBoardHistorySnapshot()
         let item = CanvasImageItem(
             cgImage: cgImage,
             center: camera.center,
@@ -430,7 +451,11 @@ final class macOSViewController: NSViewController {
         scene.append(item)
         expandBoardIfNeeded(toInclude: item.worldFrame)
         refreshCanvas()
-        scheduleAutosave(reason: "append image")
+        recordImmediateHistoryChange(
+            from: beforeSnapshot,
+            reason: "append image",
+            autosaveReason: "append image"
+        )
     }
 
     private func normalizedDisplaySize(for cgImage: CGImage) -> CGSize {
@@ -452,22 +477,41 @@ final class macOSViewController: NSViewController {
         (scene.orderedItems().last?.zIndex ?? -1) + 1
     }
 
-    private func selectItem(withID itemID: CanvasImageItemID) {
+    private func selectItem(
+        withID itemID: CanvasImageItemID,
+        recordHistory: Bool = false
+    ) {
         guard interactionState.selectedItemID != itemID else {
             return
         }
 
+        let beforeSnapshot = recordHistory ? currentBoardHistorySnapshot() : nil
         interactionState.selectedItemID = itemID
         refreshCanvas()
+
+        if let beforeSnapshot {
+            recordImmediateHistoryChange(
+                from: beforeSnapshot,
+                reason: "select item"
+            )
+        }
     }
 
-    private func clearSelectionIfNeeded() {
+    private func clearSelectionIfNeeded(recordHistory: Bool = false) {
         guard interactionState.selectedItemID != nil else {
             return
         }
 
+        let beforeSnapshot = recordHistory ? currentBoardHistorySnapshot() : nil
         interactionState.selectedItemID = nil
         refreshCanvas()
+
+        if let beforeSnapshot {
+            recordImmediateHistoryChange(
+                from: beforeSnapshot,
+                reason: "clear selection"
+            )
+        }
     }
 
     private func logClickResult(
@@ -548,7 +592,6 @@ final class macOSViewController: NSViewController {
             expandBoardIfNeeded(toInclude: movedItem.worldFrame)
         }
         refreshCanvas()
-        scheduleAutosave(reason: "move item")
     }
 
     private func makePointerResizeState(
@@ -605,7 +648,6 @@ final class macOSViewController: NSViewController {
 
         expandBoardIfNeeded(toInclude: resizedItem.worldFrame)
         refreshCanvas()
-        scheduleAutosave(reason: "resize item")
     }
 
     // Keep the opposite corner fixed and use the larger axis scale so resizing
@@ -774,7 +816,9 @@ final class macOSViewController: NSViewController {
 
     private func restorePersistedBoardIfPossible() {
         do {
-            applyBoardRuntimeState(try BoardStore.loadOrCreateInitialBoard())
+            let runtimeState = try BoardStore.loadOrCreateInitialBoard()
+            applyBoardRuntimeState(runtimeState)
+            historyController.reset()
         } catch FolderBookmarkStoreError.missingBookmarkData {
             return
         } catch {
@@ -790,6 +834,75 @@ final class macOSViewController: NSViewController {
         boardState = runtimeState.boardState
         camera = runtimeState.camera
         interactionState = runtimeState.interactionState
+    }
+
+    private func currentBoardHistorySnapshot() -> BoardHistorySnapshot {
+        BoardHistorySnapshot(
+            items: scene.orderedItems(),
+            boardState: boardState,
+            interactionState: interactionState
+        )
+    }
+
+    private func applyBoardHistorySnapshot(_ snapshot: BoardHistorySnapshot) {
+        if let runtimeState = currentBoardRuntimeState() {
+            applyBoardRuntimeState(
+                runtimeState.replacingDocumentState(with: snapshot)
+            )
+        } else {
+            scene.setItems(snapshot.items)
+            boardState = snapshot.boardState
+            interactionState = snapshot.interactionState
+        }
+
+        refreshCanvas()
+    }
+
+    private func beginPointerHistoryTransactionIfNeeded(
+        for pressTarget: PointerPressTarget
+    ) {
+        let reason: String
+        switch pressTarget {
+        case .handle:
+            reason = "resize item"
+        case .selectedBody:
+            reason = "move item"
+        case .unselectedItem, .blank:
+            return
+        }
+
+        historyController.beginTransaction(
+            from: currentBoardHistorySnapshot(),
+            reason: reason
+        )
+    }
+
+    private func commitPendingPointerHistoryTransaction(
+        autosaveReason: String
+    ) {
+        guard historyController.commitPendingTransaction(to: currentBoardHistorySnapshot()) else {
+            return
+        }
+
+        scheduleAutosave(reason: autosaveReason)
+    }
+
+    private func recordImmediateHistoryChange(
+        from beforeSnapshot: BoardHistorySnapshot,
+        reason: String,
+        autosaveReason: String? = nil
+    ) {
+        guard historyController.recordChange(
+            from: beforeSnapshot,
+            to: currentBoardHistorySnapshot(),
+            reason: reason
+        ) else {
+            return
+        }
+
+        if let autosaveReason {
+            scheduleAutosave(reason: autosaveReason)
+        }
     }
 
     private func scheduleAutosave(reason: String) {
