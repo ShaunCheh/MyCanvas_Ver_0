@@ -586,19 +586,20 @@ final class macOSViewController: NSViewController {
                 using: resizeState,
                 draggedViewportLocation: viewportLocation
             ),
-            var item = scene.item(withID: resizeState.itemID)
+            let currentItem = scene.item(withID: resizeState.itemID)
         else {
             return
         }
 
-        guard item.worldFrame.standardized != resizedWorldFrame else {
+        guard currentItem.worldFrame.standardized != resizedWorldFrame else {
             return
         }
 
-        item.center = CGPoint(x: resizedWorldFrame.midX, y: resizedWorldFrame.midY)
-        item.size = resizedWorldFrame.size
-        scene.upsert(item)
-        expandBoardIfNeeded(toInclude: resizedWorldFrame)
+        guard let resizedItem = scene.resizeItem(withID: resizeState.itemID, to: resizedWorldFrame) else {
+            return
+        }
+
+        expandBoardIfNeeded(toInclude: resizedItem.worldFrame)
         refreshCanvas()
         scheduleAutosave(reason: "resize item")
     }

@@ -47,6 +47,23 @@ final class CanvasScene {
         }
     }
 
+    @discardableResult
+    func resizeItem(withID id: CanvasImageItemID, to worldFrame: CGRect) -> CanvasImageItem? {
+        let standardizedFrame = worldFrame.standardized
+        guard standardizedFrame.width > 0, standardizedFrame.height > 0 else {
+            return nil
+        }
+
+        return updateItem(withID: id) { item in
+            item.center = CGPoint(
+                x: standardizedFrame.midX,
+                y: standardizedFrame.midY
+            )
+            item.size = standardizedFrame.size
+            return item
+        }
+    }
+
     func visibleItems(in worldRect: CGRect) -> [CanvasImageItem] {
         orderedItems(from: items.filter { $0.worldFrame.intersects(worldRect) })
     }
@@ -65,14 +82,15 @@ final class CanvasScene {
         }
     }
 
-    private func updateItem(
+    @discardableResult
+    private func updateItem<T>(
         withID id: CanvasImageItemID,
-        _ mutate: (inout CanvasImageItem) -> Void
-    ) {
+        _ mutate: (inout CanvasImageItem) -> T
+    ) -> T? {
         guard let index = items.firstIndex(where: { $0.id == id }) else {
-            return
+            return nil
         }
 
-        mutate(&items[index])
+        return mutate(&items[index])
     }
 }
