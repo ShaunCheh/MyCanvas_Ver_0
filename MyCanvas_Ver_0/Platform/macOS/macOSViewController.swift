@@ -13,6 +13,7 @@ import UniformTypeIdentifiers
 
 final class macOSViewController: NSViewController {
     private enum PointerPressTarget {
+        case rotateHandle(itemID: CanvasImageItemID)
         case cropHandle(role: CanvasCropHandleRole, itemID: CanvasImageItemID)
         case handle(role: CanvasSelectionHandleRole, itemID: CanvasImageItemID)
         case selectedBody(itemID: CanvasImageItemID)
@@ -21,7 +22,7 @@ final class macOSViewController: NSViewController {
 
         var itemID: CanvasImageItemID? {
             switch self {
-            case let .cropHandle(_, itemID), let .handle(_, itemID), let .selectedBody(itemID), let .unselectedItem(itemID):
+            case let .rotateHandle(itemID), let .cropHandle(_, itemID), let .handle(_, itemID), let .selectedBody(itemID), let .unselectedItem(itemID):
                 return itemID
             case .blank:
                 return nil
@@ -32,8 +33,10 @@ final class macOSViewController: NSViewController {
     private struct PointerResizeState {
         let itemID: CanvasImageItemID
         let handleRole: CanvasSelectionHandleRole
-        let initialWorldFrame: CGRect
-        let fixedOppositeWorldCorner: CGPoint
+        let referenceCenter: CGPoint
+        let referenceRotationRadians: CGFloat
+        let initialLocalFrame: CGRect
+        let fixedOppositeLocalCorner: CGPoint
         let minimumScale: CGFloat
     }
 
@@ -45,6 +48,12 @@ final class macOSViewController: NSViewController {
         let minimumLocalSize: CGSize
     }
 
+    private struct PointerRotateState {
+        let itemID: CanvasImageItemID
+        let referenceCenter: CGPoint
+        let rotationOffsetToPointerAngle: CGFloat
+    }
+
     private enum PointerDragState {
         case idle
         case pressed(
@@ -52,6 +61,7 @@ final class macOSViewController: NSViewController {
             pressTarget: PointerPressTarget
         )
         case croppingSelectedItem(PointerCropState)
+        case rotatingSelectedItem(PointerRotateState)
         case draggingSelectedItem(itemID: CanvasImageItemID)
         case resizingSelectedItem(PointerResizeState)
         case draggingCanvas
@@ -62,6 +72,7 @@ final class macOSViewController: NSViewController {
     private static let minimumResizeViewportDimension: CGFloat = 20
     private static let cropHandleHitTargetSize: CGFloat = 18
     private static let minimumCropViewportDimension: CGFloat = 20
+    private static let rotateHandleHitTargetSize: CGFloat = 22
 
     private let scene = CanvasScene()
     private var camera = CanvasCamera()
@@ -104,6 +115,13 @@ final class macOSViewController: NSViewController {
         button.imagePosition = .imageLeading
         return button
     }()
+    private let rotateButton: NSButton = {
+        let button = NSButton(title: "Rotate", target: nil, action: nil)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.bezelStyle = .rounded
+        button.imagePosition = .imageLeading
+        return button
+    }()
     private let canvasViewportView = macOSCanvasViewportView()
     private var canvasContentView: NSView?
     private var boardState: CanvasBoardState?
@@ -135,6 +153,7 @@ final class macOSViewController: NSViewController {
         setupImportButton()
         setupSaveButton()
         setupCropButton()
+        setupRotateButton()
         restorePersistedBoardIfPossible()
         setupCanvasViewport()
     }
@@ -163,6 +182,7 @@ final class macOSViewController: NSViewController {
 
     private func setupViewHierarchy() {
         view.addSubview(canvasHostView)
+        view.addSubview(rotateButton)
         view.addSubview(cropButton)
         view.addSubview(saveButton)
         view.addSubview(importButton)
@@ -174,6 +194,8 @@ final class macOSViewController: NSViewController {
             canvasHostView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             canvasHostView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             canvasHostView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            rotateButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+            rotateButton.bottomAnchor.constraint(equalTo: cropButton.topAnchor, constant: -12),
             cropButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
             cropButton.bottomAnchor.constraint(equalTo: saveButton.topAnchor, constant: -12),
             saveButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
@@ -197,7 +219,13 @@ final class macOSViewController: NSViewController {
     private func setupCropButton() {
         cropButton.target = self
         cropButton.action = #selector(handleCropButtonClick)
-        updateCropButtonAppearance()
+        updateInlineEditButtonsAppearance()
+    }
+
+    private func setupRotateButton() {
+        rotateButton.target = self
+        rotateButton.action = #selector(handleRotateButtonClick)
+        updateInlineEditButtonsAppearance()
     }
 
     private func setupCanvasViewport() {
@@ -264,6 +292,18 @@ final class macOSViewController: NSViewController {
             }
 
             switch pressTarget {
+            case let .rotateHandle(itemID):
+                guard let rotateState = makePointerRotateState(
+                    itemID: itemID,
+                    initialViewportLocation: pressedLocation
+                ) else {
+                    historyController.cancelPendingTransaction()
+                    pointerDragState = .idle
+                    return
+                }
+
+                pointerDragState = .rotatingSelectedItem(rotateState)
+                updateRotationDraft(using: rotateState, to: location)
             case let .cropHandle(handleRole, itemID):
                 guard let cropState = makePointerCropState(itemID: itemID, handleRole: handleRole) else {
                     historyController.cancelPendingTransaction()
@@ -290,6 +330,8 @@ final class macOSViewController: NSViewController {
             }
         case let .croppingSelectedItem(cropState):
             updateCropDraft(using: cropState, to: location)
+        case let .rotatingSelectedItem(rotateState):
+            updateRotationDraft(using: rotateState, to: location)
         case let .draggingSelectedItem(itemID):
             moveSelectedItem(withID: itemID, from: previousLocation, to: location)
         case let .resizingSelectedItem(resizeState):
@@ -308,7 +350,7 @@ final class macOSViewController: NSViewController {
 
         switch pointerDragState {
         case let .pressed(_, pressTarget):
-            if isInlineCropModeActive {
+            if isInlineEditModeActive {
                 historyController.cancelPendingTransaction()
                 return
             }
@@ -322,6 +364,9 @@ final class macOSViewController: NSViewController {
             var affectedItemID: CanvasImageItemID?
 
             switch pressTarget {
+            case let .rotateHandle(itemID):
+                clickTarget = "rotate_handle"
+                affectedItemID = itemID
             case let .cropHandle(_, itemID):
                 clickTarget = "crop_handle"
                 affectedItemID = itemID
@@ -366,6 +411,8 @@ final class macOSViewController: NSViewController {
                 affectedItemID: affectedItemID
             )
             historyController.cancelPendingTransaction()
+        case .rotatingSelectedItem:
+            commitRotationDraftIfNeeded()
         case .croppingSelectedItem:
             commitCropDraftIfNeeded()
         case .draggingSelectedItem:
@@ -379,6 +426,8 @@ final class macOSViewController: NSViewController {
 
     private func handlePrimaryPointerCancel() {
         switch pointerDragState {
+        case .rotatingSelectedItem:
+            commitRotationDraftIfNeeded()
         case .croppingSelectedItem:
             commitCropDraftIfNeeded()
         case .draggingSelectedItem:
@@ -502,6 +551,15 @@ final class macOSViewController: NSViewController {
         }
     }
 
+    @objc
+    private func handleRotateButtonClick() {
+        if isInlineRotateModeActive {
+            endInlineEditMode(reason: "exit rotate mode")
+        } else {
+            beginRotateModeIfPossible()
+        }
+    }
+
     private func appendImportedImage(_ cgImage: CGImage) {
         let beforeSnapshot = currentBoardHistorySnapshot()
         let item = CanvasImageItem(
@@ -601,10 +659,9 @@ final class macOSViewController: NSViewController {
     }
 
     private func hitTestItemID(at viewportLocation: CGPoint) -> CanvasImageItemID? {
-        lastRenderSnapshot.items
-            .reversed()
-            .first(where: { $0.screenFrame.contains(viewportLocation) })?
-            .id
+        scene.topmostItemID(
+            containing: camera.viewportToWorld(viewportLocation)
+        )
     }
 
     private func hitTestSelectionHandle(at viewportLocation: CGPoint) -> (role: CanvasSelectionHandleRole, itemID: CanvasImageItemID)? {
@@ -631,12 +688,34 @@ final class macOSViewController: NSViewController {
         }
     }
 
+    private func hitTestRotateHandle(at viewportLocation: CGPoint) -> CanvasImageItemID? {
+        guard let rotateOverlay = lastRenderSnapshot.rotateOverlay else {
+            return nil
+        }
+
+        guard Self.rotateHandleHitRect(
+            centeredAt: rotateOverlay.handle.screenCenter
+        ).contains(viewportLocation) else {
+            return nil
+        }
+
+        return rotateOverlay.itemID
+    }
+
     // Keep interaction priority aligned with common editors: resize handles win
     // over body hits so a visible handle is always the first-class press target.
     private func pointerPressTarget(at viewportLocation: CGPoint) -> PointerPressTarget {
         if isInlineCropModeActive {
             if let cropHandleHit = hitTestCropHandle(at: viewportLocation) {
                 return .cropHandle(role: cropHandleHit.role, itemID: cropHandleHit.itemID)
+            }
+
+            return .blank
+        }
+
+        if isInlineRotateModeActive {
+            if let rotateHandleItemID = hitTestRotateHandle(at: viewportLocation) {
+                return .rotateHandle(itemID: rotateHandleItemID)
             }
 
             return .blank
@@ -655,6 +734,33 @@ final class macOSViewController: NSViewController {
         }
 
         return .unselectedItem(itemID: itemID)
+    }
+
+    private func makePointerRotateState(
+        itemID: CanvasImageItemID,
+        initialViewportLocation: CGPoint
+    ) -> PointerRotateState? {
+        guard
+            let item = scene.item(withID: itemID),
+            let inlineEditState,
+            inlineEditState.mode == .rotate,
+            inlineEditState.itemID == itemID
+        else {
+            return nil
+        }
+
+        let initialPointerAngle = angle(
+            from: item.center,
+            to: camera.viewportToWorld(initialViewportLocation)
+        )
+
+        return PointerRotateState(
+            itemID: itemID,
+            referenceCenter: item.center,
+            rotationOffsetToPointerAngle: normalizedCanvasAngle(
+                inlineEditState.draftRotationRadians - initialPointerAngle
+            )
+        )
     }
 
     private func makePointerCropState(
@@ -758,6 +864,66 @@ final class macOSViewController: NSViewController {
         commitPendingPointerHistoryTransaction(autosaveReason: "crop item")
     }
 
+    private func updateRotationDraft(
+        using rotateState: PointerRotateState,
+        to viewportLocation: CGPoint
+    ) {
+        guard
+            var inlineEditState,
+            inlineEditState.mode == .rotate,
+            inlineEditState.itemID == rotateState.itemID
+        else {
+            return
+        }
+
+        let pointerAngle = angle(
+            from: rotateState.referenceCenter,
+            to: camera.viewportToWorld(viewportLocation)
+        )
+        let draftRotationRadians = normalizedCanvasAngle(
+            pointerAngle + rotateState.rotationOffsetToPointerAngle
+        )
+        guard !anglesMatch(
+            inlineEditState.draftRotationRadians,
+            draftRotationRadians
+        ) else {
+            return
+        }
+
+        inlineEditState.draftRotationRadians = draftRotationRadians
+        self.inlineEditState = inlineEditState
+        refreshCanvas()
+    }
+
+    private func commitRotationDraftIfNeeded() {
+        guard
+            let inlineEditState,
+            inlineEditState.mode == .rotate,
+            let item = scene.item(withID: inlineEditState.itemID)
+        else {
+            historyController.cancelPendingTransaction()
+            return
+        }
+
+        guard !anglesMatch(item.rotationRadians, inlineEditState.draftRotationRadians) else {
+            historyController.cancelPendingTransaction()
+            return
+        }
+
+        guard let rotatedItem = scene.rotateItem(
+            withID: inlineEditState.itemID,
+            to: inlineEditState.draftRotationRadians
+        ) else {
+            historyController.cancelPendingTransaction()
+            return
+        }
+
+        expandBoardIfNeeded(toInclude: rotatedItem.worldBounds)
+        self.inlineEditState = CanvasInlineEditState(item: rotatedItem, mode: .rotate)
+        refreshCanvas()
+        commitPendingPointerHistoryTransaction(autosaveReason: "rotate item")
+    }
+
     private func moveSelectedItem(
         withID itemID: CanvasImageItemID,
         from previousLocation: CGPoint,
@@ -775,7 +941,7 @@ final class macOSViewController: NSViewController {
 
         scene.moveItem(withID: itemID, by: deltaInWorld)
         if let movedItem = scene.item(withID: itemID) {
-            expandBoardIfNeeded(toInclude: movedItem.worldFrame)
+            expandBoardIfNeeded(toInclude: movedItem.worldBounds)
         }
         refreshCanvas()
     }
@@ -788,22 +954,27 @@ final class macOSViewController: NSViewController {
             return nil
         }
 
-        let initialWorldFrame = item.worldFrame.standardized
-        guard initialWorldFrame.width > 0, initialWorldFrame.height > 0 else {
+        let initialLocalFrame = item.localFrame.standardized
+        guard initialLocalFrame.width > 0, initialLocalFrame.height > 0 else {
             return nil
         }
 
         let minimumWorldDimension = Self.minimumResizeViewportDimension / camera.zoomScale
         let minimumScale = max(
-            minimumWorldDimension / initialWorldFrame.width,
-            minimumWorldDimension / initialWorldFrame.height
+            minimumWorldDimension / initialLocalFrame.width,
+            minimumWorldDimension / initialLocalFrame.height
         )
 
         return PointerResizeState(
             itemID: itemID,
             handleRole: handleRole,
-            initialWorldFrame: initialWorldFrame,
-            fixedOppositeWorldCorner: fixedOppositeWorldCorner(for: handleRole, in: initialWorldFrame),
+            referenceCenter: item.center,
+            referenceRotationRadians: item.rotationRadians,
+            initialLocalFrame: initialLocalFrame,
+            fixedOppositeLocalCorner: fixedOppositeResizeLocalCorner(
+                for: handleRole,
+                in: initialLocalFrame
+            ),
             minimumScale: minimumScale
         )
     }
@@ -815,7 +986,7 @@ final class macOSViewController: NSViewController {
         to viewportLocation: CGPoint
     ) {
         guard
-            let resizedWorldFrame = makeResizedWorldFrame(
+            let resizedLocalFrame = makeResizedLocalFrame(
                 using: resizeState,
                 draggedViewportLocation: viewportLocation
             ),
@@ -824,71 +995,90 @@ final class macOSViewController: NSViewController {
             return
         }
 
-        guard currentItem.worldFrame.standardized != resizedWorldFrame else {
+        let resizedCenter = referenceWorldPoint(
+            fromLocal: CGPoint(
+                x: resizedLocalFrame.midX,
+                y: resizedLocalFrame.midY
+            ),
+            center: resizeState.referenceCenter,
+            rotationRadians: resizeState.referenceRotationRadians
+        )
+        guard
+            currentItem.center != resizedCenter ||
+            currentItem.size != resizedLocalFrame.size
+        else {
             return
         }
 
-        guard let resizedItem = scene.resizeItem(withID: resizeState.itemID, to: resizedWorldFrame) else {
+        guard let resizedItem = scene.resizeItem(
+            withID: resizeState.itemID,
+            toCenter: resizedCenter,
+            size: resizedLocalFrame.size
+        ) else {
             return
         }
 
-        expandBoardIfNeeded(toInclude: resizedItem.worldFrame)
+        expandBoardIfNeeded(toInclude: resizedItem.worldBounds)
         refreshCanvas()
     }
 
     // Keep the opposite corner fixed and use the larger axis scale so resizing
     // stays proportional regardless of drag direction.
-    private func makeResizedWorldFrame(
+    private func makeResizedLocalFrame(
         using resizeState: PointerResizeState,
         draggedViewportLocation: CGPoint
     ) -> CGRect? {
-        let minimumWidth = resizeState.initialWorldFrame.width * resizeState.minimumScale
-        let minimumHeight = resizeState.initialWorldFrame.height * resizeState.minimumScale
-        let draggedWorldCorner = constrainedDraggedWorldCorner(
-            camera.viewportToWorld(draggedViewportLocation),
+        let minimumWidth = resizeState.initialLocalFrame.width * resizeState.minimumScale
+        let minimumHeight = resizeState.initialLocalFrame.height * resizeState.minimumScale
+        let draggedLocalCorner = constrainedDraggedResizeLocalCorner(
+            referenceLocalPoint(
+                fromWorld: camera.viewportToWorld(draggedViewportLocation),
+                center: resizeState.referenceCenter,
+                rotationRadians: resizeState.referenceRotationRadians
+            ),
             for: resizeState.handleRole,
-            oppositeCorner: resizeState.fixedOppositeWorldCorner,
+            oppositeCorner: resizeState.fixedOppositeLocalCorner,
             minimumWidth: minimumWidth,
             minimumHeight: minimumHeight
         )
 
-        let widthScale = abs(draggedWorldCorner.x - resizeState.fixedOppositeWorldCorner.x) / resizeState.initialWorldFrame.width
-        let heightScale = abs(draggedWorldCorner.y - resizeState.fixedOppositeWorldCorner.y) / resizeState.initialWorldFrame.height
+        let widthScale = abs(draggedLocalCorner.x - resizeState.fixedOppositeLocalCorner.x) / resizeState.initialLocalFrame.width
+        let heightScale = abs(draggedLocalCorner.y - resizeState.fixedOppositeLocalCorner.y) / resizeState.initialLocalFrame.height
         let scale = max(widthScale, heightScale, resizeState.minimumScale)
         guard scale.isFinite else {
             return nil
         }
 
         let resizedSize = CGSize(
-            width: resizeState.initialWorldFrame.width * scale,
-            height: resizeState.initialWorldFrame.height * scale
+            width: resizeState.initialLocalFrame.width * scale,
+            height: resizeState.initialLocalFrame.height * scale
         )
 
-        return worldFrame(
+        return localFrame(
             for: resizeState.handleRole,
-            withFixedOppositeCorner: resizeState.fixedOppositeWorldCorner,
+            withFixedOppositeCorner: resizeState.fixedOppositeLocalCorner,
             size: resizedSize
         )
     }
 
-    private func fixedOppositeWorldCorner(
+    private func fixedOppositeResizeLocalCorner(
         for handleRole: CanvasSelectionHandleRole,
-        in worldFrame: CGRect
+        in localFrame: CGRect
     ) -> CGPoint {
         switch handleRole {
         case .topLeading:
-            return CGPoint(x: worldFrame.maxX, y: worldFrame.maxY)
+            return CGPoint(x: localFrame.maxX, y: localFrame.maxY)
         case .topTrailing:
-            return CGPoint(x: worldFrame.minX, y: worldFrame.maxY)
+            return CGPoint(x: localFrame.minX, y: localFrame.maxY)
         case .bottomLeading:
-            return CGPoint(x: worldFrame.maxX, y: worldFrame.minY)
+            return CGPoint(x: localFrame.maxX, y: localFrame.minY)
         case .bottomTrailing:
-            return CGPoint(x: worldFrame.minX, y: worldFrame.minY)
+            return CGPoint(x: localFrame.minX, y: localFrame.minY)
         }
     }
 
-    private func constrainedDraggedWorldCorner(
-        _ draggedWorldCorner: CGPoint,
+    private func constrainedDraggedResizeLocalCorner(
+        _ draggedLocalCorner: CGPoint,
         for handleRole: CanvasSelectionHandleRole,
         oppositeCorner: CGPoint,
         minimumWidth: CGFloat,
@@ -897,28 +1087,28 @@ final class macOSViewController: NSViewController {
         switch handleRole {
         case .topLeading:
             return CGPoint(
-                x: min(draggedWorldCorner.x, oppositeCorner.x - minimumWidth),
-                y: min(draggedWorldCorner.y, oppositeCorner.y - minimumHeight)
+                x: min(draggedLocalCorner.x, oppositeCorner.x - minimumWidth),
+                y: min(draggedLocalCorner.y, oppositeCorner.y - minimumHeight)
             )
         case .topTrailing:
             return CGPoint(
-                x: max(draggedWorldCorner.x, oppositeCorner.x + minimumWidth),
-                y: min(draggedWorldCorner.y, oppositeCorner.y - minimumHeight)
+                x: max(draggedLocalCorner.x, oppositeCorner.x + minimumWidth),
+                y: min(draggedLocalCorner.y, oppositeCorner.y - minimumHeight)
             )
         case .bottomLeading:
             return CGPoint(
-                x: min(draggedWorldCorner.x, oppositeCorner.x - minimumWidth),
-                y: max(draggedWorldCorner.y, oppositeCorner.y + minimumHeight)
+                x: min(draggedLocalCorner.x, oppositeCorner.x - minimumWidth),
+                y: max(draggedLocalCorner.y, oppositeCorner.y + minimumHeight)
             )
         case .bottomTrailing:
             return CGPoint(
-                x: max(draggedWorldCorner.x, oppositeCorner.x + minimumWidth),
-                y: max(draggedWorldCorner.y, oppositeCorner.y + minimumHeight)
+                x: max(draggedLocalCorner.x, oppositeCorner.x + minimumWidth),
+                y: max(draggedLocalCorner.y, oppositeCorner.y + minimumHeight)
             )
         }
     }
 
-    private func worldFrame(
+    private func localFrame(
         for handleRole: CanvasSelectionHandleRole,
         withFixedOppositeCorner oppositeCorner: CGPoint,
         size: CGSize
@@ -971,6 +1161,60 @@ final class macOSViewController: NSViewController {
             width: cropHandleHitTargetSize,
             height: cropHandleHitTargetSize
         ).standardized
+    }
+
+    private static func rotateHandleHitRect(centeredAt center: CGPoint) -> CGRect {
+        CGRect(
+            x: center.x - rotateHandleHitTargetSize / 2,
+            y: center.y - rotateHandleHitTargetSize / 2,
+            width: rotateHandleHitTargetSize,
+            height: rotateHandleHitTargetSize
+        ).standardized
+    }
+
+    private func referenceLocalPoint(
+        fromWorld worldPoint: CGPoint,
+        center: CGPoint,
+        rotationRadians: CGFloat
+    ) -> CGPoint {
+        let translatedPoint = CGPoint(
+            x: worldPoint.x - center.x,
+            y: worldPoint.y - center.y
+        )
+        let cosine = cos(rotationRadians)
+        let sine = sin(rotationRadians)
+        return CGPoint(
+            x: (translatedPoint.x * cosine) + (translatedPoint.y * sine),
+            y: (-translatedPoint.x * sine) + (translatedPoint.y * cosine)
+        )
+    }
+
+    private func referenceWorldPoint(
+        fromLocal localPoint: CGPoint,
+        center: CGPoint,
+        rotationRadians: CGFloat
+    ) -> CGPoint {
+        let cosine = cos(rotationRadians)
+        let sine = sin(rotationRadians)
+        return CGPoint(
+            x: center.x + (localPoint.x * cosine) - (localPoint.y * sine),
+            y: center.y + (localPoint.x * sine) + (localPoint.y * cosine)
+        )
+    }
+
+    private func angle(
+        from center: CGPoint,
+        to point: CGPoint
+    ) -> CGFloat {
+        atan2(point.y - center.y, point.x - center.x)
+    }
+
+    private func anglesMatch(
+        _ lhs: CGFloat,
+        _ rhs: CGFloat,
+        tolerance: CGFloat = 0.0001
+    ) -> Bool {
+        abs(normalizedCanvasAngle(lhs - rhs)) < tolerance
     }
 
     private func fixedOppositeLocalCorner(
@@ -1101,7 +1345,7 @@ final class macOSViewController: NSViewController {
         camera = runtimeState.camera
         interactionState = runtimeState.interactionState
         inlineEditState = nil
-        updateCropButtonAppearance()
+        updateInlineEditButtonsAppearance()
     }
 
     private func currentBoardHistorySnapshot() -> BoardHistorySnapshot {
@@ -1131,6 +1375,8 @@ final class macOSViewController: NSViewController {
     ) {
         let reason: String
         switch pressTarget {
+        case .rotateHandle:
+            reason = "rotate item"
         case .cropHandle:
             reason = "crop item"
         case .handle:
@@ -1179,8 +1425,17 @@ final class macOSViewController: NSViewController {
         inlineEditState?.mode == .crop
     }
 
+    private var isInlineRotateModeActive: Bool {
+        inlineEditState?.mode == .rotate
+    }
+
+    private var isInlineEditModeActive: Bool {
+        inlineEditState != nil
+    }
+
     private func beginCropModeIfPossible() {
         guard
+            !isInlineRotateModeActive,
             let selectedItemID = interactionState.selectedItemID,
             let item = scene.item(withID: selectedItemID)
         else {
@@ -1188,7 +1443,21 @@ final class macOSViewController: NSViewController {
         }
 
         inlineEditState = CanvasInlineEditState(item: item, mode: .crop)
-        updateCropButtonAppearance()
+        updateInlineEditButtonsAppearance()
+        refreshCanvas()
+    }
+
+    private func beginRotateModeIfPossible() {
+        guard
+            !isInlineCropModeActive,
+            let selectedItemID = interactionState.selectedItemID,
+            let item = scene.item(withID: selectedItemID)
+        else {
+            return
+        }
+
+        inlineEditState = CanvasInlineEditState(item: item, mode: .rotate)
+        updateInlineEditButtonsAppearance()
         refreshCanvas()
     }
 
@@ -1198,26 +1467,26 @@ final class macOSViewController: NSViewController {
         }
 
         inlineEditState = nil
-        updateCropButtonAppearance()
+        updateInlineEditButtonsAppearance()
         refreshCanvas()
     }
 
     private func syncInlineEditStateWithSelection() {
         guard let inlineEditState else {
-            updateCropButtonAppearance()
+            updateInlineEditButtonsAppearance()
             return
         }
 
         guard interactionState.selectedItemID == inlineEditState.itemID else {
             self.inlineEditState = nil
-            updateCropButtonAppearance()
+            updateInlineEditButtonsAppearance()
             return
         }
 
         if let item = scene.item(withID: inlineEditState.itemID) {
             self.inlineEditState = CanvasInlineEditState(item: item, mode: inlineEditState.mode)
         }
-        updateCropButtonAppearance()
+        updateInlineEditButtonsAppearance()
     }
 
     private func scheduleAutosave(reason: String) {
@@ -1331,13 +1600,29 @@ final class macOSViewController: NSViewController {
         )
     }
 
+    private func updateInlineEditButtonsAppearance() {
+        updateCropButtonAppearance()
+        updateRotateButtonAppearance()
+    }
+
     private func updateCropButtonAppearance() {
         let isActive = isInlineCropModeActive
-        let isEnabled = isActive || interactionState.selectedItemID != nil
+        let isEnabled = isActive || (interactionState.selectedItemID != nil && !isInlineRotateModeActive)
         applyCropButtonAppearance(
             title: isActive ? "Done" : "Crop",
             systemImageName: isActive ? "checkmark" : "crop",
             tintColor: isActive ? .systemOrange : .controlAccentColor,
+            isEnabled: isEnabled
+        )
+    }
+
+    private func updateRotateButtonAppearance() {
+        let isActive = isInlineRotateModeActive
+        let isEnabled = isActive || (interactionState.selectedItemID != nil && !isInlineCropModeActive)
+        applyRotateButtonAppearance(
+            title: isActive ? "Done" : "Rotate",
+            systemImageName: isActive ? "checkmark" : "rotate.right",
+            tintColor: isActive ? .systemPurple : .systemTeal,
             isEnabled: isEnabled
         )
     }
@@ -1368,6 +1653,21 @@ final class macOSViewController: NSViewController {
         )
         cropButton.contentTintColor = isEnabled ? tintColor : .secondaryLabelColor
         cropButton.isEnabled = isEnabled
+    }
+
+    private func applyRotateButtonAppearance(
+        title: String,
+        systemImageName: String,
+        tintColor: NSColor,
+        isEnabled: Bool
+    ) {
+        rotateButton.title = title
+        rotateButton.image = NSImage(
+            systemSymbolName: systemImageName,
+            accessibilityDescription: title
+        )
+        rotateButton.contentTintColor = isEnabled ? tintColor : .secondaryLabelColor
+        rotateButton.isEnabled = isEnabled
     }
 
     private func presentSaveError(message: String) {

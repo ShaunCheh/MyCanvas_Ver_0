@@ -68,12 +68,56 @@ final class CanvasScene {
             return nil
         }
 
-        return updateItem(withID: id) { item in
-            item.center = CGPoint(
+        return resizeItem(
+            withID: id,
+            toCenter: CGPoint(
                 x: standardizedFrame.midX,
                 y: standardizedFrame.midY
+            ),
+            size: standardizedFrame.size
+        )
+    }
+
+    @discardableResult
+    func resizeItem(
+        withID id: CanvasImageItemID,
+        toCenter center: CGPoint,
+        size: CGSize
+    ) -> CanvasImageItem? {
+        guard size.width > 0, size.height > 0 else {
+            return nil
+        }
+
+        return updateItem(withID: id) { item in
+            item.center = center
+            item.size = size
+            return item
+        }
+    }
+
+    @discardableResult
+    // Rotated resize works in item-local axes so the committed center/size update
+    // stays shared even when the visible quad is no longer axis-aligned in world space.
+    func resizeItem(
+        withID id: CanvasImageItemID,
+        toLocalFrame localFrame: CGRect
+    ) -> CanvasImageItem? {
+        let standardizedLocalFrame = localFrame.standardized
+        guard
+            standardizedLocalFrame.width > 0,
+            standardizedLocalFrame.height > 0
+        else {
+            return nil
+        }
+
+        return updateItem(withID: id) { item in
+            item.center = item.worldPoint(
+                fromLocal: CGPoint(
+                    x: standardizedLocalFrame.midX,
+                    y: standardizedLocalFrame.midY
+                )
             )
-            item.size = standardizedFrame.size
+            item.size = standardizedLocalFrame.size
             return item
         }
     }
@@ -103,6 +147,19 @@ final class CanvasScene {
             item.cropRectNormalized = normalizedCropRect
             item.center = updatedCenter
             item.size = updatedLocalFrame.size
+            return item
+        }
+    }
+
+    @discardableResult
+    // Rotation writes stay centralized in Scene so controllers only manage draft
+    // angles while the persisted presentation state changes in one shared place.
+    func rotateItem(
+        withID id: CanvasImageItemID,
+        to rotationRadians: CGFloat
+    ) -> CanvasImageItem? {
+        updateItem(withID: id) { item in
+            item.rotationRadians = normalizedCanvasAngle(rotationRadians)
             return item
         }
     }

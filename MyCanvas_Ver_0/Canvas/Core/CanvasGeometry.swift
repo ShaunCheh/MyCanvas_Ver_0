@@ -38,6 +38,29 @@ struct CanvasQuad: Equatable {
         ]
     }
 
+    var center: CGPoint {
+        CGPoint(
+            x: (topLeading.x + topTrailing.x + bottomLeading.x + bottomTrailing.x) / 4,
+            y: (topLeading.y + topTrailing.y + bottomLeading.y + bottomTrailing.y) / 4
+        )
+    }
+
+    var topMidpoint: CGPoint {
+        midpoint(between: topLeading, and: topTrailing)
+    }
+
+    var bottomMidpoint: CGPoint {
+        midpoint(between: bottomLeading, and: bottomTrailing)
+    }
+
+    var leadingMidpoint: CGPoint {
+        midpoint(between: topLeading, and: bottomLeading)
+    }
+
+    var trailingMidpoint: CGPoint {
+        midpoint(between: topTrailing, and: bottomTrailing)
+    }
+
     var boundingRect: CGRect {
         let xs = points.map(\.x)
         let ys = points.map(\.y)
@@ -67,4 +90,18 @@ struct CanvasQuad: Equatable {
             bottomTrailing: transform(bottomTrailing)
         )
     }
+
+    private func midpoint(
+        between lhs: CGPoint,
+        and rhs: CGPoint
+    ) -> CGPoint {
+        CGPoint(
+            x: (lhs.x + rhs.x) / 2,
+            y: (lhs.y + rhs.y) / 2
+        )
+    }
+}
+
+func normalizedCanvasAngle(_ radians: CGFloat) -> CGFloat {
+    atan2(sin(radians), cos(radians))
 }

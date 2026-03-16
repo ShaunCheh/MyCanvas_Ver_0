@@ -29,6 +29,23 @@ final class macOSCanvasViewportView: NSView {
     private static let cropOutlineLineWidth: CGFloat = 2
     private static let cropHandleLineWidth: CGFloat = 2
     private static let cropHandleSize: CGFloat = 10
+    private static let rotateOutlineStrokeColor = CGColor(
+        red: 175.0 / 255.0,
+        green: 82.0 / 255.0,
+        blue: 222.0 / 255.0,
+        alpha: 1
+    )
+    private static let rotateGuideStrokeColor = CGColor(
+        red: 175.0 / 255.0,
+        green: 82.0 / 255.0,
+        blue: 222.0 / 255.0,
+        alpha: 0.9
+    )
+    private static let rotateHandleFillColor = CGColor(gray: 1, alpha: 1)
+    private static let rotateOutlineLineWidth: CGFloat = 2
+    private static let rotateGuideLineWidth: CGFloat = 2
+    private static let rotateHandleLineWidth: CGFloat = 2
+    private static let rotateHandleSize: CGFloat = 12
 
     private let backgroundLayer = CALayer()
     private let itemsLayer = CALayer()
@@ -39,6 +56,9 @@ final class macOSCanvasViewportView: NSView {
     private let cropMaskLayer = CAShapeLayer()
     private let cropOutlineLayer = CAShapeLayer()
     private var cropHandleLayers: [CanvasCropHandleRole: CAShapeLayer] = [:]
+    private let rotateOutlineLayer = CAShapeLayer()
+    private let rotateGuideLayer = CAShapeLayer()
+    private let rotateHandleLayer = CAShapeLayer()
     private var imageLayers: [CanvasImageItemID: CanvasImageLayer] = [:]
     private var snapshot: CanvasRenderSnapshot = .empty
     private var lastPrimaryPointerLocation: CGPoint?
@@ -81,6 +101,7 @@ final class macOSCanvasViewportView: NSView {
             refreshBoardHighlight()
             refreshSelectionOverlay()
             refreshCropOverlay()
+            refreshRotateOverlay()
         }
     }
 
@@ -92,6 +113,7 @@ final class macOSCanvasViewportView: NSView {
             refreshBoardHighlight()
             refreshSelectionOverlay()
             refreshCropOverlay()
+            refreshRotateOverlay()
         }
     }
 
@@ -104,6 +126,9 @@ final class macOSCanvasViewportView: NSView {
         overlayLayer.addSublayer(selectionOutlineLayer)
         overlayLayer.addSublayer(cropMaskLayer)
         overlayLayer.addSublayer(cropOutlineLayer)
+        overlayLayer.addSublayer(rotateGuideLayer)
+        overlayLayer.addSublayer(rotateOutlineLayer)
+        overlayLayer.addSublayer(rotateHandleLayer)
 
         configureBoardHighlightLayer()
         configureSelectionOutlineLayer()
@@ -111,6 +136,9 @@ final class macOSCanvasViewportView: NSView {
         configureCropMaskLayer()
         configureCropOutlineLayer()
         configureCropHandleLayers()
+        configureRotateGuideLayer()
+        configureRotateOutlineLayer()
+        configureRotateHandleLayer()
         updateBackgroundAppearance()
     }
 
@@ -127,12 +155,24 @@ final class macOSCanvasViewportView: NSView {
             overlayLayer.frame = bounds
         }
 
+        if selectionOutlineLayer.frame != bounds {
+            selectionOutlineLayer.frame = bounds
+        }
+
         if cropMaskLayer.frame != bounds {
             cropMaskLayer.frame = bounds
         }
 
         if cropOutlineLayer.frame != bounds {
             cropOutlineLayer.frame = bounds
+        }
+
+        if rotateGuideLayer.frame != bounds {
+            rotateGuideLayer.frame = bounds
+        }
+
+        if rotateOutlineLayer.frame != bounds {
+            rotateOutlineLayer.frame = bounds
         }
     }
 
@@ -208,6 +248,28 @@ final class macOSCanvasViewportView: NSView {
         }
     }
 
+    private func configureRotateGuideLayer() {
+        rotateGuideLayer.fillColor = nil
+        rotateGuideLayer.strokeColor = Self.rotateGuideStrokeColor
+        rotateGuideLayer.lineWidth = Self.rotateGuideLineWidth
+        rotateGuideLayer.lineCap = .round
+        rotateGuideLayer.isHidden = true
+    }
+
+    private func configureRotateOutlineLayer() {
+        rotateOutlineLayer.fillColor = nil
+        rotateOutlineLayer.strokeColor = Self.rotateOutlineStrokeColor
+        rotateOutlineLayer.lineWidth = Self.rotateOutlineLineWidth
+        rotateOutlineLayer.isHidden = true
+    }
+
+    private func configureRotateHandleLayer() {
+        rotateHandleLayer.fillColor = Self.rotateHandleFillColor
+        rotateHandleLayer.strokeColor = Self.rotateOutlineStrokeColor
+        rotateHandleLayer.lineWidth = Self.rotateHandleLineWidth
+        rotateHandleLayer.isHidden = true
+    }
+
     private func refreshBoardHighlight() {
         guard let boardOverlay = snapshot.boardOverlay else {
             boardHighlightLayer.path = nil
@@ -235,12 +297,7 @@ final class macOSCanvasViewportView: NSView {
 
         // The viewport owns selection presentation details; it only consumes the
         // renderer's neutral geometry and applies macOS-specific visuals here.
-        let selectionFrame = selectionOverlay.screenFrame.standardized
-        selectionOutlineLayer.frame = selectionFrame
-        selectionOutlineLayer.path = CGPath(
-            rect: CGRect(origin: .zero, size: selectionFrame.size),
-            transform: nil
-        )
+        selectionOutlineLayer.path = Self.quadPath(for: selectionOverlay.screenQuad)
         selectionOutlineLayer.isHidden = false
         selectionOutlineLayer.contentsScale = currentContentsScale
 
@@ -264,6 +321,33 @@ final class macOSCanvasViewportView: NSView {
             handleLayer.isHidden = false
             handleLayer.contentsScale = currentContentsScale
         }
+    }
+
+    private func refreshRotateOverlay() {
+        guard let rotateOverlay = snapshot.rotateOverlay else {
+            hideRotateOverlay()
+            return
+        }
+
+        let guidePath = CGMutablePath()
+        guidePath.move(to: rotateOverlay.guideScreenStart)
+        guidePath.addLine(to: rotateOverlay.guideScreenEnd)
+        rotateGuideLayer.path = guidePath
+        rotateGuideLayer.isHidden = false
+        rotateGuideLayer.contentsScale = currentContentsScale
+
+        rotateOutlineLayer.path = Self.quadPath(for: rotateOverlay.screenQuad)
+        rotateOutlineLayer.isHidden = false
+        rotateOutlineLayer.contentsScale = currentContentsScale
+
+        let handleRect = Self.rotateHandleRect(centeredAt: rotateOverlay.handle.screenCenter)
+        rotateHandleLayer.frame = handleRect
+        rotateHandleLayer.path = CGPath(
+            ellipseIn: CGRect(origin: .zero, size: handleRect.size),
+            transform: nil
+        )
+        rotateHandleLayer.isHidden = false
+        rotateHandleLayer.contentsScale = currentContentsScale
     }
 
     private func refreshCropOverlay() {
@@ -309,7 +393,6 @@ final class macOSCanvasViewportView: NSView {
 
     private func hideSelectionOverlay() {
         selectionOutlineLayer.path = nil
-        selectionOutlineLayer.frame = .zero
         selectionOutlineLayer.isHidden = true
 
         for handleLayer in selectionHandleLayers.values {
@@ -332,6 +415,16 @@ final class macOSCanvasViewportView: NSView {
         }
     }
 
+    private func hideRotateOverlay() {
+        rotateGuideLayer.path = nil
+        rotateGuideLayer.isHidden = true
+        rotateOutlineLayer.path = nil
+        rotateOutlineLayer.isHidden = true
+        rotateHandleLayer.path = nil
+        rotateHandleLayer.frame = .zero
+        rotateHandleLayer.isHidden = true
+    }
+
     private static func selectionHandleRect(centeredAt center: CGPoint) -> CGRect {
         CGRect(
             x: center.x - selectionHandleSize / 2,
@@ -347,6 +440,15 @@ final class macOSCanvasViewportView: NSView {
             y: center.y - cropHandleSize / 2,
             width: cropHandleSize,
             height: cropHandleSize
+        ).standardized
+    }
+
+    private static func rotateHandleRect(centeredAt center: CGPoint) -> CGRect {
+        CGRect(
+            x: center.x - rotateHandleSize / 2,
+            y: center.y - rotateHandleSize / 2,
+            width: rotateHandleSize,
+            height: rotateHandleSize
         ).standardized
     }
 

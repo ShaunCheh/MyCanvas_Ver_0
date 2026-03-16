@@ -69,6 +69,23 @@ struct CanvasCropRenderOverlay {
     let handles: [CanvasCropHandleGeometry]
 }
 
+struct CanvasRotateHandleGeometry {
+    let screenCenter: CGPoint
+}
+
+// Rotate overlay keeps only semantic geometry for the current item outline,
+// pivot guide, and rotate handle. Platforms still decide stroke, fill, and hit slop.
+struct CanvasRotateRenderOverlay {
+    let itemID: CanvasImageItemID
+    let mode: CanvasInlineEditMode
+    let worldQuad: CanvasQuad
+    let screenQuad: CanvasQuad
+    let screenCenter: CGPoint
+    let guideScreenStart: CGPoint
+    let guideScreenEnd: CGPoint
+    let handle: CanvasRotateHandleGeometry
+}
+
 struct CanvasRenderSnapshot {
     let viewportBounds: CGRect
     let visibleWorldRect: CGRect
@@ -76,6 +93,7 @@ struct CanvasRenderSnapshot {
     let items: [CanvasRenderItem]
     let selectionOverlay: CanvasSelectionRenderOverlay?
     let cropOverlay: CanvasCropRenderOverlay?
+    let rotateOverlay: CanvasRotateRenderOverlay?
 
     static let empty = CanvasRenderSnapshot(
         viewportBounds: .zero,
@@ -83,6 +101,7 @@ struct CanvasRenderSnapshot {
         boardOverlay: nil,
         items: [],
         selectionOverlay: nil,
-        cropOverlay: nil
+        cropOverlay: nil,
+        rotateOverlay: nil
     )
 }
