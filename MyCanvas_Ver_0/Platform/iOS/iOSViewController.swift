@@ -590,6 +590,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         }
     }
 
+    // Keep interaction priority aligned with common editors: resize handles win
+    // over body hits so a visible handle is always the first-class press target.
     private func pointerPressTarget(at viewportLocation: CGPoint) -> PointerPressTarget {
         if let handleHit = hitTestSelectionHandle(at: viewportLocation) {
             return .handle(role: handleHit.role, itemID: handleHit.itemID)
@@ -657,6 +659,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         )
     }
 
+    // Controllers solve drag geometry, but Scene still performs the write so
+    // move/resize mutations follow one shared data path across platforms.
     private func resizeSelectedItem(
         using resizeState: PointerResizeState,
         to viewportLocation: CGPoint
@@ -684,6 +688,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         scheduleAutosave(reason: "resize item")
     }
 
+    // Keep the opposite corner fixed and use the larger axis scale so resizing
+    // stays proportional regardless of drag direction.
     private func makeResizedWorldFrame(
         using resizeState: PointerResizeState,
         draggedViewportLocation: CGPoint

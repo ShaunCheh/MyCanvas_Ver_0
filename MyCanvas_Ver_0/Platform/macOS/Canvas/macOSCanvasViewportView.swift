@@ -179,6 +179,8 @@ final class macOSCanvasViewportView: NSView {
             return
         }
 
+        // The viewport owns selection presentation details; it only consumes the
+        // renderer's neutral geometry and applies macOS-specific visuals here.
         let selectionFrame = selectionOverlay.screenFrame.standardized
         selectionOutlineLayer.frame = selectionFrame
         selectionOutlineLayer.path = CGPath(

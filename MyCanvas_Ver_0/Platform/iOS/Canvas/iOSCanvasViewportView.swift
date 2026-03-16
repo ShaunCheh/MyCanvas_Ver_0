@@ -271,6 +271,8 @@ final class iOSCanvasViewportView: UIView {
             return
         }
 
+        // The viewport owns selection presentation details; it only consumes the
+        // renderer's neutral geometry and applies iOS-specific visuals here.
         let selectionFrame = selectionOverlay.screenFrame.standardized
         selectionOutlineLayer.frame = selectionFrame
         selectionOutlineLayer.path = CGPath(

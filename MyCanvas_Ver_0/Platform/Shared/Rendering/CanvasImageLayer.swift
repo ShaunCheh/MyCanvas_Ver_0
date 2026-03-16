@@ -1,6 +1,8 @@
 import CoreGraphics
 import QuartzCore
 
+// Image layers only render image content. Selection visuals live in viewport
+// overlays so shared render items stay free of platform-specific chrome.
 final class CanvasImageLayer: CALayer {
     let itemID: CanvasImageItemID
     private var lastAppliedFrame: CGRect

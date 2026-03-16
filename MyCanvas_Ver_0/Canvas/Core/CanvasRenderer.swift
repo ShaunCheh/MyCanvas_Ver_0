@@ -48,6 +48,8 @@ struct CanvasRenderer {
         )
     }
 
+    // Renderer is the single source of truth for selection geometry so drawing
+    // and hit testing stay aligned without consulting platform layer state.
     private func makeSelectionOverlay(
         scene: CanvasScene,
         camera: CanvasCamera,

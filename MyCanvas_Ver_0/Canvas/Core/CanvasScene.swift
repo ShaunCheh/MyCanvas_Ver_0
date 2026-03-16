@@ -48,6 +48,8 @@ final class CanvasScene {
     }
 
     @discardableResult
+    // Controllers own pointer math, but Scene remains the shared mutation entry
+    // point for resizing so platform flows write geometry the same way.
     func resizeItem(withID id: CanvasImageItemID, to worldFrame: CGRect) -> CanvasImageItem? {
         let standardizedFrame = worldFrame.standardized
         guard standardizedFrame.width > 0, standardizedFrame.height > 0 else {

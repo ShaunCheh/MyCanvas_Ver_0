@@ -1,6 +1,8 @@
 import CoreGraphics
 import Foundation
 
+// Render items stay focused on image content. Selection chrome travels separately
+// so platform overlays and interaction state do not leak into per-item rendering.
 struct CanvasRenderItem {
     let id: CanvasImageItemID
     let screenFrame: CGRect
@@ -25,6 +27,8 @@ struct CanvasSelectionHandleGeometry {
     let screenCenter: CGPoint
 }
 
+// Shared selection geometry is intentionally platform-neutral: it describes what
+// is selected and where it is, while each platform decides visual size and hit slop.
 struct CanvasSelectionRenderOverlay {
     let itemID: CanvasImageItemID
     let worldFrame: CGRect
