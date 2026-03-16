@@ -18,12 +18,7 @@ struct CanvasRenderer {
         }
 
         let renderItems = visibleItems.map { item in
-            CanvasRenderItem(
-                id: item.id,
-                screenFrame: camera.worldToViewport(item.worldFrame),
-                cgImage: item.cgImage,
-                zIndex: item.zIndex
-            )
+            makeRenderItem(for: item, camera: camera)
         }
 
         let boardOverlay = boardState.map { boardState in
@@ -62,39 +57,64 @@ struct CanvasRenderer {
             return nil
         }
 
-        let worldFrame = selectedItem.worldFrame.standardized
-        let screenFrame = camera.worldToViewport(worldFrame).standardized
+        let worldQuad = selectedItem.worldQuad
+        let worldFrame = worldQuad.boundingRect.standardized
+        let screenQuad = camera.worldToViewport(worldQuad)
+        let screenFrame = screenQuad.boundingRect.standardized
 
         return CanvasSelectionRenderOverlay(
             itemID: selectedItemID,
             worldFrame: worldFrame,
+            worldQuad: worldQuad,
             screenFrame: screenFrame,
-            handles: makeSelectionHandles(for: screenFrame)
+            screenQuad: screenQuad,
+            handles: makeSelectionHandles(for: screenQuad)
         )
     }
 
-    private func makeSelectionHandles(for screenFrame: CGRect) -> [CanvasSelectionHandleGeometry] {
+    private func makeRenderItem(
+        for item: CanvasImageItem,
+        camera: CanvasCamera
+    ) -> CanvasRenderItem {
+        let screenQuad = camera.worldToViewport(item.worldQuad)
+        return CanvasRenderItem(
+            id: item.id,
+            screenFrame: screenQuad.boundingRect.standardized,
+            screenQuad: screenQuad,
+            screenCenter: camera.worldToViewport(item.center),
+            screenBoundsSize: CGSize(
+                width: item.size.width * camera.zoomScale,
+                height: item.size.height * camera.zoomScale
+            ),
+            contentsRect: item.imageContentsRect,
+            rotationRadians: item.rotationRadians,
+            cgImage: item.cgImage,
+            zIndex: item.zIndex
+        )
+    }
+
+    private func makeSelectionHandles(for screenQuad: CanvasQuad) -> [CanvasSelectionHandleGeometry] {
         CanvasSelectionHandleRole.allCases.map { role in
             CanvasSelectionHandleGeometry(
                 role: role,
-                screenCenter: selectionHandleCenter(for: role, in: screenFrame)
+                screenCenter: selectionHandleCenter(for: role, in: screenQuad)
             )
         }
     }
 
     private func selectionHandleCenter(
         for role: CanvasSelectionHandleRole,
-        in screenFrame: CGRect
+        in screenQuad: CanvasQuad
     ) -> CGPoint {
         switch role {
         case .topLeading:
-            return CGPoint(x: screenFrame.minX, y: screenFrame.minY)
+            return screenQuad.topLeading
         case .topTrailing:
-            return CGPoint(x: screenFrame.maxX, y: screenFrame.minY)
+            return screenQuad.topTrailing
         case .bottomLeading:
-            return CGPoint(x: screenFrame.minX, y: screenFrame.maxY)
+            return screenQuad.bottomLeading
         case .bottomTrailing:
-            return CGPoint(x: screenFrame.maxX, y: screenFrame.maxY)
+            return screenQuad.bottomTrailing
         }
     }
 }

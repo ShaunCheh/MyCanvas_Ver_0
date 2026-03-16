@@ -67,6 +67,10 @@ struct CanvasCamera {
         )
     }
 
+    func worldToViewport(_ quad: CanvasQuad) -> CanvasQuad {
+        quad.map(worldToViewport)
+    }
+
     mutating func pan(by deltaInViewport: CGPoint) {
         center.x -= deltaInViewport.x / zoomScale
         center.y -= deltaInViewport.y / zoomScale

@@ -73,12 +73,76 @@ struct CanvasImageItem {
         self.rotationRadians = rotationRadians
     }
 
+    var localFrame: CGRect {
+        CGRect(
+            x: -size.width / 2,
+            y: -size.height / 2,
+            width: size.width,
+            height: size.height
+        )
+    }
+
+    var localQuad: CanvasQuad {
+        CanvasQuad(rect: localFrame)
+    }
+
+    var worldQuad: CanvasQuad {
+        localQuad.map(worldPoint(fromLocal:))
+    }
+
+    // `worldFrame` intentionally remains the unrotated visible frame so the
+    // existing axis-aligned move/resize flows can keep compiling during the
+    // staged rotation rollout. Use `worldBounds` for transformed culling/hit-test.
     var worldFrame: CGRect {
         CGRect(
             x: center.x - size.width / 2,
             y: center.y - size.height / 2,
             width: size.width,
             height: size.height
+        )
+    }
+
+    var worldBounds: CGRect {
+        worldQuad.boundingRect
+    }
+
+    var imageContentsRect: CGRect {
+        cropRectNormalized.cgRect
+    }
+
+    func contains(worldPoint: CGPoint) -> Bool {
+        localFrame.contains(localPoint(fromWorld: worldPoint))
+    }
+
+    func worldPoint(fromLocal localPoint: CGPoint) -> CGPoint {
+        let rotatedPoint = Self.rotated(localPoint, by: rotationRadians)
+        return CGPoint(
+            x: rotatedPoint.x + center.x,
+            y: rotatedPoint.y + center.y
+        )
+    }
+
+    func localPoint(fromWorld worldPoint: CGPoint) -> CGPoint {
+        let translatedPoint = CGPoint(
+            x: worldPoint.x - center.x,
+            y: worldPoint.y - center.y
+        )
+        return Self.rotated(translatedPoint, by: -rotationRadians)
+    }
+
+    private static func rotated(
+        _ point: CGPoint,
+        by radians: CGFloat
+    ) -> CGPoint {
+        guard radians != 0 else {
+            return point
+        }
+
+        let cosine = cos(radians)
+        let sine = sin(radians)
+        return CGPoint(
+            x: point.x * cosine - point.y * sine,
+            y: point.x * sine + point.y * cosine
         )
     }
 }

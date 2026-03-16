@@ -32,8 +32,20 @@ final class CanvasScene {
         items.first(where: { $0.id == id })
     }
 
+    func itemWorldQuad(withID id: CanvasImageItemID) -> CanvasQuad? {
+        item(withID: id)?.worldQuad
+    }
+
+    func itemWorldBounds(withID id: CanvasImageItemID) -> CGRect? {
+        item(withID: id)?.worldBounds
+    }
+
     func topmostItem(containing worldPoint: CGPoint) -> CanvasImageItem? {
-        orderedItems().reversed().first(where: { $0.worldFrame.contains(worldPoint) })
+        orderedItems().reversed().first(where: { $0.contains(worldPoint: worldPoint) })
+    }
+
+    func topmostItemID(containing worldPoint: CGPoint) -> CanvasImageItemID? {
+        topmostItem(containing: worldPoint)?.id
     }
 
     func moveItem(withID id: CanvasImageItemID, by deltaInWorld: CGPoint) {
@@ -67,7 +79,10 @@ final class CanvasScene {
     }
 
     func visibleItems(in worldRect: CGRect) -> [CanvasImageItem] {
-        orderedItems(from: items.filter { $0.worldFrame.intersects(worldRect) })
+        let standardizedWorldRect = worldRect.standardized
+        return orderedItems(from: items.filter { item in
+            item.worldBounds.intersects(standardizedWorldRect)
+        })
     }
 
     func orderedItems() -> [CanvasImageItem] {

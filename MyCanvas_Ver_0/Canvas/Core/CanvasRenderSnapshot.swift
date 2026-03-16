@@ -6,6 +6,11 @@ import Foundation
 struct CanvasRenderItem {
     let id: CanvasImageItemID
     let screenFrame: CGRect
+    let screenQuad: CanvasQuad
+    let screenCenter: CGPoint
+    let screenBoundsSize: CGSize
+    let contentsRect: CGRect
+    let rotationRadians: CGFloat
     let cgImage: CGImage
     let zIndex: CGFloat
 }
@@ -32,7 +37,9 @@ struct CanvasSelectionHandleGeometry {
 struct CanvasSelectionRenderOverlay {
     let itemID: CanvasImageItemID
     let worldFrame: CGRect
+    let worldQuad: CanvasQuad
     let screenFrame: CGRect
+    let screenQuad: CanvasQuad
     let handles: [CanvasSelectionHandleGeometry]
 }
 
