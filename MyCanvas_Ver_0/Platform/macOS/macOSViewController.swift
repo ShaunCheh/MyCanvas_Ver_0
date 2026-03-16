@@ -14,10 +14,16 @@ import UniformTypeIdentifiers
 final class macOSViewController: NSViewController {
     private enum PointerDragState {
         case idle
-        case pressed(pressedItemID: CanvasImageItemID?, pressedItemWasSelected: Bool)
+        case pressed(
+            pressedLocation: CGPoint,
+            pressedItemID: CanvasImageItemID?,
+            pressedItemWasSelected: Bool
+        )
         case draggingSelectedItem(itemID: CanvasImageItemID)
         case draggingCanvas
     }
+
+    private static let pointerDragActivationDistance: CGFloat = 4
 
     private let scene = CanvasScene()
     private var camera = CanvasCamera()
@@ -187,6 +193,7 @@ final class macOSViewController: NSViewController {
     private func handlePrimaryPointerDown(at location: CGPoint) {
         let pressedItemID = hitTestItemID(at: location)
         pointerDragState = .pressed(
+            pressedLocation: location,
             pressedItemID: pressedItemID,
             pressedItemWasSelected: pressedItemID == interactionState.selectedItemID
         )
@@ -194,13 +201,17 @@ final class macOSViewController: NSViewController {
 
     private func handlePrimaryPointerMove(to location: CGPoint, from previousLocation: CGPoint) {
         switch pointerDragState {
-        case let .pressed(pressedItemID, pressedItemWasSelected):
+        case let .pressed(pressedLocation, pressedItemID, pressedItemWasSelected):
+            guard hasExceededPointerDragActivationDistance(from: pressedLocation, to: location) else {
+                return
+            }
+
             if pressedItemWasSelected, let pressedItemID {
                 pointerDragState = .draggingSelectedItem(itemID: pressedItemID)
-                moveSelectedItem(withID: pressedItemID, from: previousLocation, to: location)
+                moveSelectedItem(withID: pressedItemID, from: pressedLocation, to: location)
             } else {
                 pointerDragState = .draggingCanvas
-                panCanvas(from: previousLocation, to: location)
+                panCanvas(from: pressedLocation, to: location)
             }
         case let .draggingSelectedItem(itemID):
             moveSelectedItem(withID: itemID, from: previousLocation, to: location)
@@ -217,13 +228,40 @@ final class macOSViewController: NSViewController {
         }
 
         switch pointerDragState {
-        case let .pressed(pressedItemID, _):
+        case let .pressed(_, pressedItemID, _):
             let releasedItemID = hitTestItemID(at: location)
+            let previousSelectedItemID = interactionState.selectedItemID
+            var clickTarget = "blank"
+            var clickResult = "selection_unchanged"
+            var affectedItemID: CanvasImageItemID?
+
             if let pressedItemID, releasedItemID == pressedItemID {
+                clickTarget = "image"
+                affectedItemID = pressedItemID
                 selectItem(withID: pressedItemID)
+                if previousSelectedItemID != pressedItemID {
+                    clickResult = "image_selected"
+                }
             } else if pressedItemID == nil, releasedItemID == nil {
+                affectedItemID = previousSelectedItemID
                 clearSelectionIfNeeded()
+                if previousSelectedItemID != nil {
+                    clickResult = "image_deselected"
+                }
+            } else {
+                clickTarget = "mismatched_hit_test"
+                affectedItemID = releasedItemID ?? pressedItemID
             }
+
+            logClickResult(
+                target: clickTarget,
+                result: clickResult,
+                pressedItemID: pressedItemID,
+                releasedItemID: releasedItemID,
+                previousSelectedItemID: previousSelectedItemID,
+                currentSelectedItemID: interactionState.selectedItemID,
+                affectedItemID: affectedItemID
+            )
         case .draggingSelectedItem, .draggingCanvas, .idle:
             break
         }
@@ -231,6 +269,17 @@ final class macOSViewController: NSViewController {
 
     private func handlePrimaryPointerCancel() {
         pointerDragState = .idle
+    }
+
+    private func hasExceededPointerDragActivationDistance(
+        from pressedLocation: CGPoint,
+        to currentLocation: CGPoint
+    ) -> Bool {
+        let dx = currentLocation.x - pressedLocation.x
+        let dy = currentLocation.y - pressedLocation.y
+        let distanceSquared = (dx * dx) + (dy * dy)
+        let thresholdSquared = Self.pointerDragActivationDistance * Self.pointerDragActivationDistance
+        return distanceSquared >= thresholdSquared
     }
 
     private func handleIndirectPan(_ translation: CGPoint) {
@@ -371,6 +420,27 @@ final class macOSViewController: NSViewController {
 
         interactionState.selectedItemID = nil
         refreshCanvas()
+    }
+
+    private func logClickResult(
+        target: String,
+        result: String,
+        pressedItemID: CanvasImageItemID?,
+        releasedItemID: CanvasImageItemID?,
+        previousSelectedItemID: CanvasImageItemID?,
+        currentSelectedItemID: CanvasImageItemID?,
+        affectedItemID: CanvasImageItemID?
+    ) {
+        print(
+            "[Canvas macOS][ClickSelection] " +
+            "target=\(target) " +
+            "result=\(result) " +
+            "pressedItemID=\(describe(itemID: pressedItemID)) " +
+            "releasedItemID=\(describe(itemID: releasedItemID)) " +
+            "previousSelectedItemID=\(describe(itemID: previousSelectedItemID)) " +
+            "currentSelectedItemID=\(describe(itemID: currentSelectedItemID)) " +
+            "affectedItemID=\(describe(itemID: affectedItemID))"
+        )
     }
 
     private func hitTestItemID(at viewportLocation: CGPoint) -> CanvasImageItemID? {
@@ -595,6 +665,10 @@ final class macOSViewController: NSViewController {
         } else {
             alert.runModal()
         }
+    }
+
+    private func describe(itemID: CanvasImageItemID?) -> String {
+        itemID?.uuidString ?? "nil"
     }
 }
 #endif
