@@ -28,7 +28,9 @@ enum BoardDocumentMapper {
                 cgImage: try imageLoader(itemRecord),
                 center: itemRecord.center.cgPoint,
                 size: itemRecord.size.cgSize,
-                zIndex: CGFloat(itemRecord.zIndex)
+                zIndex: CGFloat(itemRecord.zIndex),
+                cropRectNormalized: itemRecord.cropRectNormalized?.canvasImageCropRect ?? .fullImage,
+                rotationRadians: CGFloat(itemRecord.rotationRadians ?? 0)
             )
         }
 
@@ -59,7 +61,9 @@ enum BoardDocumentMapper {
             center: BoardPointRecord(item.center),
             size: BoardSizeRecord(item.size),
             zIndex: Double(item.zIndex),
-            assetFilename: "\(item.id.uuidString).png"
+            assetFilename: "\(item.id.uuidString).png",
+            cropRectNormalized: BoardImageCropRecord(item.cropRectNormalized),
+            rotationRadians: Double(item.rotationRadians)
         )
     }
 

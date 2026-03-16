@@ -46,7 +46,7 @@ struct BoardRuntimeState {
 }
 
 struct BoardDocument: Codable {
-    static let currentFormatVersion = 1
+    static let currentFormatVersion = 2
     static let defaultTitle = "Untitled Board"
 
     let formatVersion: Int
@@ -77,6 +77,48 @@ struct BoardImageItemRecord: Codable {
     var size: BoardSizeRecord
     var zIndex: Double
     var assetFilename: String
+    var cropRectNormalized: BoardImageCropRecord?
+    var rotationRadians: Double?
+}
+
+struct BoardImageCropRecord: Codable {
+    var x: Double
+    var y: Double
+    var width: Double
+    var height: Double
+
+    init(
+        x: Double,
+        y: Double,
+        width: Double,
+        height: Double
+    ) {
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+    }
+
+    init(_ cropRect: CanvasImageCropRect) {
+        let normalizedRect = cropRect.cgRect
+        self.init(
+            x: Double(normalizedRect.origin.x),
+            y: Double(normalizedRect.origin.y),
+            width: Double(normalizedRect.width),
+            height: Double(normalizedRect.height)
+        )
+    }
+
+    var canvasImageCropRect: CanvasImageCropRect {
+        CanvasImageCropRect(
+            CGRect(
+                x: x,
+                y: y,
+                width: width,
+                height: height
+            )
+        )
+    }
 }
 
 struct BoardPointRecord: Codable {
