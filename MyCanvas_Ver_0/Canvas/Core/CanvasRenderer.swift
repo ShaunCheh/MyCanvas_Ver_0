@@ -34,11 +34,66 @@ struct CanvasRenderer {
             )
         }
 
+        let selectionOverlay = makeSelectionOverlay(
+            scene: scene,
+            camera: camera,
+            interactionState: interactionState
+        )
+
         return CanvasRenderSnapshot(
             viewportBounds: camera.viewportBounds,
             visibleWorldRect: visibleWorldRect,
             boardOverlay: boardOverlay,
-            items: renderItems
+            items: renderItems,
+            selectionOverlay: selectionOverlay
         )
+    }
+
+    private func makeSelectionOverlay(
+        scene: CanvasScene,
+        camera: CanvasCamera,
+        interactionState: CanvasInteractionState
+    ) -> CanvasSelectionRenderOverlay? {
+        guard
+            let selectedItemID = interactionState.selectedItemID,
+            let selectedItem = scene.item(withID: selectedItemID)
+        else {
+            return nil
+        }
+
+        let worldFrame = selectedItem.worldFrame.standardized
+        let screenFrame = camera.worldToViewport(worldFrame).standardized
+
+        return CanvasSelectionRenderOverlay(
+            itemID: selectedItemID,
+            worldFrame: worldFrame,
+            screenFrame: screenFrame,
+            handles: makeSelectionHandles(for: screenFrame)
+        )
+    }
+
+    private func makeSelectionHandles(for screenFrame: CGRect) -> [CanvasSelectionHandleGeometry] {
+        CanvasSelectionHandleRole.allCases.map { role in
+            CanvasSelectionHandleGeometry(
+                role: role,
+                screenCenter: selectionHandleCenter(for: role, in: screenFrame)
+            )
+        }
+    }
+
+    private func selectionHandleCenter(
+        for role: CanvasSelectionHandleRole,
+        in screenFrame: CGRect
+    ) -> CGPoint {
+        switch role {
+        case .topLeading:
+            return CGPoint(x: screenFrame.minX, y: screenFrame.minY)
+        case .topTrailing:
+            return CGPoint(x: screenFrame.maxX, y: screenFrame.minY)
+        case .bottomLeading:
+            return CGPoint(x: screenFrame.minX, y: screenFrame.maxY)
+        case .bottomTrailing:
+            return CGPoint(x: screenFrame.maxX, y: screenFrame.maxY)
+        }
     }
 }
