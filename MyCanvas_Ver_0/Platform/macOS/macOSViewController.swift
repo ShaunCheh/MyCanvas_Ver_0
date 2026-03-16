@@ -12,18 +12,44 @@ import ImageIO
 import UniformTypeIdentifiers
 
 final class macOSViewController: NSViewController {
+    private enum PointerPressTarget {
+        case handle(role: CanvasSelectionHandleRole, itemID: CanvasImageItemID)
+        case selectedBody(itemID: CanvasImageItemID)
+        case unselectedItem(itemID: CanvasImageItemID)
+        case blank
+
+        var itemID: CanvasImageItemID? {
+            switch self {
+            case let .handle(_, itemID), let .selectedBody(itemID), let .unselectedItem(itemID):
+                return itemID
+            case .blank:
+                return nil
+            }
+        }
+    }
+
+    private struct PointerResizeState {
+        let itemID: CanvasImageItemID
+        let handleRole: CanvasSelectionHandleRole
+        let initialWorldFrame: CGRect
+        let fixedOppositeWorldCorner: CGPoint
+        let minimumScale: CGFloat
+    }
+
     private enum PointerDragState {
         case idle
         case pressed(
             pressedLocation: CGPoint,
-            pressedItemID: CanvasImageItemID?,
-            pressedItemWasSelected: Bool
+            pressTarget: PointerPressTarget
         )
         case draggingSelectedItem(itemID: CanvasImageItemID)
+        case resizingSelectedItem(PointerResizeState)
         case draggingCanvas
     }
 
     private static let pointerDragActivationDistance: CGFloat = 4
+    private static let selectionHandleHitTargetSize: CGFloat = 18
+    private static let minimumResizeViewportDimension: CGFloat = 20
 
     private let scene = CanvasScene()
     private var camera = CanvasCamera()
@@ -191,30 +217,39 @@ final class macOSViewController: NSViewController {
     }
 
     private func handlePrimaryPointerDown(at location: CGPoint) {
-        let pressedItemID = hitTestItemID(at: location)
         pointerDragState = .pressed(
             pressedLocation: location,
-            pressedItemID: pressedItemID,
-            pressedItemWasSelected: pressedItemID == interactionState.selectedItemID
+            pressTarget: pointerPressTarget(at: location)
         )
     }
 
     private func handlePrimaryPointerMove(to location: CGPoint, from previousLocation: CGPoint) {
         switch pointerDragState {
-        case let .pressed(pressedLocation, pressedItemID, pressedItemWasSelected):
+        case let .pressed(pressedLocation, pressTarget):
             guard hasExceededPointerDragActivationDistance(from: pressedLocation, to: location) else {
                 return
             }
 
-            if pressedItemWasSelected, let pressedItemID {
-                pointerDragState = .draggingSelectedItem(itemID: pressedItemID)
-                moveSelectedItem(withID: pressedItemID, from: pressedLocation, to: location)
-            } else {
+            switch pressTarget {
+            case let .handle(handleRole, itemID):
+                guard let resizeState = makePointerResizeState(itemID: itemID, handleRole: handleRole) else {
+                    pointerDragState = .idle
+                    return
+                }
+
+                pointerDragState = .resizingSelectedItem(resizeState)
+                resizeSelectedItem(using: resizeState, to: location)
+            case let .selectedBody(itemID):
+                pointerDragState = .draggingSelectedItem(itemID: itemID)
+                moveSelectedItem(withID: itemID, from: pressedLocation, to: location)
+            case .unselectedItem, .blank:
                 pointerDragState = .draggingCanvas
                 panCanvas(from: pressedLocation, to: location)
             }
         case let .draggingSelectedItem(itemID):
             moveSelectedItem(withID: itemID, from: previousLocation, to: location)
+        case let .resizingSelectedItem(resizeState):
+            resizeSelectedItem(using: resizeState, to: location)
         case .draggingCanvas:
             panCanvas(from: previousLocation, to: location)
         case .idle:
@@ -228,29 +263,42 @@ final class macOSViewController: NSViewController {
         }
 
         switch pointerDragState {
-        case let .pressed(_, pressedItemID, _):
-            let releasedItemID = hitTestItemID(at: location)
+        case let .pressed(_, pressTarget):
+            let pressedItemID = pressTarget.itemID
+            let releasedHandleHit = hitTestSelectionHandle(at: location)
+            let releasedItemID = hitTestItemID(at: location) ?? releasedHandleHit?.itemID
             let previousSelectedItemID = interactionState.selectedItemID
             var clickTarget = "blank"
             var clickResult = "selection_unchanged"
             var affectedItemID: CanvasImageItemID?
 
-            if let pressedItemID, releasedItemID == pressedItemID {
-                clickTarget = "image"
-                affectedItemID = pressedItemID
-                selectItem(withID: pressedItemID)
-                if previousSelectedItemID != pressedItemID {
-                    clickResult = "image_selected"
+            switch pressTarget {
+            case let .handle(_, itemID):
+                clickTarget = "handle"
+                affectedItemID = itemID
+            case let .selectedBody(itemID), let .unselectedItem(itemID):
+                if releasedItemID == itemID {
+                    clickTarget = "image"
+                    affectedItemID = itemID
+                    selectItem(withID: itemID)
+                    if previousSelectedItemID != itemID {
+                        clickResult = "image_selected"
+                    }
+                } else {
+                    clickTarget = "mismatched_hit_test"
+                    affectedItemID = releasedItemID ?? itemID
                 }
-            } else if pressedItemID == nil, releasedItemID == nil {
-                affectedItemID = previousSelectedItemID
-                clearSelectionIfNeeded()
-                if previousSelectedItemID != nil {
-                    clickResult = "image_deselected"
+            case .blank:
+                if releasedItemID == nil {
+                    affectedItemID = previousSelectedItemID
+                    clearSelectionIfNeeded()
+                    if previousSelectedItemID != nil {
+                        clickResult = "image_deselected"
+                    }
+                } else {
+                    clickTarget = "mismatched_hit_test"
+                    affectedItemID = releasedItemID
                 }
-            } else {
-                clickTarget = "mismatched_hit_test"
-                affectedItemID = releasedItemID ?? pressedItemID
             }
 
             logClickResult(
@@ -262,7 +310,7 @@ final class macOSViewController: NSViewController {
                 currentSelectedItemID: interactionState.selectedItemID,
                 affectedItemID: affectedItemID
             )
-        case .draggingSelectedItem, .draggingCanvas, .idle:
+        case .draggingSelectedItem, .resizingSelectedItem, .draggingCanvas, .idle:
             break
         }
     }
@@ -450,6 +498,34 @@ final class macOSViewController: NSViewController {
             .id
     }
 
+    private func hitTestSelectionHandle(at viewportLocation: CGPoint) -> (role: CanvasSelectionHandleRole, itemID: CanvasImageItemID)? {
+        guard let selectionOverlay = lastRenderSnapshot.selectionOverlay else {
+            return nil
+        }
+
+        return selectionOverlay.handles.first(where: { handle in
+            Self.selectionHandleHitRect(centeredAt: handle.screenCenter).contains(viewportLocation)
+        }).map { handle in
+            (role: handle.role, itemID: selectionOverlay.itemID)
+        }
+    }
+
+    private func pointerPressTarget(at viewportLocation: CGPoint) -> PointerPressTarget {
+        if let handleHit = hitTestSelectionHandle(at: viewportLocation) {
+            return .handle(role: handleHit.role, itemID: handleHit.itemID)
+        }
+
+        guard let itemID = hitTestItemID(at: viewportLocation) else {
+            return .blank
+        }
+
+        if itemID == interactionState.selectedItemID {
+            return .selectedBody(itemID: itemID)
+        }
+
+        return .unselectedItem(itemID: itemID)
+    }
+
     private func moveSelectedItem(
         withID itemID: CanvasImageItemID,
         from previousLocation: CGPoint,
@@ -471,6 +547,186 @@ final class macOSViewController: NSViewController {
         }
         refreshCanvas()
         scheduleAutosave(reason: "move item")
+    }
+
+    private func makePointerResizeState(
+        itemID: CanvasImageItemID,
+        handleRole: CanvasSelectionHandleRole
+    ) -> PointerResizeState? {
+        guard let item = scene.item(withID: itemID) else {
+            return nil
+        }
+
+        let initialWorldFrame = item.worldFrame.standardized
+        guard initialWorldFrame.width > 0, initialWorldFrame.height > 0 else {
+            return nil
+        }
+
+        let minimumWorldDimension = Self.minimumResizeViewportDimension / camera.zoomScale
+        let minimumScale = max(
+            minimumWorldDimension / initialWorldFrame.width,
+            minimumWorldDimension / initialWorldFrame.height
+        )
+
+        return PointerResizeState(
+            itemID: itemID,
+            handleRole: handleRole,
+            initialWorldFrame: initialWorldFrame,
+            fixedOppositeWorldCorner: fixedOppositeWorldCorner(for: handleRole, in: initialWorldFrame),
+            minimumScale: minimumScale
+        )
+    }
+
+    private func resizeSelectedItem(
+        using resizeState: PointerResizeState,
+        to viewportLocation: CGPoint
+    ) {
+        guard
+            let resizedWorldFrame = makeResizedWorldFrame(
+                using: resizeState,
+                draggedViewportLocation: viewportLocation
+            ),
+            var item = scene.item(withID: resizeState.itemID)
+        else {
+            return
+        }
+
+        guard item.worldFrame.standardized != resizedWorldFrame else {
+            return
+        }
+
+        item.center = CGPoint(x: resizedWorldFrame.midX, y: resizedWorldFrame.midY)
+        item.size = resizedWorldFrame.size
+        scene.upsert(item)
+        expandBoardIfNeeded(toInclude: resizedWorldFrame)
+        refreshCanvas()
+        scheduleAutosave(reason: "resize item")
+    }
+
+    private func makeResizedWorldFrame(
+        using resizeState: PointerResizeState,
+        draggedViewportLocation: CGPoint
+    ) -> CGRect? {
+        let minimumWidth = resizeState.initialWorldFrame.width * resizeState.minimumScale
+        let minimumHeight = resizeState.initialWorldFrame.height * resizeState.minimumScale
+        let draggedWorldCorner = constrainedDraggedWorldCorner(
+            camera.viewportToWorld(draggedViewportLocation),
+            for: resizeState.handleRole,
+            oppositeCorner: resizeState.fixedOppositeWorldCorner,
+            minimumWidth: minimumWidth,
+            minimumHeight: minimumHeight
+        )
+
+        let widthScale = abs(draggedWorldCorner.x - resizeState.fixedOppositeWorldCorner.x) / resizeState.initialWorldFrame.width
+        let heightScale = abs(draggedWorldCorner.y - resizeState.fixedOppositeWorldCorner.y) / resizeState.initialWorldFrame.height
+        let scale = max(widthScale, heightScale, resizeState.minimumScale)
+        guard scale.isFinite else {
+            return nil
+        }
+
+        let resizedSize = CGSize(
+            width: resizeState.initialWorldFrame.width * scale,
+            height: resizeState.initialWorldFrame.height * scale
+        )
+
+        return worldFrame(
+            for: resizeState.handleRole,
+            withFixedOppositeCorner: resizeState.fixedOppositeWorldCorner,
+            size: resizedSize
+        )
+    }
+
+    private func fixedOppositeWorldCorner(
+        for handleRole: CanvasSelectionHandleRole,
+        in worldFrame: CGRect
+    ) -> CGPoint {
+        switch handleRole {
+        case .topLeading:
+            return CGPoint(x: worldFrame.maxX, y: worldFrame.maxY)
+        case .topTrailing:
+            return CGPoint(x: worldFrame.minX, y: worldFrame.maxY)
+        case .bottomLeading:
+            return CGPoint(x: worldFrame.maxX, y: worldFrame.minY)
+        case .bottomTrailing:
+            return CGPoint(x: worldFrame.minX, y: worldFrame.minY)
+        }
+    }
+
+    private func constrainedDraggedWorldCorner(
+        _ draggedWorldCorner: CGPoint,
+        for handleRole: CanvasSelectionHandleRole,
+        oppositeCorner: CGPoint,
+        minimumWidth: CGFloat,
+        minimumHeight: CGFloat
+    ) -> CGPoint {
+        switch handleRole {
+        case .topLeading:
+            return CGPoint(
+                x: min(draggedWorldCorner.x, oppositeCorner.x - minimumWidth),
+                y: min(draggedWorldCorner.y, oppositeCorner.y - minimumHeight)
+            )
+        case .topTrailing:
+            return CGPoint(
+                x: max(draggedWorldCorner.x, oppositeCorner.x + minimumWidth),
+                y: min(draggedWorldCorner.y, oppositeCorner.y - minimumHeight)
+            )
+        case .bottomLeading:
+            return CGPoint(
+                x: min(draggedWorldCorner.x, oppositeCorner.x - minimumWidth),
+                y: max(draggedWorldCorner.y, oppositeCorner.y + minimumHeight)
+            )
+        case .bottomTrailing:
+            return CGPoint(
+                x: max(draggedWorldCorner.x, oppositeCorner.x + minimumWidth),
+                y: max(draggedWorldCorner.y, oppositeCorner.y + minimumHeight)
+            )
+        }
+    }
+
+    private func worldFrame(
+        for handleRole: CanvasSelectionHandleRole,
+        withFixedOppositeCorner oppositeCorner: CGPoint,
+        size: CGSize
+    ) -> CGRect {
+        switch handleRole {
+        case .topLeading:
+            return CGRect(
+                x: oppositeCorner.x - size.width,
+                y: oppositeCorner.y - size.height,
+                width: size.width,
+                height: size.height
+            )
+        case .topTrailing:
+            return CGRect(
+                x: oppositeCorner.x,
+                y: oppositeCorner.y - size.height,
+                width: size.width,
+                height: size.height
+            )
+        case .bottomLeading:
+            return CGRect(
+                x: oppositeCorner.x - size.width,
+                y: oppositeCorner.y,
+                width: size.width,
+                height: size.height
+            )
+        case .bottomTrailing:
+            return CGRect(
+                x: oppositeCorner.x,
+                y: oppositeCorner.y,
+                width: size.width,
+                height: size.height
+            )
+        }
+    }
+
+    private static func selectionHandleHitRect(centeredAt center: CGPoint) -> CGRect {
+        CGRect(
+            x: center.x - selectionHandleHitTargetSize / 2,
+            y: center.y - selectionHandleHitTargetSize / 2,
+            width: selectionHandleHitTargetSize,
+            height: selectionHandleHitTargetSize
+        ).standardized
     }
 
     private func panCanvas(from previousLocation: CGPoint, to location: CGPoint) {
