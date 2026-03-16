@@ -1370,6 +1370,38 @@ final class macOSViewController: NSViewController {
         refreshCanvas()
     }
 
+    var canUndoCommand: Bool {
+        inlineEditState == nil && historyController.canUndo
+    }
+
+    var canRedoCommand: Bool {
+        inlineEditState == nil && historyController.canRedo
+    }
+
+    func performUndoCommand() {
+        guard
+            canUndoCommand,
+            let snapshot = historyController.undo()
+        else {
+            return
+        }
+
+        applyBoardHistorySnapshot(snapshot)
+        scheduleAutosave(reason: "undo change")
+    }
+
+    func performRedoCommand() {
+        guard
+            canRedoCommand,
+            let snapshot = historyController.redo()
+        else {
+            return
+        }
+
+        applyBoardHistorySnapshot(snapshot)
+        scheduleAutosave(reason: "redo change")
+    }
+
     private func beginPointerHistoryTransactionIfNeeded(
         for pressTarget: PointerPressTarget
     ) {

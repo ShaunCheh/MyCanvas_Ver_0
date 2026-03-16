@@ -5,6 +5,10 @@ final class macOSAppRootViewController: NSViewController {
     private let launchCoordinator: AppLaunchCoordinator
     private var currentViewController: NSViewController?
 
+    var currentCanvasViewController: macOSViewController? {
+        currentViewController as? macOSViewController
+    }
+
     init(launchCoordinator: AppLaunchCoordinator = AppLaunchCoordinator()) {
         self.launchCoordinator = launchCoordinator
         super.init(nibName: nil, bundle: nil)

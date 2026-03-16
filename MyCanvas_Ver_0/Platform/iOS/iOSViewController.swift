@@ -115,6 +115,16 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         button.translatesAutoresizingMaskIntoConstraints = false
         return button
     }()
+    private let undoButton: UIButton = {
+        let button = UIButton(type: .system)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }()
+    private let redoButton: UIButton = {
+        let button = UIButton(type: .system)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }()
     private let rotateButton: UIButton = {
         let button = UIButton(type: .system)
         button.translatesAutoresizingMaskIntoConstraints = false
@@ -145,6 +155,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         setupImportButton()
         setupSaveButton()
         setupCropButton()
+        setupUndoButton()
+        setupRedoButton()
         setupRotateButton()
         restorePersistedBoardIfPossible()
         setupCanvasViewport()
@@ -180,6 +192,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         view.addSubview(canvasHostView)
         view.addSubview(rotateButton)
         view.addSubview(cropButton)
+        view.addSubview(undoButton)
+        view.addSubview(redoButton)
         view.addSubview(saveButton)
         view.addSubview(importButton)
     }
@@ -194,13 +208,19 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
             rotateButton.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -20),
             rotateButton.bottomAnchor.constraint(equalTo: cropButton.topAnchor, constant: -12),
             cropButton.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -20),
-            cropButton.bottomAnchor.constraint(equalTo: saveButton.topAnchor, constant: -12),
+            cropButton.bottomAnchor.constraint(equalTo: undoButton.topAnchor, constant: -12),
+            undoButton.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -20),
+            undoButton.bottomAnchor.constraint(equalTo: redoButton.topAnchor, constant: -12),
+            redoButton.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -20),
+            redoButton.bottomAnchor.constraint(equalTo: saveButton.topAnchor, constant: -12),
             saveButton.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -20),
             saveButton.bottomAnchor.constraint(equalTo: importButton.topAnchor, constant: -12),
             importButton.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -20),
             importButton.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -20),
             rotateButton.heightAnchor.constraint(equalToConstant: 40),
             cropButton.heightAnchor.constraint(equalToConstant: 40),
+            undoButton.heightAnchor.constraint(equalToConstant: 40),
+            redoButton.heightAnchor.constraint(equalToConstant: 40),
             saveButton.heightAnchor.constraint(equalToConstant: 40),
             importButton.heightAnchor.constraint(equalToConstant: 56)
         ])
@@ -217,6 +237,16 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
     private func setupCropButton() {
         cropButton.addTarget(self, action: #selector(handleCropButtonTap), for: .touchUpInside)
         updateInlineEditButtonsAppearance()
+    }
+
+    private func setupUndoButton() {
+        undoButton.addTarget(self, action: #selector(handleUndoButtonTap), for: .touchUpInside)
+        updateHistoryButtonsAppearance()
+    }
+
+    private func setupRedoButton() {
+        redoButton.addTarget(self, action: #selector(handleRedoButtonTap), for: .touchUpInside)
+        updateHistoryButtonsAppearance()
     }
 
     private func setupRotateButton() {
@@ -600,6 +630,16 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         } else {
             beginRotateModeIfPossible()
         }
+    }
+
+    @objc
+    private func handleUndoButtonTap() {
+        performUndoCommand()
+    }
+
+    @objc
+    private func handleRedoButtonTap() {
+        performRedoCommand()
     }
 
     func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
@@ -1452,6 +1492,44 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         requestCanvasRefresh(reason: "apply history snapshot")
     }
 
+    private var isHistoryCommandAvailable: Bool {
+        inlineEditState == nil
+    }
+
+    private var canUndoCommand: Bool {
+        isHistoryCommandAvailable && historyController.canUndo
+    }
+
+    private var canRedoCommand: Bool {
+        isHistoryCommandAvailable && historyController.canRedo
+    }
+
+    private func performUndoCommand() {
+        guard
+            canUndoCommand,
+            let snapshot = historyController.undo()
+        else {
+            return
+        }
+
+        applyBoardHistorySnapshot(snapshot)
+        scheduleAutosave(reason: "undo change")
+        updateHistoryButtonsAppearance()
+    }
+
+    private func performRedoCommand() {
+        guard
+            canRedoCommand,
+            let snapshot = historyController.redo()
+        else {
+            return
+        }
+
+        applyBoardHistorySnapshot(snapshot)
+        scheduleAutosave(reason: "redo change")
+        updateHistoryButtonsAppearance()
+    }
+
     private func beginPointerHistoryTransactionIfNeeded(
         for pressTarget: PointerPressTarget
     ) {
@@ -1483,6 +1561,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         }
 
         scheduleAutosave(reason: autosaveReason)
+        updateHistoryButtonsAppearance()
     }
 
     private func recordImmediateHistoryChange(
@@ -1501,6 +1580,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         if let autosaveReason {
             scheduleAutosave(reason: autosaveReason)
         }
+
+        updateHistoryButtonsAppearance()
     }
 
     private var isInlineCropModeActive: Bool {
@@ -1685,6 +1766,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
     private func updateInlineEditButtonsAppearance() {
         updateCropButtonAppearance()
         updateRotateButtonAppearance()
+        updateHistoryButtonsAppearance()
     }
 
     private func updateCropButtonAppearance() {
@@ -1695,6 +1777,29 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
             systemImageName: isActive ? "checkmark" : "crop",
             backgroundColor: isActive ? .systemOrange : .systemIndigo,
             isEnabled: isEnabled
+        )
+    }
+
+    private func updateHistoryButtonsAppearance() {
+        updateUndoButtonAppearance()
+        updateRedoButtonAppearance()
+    }
+
+    private func updateUndoButtonAppearance() {
+        applyUndoButtonAppearance(
+            title: "Undo",
+            systemImageName: "arrow.uturn.backward",
+            backgroundColor: .systemBlue,
+            isEnabled: canUndoCommand
+        )
+    }
+
+    private func updateRedoButtonAppearance() {
+        applyRedoButtonAppearance(
+            title: "Redo",
+            systemImageName: "arrow.uturn.forward",
+            backgroundColor: .systemIndigo,
+            isEnabled: canRedoCommand
         )
     }
 
@@ -1738,6 +1843,44 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         configuration.image = UIImage(systemName: systemImageName)
         configuration.baseBackgroundColor = isEnabled ? backgroundColor : .systemGray3
         cropButton.configuration = configuration
+    }
+
+    private func applyUndoButtonAppearance(
+        title: String,
+        systemImageName: String,
+        backgroundColor: UIColor,
+        isEnabled: Bool
+    ) {
+        undoButton.isEnabled = isEnabled
+        var configuration = undoButton.configuration ?? UIButton.Configuration.filled()
+        configuration.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
+        configuration.imagePlacement = .leading
+        configuration.imagePadding = 6
+        configuration.cornerStyle = .capsule
+        configuration.baseForegroundColor = .white
+        configuration.title = title
+        configuration.image = UIImage(systemName: systemImageName)
+        configuration.baseBackgroundColor = isEnabled ? backgroundColor : .systemGray3
+        undoButton.configuration = configuration
+    }
+
+    private func applyRedoButtonAppearance(
+        title: String,
+        systemImageName: String,
+        backgroundColor: UIColor,
+        isEnabled: Bool
+    ) {
+        redoButton.isEnabled = isEnabled
+        var configuration = redoButton.configuration ?? UIButton.Configuration.filled()
+        configuration.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
+        configuration.imagePlacement = .leading
+        configuration.imagePadding = 6
+        configuration.cornerStyle = .capsule
+        configuration.baseForegroundColor = .white
+        configuration.title = title
+        configuration.image = UIImage(systemName: systemImageName)
+        configuration.baseBackgroundColor = isEnabled ? backgroundColor : .systemGray3
+        redoButton.configuration = configuration
     }
 
     private func applyRotateButtonAppearance(
