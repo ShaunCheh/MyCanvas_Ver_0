@@ -14,8 +14,13 @@ final class macOSCanvasMiniMapView: NSView {
     private let viewportLayer = CAShapeLayer()
     private var snapshot: CanvasMiniMapSnapshot = .empty
     private var geometry: CanvasMiniMapViewGeometry?
+    var onNavigate: ((CGPoint) -> Void)?
 
     override var isFlipped: Bool {
+        true
+    }
+
+    override var acceptsFirstResponder: Bool {
         true
     }
 
@@ -197,6 +202,14 @@ final class macOSCanvasMiniMapView: NSView {
         occupancyLayer.isHidden = true
         viewportLayer.path = nil
         viewportLayer.isHidden = true
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        onNavigate?(convert(event.locationInWindow, from: nil))
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        onNavigate?(convert(event.locationInWindow, from: nil))
     }
 
     private var currentContentsScale: CGFloat {

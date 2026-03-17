@@ -112,6 +112,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
     private let scene = CanvasScene()
     private var camera = CanvasCamera()
     private let renderer = CanvasRenderer()
+    private let miniMapRenderer = CanvasMiniMapRenderer()
     private let canvasHostView: UIView = {
         let view = UIView()
         view.translatesAutoresizingMaskIntoConstraints = false
@@ -139,6 +140,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         view.isHidden = true
         return view
     }()
+    private let miniMapView = iOSCanvasMiniMapView()
     private let importButton: UIButton = {
         let button = UIButton(type: .system)
         button.translatesAutoresizingMaskIntoConstraints = false
@@ -209,6 +211,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         setupCropButton()
         setupUndoButton()
         setupRedoButton()
+        setupMiniMapView()
         restorePersistedBoardIfPossible()
         setupCanvasViewport()
     }
@@ -284,6 +287,10 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         if miniMapMountView.frame != miniMapFrame {
             miniMapMountView.frame = miniMapFrame
         }
+        miniMapMountView.isHidden = miniMapFrame.isEmpty
+        if miniMapView.frame != miniMapMountView.bounds {
+            miniMapView.frame = miniMapMountView.bounds
+        }
     }
 
     private func chromeSafeBounds() -> CGRect {
@@ -328,6 +335,15 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
     private func setupRedoButton() {
         redoButton.addTarget(self, action: #selector(handleRedoButtonTap), for: .touchUpInside)
         updateHistoryButtonsAppearance()
+    }
+
+    private func setupMiniMapView() {
+        miniMapView.frame = miniMapMountView.bounds
+        miniMapView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        miniMapView.onNavigate = { [weak self] point in
+            self?.handleMiniMapNavigate(to: point)
+        }
+        miniMapMountView.addSubview(miniMapView)
     }
 
     private func setupCanvasViewport() {
@@ -654,7 +670,34 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         )
         lastRenderSnapshot = snapshot
         canvasViewportView.apply(snapshot)
+        refreshMiniMap()
         logCanvasState(reason: reason, snapshot: snapshot)
+    }
+
+    private func refreshMiniMap() {
+        let snapshot = miniMapRenderer.makeSnapshot(
+            scene: scene,
+            boardState: boardState,
+            camera: camera,
+            inlineEditState: inlineEditState,
+            rotationPreviewState: rotationPreviewState
+        )
+        miniMapView.apply(snapshot)
+    }
+
+    private func handleMiniMapNavigate(to miniMapPoint: CGPoint) {
+        syncCameraViewportSizeFromCurrentBoundsIfPossible()
+        guard let worldPoint = miniMapView.worldPoint(atMiniMapPoint: miniMapPoint) else {
+            return
+        }
+
+        guard camera.center != worldPoint else {
+            return
+        }
+
+        camera.center = worldPoint
+        requestCanvasRefresh(reason: "navigate minimap to \(describe(point: worldPoint))")
+        scheduleAutosave(reason: "navigate canvas via minimap")
     }
 
     @objc

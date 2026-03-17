@@ -14,6 +14,23 @@ final class iOSCanvasMiniMapView: UIView {
     private let viewportLayer = CAShapeLayer()
     private var snapshot: CanvasMiniMapSnapshot = .empty
     private var geometry: CanvasMiniMapViewGeometry?
+    var onNavigate: ((CGPoint) -> Void)?
+
+    private lazy var tapGestureRecognizer: UITapGestureRecognizer = {
+        let gestureRecognizer = UITapGestureRecognizer(
+            target: self,
+            action: #selector(handleTap(_:))
+        )
+        return gestureRecognizer
+    }()
+
+    private lazy var panGestureRecognizer: UIPanGestureRecognizer = {
+        let gestureRecognizer = UIPanGestureRecognizer(
+            target: self,
+            action: #selector(handlePan(_:))
+        )
+        return gestureRecognizer
+    }()
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -69,12 +86,16 @@ final class iOSCanvasMiniMapView: UIView {
     private func setupLayers() {
         backgroundColor = .clear
         clipsToBounds = false
+        isUserInteractionEnabled = true
         layer.cornerRadius = Self.cornerRadius
         layer.masksToBounds = true
         layer.addSublayer(backgroundLayer)
         layer.addSublayer(boardLayer)
         layer.addSublayer(occupancyLayer)
         layer.addSublayer(viewportLayer)
+        tapGestureRecognizer.require(toFail: panGestureRecognizer)
+        addGestureRecognizer(tapGestureRecognizer)
+        addGestureRecognizer(panGestureRecognizer)
 
         boardLayer.fillColor = UIColor.secondarySystemBackground.withAlphaComponent(0.55).cgColor
         boardLayer.strokeColor = UIColor.systemOrange.withAlphaComponent(0.75).cgColor
@@ -194,6 +215,25 @@ final class iOSCanvasMiniMapView: UIView {
         occupancyLayer.isHidden = true
         viewportLayer.path = nil
         viewportLayer.isHidden = true
+    }
+
+    @objc
+    private func handleTap(_ gestureRecognizer: UITapGestureRecognizer) {
+        guard gestureRecognizer.state == .ended else {
+            return
+        }
+
+        onNavigate?(gestureRecognizer.location(in: self))
+    }
+
+    @objc
+    private func handlePan(_ gestureRecognizer: UIPanGestureRecognizer) {
+        switch gestureRecognizer.state {
+        case .began, .changed:
+            onNavigate?(gestureRecognizer.location(in: self))
+        default:
+            break
+        }
     }
 
     private var currentContentsScale: CGFloat {

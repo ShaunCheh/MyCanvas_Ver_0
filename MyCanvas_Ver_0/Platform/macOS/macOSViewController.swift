@@ -113,6 +113,7 @@ final class macOSViewController: NSViewController {
     private let scene = CanvasScene()
     private var camera = CanvasCamera()
     private let renderer = CanvasRenderer()
+    private let miniMapRenderer = CanvasMiniMapRenderer()
     private let canvasHostView: NSView = {
         let view = NSView()
         view.translatesAutoresizingMaskIntoConstraints = false
@@ -141,6 +142,7 @@ final class macOSViewController: NSViewController {
         view.isHidden = true
         return view
     }()
+    private let miniMapView = macOSCanvasMiniMapView()
     private let importButton: NSButton = {
         let button = NSButton()
         button.translatesAutoresizingMaskIntoConstraints = false
@@ -203,6 +205,7 @@ final class macOSViewController: NSViewController {
         setupImportButton()
         setupSaveButton()
         setupCropButton()
+        setupMiniMapView()
         restorePersistedBoardIfPossible()
         setupCanvasViewport()
     }
@@ -268,6 +271,10 @@ final class macOSViewController: NSViewController {
         if miniMapMountView.frame != miniMapFrame {
             miniMapMountView.frame = miniMapFrame
         }
+        miniMapMountView.isHidden = miniMapFrame.isEmpty
+        if miniMapView.frame != miniMapMountView.bounds {
+            miniMapView.frame = miniMapMountView.bounds
+        }
     }
 
     private func chromeSafeBounds() -> CGRect {
@@ -305,6 +312,15 @@ final class macOSViewController: NSViewController {
         cropButton.target = self
         cropButton.action = #selector(handleCropButtonClick)
         updateInlineEditButtonsAppearance()
+    }
+
+    private func setupMiniMapView() {
+        miniMapView.frame = miniMapMountView.bounds
+        miniMapView.autoresizingMask = [.width, .height]
+        miniMapView.onNavigate = { [weak self] point in
+            self?.handleMiniMapNavigate(to: point)
+        }
+        miniMapMountView.addSubview(miniMapView)
     }
 
     private func setupCanvasViewport() {
@@ -571,6 +587,32 @@ final class macOSViewController: NSViewController {
         )
         lastRenderSnapshot = snapshot
         canvasViewportView.apply(snapshot)
+        refreshMiniMap()
+    }
+
+    private func refreshMiniMap() {
+        let snapshot = miniMapRenderer.makeSnapshot(
+            scene: scene,
+            boardState: boardState,
+            camera: camera,
+            inlineEditState: inlineEditState,
+            rotationPreviewState: rotationPreviewState
+        )
+        miniMapView.apply(snapshot)
+    }
+
+    private func handleMiniMapNavigate(to miniMapPoint: CGPoint) {
+        guard let worldPoint = miniMapView.worldPoint(atMiniMapPoint: miniMapPoint) else {
+            return
+        }
+
+        guard camera.center != worldPoint else {
+            return
+        }
+
+        camera.center = worldPoint
+        refreshCanvas()
+        scheduleAutosave(reason: "navigate canvas via minimap")
     }
 
     @objc
