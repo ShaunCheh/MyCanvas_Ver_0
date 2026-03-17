@@ -41,25 +41,13 @@ struct CanvasRenderer {
             interactionState: interactionState,
             inlineEditState: inlineEditState
         )
-        let selectionOverlay = makeSelectionOverlay(
-            from: editOverlay
-        )
-        let cropOverlay = makeCropOverlay(
-            from: editOverlay
-        )
-        let rotateOverlay = makeRotateOverlay(
-            from: editOverlay
-        )
 
         return CanvasRenderSnapshot(
             viewportBounds: camera.viewportBounds,
             visibleWorldRect: visibleWorldRect,
             boardOverlay: boardOverlay,
             items: renderItems,
-            editOverlay: editOverlay,
-            selectionOverlay: selectionOverlay,
-            cropOverlay: cropOverlay,
-            rotateOverlay: rotateOverlay
+            editOverlay: editOverlay
         )
     }
 
@@ -219,26 +207,6 @@ struct CanvasRenderer {
         )
     }
 
-    private func makeSelectionOverlay(
-        from editOverlay: CanvasEditRenderOverlay?
-    ) -> CanvasSelectionRenderOverlay? {
-        guard
-            let editOverlay,
-            editOverlay.kind == .selection
-        else {
-            return nil
-        }
-
-        return CanvasSelectionRenderOverlay(
-            itemID: editOverlay.itemID,
-            worldFrame: editOverlay.activeWorldQuad.boundingRect.standardized,
-            worldQuad: editOverlay.activeWorldQuad,
-            screenFrame: editOverlay.activeScreenQuad.boundingRect.standardized,
-            screenQuad: editOverlay.activeScreenQuad,
-            handles: makeSelectionHandles(from: editOverlay.cornerHandles)
-        )
-    }
-
     private func makeRenderItem(
         for item: CanvasImageItem,
         camera: CanvasCamera,
@@ -283,52 +251,6 @@ struct CanvasRenderer {
         )
     }
 
-    private func makeCropOverlay(
-        from editOverlay: CanvasEditRenderOverlay?
-    ) -> CanvasCropRenderOverlay? {
-        guard
-            let editOverlay,
-            editOverlay.kind == .crop,
-            case let .crop(payload) = editOverlay.payload
-        else {
-            return nil
-        }
-
-        return CanvasCropRenderOverlay(
-            itemID: editOverlay.itemID,
-            mode: .crop,
-            fullImageWorldQuad: payload.fullImageWorldQuad,
-            fullImageScreenQuad: payload.fullImageScreenQuad,
-            cropRectNormalized: payload.cropRectNormalized,
-            cropWorldQuad: payload.cropWorldQuad,
-            cropScreenQuad: payload.cropScreenQuad,
-            handles: makeCropHandles(from: editOverlay.cornerHandles)
-        )
-    }
-
-    private func makeRotateOverlay(
-        from editOverlay: CanvasEditRenderOverlay?
-    ) -> CanvasRotateRenderOverlay? {
-        guard
-            let editOverlay,
-            editOverlay.kind == .rotate,
-            case let .rotate(payload) = editOverlay.payload
-        else {
-            return nil
-        }
-
-        return CanvasRotateRenderOverlay(
-            itemID: editOverlay.itemID,
-            mode: .rotate,
-            worldQuad: editOverlay.activeWorldQuad,
-            screenQuad: editOverlay.activeScreenQuad,
-            screenCenter: editOverlay.activeScreenQuad.center,
-            guideScreenStart: payload.guideScreenStart,
-            guideScreenEnd: payload.guideScreenEnd,
-            handle: CanvasRotateHandleGeometry(screenCenter: payload.handle.screenCenter)
-        )
-    }
-
     private func makeEditCornerHandles(
         for screenQuad: CanvasQuad
     ) -> [CanvasEditHandleGeometry] {
@@ -357,44 +279,6 @@ struct CanvasRenderer {
         ]
     }
 
-    private func makeSelectionHandles(
-        from cornerHandles: [CanvasEditHandleGeometry]
-    ) -> [CanvasSelectionHandleGeometry] {
-        CanvasSelectionHandleRole.allCases.compactMap { role in
-            guard
-                let handle = cornerHandles.first(where: {
-                    $0.role == editHandleRole(for: role)
-                })
-            else {
-                return nil
-            }
-
-            return CanvasSelectionHandleGeometry(
-                role: role,
-                screenCenter: handle.screenCenter
-            )
-        }
-    }
-
-    private func makeCropHandles(
-        from cornerHandles: [CanvasEditHandleGeometry]
-    ) -> [CanvasCropHandleGeometry] {
-        CanvasCropHandleRole.allCases.compactMap { role in
-            guard
-                let handle = cornerHandles.first(where: {
-                    $0.role == editHandleRole(for: role)
-                })
-            else {
-                return nil
-            }
-
-            return CanvasCropHandleGeometry(
-                role: role,
-                screenCenter: handle.screenCenter
-            )
-        }
-    }
-
     private func editHandleRotation(
         for screenQuad: CanvasQuad
     ) -> CGFloat {
@@ -404,52 +288,6 @@ struct CanvasRenderer {
                 screenQuad.topTrailing.x - screenQuad.topLeading.x
             )
         )
-    }
-
-    private func editHandleRole(
-        for role: CanvasSelectionHandleRole
-    ) -> CanvasEditHandleRole {
-        switch role {
-        case .topLeading:
-            return .topLeading
-        case .topTrailing:
-            return .topTrailing
-        case .bottomLeading:
-            return .bottomLeading
-        case .bottomTrailing:
-            return .bottomTrailing
-        }
-    }
-
-    private func editHandleRole(
-        for role: CanvasCropHandleRole
-    ) -> CanvasEditHandleRole {
-        switch role {
-        case .topLeading:
-            return .topLeading
-        case .topTrailing:
-            return .topTrailing
-        case .bottomLeading:
-            return .bottomLeading
-        case .bottomTrailing:
-            return .bottomTrailing
-        }
-    }
-
-    private func cropHandleCenter(
-        for role: CanvasCropHandleRole,
-        in screenQuad: CanvasQuad
-    ) -> CGPoint {
-        switch role {
-        case .topLeading:
-            return screenQuad.topLeading
-        case .topTrailing:
-            return screenQuad.topTrailing
-        case .bottomLeading:
-            return screenQuad.bottomLeading
-        case .bottomTrailing:
-            return screenQuad.bottomTrailing
-        }
     }
 
     private func previewedItem(
