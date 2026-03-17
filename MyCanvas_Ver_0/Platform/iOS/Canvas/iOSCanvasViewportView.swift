@@ -45,6 +45,12 @@ final class iOSCanvasViewportView: UIView {
     private let overlayLayer = CALayer()
     private let boardHighlightLayer = CAShapeLayer()
     private let selectionOutlineLayer = CAShapeLayer()
+    private let interactionOverlayLayer = CALayer()
+    private let rotationRingLayer = CAShapeLayer()
+    private let rotationTickLayer = CAShapeLayer()
+    private let rotationPointerLayer = CAShapeLayer()
+    private let rotationTextBackgroundLayer = CAShapeLayer()
+    private let rotationTextLayer = CATextLayer()
     private var selectionHandleLayers: [CanvasSelectionHandleRole: CAShapeLayer] = [:]
     private let cropMaskLayer = CAShapeLayer()
     private let cropOutlineLayer = CAShapeLayer()
@@ -161,6 +167,7 @@ final class iOSCanvasViewportView: UIView {
             refreshImageLayers()
             refreshBoardHighlight()
             refreshEditOverlay()
+            refreshInteractionOverlay()
         }
     }
 
@@ -176,6 +183,7 @@ final class iOSCanvasViewportView: UIView {
             refreshImageLayers()
             refreshBoardHighlight()
             refreshEditOverlay()
+            refreshInteractionOverlay()
         }
     }
 
@@ -189,14 +197,26 @@ final class iOSCanvasViewportView: UIView {
         layer.addSublayer(overlayLayer)
         overlayLayer.addSublayer(boardHighlightLayer)
         overlayLayer.addSublayer(selectionOutlineLayer)
+        overlayLayer.addSublayer(interactionOverlayLayer)
         overlayLayer.addSublayer(cropMaskLayer)
         overlayLayer.addSublayer(cropOutlineLayer)
         overlayLayer.addSublayer(rotateGuideLayer)
         overlayLayer.addSublayer(rotateHandleLayer)
+        interactionOverlayLayer.addSublayer(rotationRingLayer)
+        interactionOverlayLayer.addSublayer(rotationTickLayer)
+        interactionOverlayLayer.addSublayer(rotationPointerLayer)
+        interactionOverlayLayer.addSublayer(rotationTextBackgroundLayer)
+        interactionOverlayLayer.addSublayer(rotationTextLayer)
         addGestureRecognizer(pinchGestureRecognizer)
 
         configureBoardHighlightLayer()
         configureSelectionOutlineLayer()
+        configureInteractionOverlayLayer()
+        configureRotationRingLayer()
+        configureRotationTickLayer()
+        configureRotationPointerLayer()
+        configureRotationTextBackgroundLayer()
+        configureRotationTextLayer()
         configureSelectionHandleLayers()
         configureCropMaskLayer()
         configureCropOutlineLayer()
@@ -225,6 +245,10 @@ final class iOSCanvasViewportView: UIView {
 
         if selectionOutlineLayer.frame != bounds {
             selectionOutlineLayer.frame = bounds
+        }
+
+        if interactionOverlayLayer.frame != bounds {
+            interactionOverlayLayer.frame = bounds
         }
 
         if cropMaskLayer.frame != bounds {
@@ -283,6 +307,48 @@ final class iOSCanvasViewportView: UIView {
         selectionOutlineLayer.strokeColor = Self.selectionStrokeColor
         selectionOutlineLayer.lineWidth = Self.selectionOutlineLineWidth
         selectionOutlineLayer.isHidden = true
+    }
+
+    private func configureInteractionOverlayLayer() {
+        interactionOverlayLayer.isHidden = true
+    }
+
+    private func configureRotationRingLayer() {
+        rotationRingLayer.fillColor = nil
+        rotationRingLayer.strokeColor = Self.selectionStrokeColor
+        rotationRingLayer.lineWidth = Self.selectionOutlineLineWidth
+        rotationRingLayer.isHidden = true
+    }
+
+    private func configureRotationTickLayer() {
+        rotationTickLayer.fillColor = nil
+        rotationTickLayer.strokeColor = Self.selectionStrokeColor
+        rotationTickLayer.lineWidth = Self.rotateGuideLineWidth
+        rotationTickLayer.lineCap = .round
+        rotationTickLayer.isHidden = true
+    }
+
+    private func configureRotationPointerLayer() {
+        rotationPointerLayer.fillColor = nil
+        rotationPointerLayer.strokeColor = Self.selectionStrokeColor
+        rotationPointerLayer.lineWidth = Self.rotateGuideLineWidth
+        rotationPointerLayer.lineCap = .round
+        rotationPointerLayer.isHidden = true
+    }
+
+    private func configureRotationTextBackgroundLayer() {
+        rotationTextBackgroundLayer.fillColor = Self.selectionHandleFillColor
+        rotationTextBackgroundLayer.strokeColor = Self.selectionStrokeColor
+        rotationTextBackgroundLayer.lineWidth = Self.selectionHandleLineWidth
+        rotationTextBackgroundLayer.isHidden = true
+    }
+
+    private func configureRotationTextLayer() {
+        rotationTextLayer.alignmentMode = .center
+        rotationTextLayer.contentsScale = currentContentsScale
+        rotationTextLayer.isWrapped = false
+        rotationTextLayer.isHidden = true
+        rotationTextLayer.truncationMode = .none
     }
 
     private func configureSelectionHandleLayers() {
@@ -362,6 +428,18 @@ final class iOSCanvasViewportView: UIView {
         case .crop:
             hideSelectionOverlay()
             refreshCropChrome(from: editOverlay)
+        }
+    }
+
+    private func refreshInteractionOverlay() {
+        guard let interactionOverlay = snapshot.interactionOverlay else {
+            hideInteractionOverlay()
+            return
+        }
+
+        switch interactionOverlay.kind {
+        case .rotation:
+            refreshRotationInteractionOverlay(from: interactionOverlay)
         }
     }
 
@@ -468,9 +546,69 @@ final class iOSCanvasViewportView: UIView {
         rotateHandleLayer.contentsScale = currentContentsScale
     }
 
+    private func refreshRotationInteractionOverlay(
+        from interactionOverlay: CanvasInteractionRenderOverlay
+    ) {
+        guard case let .rotation(payload) = interactionOverlay.payload else {
+            hideInteractionOverlay()
+            return
+        }
+
+        interactionOverlayLayer.isHidden = !payload.isActive
+
+        rotationRingLayer.frame = bounds
+        rotationRingLayer.path = nil
+        rotationRingLayer.isHidden = !payload.isActive
+        rotationRingLayer.contentsScale = currentContentsScale
+
+        rotationTickLayer.frame = bounds
+        rotationTickLayer.path = nil
+        rotationTickLayer.isHidden = !payload.isActive
+        rotationTickLayer.contentsScale = currentContentsScale
+
+        rotationPointerLayer.frame = bounds
+        rotationPointerLayer.path = nil
+        rotationPointerLayer.isHidden = !payload.isActive
+        rotationPointerLayer.contentsScale = currentContentsScale
+
+        rotationTextBackgroundLayer.frame = .zero
+        rotationTextBackgroundLayer.path = nil
+        rotationTextBackgroundLayer.isHidden = !payload.isActive
+        rotationTextBackgroundLayer.contentsScale = currentContentsScale
+
+        rotationTextLayer.frame = CGRect(origin: payload.textScreenAnchor, size: .zero)
+        rotationTextLayer.string = nil
+        rotationTextLayer.isHidden = !payload.isActive
+        rotationTextLayer.contentsScale = currentContentsScale
+    }
+
     private func hideEditOverlay() {
         hideSelectionOverlay()
         hideCropOverlay()
+    }
+
+    private func hideInteractionOverlay() {
+        interactionOverlayLayer.isHidden = true
+
+        rotationRingLayer.path = nil
+        rotationRingLayer.frame = bounds
+        rotationRingLayer.isHidden = true
+
+        rotationTickLayer.path = nil
+        rotationTickLayer.frame = bounds
+        rotationTickLayer.isHidden = true
+
+        rotationPointerLayer.path = nil
+        rotationPointerLayer.frame = bounds
+        rotationPointerLayer.isHidden = true
+
+        rotationTextBackgroundLayer.path = nil
+        rotationTextBackgroundLayer.frame = .zero
+        rotationTextBackgroundLayer.isHidden = true
+
+        rotationTextLayer.frame = .zero
+        rotationTextLayer.string = nil
+        rotationTextLayer.isHidden = true
     }
 
     private func hideSelectionOverlay() {
