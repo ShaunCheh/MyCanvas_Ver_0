@@ -592,7 +592,9 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
     private func handlePrimaryPointerCancel() {
         switch pointerDragState {
         case .rotatingSelectedItem:
-            commitRotationDraftIfNeeded()
+            cancelRotationInteractionIfNeeded(
+                refreshReason: "cancel rotate interaction"
+            )
         case .croppingSelectedItem, .movingCropFrame:
             commitCropDraftIfNeeded()
         case .draggingSelectedItem:
@@ -1185,6 +1187,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
     ) {
         guard
             inlineEditState == nil,
+            interactionState.selectedItemID == rotateState.itemID,
+            rotationInteractionState?.itemID == rotateState.itemID,
             let item = scene.item(withID: rotateState.itemID)
         else {
             return
@@ -1216,15 +1220,16 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
             let rotationPreviewState,
             let item = scene.item(withID: rotationPreviewState.itemID)
         else {
-            clearRotationInteractionState()
-            historyController.cancelPendingTransaction()
+            cancelRotationInteractionIfNeeded(
+                refreshReason: "discard rotate interaction"
+            )
             return
         }
 
         guard !anglesMatch(item.rotationRadians, rotationPreviewState.draftRotationRadians) else {
-            clearRotationPreviewState()
-            clearRotationInteractionState()
-            historyController.cancelPendingTransaction()
+            cancelRotationInteractionIfNeeded(
+                refreshReason: "discard unchanged rotate interaction"
+            )
             return
         }
 
@@ -1232,15 +1237,14 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
             withID: rotationPreviewState.itemID,
             to: rotationPreviewState.draftRotationRadians
         ) else {
-            clearRotationPreviewState()
-            clearRotationInteractionState()
-            historyController.cancelPendingTransaction()
+            cancelRotationInteractionIfNeeded(
+                refreshReason: "discard failed rotate interaction"
+            )
             return
         }
 
         expandBoardIfNeeded(toInclude: rotatedItem.worldBounds)
-        clearRotationPreviewState()
-        clearRotationInteractionState()
+        clearRotationTransientState()
         requestCanvasRefresh(reason: "commit rotate item")
         commitPendingPointerHistoryTransaction(autosaveReason: "rotate item")
     }
@@ -1256,6 +1260,11 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         return rotationPreviewState.draftRotationRadians
     }
 
+    private func clearRotationTransientState() {
+        clearRotationPreviewState()
+        clearRotationInteractionState()
+    }
+
     private func clearRotationPreviewState() {
         rotationPreviewState = nil
     }
@@ -1266,10 +1275,41 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         }
 
         rotationInteractionState = CanvasRotationInteractionState(itemID: itemID)
+        requestCanvasRefresh(reason: "begin rotate interaction")
     }
 
     private func clearRotationInteractionState() {
         rotationInteractionState = nil
+    }
+
+    private func cancelRotationInteractionIfNeeded(
+        resetPointerDragState: Bool = false,
+        refreshReason: String? = nil
+    ) {
+        let hadVisibleRotationState =
+            rotationPreviewState != nil || rotationInteractionState != nil
+        let wasRotating: Bool
+        switch pointerDragState {
+        case .rotatingSelectedItem:
+            wasRotating = true
+        default:
+            wasRotating = false
+        }
+
+        guard hadVisibleRotationState || wasRotating else {
+            return
+        }
+
+        clearRotationTransientState()
+        historyController.cancelPendingTransaction()
+
+        if resetPointerDragState, wasRotating {
+            pointerDragState = .idle
+        }
+
+        if hadVisibleRotationState, let refreshReason {
+            requestCanvasRefresh(reason: refreshReason)
+        }
     }
 
     private func moveSelectedItem(
@@ -1953,6 +1993,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
     }
 
     private func applyBoardRuntimeState(_ runtimeState: BoardRuntimeState) {
+        cancelRotationInteractionIfNeeded(resetPointerDragState: true)
         activeBoardID = runtimeState.boardID
         activeBoardTitle = runtimeState.title
         activeBoardCreatedAt = runtimeState.createdAt
@@ -1961,8 +2002,6 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         camera = runtimeState.camera
         interactionState = runtimeState.interactionState
         inlineEditState = nil
-        clearRotationPreviewState()
-        clearRotationInteractionState()
         updateInlineEditButtonsAppearance()
     }
 
@@ -1980,11 +2019,10 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
                 runtimeState.replacingDocumentState(with: snapshot)
             )
         } else {
+            cancelRotationInteractionIfNeeded(resetPointerDragState: true)
             scene.setItems(snapshot.items)
             boardState = snapshot.boardState
             interactionState = snapshot.interactionState
-            clearRotationPreviewState()
-            clearRotationInteractionState()
         }
 
         requestCanvasRefresh(reason: "apply history snapshot")
@@ -2098,8 +2136,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
             return
         }
 
-        clearRotationPreviewState()
-        clearRotationInteractionState()
+        cancelRotationInteractionIfNeeded(resetPointerDragState: true)
         inlineEditState = CanvasInlineEditState(item: item, mode: .crop)
         updateInlineEditButtonsAppearance()
         requestCanvasRefresh(reason: "enter crop mode")
@@ -2116,18 +2153,11 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
     }
 
     private func syncInlineEditStateWithSelection() {
-        if
-            let rotationPreviewState,
-            interactionState.selectedItemID != rotationPreviewState.itemID
-        {
-            clearRotationPreviewState()
-        }
-
-        if
-            let rotationInteractionState,
-            interactionState.selectedItemID != rotationInteractionState.itemID
-        {
-            clearRotationInteractionState()
+        let shouldCancelRotationInteraction =
+            rotationPreviewState.map { interactionState.selectedItemID != $0.itemID } ?? false ||
+            rotationInteractionState.map { interactionState.selectedItemID != $0.itemID } ?? false
+        if shouldCancelRotationInteraction {
+            cancelRotationInteractionIfNeeded(resetPointerDragState: true)
         }
 
         guard let inlineEditState else {
