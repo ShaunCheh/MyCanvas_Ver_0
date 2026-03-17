@@ -75,12 +75,12 @@ struct CanvasOverlayLayoutSolver {
             return nil
         }
 
-        let blockerRects = occupiedRects.compactMap { rect in
-            guard let sanitizedRect = sanitizedRect(rect) else {
+        let blockerRects: [CGRect] = occupiedRects.compactMap { rect -> CGRect? in
+            guard let sanitizedOccupiedRect = sanitizedRect(rect) else {
                 return nil
             }
 
-            return sanitizedRect.insetBy(
+            return sanitizedOccupiedRect.insetBy(
                 dx: -configuration.chromeClearance,
                 dy: -configuration.chromeClearance
             )
