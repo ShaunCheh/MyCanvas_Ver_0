@@ -668,7 +668,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
             camera: camera,
             interactionState: interactionState,
             inlineEditState: inlineEditState,
-            rotationPreviewState: rotationPreviewState
+            rotationPreviewState: rotationPreviewState,
+            rotationInteractionState: rotationInteractionState
         )
         lastRenderSnapshot = snapshot
         canvasViewportView.apply(snapshot)

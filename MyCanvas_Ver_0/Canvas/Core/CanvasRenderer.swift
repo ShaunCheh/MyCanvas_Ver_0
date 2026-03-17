@@ -3,6 +3,7 @@ import Foundation
 
 struct CanvasRenderer {
     private static let rotateHandleScreenOffset: CGFloat = 28
+    private static let rotationInteractionTickStepDegrees: CGFloat = 10
     private let presentationResolver = CanvasImagePresentationResolver()
 
     func makeSnapshot(
@@ -11,7 +12,8 @@ struct CanvasRenderer {
         camera: CanvasCamera,
         interactionState: CanvasInteractionState = CanvasInteractionState(),
         inlineEditState: CanvasInlineEditState? = nil,
-        rotationPreviewState: CanvasRotationPreviewState? = nil
+        rotationPreviewState: CanvasRotationPreviewState? = nil,
+        rotationInteractionState: CanvasRotationInteractionState? = nil
     ) -> CanvasRenderSnapshot {
         let visibleWorldRect = camera.visibleWorldRect
         // Avoid turning an invalid zero-sized viewport into point-based culling.
@@ -45,13 +47,22 @@ struct CanvasRenderer {
             inlineEditState: inlineEditState,
             rotationPreviewState: rotationPreviewState
         )
+        let interactionOverlay = makeInteractionOverlay(
+            scene: scene,
+            camera: camera,
+            interactionState: interactionState,
+            inlineEditState: inlineEditState,
+            rotationPreviewState: rotationPreviewState,
+            rotationInteractionState: rotationInteractionState
+        )
 
         return CanvasRenderSnapshot(
             viewportBounds: camera.viewportBounds,
             visibleWorldRect: visibleWorldRect,
             boardOverlay: boardOverlay,
             items: renderItems,
-            editOverlay: editOverlay
+            editOverlay: editOverlay,
+            interactionOverlay: interactionOverlay
         )
     }
 
@@ -161,6 +172,58 @@ struct CanvasRenderer {
                     cropRectNormalized: presentation.effectiveCropRectNormalized,
                     cropWorldQuad: cropWorldQuad,
                     cropScreenQuad: cropScreenQuad
+                )
+            )
+        )
+    }
+
+    private func makeInteractionOverlay(
+        scene: CanvasScene,
+        camera: CanvasCamera,
+        interactionState: CanvasInteractionState,
+        inlineEditState: CanvasInlineEditState?,
+        rotationPreviewState: CanvasRotationPreviewState?,
+        rotationInteractionState: CanvasRotationInteractionState?
+    ) -> CanvasInteractionRenderOverlay? {
+        guard inlineEditState == nil else {
+            return nil
+        }
+
+        guard
+            let rotationInteractionState,
+            interactionState.selectedItemID == rotationInteractionState.itemID,
+            let item = scene.item(withID: rotationInteractionState.itemID)
+        else {
+            return nil
+        }
+
+        let presentation = presentationResolver.resolve(
+            item: item,
+            inlineEditState: inlineEditState,
+            rotationPreviewState: rotationPreviewState
+        )
+        let screenQuad = camera.worldToViewport(presentation.visibleWorldQuad)
+        let rotateAffordance = makeRotateAffordance(
+            for: presentation,
+            camera: camera,
+            screenQuad: screenQuad
+        )
+        let screenCenter = camera.worldToViewport(item.center)
+
+        return CanvasInteractionRenderOverlay(
+            itemID: presentation.itemID,
+            kind: .rotation,
+            payload: .rotation(
+                CanvasRotationInteractionOverlayPayload(
+                    screenCenter: screenCenter,
+                    currentRotationRadians: presentation.effectiveRotationRadians,
+                    zeroReference: .up,
+                    tickStepDegrees: Self.rotationInteractionTickStepDegrees,
+                    ringRadius: distance(
+                        from: screenCenter,
+                        to: rotateAffordance.handle.screenCenter
+                    ),
+                    isActive: true
                 )
             )
         )
@@ -323,5 +386,12 @@ struct CanvasRenderer {
             x: dx / length,
             y: dy / length
         )
+    }
+
+    private func distance(
+        from start: CGPoint,
+        to end: CGPoint
+    ) -> CGFloat {
+        hypot(end.x - start.x, end.y - start.y)
     }
 }

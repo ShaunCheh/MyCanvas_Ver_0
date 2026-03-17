@@ -87,6 +87,43 @@ struct CanvasEditRenderOverlay {
     let payload: CanvasEditRenderOverlayPayload
 }
 
+enum CanvasInteractionOverlayKind {
+    case rotation
+}
+
+enum CanvasInteractionAngleZeroReference {
+    case up
+}
+
+struct CanvasRotationInteractionOverlayPayload {
+    let screenCenter: CGPoint
+    let currentRotationRadians: CGFloat
+    let zeroReference: CanvasInteractionAngleZeroReference
+    let tickStepDegrees: CGFloat
+    let ringRadius: CGFloat
+    let isActive: Bool
+
+    var displayDegrees0To360: CGFloat {
+        let normalizedDegrees = (currentRotationRadians * 180 / .pi)
+            .truncatingRemainder(dividingBy: 360)
+        return normalizedDegrees >= 0
+            ? normalizedDegrees
+            : normalizedDegrees + 360
+    }
+}
+
+enum CanvasInteractionRenderOverlayPayload {
+    case rotation(CanvasRotationInteractionOverlayPayload)
+}
+
+// Interaction overlays intentionally live alongside edit overlays so transient
+// gesture HUDs can evolve without being folded back into selection/crop chrome.
+struct CanvasInteractionRenderOverlay {
+    let itemID: CanvasImageItemID
+    let kind: CanvasInteractionOverlayKind
+    let payload: CanvasInteractionRenderOverlayPayload
+}
+
 enum CanvasCropHandleRole: CaseIterable {
     case topLeading
     case top
@@ -182,12 +219,14 @@ struct CanvasRenderSnapshot {
     let boardOverlay: CanvasBoardRenderOverlay?
     let items: [CanvasRenderItem]
     let editOverlay: CanvasEditRenderOverlay?
+    let interactionOverlay: CanvasInteractionRenderOverlay?
 
     static let empty = CanvasRenderSnapshot(
         viewportBounds: .zero,
         visibleWorldRect: .zero,
         boardOverlay: nil,
         items: [],
-        editOverlay: nil
+        editOverlay: nil,
+        interactionOverlay: nil
     )
 }
