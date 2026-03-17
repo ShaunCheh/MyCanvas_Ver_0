@@ -1234,20 +1234,13 @@ final class macOSViewController: NSViewController {
         let fullImageLocalFrame = fullImageLocalFrame.standardized
 
         switch handleRole {
-        case .topLeading:
-            let minX = min(
-                max(draggedLocalPoint.x, fullImageLocalFrame.minX),
-                initialLocalFrame.maxX - minimumLocalSize.width
-            )
-            let minY = min(
-                max(draggedLocalPoint.y, fullImageLocalFrame.minY),
-                initialLocalFrame.maxY - minimumLocalSize.height
-            )
-            return CGRect(
-                x: minX,
-                y: minY,
-                width: initialLocalFrame.maxX - minX,
-                height: initialLocalFrame.maxY - minY
+        case .topLeading, .topTrailing, .bottomLeading, .bottomTrailing:
+            return proportionalCropLocalFrame(
+                draggedLocalPoint,
+                for: handleRole,
+                initialLocalFrame: initialLocalFrame,
+                fullImageLocalFrame: fullImageLocalFrame,
+                minimumLocalSize: minimumLocalSize
             )
         case .top:
             let minY = min(
@@ -1258,21 +1251,6 @@ final class macOSViewController: NSViewController {
                 x: initialLocalFrame.minX,
                 y: minY,
                 width: initialLocalFrame.width,
-                height: initialLocalFrame.maxY - minY
-            )
-        case .topTrailing:
-            let maxX = max(
-                min(draggedLocalPoint.x, fullImageLocalFrame.maxX),
-                initialLocalFrame.minX + minimumLocalSize.width
-            )
-            let minY = min(
-                max(draggedLocalPoint.y, fullImageLocalFrame.minY),
-                initialLocalFrame.maxY - minimumLocalSize.height
-            )
-            return CGRect(
-                x: initialLocalFrame.minX,
-                y: minY,
-                width: maxX - initialLocalFrame.minX,
                 height: initialLocalFrame.maxY - minY
             )
         case .trailing:
@@ -1286,21 +1264,6 @@ final class macOSViewController: NSViewController {
                 width: maxX - initialLocalFrame.minX,
                 height: initialLocalFrame.height
             )
-        case .bottomTrailing:
-            let maxX = max(
-                min(draggedLocalPoint.x, fullImageLocalFrame.maxX),
-                initialLocalFrame.minX + minimumLocalSize.width
-            )
-            let maxY = max(
-                min(draggedLocalPoint.y, fullImageLocalFrame.maxY),
-                initialLocalFrame.minY + minimumLocalSize.height
-            )
-            return CGRect(
-                x: initialLocalFrame.minX,
-                y: initialLocalFrame.minY,
-                width: maxX - initialLocalFrame.minX,
-                height: maxY - initialLocalFrame.minY
-            )
         case .bottom:
             let maxY = max(
                 min(draggedLocalPoint.y, fullImageLocalFrame.maxY),
@@ -1310,21 +1273,6 @@ final class macOSViewController: NSViewController {
                 x: initialLocalFrame.minX,
                 y: initialLocalFrame.minY,
                 width: initialLocalFrame.width,
-                height: maxY - initialLocalFrame.minY
-            )
-        case .bottomLeading:
-            let minX = min(
-                max(draggedLocalPoint.x, fullImageLocalFrame.minX),
-                initialLocalFrame.maxX - minimumLocalSize.width
-            )
-            let maxY = max(
-                min(draggedLocalPoint.y, fullImageLocalFrame.maxY),
-                initialLocalFrame.minY + minimumLocalSize.height
-            )
-            return CGRect(
-                x: minX,
-                y: initialLocalFrame.minY,
-                width: initialLocalFrame.maxX - minX,
                 height: maxY - initialLocalFrame.minY
             )
         case .leading:
@@ -1338,6 +1286,211 @@ final class macOSViewController: NSViewController {
                 width: initialLocalFrame.maxX - minX,
                 height: initialLocalFrame.height
             )
+        }
+    }
+
+    // Corner crop drags now keep the opposite corner fixed and preserve the
+    // current aspect ratio, while edge handles still use single-axis trimming.
+    private func proportionalCropLocalFrame(
+        _ draggedLocalPoint: CGPoint,
+        for handleRole: CanvasCropHandleRole,
+        initialLocalFrame: CGRect,
+        fullImageLocalFrame: CGRect,
+        minimumLocalSize: CGSize
+    ) -> CGRect {
+        guard
+            initialLocalFrame.width > 0,
+            initialLocalFrame.height > 0
+        else {
+            return initialLocalFrame
+        }
+
+        let oppositeCorner = fixedOppositeCropLocalCorner(
+            for: handleRole,
+            in: initialLocalFrame
+        )
+        let constrainedLocalCorner = constrainedDraggedCropLocalCorner(
+            draggedLocalPoint,
+            for: handleRole,
+            oppositeCorner: oppositeCorner,
+            fullImageLocalFrame: fullImageLocalFrame
+        )
+        let widthScale = abs(constrainedLocalCorner.x - oppositeCorner.x) / initialLocalFrame.width
+        let heightScale = abs(constrainedLocalCorner.y - oppositeCorner.y) / initialLocalFrame.height
+        let minimumScale = max(
+            minimumLocalSize.width / initialLocalFrame.width,
+            minimumLocalSize.height / initialLocalFrame.height
+        )
+        let maximumScale = maximumProportionalCropScale(
+            for: handleRole,
+            oppositeCorner: oppositeCorner,
+            initialLocalFrame: initialLocalFrame,
+            fullImageLocalFrame: fullImageLocalFrame
+        )
+        let scale = min(
+            max(widthScale, heightScale, minimumScale),
+            maximumScale
+        )
+        guard scale.isFinite, scale > 0 else {
+            return initialLocalFrame
+        }
+
+        return cropLocalFrame(
+            for: handleRole,
+            withFixedOppositeCorner: oppositeCorner,
+            size: CGSize(
+                width: initialLocalFrame.width * scale,
+                height: initialLocalFrame.height * scale
+            )
+        )
+    }
+
+    private func fixedOppositeCropLocalCorner(
+        for handleRole: CanvasCropHandleRole,
+        in localFrame: CGRect
+    ) -> CGPoint {
+        switch handleRole {
+        case .topLeading:
+            return CGPoint(x: localFrame.maxX, y: localFrame.maxY)
+        case .topTrailing:
+            return CGPoint(x: localFrame.minX, y: localFrame.maxY)
+        case .bottomLeading:
+            return CGPoint(x: localFrame.maxX, y: localFrame.minY)
+        case .bottomTrailing:
+            return CGPoint(x: localFrame.minX, y: localFrame.minY)
+        case .top, .trailing, .bottom, .leading:
+            assertionFailure("Only crop corner handles have an opposite corner.")
+            return localFrame.origin
+        }
+    }
+
+    private func constrainedDraggedCropLocalCorner(
+        _ draggedLocalCorner: CGPoint,
+        for handleRole: CanvasCropHandleRole,
+        oppositeCorner: CGPoint,
+        fullImageLocalFrame: CGRect
+    ) -> CGPoint {
+        switch handleRole {
+        case .topLeading:
+            return CGPoint(
+                x: min(
+                    max(draggedLocalCorner.x, fullImageLocalFrame.minX),
+                    oppositeCorner.x
+                ),
+                y: min(
+                    max(draggedLocalCorner.y, fullImageLocalFrame.minY),
+                    oppositeCorner.y
+                )
+            )
+        case .topTrailing:
+            return CGPoint(
+                x: max(
+                    min(draggedLocalCorner.x, fullImageLocalFrame.maxX),
+                    oppositeCorner.x
+                ),
+                y: min(
+                    max(draggedLocalCorner.y, fullImageLocalFrame.minY),
+                    oppositeCorner.y
+                )
+            )
+        case .bottomLeading:
+            return CGPoint(
+                x: min(
+                    max(draggedLocalCorner.x, fullImageLocalFrame.minX),
+                    oppositeCorner.x
+                ),
+                y: max(
+                    min(draggedLocalCorner.y, fullImageLocalFrame.maxY),
+                    oppositeCorner.y
+                )
+            )
+        case .bottomTrailing:
+            return CGPoint(
+                x: max(
+                    min(draggedLocalCorner.x, fullImageLocalFrame.maxX),
+                    oppositeCorner.x
+                ),
+                y: max(
+                    min(draggedLocalCorner.y, fullImageLocalFrame.maxY),
+                    oppositeCorner.y
+                )
+            )
+        case .top, .trailing, .bottom, .leading:
+            assertionFailure("Only crop corner handles support proportional dragging.")
+            return draggedLocalCorner
+        }
+    }
+
+    private func maximumProportionalCropScale(
+        for handleRole: CanvasCropHandleRole,
+        oppositeCorner: CGPoint,
+        initialLocalFrame: CGRect,
+        fullImageLocalFrame: CGRect
+    ) -> CGFloat {
+        let maxWidth: CGFloat
+        let maxHeight: CGFloat
+
+        switch handleRole {
+        case .topLeading:
+            maxWidth = oppositeCorner.x - fullImageLocalFrame.minX
+            maxHeight = oppositeCorner.y - fullImageLocalFrame.minY
+        case .topTrailing:
+            maxWidth = fullImageLocalFrame.maxX - oppositeCorner.x
+            maxHeight = oppositeCorner.y - fullImageLocalFrame.minY
+        case .bottomLeading:
+            maxWidth = oppositeCorner.x - fullImageLocalFrame.minX
+            maxHeight = fullImageLocalFrame.maxY - oppositeCorner.y
+        case .bottomTrailing:
+            maxWidth = fullImageLocalFrame.maxX - oppositeCorner.x
+            maxHeight = fullImageLocalFrame.maxY - oppositeCorner.y
+        case .top, .trailing, .bottom, .leading:
+            assertionFailure("Only crop corner handles have a proportional max scale.")
+            return 1
+        }
+
+        return min(
+            maxWidth / initialLocalFrame.width,
+            maxHeight / initialLocalFrame.height
+        )
+    }
+
+    private func cropLocalFrame(
+        for handleRole: CanvasCropHandleRole,
+        withFixedOppositeCorner oppositeCorner: CGPoint,
+        size: CGSize
+    ) -> CGRect {
+        switch handleRole {
+        case .topLeading:
+            return CGRect(
+                x: oppositeCorner.x - size.width,
+                y: oppositeCorner.y - size.height,
+                width: size.width,
+                height: size.height
+            )
+        case .topTrailing:
+            return CGRect(
+                x: oppositeCorner.x,
+                y: oppositeCorner.y - size.height,
+                width: size.width,
+                height: size.height
+            )
+        case .bottomLeading:
+            return CGRect(
+                x: oppositeCorner.x - size.width,
+                y: oppositeCorner.y,
+                width: size.width,
+                height: size.height
+            )
+        case .bottomTrailing:
+            return CGRect(
+                x: oppositeCorner.x,
+                y: oppositeCorner.y,
+                width: size.width,
+                height: size.height
+            )
+        case .top, .trailing, .bottom, .leading:
+            assertionFailure("Only crop corner handles build proportional corner frames.")
+            return CGRect(origin: oppositeCorner, size: size)
         }
     }
 
