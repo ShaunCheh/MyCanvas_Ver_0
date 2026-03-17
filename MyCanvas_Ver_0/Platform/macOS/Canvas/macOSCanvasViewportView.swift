@@ -32,6 +32,10 @@ final class macOSCanvasViewportView: NSView {
     private static let rotateGuideLineWidth: CGFloat = 2
     private static let rotateHandleLineWidth: CGFloat = 2
     private static let rotateHandleSize: CGFloat = 12
+    private static let rotationTextFontSize: CGFloat = 12
+    private static let rotationTextHorizontalPadding: CGFloat = 8
+    private static let rotationTextVerticalPadding: CGFloat = 4
+    private static let rotationTextCornerRadius: CGFloat = 8
 
     private let backgroundLayer = CALayer()
     private let itemsLayer = CALayer()
@@ -465,27 +469,47 @@ final class macOSCanvasViewportView: NSView {
         interactionOverlayLayer.isHidden = !payload.isActive
 
         rotationRingLayer.frame = bounds
-        rotationRingLayer.path = nil
+        rotationRingLayer.path = CGPath(
+            ellipseIn: payload.ringScreenRect,
+            transform: nil
+        )
         rotationRingLayer.isHidden = !payload.isActive
         rotationRingLayer.contentsScale = currentContentsScale
 
         rotationTickLayer.frame = bounds
-        rotationTickLayer.path = nil
+        rotationTickLayer.path = Self.lineSegmentsPath(payload.tickSegments)
         rotationTickLayer.isHidden = !payload.isActive
         rotationTickLayer.contentsScale = currentContentsScale
 
         rotationPointerLayer.frame = bounds
-        rotationPointerLayer.path = nil
+        rotationPointerLayer.path = Self.lineSegmentsPath([
+            payload.zeroReferenceSegment,
+            payload.currentAngleSegment
+        ])
         rotationPointerLayer.isHidden = !payload.isActive
         rotationPointerLayer.contentsScale = currentContentsScale
 
-        rotationTextBackgroundLayer.frame = .zero
-        rotationTextBackgroundLayer.path = nil
+        let attributedText = Self.rotationAttributedText(for: payload)
+        let textFrame = Self.rotationTextFrame(
+            for: attributedText,
+            anchoredAt: payload.textScreenAnchor
+        )
+        let textBackgroundFrame = Self.rotationTextBackgroundFrame(
+            for: textFrame
+        )
+
+        rotationTextBackgroundLayer.frame = bounds
+        rotationTextBackgroundLayer.path = CGPath(
+            roundedRect: textBackgroundFrame,
+            cornerWidth: Self.rotationTextCornerRadius,
+            cornerHeight: Self.rotationTextCornerRadius,
+            transform: nil
+        )
         rotationTextBackgroundLayer.isHidden = !payload.isActive
         rotationTextBackgroundLayer.contentsScale = currentContentsScale
 
-        rotationTextLayer.frame = CGRect(origin: payload.textScreenAnchor, size: .zero)
-        rotationTextLayer.string = nil
+        rotationTextLayer.frame = textFrame
+        rotationTextLayer.string = attributedText
         rotationTextLayer.isHidden = !payload.isActive
         rotationTextLayer.contentsScale = currentContentsScale
     }
@@ -620,6 +644,72 @@ final class macOSCanvasViewportView: NSView {
         path.addLine(to: quad.bottomLeading)
         path.closeSubpath()
         return path
+    }
+
+    private static func lineSegmentsPath(
+        _ segments: [CanvasInteractionLineSegment]
+    ) -> CGPath {
+        let path = CGMutablePath()
+
+        for segment in segments {
+            path.move(to: segment.start)
+            path.addLine(to: segment.end)
+        }
+
+        return path
+    }
+
+    private static func rotationAttributedText(
+        for payload: CanvasRotationInteractionOverlayPayload
+    ) -> NSAttributedString {
+        let degrees = Int(payload.displayDegrees0To360.rounded())
+        let displayDegrees = degrees == 360 ? 360 : max(0, degrees)
+        let font = NSFont.monospacedDigitSystemFont(
+            ofSize: rotationTextFontSize,
+            weight: .semibold
+        )
+        let textColor = NSColor(cgColor: selectionStrokeColor) ?? .controlAccentColor
+
+        return NSAttributedString(
+            string: "\(displayDegrees)\u{00B0}",
+            attributes: [
+                .font: font,
+                .foregroundColor: textColor
+            ]
+        )
+    }
+
+    private static func rotationTextFrame(
+        for attributedText: NSAttributedString,
+        anchoredAt anchor: CGPoint
+    ) -> CGRect {
+        let textBounds = attributedText.boundingRect(
+            with: CGSize(
+                width: .greatestFiniteMagnitude,
+                height: .greatestFiniteMagnitude
+            ),
+            options: [
+                .usesLineFragmentOrigin,
+                .usesFontLeading
+            ],
+            context: nil
+        ).integral
+
+        return CGRect(
+            x: anchor.x - (textBounds.width / 2),
+            y: anchor.y - (textBounds.height / 2),
+            width: textBounds.width,
+            height: textBounds.height
+        ).integral
+    }
+
+    private static func rotationTextBackgroundFrame(
+        for textFrame: CGRect
+    ) -> CGRect {
+        textFrame.insetBy(
+            dx: -rotationTextHorizontalPadding,
+            dy: -rotationTextVerticalPadding
+        ).integral
     }
 
     private var currentContentsScale: CGFloat {
