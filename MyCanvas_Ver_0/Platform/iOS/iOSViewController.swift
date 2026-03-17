@@ -67,7 +67,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         let itemID: CanvasImageItemID
         let handleRole: CanvasCropHandleRole
         let fullImageLocalFrame: CGRect
-        let fixedOppositeLocalCorner: CGPoint
+        let initialLocalFrame: CGRect
         let minimumLocalSize: CGSize
     }
 
@@ -812,11 +812,11 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         switch editOverlay.kind {
         case .crop:
             guard
-                let handle = editOverlay.cornerHandles.first(where: { handle in
+                let handle = editOverlay.handles.first(where: { handle in
                     Self.cropHandleHitRect(centeredAt: handle.screenCenter)
                         .contains(viewportLocation)
                 }),
-                let role = cropHandleRole(for: handle.role)
+                let role = handle.role.cropHandleRole
             else {
                 return nil
             }
@@ -832,11 +832,11 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
             }
 
             guard
-                let handle = editOverlay.cornerHandles.first(where: { handle in
+                let handle = editOverlay.handles.first(where: { handle in
                     Self.selectionHandleHitRect(centeredAt: handle.screenCenter)
                         .contains(viewportLocation)
                 }),
-                let role = selectionHandleRole(for: handle.role)
+                let role = handle.role.selectionHandleRole
             else {
                 return nil
             }
@@ -917,10 +917,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
             itemID: itemID,
             handleRole: handleRole,
             fullImageLocalFrame: fullImageLocalFrame,
-            fixedOppositeLocalCorner: fixedOppositeLocalCorner(
-                for: handleRole,
-                in: draftLocalFrame
-            ),
+            initialLocalFrame: draftLocalFrame,
             minimumLocalSize: CGSize(
                 width: min(minimumLocalDimension, fullImageLocalFrame.width),
                 height: min(minimumLocalDimension, fullImageLocalFrame.height)
@@ -943,19 +940,13 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
 
         let draggedWorldPoint = camera.viewportToWorld(viewportLocation)
         let draggedLocalPoint = item.localPoint(fromWorld: draggedWorldPoint)
-        let constrainedLocalPoint = constrainedDraggedCropLocalCorner(
+        let cropLocalFrame = constrainedCropLocalFrame(
             draggedLocalPoint,
             for: cropState.handleRole,
-            oppositeCorner: cropState.fixedOppositeLocalCorner,
+            initialLocalFrame: cropState.initialLocalFrame,
             fullImageLocalFrame: cropState.fullImageLocalFrame,
             minimumLocalSize: cropState.minimumLocalSize
         )
-        let cropLocalFrame = CGRect(
-            x: min(constrainedLocalPoint.x, cropState.fixedOppositeLocalCorner.x),
-            y: min(constrainedLocalPoint.y, cropState.fixedOppositeLocalCorner.y),
-            width: abs(constrainedLocalPoint.x - cropState.fixedOppositeLocalCorner.x),
-            height: abs(constrainedLocalPoint.y - cropState.fixedOppositeLocalCorner.y)
-        ).standardized
         let draftCropRectNormalized = item.normalizedCropRect(fromLocalFrame: cropLocalFrame)
         guard inlineEditState.draftCropRectNormalized != draftCropRectNormalized else {
             return
@@ -1303,40 +1294,6 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         ).standardized
     }
 
-    private func selectionHandleRole(
-        for editHandleRole: CanvasEditHandleRole
-    ) -> CanvasSelectionHandleRole? {
-        switch editHandleRole {
-        case .topLeading:
-            return .topLeading
-        case .topTrailing:
-            return .topTrailing
-        case .bottomLeading:
-            return .bottomLeading
-        case .bottomTrailing:
-            return .bottomTrailing
-        case .rotate:
-            return nil
-        }
-    }
-
-    private func cropHandleRole(
-        for editHandleRole: CanvasEditHandleRole
-    ) -> CanvasCropHandleRole? {
-        switch editHandleRole {
-        case .topLeading:
-            return .topLeading
-        case .topTrailing:
-            return .topTrailing
-        case .bottomLeading:
-            return .bottomLeading
-        case .bottomTrailing:
-            return .bottomTrailing
-        case .rotate:
-            return nil
-        }
-    }
-
     private func referenceLocalPoint(
         fromWorld worldPoint: CGPoint,
         center: CGPoint,
@@ -1382,73 +1339,120 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         abs(normalizedCanvasAngle(lhs - rhs)) < tolerance
     }
 
-    private func fixedOppositeLocalCorner(
+    private func constrainedCropLocalFrame(
+        _ draggedLocalPoint: CGPoint,
         for handleRole: CanvasCropHandleRole,
-        in localFrame: CGRect
-    ) -> CGPoint {
-        switch handleRole {
-        case .topLeading:
-            return CGPoint(x: localFrame.maxX, y: localFrame.maxY)
-        case .topTrailing:
-            return CGPoint(x: localFrame.minX, y: localFrame.maxY)
-        case .bottomLeading:
-            return CGPoint(x: localFrame.maxX, y: localFrame.minY)
-        case .bottomTrailing:
-            return CGPoint(x: localFrame.minX, y: localFrame.minY)
-        }
-    }
-
-    private func constrainedDraggedCropLocalCorner(
-        _ draggedLocalCorner: CGPoint,
-        for handleRole: CanvasCropHandleRole,
-        oppositeCorner: CGPoint,
+        initialLocalFrame: CGRect,
         fullImageLocalFrame: CGRect,
         minimumLocalSize: CGSize
-    ) -> CGPoint {
+    ) -> CGRect {
+        let initialLocalFrame = initialLocalFrame.standardized
+        let fullImageLocalFrame = fullImageLocalFrame.standardized
+
         switch handleRole {
         case .topLeading:
-            return CGPoint(
-                x: min(
-                    max(draggedLocalCorner.x, fullImageLocalFrame.minX),
-                    oppositeCorner.x - minimumLocalSize.width
-                ),
-                y: min(
-                    max(draggedLocalCorner.y, fullImageLocalFrame.minY),
-                    oppositeCorner.y - minimumLocalSize.height
-                )
+            let minX = min(
+                max(draggedLocalPoint.x, fullImageLocalFrame.minX),
+                initialLocalFrame.maxX - minimumLocalSize.width
+            )
+            let minY = min(
+                max(draggedLocalPoint.y, fullImageLocalFrame.minY),
+                initialLocalFrame.maxY - minimumLocalSize.height
+            )
+            return CGRect(
+                x: minX,
+                y: minY,
+                width: initialLocalFrame.maxX - minX,
+                height: initialLocalFrame.maxY - minY
+            )
+        case .top:
+            let minY = min(
+                max(draggedLocalPoint.y, fullImageLocalFrame.minY),
+                initialLocalFrame.maxY - minimumLocalSize.height
+            )
+            return CGRect(
+                x: initialLocalFrame.minX,
+                y: minY,
+                width: initialLocalFrame.width,
+                height: initialLocalFrame.maxY - minY
             )
         case .topTrailing:
-            return CGPoint(
-                x: max(
-                    min(draggedLocalCorner.x, fullImageLocalFrame.maxX),
-                    oppositeCorner.x + minimumLocalSize.width
-                ),
-                y: min(
-                    max(draggedLocalCorner.y, fullImageLocalFrame.minY),
-                    oppositeCorner.y - minimumLocalSize.height
-                )
+            let maxX = max(
+                min(draggedLocalPoint.x, fullImageLocalFrame.maxX),
+                initialLocalFrame.minX + minimumLocalSize.width
             )
-        case .bottomLeading:
-            return CGPoint(
-                x: min(
-                    max(draggedLocalCorner.x, fullImageLocalFrame.minX),
-                    oppositeCorner.x - minimumLocalSize.width
-                ),
-                y: max(
-                    min(draggedLocalCorner.y, fullImageLocalFrame.maxY),
-                    oppositeCorner.y + minimumLocalSize.height
-                )
+            let minY = min(
+                max(draggedLocalPoint.y, fullImageLocalFrame.minY),
+                initialLocalFrame.maxY - minimumLocalSize.height
+            )
+            return CGRect(
+                x: initialLocalFrame.minX,
+                y: minY,
+                width: maxX - initialLocalFrame.minX,
+                height: initialLocalFrame.maxY - minY
+            )
+        case .trailing:
+            let maxX = max(
+                min(draggedLocalPoint.x, fullImageLocalFrame.maxX),
+                initialLocalFrame.minX + minimumLocalSize.width
+            )
+            return CGRect(
+                x: initialLocalFrame.minX,
+                y: initialLocalFrame.minY,
+                width: maxX - initialLocalFrame.minX,
+                height: initialLocalFrame.height
             )
         case .bottomTrailing:
-            return CGPoint(
-                x: max(
-                    min(draggedLocalCorner.x, fullImageLocalFrame.maxX),
-                    oppositeCorner.x + minimumLocalSize.width
-                ),
-                y: max(
-                    min(draggedLocalCorner.y, fullImageLocalFrame.maxY),
-                    oppositeCorner.y + minimumLocalSize.height
-                )
+            let maxX = max(
+                min(draggedLocalPoint.x, fullImageLocalFrame.maxX),
+                initialLocalFrame.minX + minimumLocalSize.width
+            )
+            let maxY = max(
+                min(draggedLocalPoint.y, fullImageLocalFrame.maxY),
+                initialLocalFrame.minY + minimumLocalSize.height
+            )
+            return CGRect(
+                x: initialLocalFrame.minX,
+                y: initialLocalFrame.minY,
+                width: maxX - initialLocalFrame.minX,
+                height: maxY - initialLocalFrame.minY
+            )
+        case .bottom:
+            let maxY = max(
+                min(draggedLocalPoint.y, fullImageLocalFrame.maxY),
+                initialLocalFrame.minY + minimumLocalSize.height
+            )
+            return CGRect(
+                x: initialLocalFrame.minX,
+                y: initialLocalFrame.minY,
+                width: initialLocalFrame.width,
+                height: maxY - initialLocalFrame.minY
+            )
+        case .bottomLeading:
+            let minX = min(
+                max(draggedLocalPoint.x, fullImageLocalFrame.minX),
+                initialLocalFrame.maxX - minimumLocalSize.width
+            )
+            let maxY = max(
+                min(draggedLocalPoint.y, fullImageLocalFrame.maxY),
+                initialLocalFrame.minY + minimumLocalSize.height
+            )
+            return CGRect(
+                x: minX,
+                y: initialLocalFrame.minY,
+                width: initialLocalFrame.maxX - minX,
+                height: maxY - initialLocalFrame.minY
+            )
+        case .leading:
+            let minX = min(
+                max(draggedLocalPoint.x, fullImageLocalFrame.minX),
+                initialLocalFrame.maxX - minimumLocalSize.width
+            )
+            return CGRect(
+                x: minX,
+                y: initialLocalFrame.minY,
+                width: initialLocalFrame.maxX - minX,
+                height: initialLocalFrame.height
             )
         }
     }

@@ -35,9 +35,13 @@ enum CanvasEditOverlayKind {
 
 enum CanvasEditHandleRole: CaseIterable {
     case topLeading
+    case top
     case topTrailing
-    case bottomLeading
+    case trailing
     case bottomTrailing
+    case bottom
+    case bottomLeading
+    case leading
     case rotate
 }
 
@@ -76,15 +80,97 @@ struct CanvasEditRenderOverlay {
     let kind: CanvasEditOverlayKind
     let activeWorldQuad: CanvasQuad
     let activeScreenQuad: CanvasQuad
-    let cornerHandles: [CanvasEditHandleGeometry]
+    let handles: [CanvasEditHandleGeometry]
     let payload: CanvasEditRenderOverlayPayload
 }
 
 enum CanvasCropHandleRole: CaseIterable {
     case topLeading
+    case top
     case topTrailing
-    case bottomLeading
+    case trailing
     case bottomTrailing
+    case bottom
+    case bottomLeading
+    case leading
+}
+
+extension CanvasSelectionHandleRole {
+    var editHandleRole: CanvasEditHandleRole {
+        switch self {
+        case .topLeading:
+            return .topLeading
+        case .topTrailing:
+            return .topTrailing
+        case .bottomLeading:
+            return .bottomLeading
+        case .bottomTrailing:
+            return .bottomTrailing
+        }
+    }
+}
+
+extension CanvasCropHandleRole {
+    var editHandleRole: CanvasEditHandleRole {
+        switch self {
+        case .topLeading:
+            return .topLeading
+        case .top:
+            return .top
+        case .topTrailing:
+            return .topTrailing
+        case .trailing:
+            return .trailing
+        case .bottom:
+            return .bottom
+        case .leading:
+            return .leading
+        case .bottomLeading:
+            return .bottomLeading
+        case .bottomTrailing:
+            return .bottomTrailing
+        }
+    }
+}
+
+extension CanvasEditHandleRole {
+    var selectionHandleRole: CanvasSelectionHandleRole? {
+        switch self {
+        case .topLeading:
+            return .topLeading
+        case .topTrailing:
+            return .topTrailing
+        case .bottomLeading:
+            return .bottomLeading
+        case .bottomTrailing:
+            return .bottomTrailing
+        case .top, .trailing, .bottom, .leading, .rotate:
+            return nil
+        }
+    }
+
+    var cropHandleRole: CanvasCropHandleRole? {
+        switch self {
+        case .topLeading:
+            return .topLeading
+        case .top:
+            return .top
+        case .topTrailing:
+            return .topTrailing
+        case .trailing:
+            return .trailing
+        case .bottom:
+            return .bottom
+        case .leading:
+            return .leading
+        case .bottomLeading:
+            return .bottomLeading
+        case .bottomTrailing:
+            return .bottomTrailing
+        case .rotate:
+            return nil
+        }
+    }
 }
 
 struct CanvasRenderSnapshot {

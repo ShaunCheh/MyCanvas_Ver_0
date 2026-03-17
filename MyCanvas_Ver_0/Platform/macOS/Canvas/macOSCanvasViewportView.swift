@@ -331,8 +331,8 @@ final class macOSCanvasViewportView: NSView {
         for role in CanvasCropHandleRole.allCases {
             guard
                 let handleLayer = cropHandleLayers[role],
-                let handle = editOverlay.cornerHandles.first(where: {
-                    $0.role == Self.editHandleRole(for: role)
+                let handle = editOverlay.handles.first(where: {
+                    $0.role == role.editHandleRole
                 })
             else {
                 cropHandleLayers[role]?.path = nil
@@ -363,8 +363,8 @@ final class macOSCanvasViewportView: NSView {
         for role in CanvasSelectionHandleRole.allCases {
             guard
                 let handleLayer = selectionHandleLayers[role],
-                let handle = editOverlay.cornerHandles.first(where: {
-                    $0.role == Self.editHandleRole(for: role)
+                let handle = editOverlay.handles.first(where: {
+                    $0.role == role.editHandleRole
                 })
             else {
                 selectionHandleLayers[role]?.path = nil
@@ -458,36 +458,6 @@ final class macOSCanvasViewportView: NSView {
             width: rotateHandleSize,
             height: rotateHandleSize
         ).standardized
-    }
-
-    private static func editHandleRole(
-        for role: CanvasSelectionHandleRole
-    ) -> CanvasEditHandleRole {
-        switch role {
-        case .topLeading:
-            return .topLeading
-        case .topTrailing:
-            return .topTrailing
-        case .bottomLeading:
-            return .bottomLeading
-        case .bottomTrailing:
-            return .bottomTrailing
-        }
-    }
-
-    private static func editHandleRole(
-        for role: CanvasCropHandleRole
-    ) -> CanvasEditHandleRole {
-        switch role {
-        case .topLeading:
-            return .topLeading
-        case .topTrailing:
-            return .topTrailing
-        case .bottomLeading:
-            return .bottomLeading
-        case .bottomTrailing:
-            return .bottomTrailing
-        }
     }
 
     private static func cropHandlePath(

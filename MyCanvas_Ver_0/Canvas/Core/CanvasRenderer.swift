@@ -110,7 +110,7 @@ struct CanvasRenderer {
             kind: .selection,
             activeWorldQuad: worldQuad,
             activeScreenQuad: screenQuad,
-            cornerHandles: makeEditCornerHandles(for: screenQuad),
+            handles: makeCornerEditHandles(for: screenQuad),
             payload: .selection
         )
     }
@@ -144,7 +144,7 @@ struct CanvasRenderer {
             kind: .crop,
             activeWorldQuad: cropWorldQuad,
             activeScreenQuad: cropScreenQuad,
-            cornerHandles: makeEditCornerHandles(for: cropScreenQuad),
+            handles: makeCropEditHandles(for: cropScreenQuad),
             payload: .crop(
                 CanvasEditCropOverlayPayload(
                     fullImageWorldQuad: fullImageWorldQuad,
@@ -192,7 +192,7 @@ struct CanvasRenderer {
             kind: .rotate,
             activeWorldQuad: worldQuad,
             activeScreenQuad: screenQuad,
-            cornerHandles: makeEditCornerHandles(for: screenQuad),
+            handles: makeCornerEditHandles(for: screenQuad),
             payload: .rotate(
                 CanvasEditRotateOverlayPayload(
                     guideScreenStart: guideScreenStart,
@@ -251,32 +251,68 @@ struct CanvasRenderer {
         )
     }
 
-    private func makeEditCornerHandles(
+    private func makeCornerEditHandles(
         for screenQuad: CanvasQuad
     ) -> [CanvasEditHandleGeometry] {
+        makeEditHandles(
+            for: screenQuad,
+            roles: [
+                .topLeading,
+                .topTrailing,
+                .bottomLeading,
+                .bottomTrailing
+            ]
+        )
+    }
+
+    private func makeCropEditHandles(
+        for screenQuad: CanvasQuad
+    ) -> [CanvasEditHandleGeometry] {
+        makeEditHandles(
+            for: screenQuad,
+            roles: CanvasCropHandleRole.allCases.map(\.editHandleRole)
+        )
+    }
+
+    private func makeEditHandles(
+        for screenQuad: CanvasQuad,
+        roles: [CanvasEditHandleRole]
+    ) -> [CanvasEditHandleGeometry] {
         let rotationRadians = editHandleRotation(for: screenQuad)
-        return [
+        return roles.map { role in
             CanvasEditHandleGeometry(
-                role: .topLeading,
-                screenCenter: screenQuad.topLeading,
-                screenRotationRadians: rotationRadians
-            ),
-            CanvasEditHandleGeometry(
-                role: .topTrailing,
-                screenCenter: screenQuad.topTrailing,
-                screenRotationRadians: rotationRadians
-            ),
-            CanvasEditHandleGeometry(
-                role: .bottomLeading,
-                screenCenter: screenQuad.bottomLeading,
-                screenRotationRadians: rotationRadians
-            ),
-            CanvasEditHandleGeometry(
-                role: .bottomTrailing,
-                screenCenter: screenQuad.bottomTrailing,
+                role: role,
+                screenCenter: editHandleCenter(for: role, in: screenQuad),
                 screenRotationRadians: rotationRadians
             )
-        ]
+        }
+    }
+
+    private func editHandleCenter(
+        for role: CanvasEditHandleRole,
+        in screenQuad: CanvasQuad
+    ) -> CGPoint {
+        switch role {
+        case .topLeading:
+            return screenQuad.topLeading
+        case .top:
+            return screenQuad.topMidpoint
+        case .topTrailing:
+            return screenQuad.topTrailing
+        case .trailing:
+            return screenQuad.trailingMidpoint
+        case .bottomTrailing:
+            return screenQuad.bottomTrailing
+        case .bottom:
+            return screenQuad.bottomMidpoint
+        case .bottomLeading:
+            return screenQuad.bottomLeading
+        case .leading:
+            return screenQuad.leadingMidpoint
+        case .rotate:
+            assertionFailure("Rotate handle center is derived separately.")
+            return screenQuad.topMidpoint
+        }
     }
 
     private func editHandleRotation(
