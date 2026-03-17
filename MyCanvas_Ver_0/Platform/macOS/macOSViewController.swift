@@ -15,6 +15,7 @@ final class macOSViewController: NSViewController {
     private enum PointerPressTarget {
         case rotateHandle(itemID: CanvasImageItemID)
         case cropHandle(role: CanvasCropHandleRole, itemID: CanvasImageItemID)
+        case cropOutline(itemID: CanvasImageItemID)
         case handle(role: CanvasSelectionHandleRole, itemID: CanvasImageItemID)
         case selectedBody(itemID: CanvasImageItemID)
         case unselectedItem(itemID: CanvasImageItemID)
@@ -22,7 +23,7 @@ final class macOSViewController: NSViewController {
 
         var itemID: CanvasImageItemID? {
             switch self {
-            case let .rotateHandle(itemID), let .cropHandle(_, itemID), let .handle(_, itemID), let .selectedBody(itemID), let .unselectedItem(itemID):
+            case let .rotateHandle(itemID), let .cropHandle(_, itemID), let .cropOutline(itemID), let .handle(_, itemID), let .selectedBody(itemID), let .unselectedItem(itemID):
                 return itemID
             case .blank:
                 return nil
@@ -72,6 +73,13 @@ final class macOSViewController: NSViewController {
         let minimumLocalSize: CGSize
     }
 
+    private struct PointerCropTranslationState {
+        let itemID: CanvasImageItemID
+        let fullImageLocalFrame: CGRect
+        let initialLocalFrame: CGRect
+        let initialPointerLocalPoint: CGPoint
+    }
+
     private struct PointerRotateState {
         let itemID: CanvasImageItemID
         let referenceCenter: CGPoint
@@ -85,6 +93,7 @@ final class macOSViewController: NSViewController {
             pressTarget: PointerPressTarget
         )
         case croppingSelectedItem(PointerCropState)
+        case movingCropFrame(PointerCropTranslationState)
         case rotatingSelectedItem(PointerRotateState)
         case draggingSelectedItem(itemID: CanvasImageItemID)
         case resizingSelectedItem(PointerResizeState)
@@ -95,6 +104,7 @@ final class macOSViewController: NSViewController {
     private static let selectionHandleHitTargetSize: CGFloat = 18
     private static let minimumResizeViewportDimension: CGFloat = 20
     private static let cropHandleHitTargetSize: CGFloat = 18
+    private static let cropOutlineHitTargetWidth: CGFloat = 14
     private static let minimumCropViewportDimension: CGFloat = 20
     private static let rotateHandleHitTargetSize: CGFloat = 22
 
@@ -337,6 +347,18 @@ final class macOSViewController: NSViewController {
 
                 pointerDragState = .croppingSelectedItem(cropState)
                 updateCropDraft(using: cropState, to: location)
+            case let .cropOutline(itemID):
+                guard let translationState = makePointerCropTranslationState(
+                    itemID: itemID,
+                    initialViewportLocation: pressedLocation
+                ) else {
+                    historyController.cancelPendingTransaction()
+                    pointerDragState = .idle
+                    return
+                }
+
+                pointerDragState = .movingCropFrame(translationState)
+                updateTranslatedCropDraft(using: translationState, to: location)
             case let .handle(handleRole, itemID):
                 guard let resizeState = makePointerResizeState(itemID: itemID, handleRole: handleRole) else {
                     pointerDragState = .idle
@@ -354,6 +376,8 @@ final class macOSViewController: NSViewController {
             }
         case let .croppingSelectedItem(cropState):
             updateCropDraft(using: cropState, to: location)
+        case let .movingCropFrame(translationState):
+            updateTranslatedCropDraft(using: translationState, to: location)
         case let .rotatingSelectedItem(rotateState):
             updateRotationDraft(using: rotateState, to: location)
         case let .draggingSelectedItem(itemID):
@@ -393,6 +417,9 @@ final class macOSViewController: NSViewController {
                 affectedItemID = itemID
             case let .cropHandle(_, itemID):
                 clickTarget = "crop_handle"
+                affectedItemID = itemID
+            case let .cropOutline(itemID):
+                clickTarget = "crop_outline"
                 affectedItemID = itemID
             case let .handle(_, itemID):
                 clickTarget = "handle"
@@ -437,7 +464,7 @@ final class macOSViewController: NSViewController {
             historyController.cancelPendingTransaction()
         case .rotatingSelectedItem:
             commitRotationDraftIfNeeded()
-        case .croppingSelectedItem:
+        case .croppingSelectedItem, .movingCropFrame:
             commitCropDraftIfNeeded()
         case .draggingSelectedItem:
             commitPendingPointerHistoryTransaction(autosaveReason: "move item")
@@ -452,7 +479,7 @@ final class macOSViewController: NSViewController {
         switch pointerDragState {
         case .rotatingSelectedItem:
             commitRotationDraftIfNeeded()
-        case .croppingSelectedItem:
+        case .croppingSelectedItem, .movingCropFrame:
             commitCropDraftIfNeeded()
         case .draggingSelectedItem:
             commitPendingPointerHistoryTransaction(autosaveReason: "move item")
@@ -729,11 +756,36 @@ final class macOSViewController: NSViewController {
         }
     }
 
+    private func hitTestCropOutline(at viewportLocation: CGPoint) -> CanvasImageItemID? {
+        guard
+            let editOverlay = lastRenderSnapshot.editOverlay,
+            case let .crop(payload) = editOverlay.payload
+        else {
+            return nil
+        }
+
+        for (start, end) in Self.quadEdges(for: payload.cropScreenQuad) {
+            if Self.distance(
+                from: viewportLocation,
+                toSegmentStart: start,
+                segmentEnd: end
+            ) <= (Self.cropOutlineHitTargetWidth / 2) {
+                return editOverlay.itemID
+            }
+        }
+
+        return nil
+    }
+
     // Keep interaction priority aligned with common editors: resize handles win
     // over body hits so a visible handle is always the first-class press target.
     private func pointerPressTarget(at viewportLocation: CGPoint) -> PointerPressTarget {
         if let editHandleHit = hitTestEditHandle(at: viewportLocation) {
             return editHandleHit.pressTarget
+        }
+
+        if let cropOutlineItemID = hitTestCropOutline(at: viewportLocation) {
+            return .cropOutline(itemID: cropOutlineItemID)
         }
 
         if isInlineEditModeActive {
@@ -832,6 +884,63 @@ final class macOSViewController: NSViewController {
             minimumLocalSize: cropState.minimumLocalSize
         )
         let draftCropRectNormalized = item.normalizedCropRect(fromLocalFrame: cropLocalFrame)
+        guard inlineEditState.draftCropRectNormalized != draftCropRectNormalized else {
+            return
+        }
+
+        inlineEditState.draftCropRectNormalized = draftCropRectNormalized
+        self.inlineEditState = inlineEditState
+        refreshCanvas()
+    }
+
+    private func makePointerCropTranslationState(
+        itemID: CanvasImageItemID,
+        initialViewportLocation: CGPoint
+    ) -> PointerCropTranslationState? {
+        guard
+            let item = scene.item(withID: itemID),
+            let inlineEditState,
+            inlineEditState.mode == .crop,
+            inlineEditState.itemID == itemID
+        else {
+            return nil
+        }
+
+        return PointerCropTranslationState(
+            itemID: itemID,
+            fullImageLocalFrame: item.fullImageLocalFrame.standardized,
+            initialLocalFrame: item.localFrame(
+                forNormalizedCropRect: inlineEditState.draftCropRectNormalized
+            ).standardized,
+            initialPointerLocalPoint: item.localPoint(
+                fromWorld: camera.viewportToWorld(initialViewportLocation)
+            )
+        )
+    }
+
+    private func updateTranslatedCropDraft(
+        using translationState: PointerCropTranslationState,
+        to viewportLocation: CGPoint
+    ) {
+        guard
+            var inlineEditState,
+            inlineEditState.mode == .crop,
+            inlineEditState.itemID == translationState.itemID,
+            let item = scene.item(withID: translationState.itemID)
+        else {
+            return
+        }
+
+        let draggedLocalPoint = item.localPoint(
+            fromWorld: camera.viewportToWorld(viewportLocation)
+        )
+        let translatedLocalFrame = translatedCropLocalFrame(
+            draggedLocalPoint,
+            using: translationState
+        )
+        let draftCropRectNormalized = item.normalizedCropRect(
+            fromLocalFrame: translatedLocalFrame
+        )
         guard inlineEditState.draftCropRectNormalized != draftCropRectNormalized else {
             return
         }
@@ -1178,6 +1287,38 @@ final class macOSViewController: NSViewController {
         ).standardized
     }
 
+    private static func quadEdges(
+        for quad: CanvasQuad
+    ) -> [(start: CGPoint, end: CGPoint)] {
+        [
+            (quad.topLeading, quad.topTrailing),
+            (quad.topTrailing, quad.bottomTrailing),
+            (quad.bottomTrailing, quad.bottomLeading),
+            (quad.bottomLeading, quad.topLeading)
+        ]
+    }
+
+    private static func distance(
+        from point: CGPoint,
+        toSegmentStart start: CGPoint,
+        segmentEnd end: CGPoint
+    ) -> CGFloat {
+        let dx = end.x - start.x
+        let dy = end.y - start.y
+        let lengthSquared = (dx * dx) + (dy * dy)
+        guard lengthSquared > 0 else {
+            return hypot(point.x - start.x, point.y - start.y)
+        }
+
+        let projection = ((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSquared
+        let clampedProjection = min(max(projection, 0), 1)
+        let closestPoint = CGPoint(
+            x: start.x + (clampedProjection * dx),
+            y: start.y + (clampedProjection * dy)
+        )
+        return hypot(point.x - closestPoint.x, point.y - closestPoint.y)
+    }
+
     private func referenceLocalPoint(
         fromWorld worldPoint: CGPoint,
         center: CGPoint,
@@ -1494,6 +1635,36 @@ final class macOSViewController: NSViewController {
         }
     }
 
+    private func translatedCropLocalFrame(
+        _ draggedLocalPoint: CGPoint,
+        using translationState: PointerCropTranslationState
+    ) -> CGRect {
+        let initialLocalFrame = translationState.initialLocalFrame.standardized
+        let fullImageLocalFrame = translationState.fullImageLocalFrame.standardized
+        let delta = CGPoint(
+            x: draggedLocalPoint.x - translationState.initialPointerLocalPoint.x,
+            y: draggedLocalPoint.y - translationState.initialPointerLocalPoint.y
+        )
+        let translatedOrigin = CGPoint(
+            x: initialLocalFrame.minX + delta.x,
+            y: initialLocalFrame.minY + delta.y
+        )
+        let clampedOrigin = CGPoint(
+            x: min(
+                max(translatedOrigin.x, fullImageLocalFrame.minX),
+                fullImageLocalFrame.maxX - initialLocalFrame.width
+            ),
+            y: min(
+                max(translatedOrigin.y, fullImageLocalFrame.minY),
+                fullImageLocalFrame.maxY - initialLocalFrame.height
+            )
+        )
+        return CGRect(
+            origin: clampedOrigin,
+            size: initialLocalFrame.size
+        )
+    }
+
     private func panCanvas(from previousLocation: CGPoint, to location: CGPoint) {
         let translation = CGPoint(
             x: location.x - previousLocation.x,
@@ -1615,7 +1786,7 @@ final class macOSViewController: NSViewController {
         switch pressTarget {
         case .rotateHandle:
             reason = "rotate item"
-        case .cropHandle:
+        case .cropHandle, .cropOutline:
             reason = "crop item"
         case .handle:
             reason = "resize item"

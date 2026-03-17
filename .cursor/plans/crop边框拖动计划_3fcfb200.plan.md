@@ -4,19 +4,19 @@ overview: 在 crop 模式下新增“拖动橙黄色边框移动裁剪框”的�
 todos:
   - id: crop-border-ios-state
     content: 在 iOS controller 中新增 crop 边框 press target、drag state 与 translation state
-    status: pending
+    status: completed
   - id: crop-border-ios-hit-drag
     content: 在 iOS controller 中实现边框命中与 local-space 平移 draft 更新
-    status: pending
+    status: completed
   - id: crop-border-history-commit
     content: 把 crop 边框拖动接入现有 crop history transaction 与 commit 链路
-    status: pending
+    status: completed
   - id: crop-border-macos-mirror
     content: 将同样的边框拖动逻辑镜像同步到 macOS controller
-    status: pending
+    status: completed
   - id: crop-border-validate
     content: 完成 lints、双平台构建与关键手动回归检查
-    status: pending
+    status: completed
 isProject: false
 ---
 
