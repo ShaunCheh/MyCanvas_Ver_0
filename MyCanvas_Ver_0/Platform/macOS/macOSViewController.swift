@@ -32,11 +32,12 @@ final class macOSViewController: NSViewController {
 
     private enum EditHandleHit {
         case rotate(itemID: CanvasImageItemID)
+        case crop(role: CanvasCropHandleRole, itemID: CanvasImageItemID)
         case resize(role: CanvasSelectionHandleRole, itemID: CanvasImageItemID)
 
         var itemID: CanvasImageItemID {
             switch self {
-            case let .rotate(itemID), let .resize(_, itemID):
+            case let .rotate(itemID), let .crop(_, itemID), let .resize(_, itemID):
                 return itemID
             }
         }
@@ -45,6 +46,8 @@ final class macOSViewController: NSViewController {
             switch self {
             case let .rotate(itemID):
                 return .rotateHandle(itemID: itemID)
+            case let .crop(role, itemID):
+                return .cropHandle(role: role, itemID: itemID)
             case let .resize(role, itemID):
                 return .handle(role: role, itemID: itemID)
             }
@@ -692,7 +695,17 @@ final class macOSViewController: NSViewController {
 
         switch editOverlay.kind {
         case .crop:
-            return nil
+            guard
+                let handle = editOverlay.cornerHandles.first(where: { handle in
+                    Self.cropHandleHitRect(centeredAt: handle.screenCenter)
+                        .contains(viewportLocation)
+                }),
+                let role = cropHandleRole(for: handle.role)
+            else {
+                return nil
+            }
+
+            return .crop(role: role, itemID: editOverlay.itemID)
         case .selection, .rotate:
             if
                 case let .rotate(payload) = editOverlay.payload,
@@ -716,34 +729,14 @@ final class macOSViewController: NSViewController {
         }
     }
 
-    private func hitTestCropHandle(at viewportLocation: CGPoint) -> (role: CanvasCropHandleRole, itemID: CanvasImageItemID)? {
-        guard let cropOverlay = lastRenderSnapshot.cropOverlay else {
-            return nil
-        }
-
-        return cropOverlay.handles.first(where: { handle in
-            Self.cropHandleHitRect(centeredAt: handle.screenCenter).contains(viewportLocation)
-        }).map { handle in
-            (role: handle.role, itemID: cropOverlay.itemID)
-        }
-    }
-
     // Keep interaction priority aligned with common editors: resize handles win
     // over body hits so a visible handle is always the first-class press target.
     private func pointerPressTarget(at viewportLocation: CGPoint) -> PointerPressTarget {
-        if isInlineCropModeActive {
-            if let cropHandleHit = hitTestCropHandle(at: viewportLocation) {
-                return .cropHandle(role: cropHandleHit.role, itemID: cropHandleHit.itemID)
-            }
-
-            return .blank
-        }
-
         if let editHandleHit = hitTestEditHandle(at: viewportLocation) {
             return editHandleHit.pressTarget
         }
 
-        if isInlineRotateModeActive {
+        if isInlineEditModeActive {
             return .blank
         }
 
@@ -1197,6 +1190,23 @@ final class macOSViewController: NSViewController {
     private func selectionHandleRole(
         for editHandleRole: CanvasEditHandleRole
     ) -> CanvasSelectionHandleRole? {
+        switch editHandleRole {
+        case .topLeading:
+            return .topLeading
+        case .topTrailing:
+            return .topTrailing
+        case .bottomLeading:
+            return .bottomLeading
+        case .bottomTrailing:
+            return .bottomTrailing
+        case .rotate:
+            return nil
+        }
+    }
+
+    private func cropHandleRole(
+        for editHandleRole: CanvasEditHandleRole
+    ) -> CanvasCropHandleRole? {
         switch editHandleRole {
         case .topLeading:
             return .topLeading

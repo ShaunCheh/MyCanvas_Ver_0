@@ -176,7 +176,6 @@ final class iOSCanvasViewportView: UIView {
             refreshImageLayers()
             refreshBoardHighlight()
             refreshEditOverlay()
-            refreshCropOverlay()
         }
     }
 
@@ -192,7 +191,6 @@ final class iOSCanvasViewportView: UIView {
             refreshImageLayers()
             refreshBoardHighlight()
             refreshEditOverlay()
-            refreshCropOverlay()
         }
     }
 
@@ -389,37 +387,45 @@ final class iOSCanvasViewportView: UIView {
         case .selection:
             refreshSelectionChrome(from: editOverlay)
             hideRotateOverlay()
+            hideCropOverlay()
         case .rotate:
             refreshSelectionChrome(from: editOverlay)
             refreshRotateChrome(from: editOverlay)
+            hideCropOverlay()
         case .crop:
-            hideEditOverlay()
+            hideSelectionOverlay()
+            hideRotateOverlay()
+            refreshCropChrome(from: editOverlay)
         }
     }
 
-    private func refreshCropOverlay() {
-        guard let cropOverlay = snapshot.cropOverlay else {
+    private func refreshCropChrome(
+        from editOverlay: CanvasEditRenderOverlay
+    ) {
+        guard case let .crop(payload) = editOverlay.payload else {
             hideCropOverlay()
             return
         }
 
-        // Crop chrome stays platform-owned; shared renderer only provides the
-        // full-image and crop quads needed to dim, outline, and hit-test here.
+        // Crop now shares the same editOverlay entry point as selection/rotate;
+        // the viewport still owns mask styling, handle size, and layer setup.
         let maskPath = CGMutablePath()
-        maskPath.addPath(Self.quadPath(for: cropOverlay.fullImageScreenQuad))
-        maskPath.addPath(Self.quadPath(for: cropOverlay.cropScreenQuad))
+        maskPath.addPath(Self.quadPath(for: payload.fullImageScreenQuad))
+        maskPath.addPath(Self.quadPath(for: payload.cropScreenQuad))
         cropMaskLayer.path = maskPath
         cropMaskLayer.isHidden = false
         cropMaskLayer.contentsScale = currentContentsScale
 
-        cropOutlineLayer.path = Self.quadPath(for: cropOverlay.cropScreenQuad)
+        cropOutlineLayer.path = Self.quadPath(for: payload.cropScreenQuad)
         cropOutlineLayer.isHidden = false
         cropOutlineLayer.contentsScale = currentContentsScale
 
         for role in CanvasCropHandleRole.allCases {
             guard
                 let handleLayer = cropHandleLayers[role],
-                let handle = cropOverlay.handles.first(where: { $0.role == role })
+                let handle = editOverlay.cornerHandles.first(where: {
+                    $0.role == Self.editHandleRole(for: role)
+                })
             else {
                 cropHandleLayers[role]?.path = nil
                 cropHandleLayers[role]?.frame = .zero
@@ -501,6 +507,7 @@ final class iOSCanvasViewportView: UIView {
     private func hideEditOverlay() {
         hideSelectionOverlay()
         hideRotateOverlay()
+        hideCropOverlay()
     }
 
     private func hideSelectionOverlay() {
@@ -557,6 +564,21 @@ final class iOSCanvasViewportView: UIView {
 
     private static func editHandleRole(
         for role: CanvasSelectionHandleRole
+    ) -> CanvasEditHandleRole {
+        switch role {
+        case .topLeading:
+            return .topLeading
+        case .topTrailing:
+            return .topTrailing
+        case .bottomLeading:
+            return .bottomLeading
+        case .bottomTrailing:
+            return .bottomTrailing
+        }
+    }
+
+    private static func editHandleRole(
+        for role: CanvasCropHandleRole
     ) -> CanvasEditHandleRole {
         switch role {
         case .topLeading:

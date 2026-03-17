@@ -35,19 +35,16 @@ struct CanvasRenderer {
             )
         }
 
-        let cropOverlay = makeCropOverlay(
-            scene: scene,
-            camera: camera,
-            inlineEditState: inlineEditState
-        )
         let editOverlay = makeEditOverlay(
             scene: scene,
             camera: camera,
             interactionState: interactionState,
-            inlineEditState: inlineEditState,
-            cropOverlay: cropOverlay,
+            inlineEditState: inlineEditState
         )
         let selectionOverlay = makeSelectionOverlay(
+            from: editOverlay
+        )
+        let cropOverlay = makeCropOverlay(
             from: editOverlay
         )
         let rotateOverlay = makeRotateOverlay(
@@ -70,11 +67,14 @@ struct CanvasRenderer {
         scene: CanvasScene,
         camera: CanvasCamera,
         interactionState: CanvasInteractionState,
-        inlineEditState: CanvasInlineEditState?,
-        cropOverlay: CanvasCropRenderOverlay?,
+        inlineEditState: CanvasInlineEditState?
     ) -> CanvasEditRenderOverlay? {
-        if let cropOverlay {
-            return makeEditOverlay(from: cropOverlay)
+        if let cropEditOverlay = makeCropEditOverlay(
+            scene: scene,
+            camera: camera,
+            inlineEditState: inlineEditState
+        ) {
+            return cropEditOverlay
         }
 
         if let rotateEditOverlay = makeRotateEditOverlay(
@@ -127,6 +127,48 @@ struct CanvasRenderer {
         )
     }
 
+    private func makeCropEditOverlay(
+        scene: CanvasScene,
+        camera: CanvasCamera,
+        inlineEditState: CanvasInlineEditState?
+    ) -> CanvasEditRenderOverlay? {
+        guard
+            let inlineEditState,
+            let cropSession = inlineEditState.cropSession,
+            let item = scene.item(withID: inlineEditState.itemID)
+        else {
+            return nil
+        }
+
+        let previewItem = previewedItem(
+            for: item,
+            inlineEditState: inlineEditState
+        )
+        let fullImageWorldQuad = previewItem.fullImageWorldQuad
+        let cropWorldQuad = previewItem.worldQuad(
+            forNormalizedCropRect: cropSession.draftCropRectNormalized
+        )
+        let fullImageScreenQuad = camera.worldToViewport(fullImageWorldQuad)
+        let cropScreenQuad = camera.worldToViewport(cropWorldQuad)
+
+        return CanvasEditRenderOverlay(
+            itemID: previewItem.id,
+            kind: .crop,
+            activeWorldQuad: cropWorldQuad,
+            activeScreenQuad: cropScreenQuad,
+            cornerHandles: makeEditCornerHandles(for: cropScreenQuad),
+            payload: .crop(
+                CanvasEditCropOverlayPayload(
+                    fullImageWorldQuad: fullImageWorldQuad,
+                    fullImageScreenQuad: fullImageScreenQuad,
+                    cropRectNormalized: cropSession.draftCropRectNormalized,
+                    cropWorldQuad: cropWorldQuad,
+                    cropScreenQuad: cropScreenQuad
+                )
+            )
+        )
+    }
+
     private func makeRotateEditOverlay(
         scene: CanvasScene,
         camera: CanvasCamera,
@@ -134,7 +176,7 @@ struct CanvasRenderer {
     ) -> CanvasEditRenderOverlay? {
         guard
             let inlineEditState,
-            inlineEditState.mode == .rotate,
+            inlineEditState.rotateSession != nil,
             let item = scene.item(withID: inlineEditState.itemID)
         else {
             return nil
@@ -172,30 +214,6 @@ struct CanvasRenderer {
                         screenCenter: guideScreenEnd,
                         screenRotationRadians: rotationRadians
                     )
-                )
-            )
-        )
-    }
-
-    private func makeEditOverlay(
-        from cropOverlay: CanvasCropRenderOverlay
-    ) -> CanvasEditRenderOverlay {
-        CanvasEditRenderOverlay(
-            itemID: cropOverlay.itemID,
-            kind: .crop,
-            activeWorldQuad: cropOverlay.cropWorldQuad,
-            activeScreenQuad: cropOverlay.cropScreenQuad,
-            cornerHandles: makeEditCornerHandles(
-                from: cropOverlay.handles,
-                in: cropOverlay.cropScreenQuad
-            ),
-            payload: .crop(
-                CanvasEditCropOverlayPayload(
-                    fullImageWorldQuad: cropOverlay.fullImageWorldQuad,
-                    fullImageScreenQuad: cropOverlay.fullImageScreenQuad,
-                    cropRectNormalized: cropOverlay.cropRectNormalized,
-                    cropWorldQuad: cropOverlay.cropWorldQuad,
-                    cropScreenQuad: cropOverlay.cropScreenQuad
                 )
             )
         )
@@ -266,38 +284,25 @@ struct CanvasRenderer {
     }
 
     private func makeCropOverlay(
-        scene: CanvasScene,
-        camera: CanvasCamera,
-        inlineEditState: CanvasInlineEditState?
+        from editOverlay: CanvasEditRenderOverlay?
     ) -> CanvasCropRenderOverlay? {
         guard
-            let inlineEditState,
-            inlineEditState.mode == .crop,
-            let item = scene.item(withID: inlineEditState.itemID)
+            let editOverlay,
+            editOverlay.kind == .crop,
+            case let .crop(payload) = editOverlay.payload
         else {
             return nil
         }
 
-        let previewItem = previewedItem(
-            for: item,
-            inlineEditState: inlineEditState
-        )
-        let fullImageWorldQuad = previewItem.fullImageWorldQuad
-        let cropWorldQuad = previewItem.worldQuad(
-            forNormalizedCropRect: inlineEditState.draftCropRectNormalized
-        )
-        let fullImageScreenQuad = camera.worldToViewport(fullImageWorldQuad)
-        let cropScreenQuad = camera.worldToViewport(cropWorldQuad)
-
         return CanvasCropRenderOverlay(
-            itemID: previewItem.id,
-            mode: inlineEditState.mode,
-            fullImageWorldQuad: fullImageWorldQuad,
-            fullImageScreenQuad: fullImageScreenQuad,
-            cropRectNormalized: inlineEditState.draftCropRectNormalized,
-            cropWorldQuad: cropWorldQuad,
-            cropScreenQuad: cropScreenQuad,
-            handles: makeCropHandles(for: cropScreenQuad)
+            itemID: editOverlay.itemID,
+            mode: .crop,
+            fullImageWorldQuad: payload.fullImageWorldQuad,
+            fullImageScreenQuad: payload.fullImageScreenQuad,
+            cropRectNormalized: payload.cropRectNormalized,
+            cropWorldQuad: payload.cropWorldQuad,
+            cropScreenQuad: payload.cropScreenQuad,
+            handles: makeCropHandles(from: editOverlay.cornerHandles)
         )
     }
 
@@ -322,29 +327,6 @@ struct CanvasRenderer {
             guideScreenEnd: payload.guideScreenEnd,
             handle: CanvasRotateHandleGeometry(screenCenter: payload.handle.screenCenter)
         )
-    }
-
-    private func makeCropHandles(for screenQuad: CanvasQuad) -> [CanvasCropHandleGeometry] {
-        CanvasCropHandleRole.allCases.map { role in
-            CanvasCropHandleGeometry(
-                role: role,
-                screenCenter: cropHandleCenter(for: role, in: screenQuad)
-            )
-        }
-    }
-
-    private func makeEditCornerHandles(
-        from handles: [CanvasCropHandleGeometry],
-        in screenQuad: CanvasQuad
-    ) -> [CanvasEditHandleGeometry] {
-        let rotationRadians = editHandleRotation(for: screenQuad)
-        return handles.map { handle in
-            CanvasEditHandleGeometry(
-                role: editHandleRole(for: handle.role),
-                screenCenter: handle.screenCenter,
-                screenRotationRadians: rotationRadians
-            )
-        }
     }
 
     private func makeEditCornerHandles(
@@ -388,6 +370,25 @@ struct CanvasRenderer {
             }
 
             return CanvasSelectionHandleGeometry(
+                role: role,
+                screenCenter: handle.screenCenter
+            )
+        }
+    }
+
+    private func makeCropHandles(
+        from cornerHandles: [CanvasEditHandleGeometry]
+    ) -> [CanvasCropHandleGeometry] {
+        CanvasCropHandleRole.allCases.compactMap { role in
+            guard
+                let handle = cornerHandles.first(where: {
+                    $0.role == editHandleRole(for: role)
+                })
+            else {
+                return nil
+            }
+
+            return CanvasCropHandleGeometry(
                 role: role,
                 screenCenter: handle.screenCenter
             )
@@ -463,11 +464,11 @@ struct CanvasRenderer {
         }
 
         var previewItem = item
-        switch inlineEditState.mode {
+        switch inlineEditState.session {
         case .crop:
             return previewItem
-        case .rotate:
-            previewItem.rotationRadians = inlineEditState.draftRotationRadians
+        case let .rotate(rotateSession):
+            previewItem.rotationRadians = rotateSession.draftRotationRadians
             return previewItem
         }
     }
