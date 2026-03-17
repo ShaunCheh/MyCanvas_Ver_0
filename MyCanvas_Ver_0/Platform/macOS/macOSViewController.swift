@@ -179,6 +179,7 @@ final class macOSViewController: NSViewController {
     private var interactionState = CanvasInteractionState()
     private var inlineEditState: CanvasInlineEditState?
     private var rotationPreviewState: CanvasRotationPreviewState?
+    private var rotationInteractionState: CanvasRotationInteractionState?
     private var lastRenderSnapshot: CanvasRenderSnapshot = .empty
     private var pointerDragState: PointerDragState = .idle
     private var activeBoardID: UUID?
@@ -398,6 +399,7 @@ final class macOSViewController: NSViewController {
                 }
 
                 pointerDragState = .rotatingSelectedItem(rotateState)
+                beginRotationInteraction(for: itemID)
                 updateRotationDraft(using: rotateState, to: location)
             case let .cropHandle(handleRole, itemID):
                 guard let cropState = makePointerCropState(itemID: itemID, handleRole: handleRole) else {
@@ -1099,12 +1101,14 @@ final class macOSViewController: NSViewController {
             let rotationPreviewState,
             let item = scene.item(withID: rotationPreviewState.itemID)
         else {
+            clearRotationInteractionState()
             historyController.cancelPendingTransaction()
             return
         }
 
         guard !anglesMatch(item.rotationRadians, rotationPreviewState.draftRotationRadians) else {
             clearRotationPreviewState()
+            clearRotationInteractionState()
             historyController.cancelPendingTransaction()
             return
         }
@@ -1114,12 +1118,14 @@ final class macOSViewController: NSViewController {
             to: rotationPreviewState.draftRotationRadians
         ) else {
             clearRotationPreviewState()
+            clearRotationInteractionState()
             historyController.cancelPendingTransaction()
             return
         }
 
         expandBoardIfNeeded(toInclude: rotatedItem.worldBounds)
-        self.rotationPreviewState = nil
+        clearRotationPreviewState()
+        clearRotationInteractionState()
         refreshCanvas()
         commitPendingPointerHistoryTransaction(autosaveReason: "rotate item")
     }
@@ -1137,6 +1143,18 @@ final class macOSViewController: NSViewController {
 
     private func clearRotationPreviewState() {
         rotationPreviewState = nil
+    }
+
+    private func beginRotationInteraction(for itemID: CanvasImageItemID) {
+        guard rotationInteractionState?.itemID != itemID else {
+            return
+        }
+
+        rotationInteractionState = CanvasRotationInteractionState(itemID: itemID)
+    }
+
+    private func clearRotationInteractionState() {
+        rotationInteractionState = nil
     }
 
     private func moveSelectedItem(
@@ -1822,7 +1840,8 @@ final class macOSViewController: NSViewController {
         camera = runtimeState.camera
         interactionState = runtimeState.interactionState
         inlineEditState = nil
-        rotationPreviewState = nil
+        clearRotationPreviewState()
+        clearRotationInteractionState()
         updateInlineEditButtonsAppearance()
     }
 
@@ -1843,7 +1862,8 @@ final class macOSViewController: NSViewController {
             scene.setItems(snapshot.items)
             boardState = snapshot.boardState
             interactionState = snapshot.interactionState
-            rotationPreviewState = nil
+            clearRotationPreviewState()
+            clearRotationInteractionState()
         }
 
         refreshCanvas()
@@ -1949,6 +1969,7 @@ final class macOSViewController: NSViewController {
         }
 
         clearRotationPreviewState()
+        clearRotationInteractionState()
         inlineEditState = CanvasInlineEditState(item: item, mode: .crop)
         updateInlineEditButtonsAppearance()
         refreshCanvas()
@@ -1970,6 +1991,13 @@ final class macOSViewController: NSViewController {
             interactionState.selectedItemID != rotationPreviewState.itemID
         {
             clearRotationPreviewState()
+        }
+
+        if
+            let rotationInteractionState,
+            interactionState.selectedItemID != rotationInteractionState.itemID
+        {
+            clearRotationInteractionState()
         }
 
         guard let inlineEditState else {

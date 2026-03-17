@@ -16,6 +16,13 @@ struct CanvasRotationPreviewState {
     var draftRotationRadians: CGFloat
 }
 
+// Track the active rotation gesture separately from the draft angle so later
+// overlays can appear immediately when rotation starts, even before the angle
+// diverges from the persisted item rotation.
+struct CanvasRotationInteractionState {
+    let itemID: CanvasImageItemID
+}
+
 // This transient editing state is intentionally kept out of BoardRuntimeState /
 // board.json so inline crop drafts never become persisted document data.
 struct CanvasInlineEditState {
