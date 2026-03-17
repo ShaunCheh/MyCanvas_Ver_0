@@ -99,9 +99,8 @@ final class macOSCanvasViewportView: NSView {
         performWithoutLayerActions {
             refreshImageLayers()
             refreshBoardHighlight()
-            refreshSelectionOverlay()
+            refreshEditOverlay()
             refreshCropOverlay()
-            refreshRotateOverlay()
         }
     }
 
@@ -111,9 +110,8 @@ final class macOSCanvasViewportView: NSView {
             updateLayerFrames()
             refreshImageLayers()
             refreshBoardHighlight()
-            refreshSelectionOverlay()
+            refreshEditOverlay()
             refreshCropOverlay()
-            refreshRotateOverlay()
         }
     }
 
@@ -289,65 +287,22 @@ final class macOSCanvasViewportView: NSView {
         boardHighlightLayer.contentsScale = currentContentsScale
     }
 
-    private func refreshSelectionOverlay() {
-        guard let selectionOverlay = snapshot.selectionOverlay else {
-            hideSelectionOverlay()
+    private func refreshEditOverlay() {
+        guard let editOverlay = snapshot.editOverlay else {
+            hideEditOverlay()
             return
         }
 
-        // The viewport owns selection presentation details; it only consumes the
-        // renderer's neutral geometry and applies macOS-specific visuals here.
-        selectionOutlineLayer.path = Self.quadPath(for: selectionOverlay.screenQuad)
-        selectionOutlineLayer.isHidden = false
-        selectionOutlineLayer.contentsScale = currentContentsScale
-
-        for role in CanvasSelectionHandleRole.allCases {
-            guard
-                let handleLayer = selectionHandleLayers[role],
-                let handle = selectionOverlay.handles.first(where: { $0.role == role })
-            else {
-                selectionHandleLayers[role]?.path = nil
-                selectionHandleLayers[role]?.frame = .zero
-                selectionHandleLayers[role]?.isHidden = true
-                continue
-            }
-
-            let handleRect = Self.selectionHandleRect(centeredAt: handle.screenCenter)
-            handleLayer.frame = handleRect
-            handleLayer.path = CGPath(
-                rect: CGRect(origin: .zero, size: handleRect.size),
-                transform: nil
-            )
-            handleLayer.isHidden = false
-            handleLayer.contentsScale = currentContentsScale
-        }
-    }
-
-    private func refreshRotateOverlay() {
-        guard let rotateOverlay = snapshot.rotateOverlay else {
+        switch editOverlay.kind {
+        case .selection:
+            refreshSelectionChrome(from: editOverlay)
             hideRotateOverlay()
-            return
+        case .rotate:
+            refreshSelectionChrome(from: editOverlay)
+            refreshRotateChrome(from: editOverlay)
+        case .crop:
+            hideEditOverlay()
         }
-
-        let guidePath = CGMutablePath()
-        guidePath.move(to: rotateOverlay.guideScreenStart)
-        guidePath.addLine(to: rotateOverlay.guideScreenEnd)
-        rotateGuideLayer.path = guidePath
-        rotateGuideLayer.isHidden = false
-        rotateGuideLayer.contentsScale = currentContentsScale
-
-        rotateOutlineLayer.path = Self.quadPath(for: rotateOverlay.screenQuad)
-        rotateOutlineLayer.isHidden = false
-        rotateOutlineLayer.contentsScale = currentContentsScale
-
-        let handleRect = Self.rotateHandleRect(centeredAt: rotateOverlay.handle.screenCenter)
-        rotateHandleLayer.frame = handleRect
-        rotateHandleLayer.path = CGPath(
-            ellipseIn: CGRect(origin: .zero, size: handleRect.size),
-            transform: nil
-        )
-        rotateHandleLayer.isHidden = false
-        rotateHandleLayer.contentsScale = currentContentsScale
     }
 
     private func refreshCropOverlay() {
@@ -391,6 +346,71 @@ final class macOSCanvasViewportView: NSView {
         }
     }
 
+    private func refreshSelectionChrome(
+        from editOverlay: CanvasEditRenderOverlay
+    ) {
+        // Selection and rotate now share one neutral edit overlay source; the
+        // viewport only decides stroke, handle size, and per-platform drawing.
+        selectionOutlineLayer.path = Self.quadPath(for: editOverlay.activeScreenQuad)
+        selectionOutlineLayer.isHidden = false
+        selectionOutlineLayer.contentsScale = currentContentsScale
+
+        for role in CanvasSelectionHandleRole.allCases {
+            guard
+                let handleLayer = selectionHandleLayers[role],
+                let handle = editOverlay.cornerHandles.first(where: {
+                    $0.role == Self.editHandleRole(for: role)
+                })
+            else {
+                selectionHandleLayers[role]?.path = nil
+                selectionHandleLayers[role]?.frame = .zero
+                selectionHandleLayers[role]?.isHidden = true
+                continue
+            }
+
+            handleLayer.frame = bounds
+            handleLayer.path = Self.selectionHandlePath(
+                centeredAt: handle.screenCenter,
+                rotationRadians: handle.screenRotationRadians
+            )
+            handleLayer.isHidden = false
+            handleLayer.contentsScale = currentContentsScale
+        }
+    }
+
+    private func refreshRotateChrome(
+        from editOverlay: CanvasEditRenderOverlay
+    ) {
+        guard case let .rotate(payload) = editOverlay.payload else {
+            hideRotateOverlay()
+            return
+        }
+
+        let guidePath = CGMutablePath()
+        guidePath.move(to: payload.guideScreenStart)
+        guidePath.addLine(to: payload.guideScreenEnd)
+        rotateGuideLayer.path = guidePath
+        rotateGuideLayer.isHidden = false
+        rotateGuideLayer.contentsScale = currentContentsScale
+
+        rotateOutlineLayer.path = nil
+        rotateOutlineLayer.isHidden = true
+
+        let handleRect = Self.rotateHandleRect(centeredAt: payload.handle.screenCenter)
+        rotateHandleLayer.frame = handleRect
+        rotateHandleLayer.path = CGPath(
+            ellipseIn: CGRect(origin: .zero, size: handleRect.size),
+            transform: nil
+        )
+        rotateHandleLayer.isHidden = false
+        rotateHandleLayer.contentsScale = currentContentsScale
+    }
+
+    private func hideEditOverlay() {
+        hideSelectionOverlay()
+        hideRotateOverlay()
+    }
+
     private func hideSelectionOverlay() {
         selectionOutlineLayer.path = nil
         selectionOutlineLayer.isHidden = true
@@ -425,15 +445,6 @@ final class macOSCanvasViewportView: NSView {
         rotateHandleLayer.isHidden = true
     }
 
-    private static func selectionHandleRect(centeredAt center: CGPoint) -> CGRect {
-        CGRect(
-            x: center.x - selectionHandleSize / 2,
-            y: center.y - selectionHandleSize / 2,
-            width: selectionHandleSize,
-            height: selectionHandleSize
-        ).standardized
-    }
-
     private static func cropHandleRect(centeredAt center: CGPoint) -> CGRect {
         CGRect(
             x: center.x - cropHandleSize / 2,
@@ -450,6 +461,52 @@ final class macOSCanvasViewportView: NSView {
             width: rotateHandleSize,
             height: rotateHandleSize
         ).standardized
+    }
+
+    private static func editHandleRole(
+        for role: CanvasSelectionHandleRole
+    ) -> CanvasEditHandleRole {
+        switch role {
+        case .topLeading:
+            return .topLeading
+        case .topTrailing:
+            return .topTrailing
+        case .bottomLeading:
+            return .bottomLeading
+        case .bottomTrailing:
+            return .bottomTrailing
+        }
+    }
+
+    private static func selectionHandlePath(
+        centeredAt center: CGPoint,
+        rotationRadians: CGFloat
+    ) -> CGPath {
+        let halfSize = selectionHandleSize / 2
+        let cosine = cos(rotationRadians)
+        let sine = sin(rotationRadians)
+        let localCorners = [
+            CGPoint(x: -halfSize, y: -halfSize),
+            CGPoint(x: halfSize, y: -halfSize),
+            CGPoint(x: halfSize, y: halfSize),
+            CGPoint(x: -halfSize, y: halfSize)
+        ]
+        let path = CGMutablePath()
+
+        for (index, localCorner) in localCorners.enumerated() {
+            let rotatedCorner = CGPoint(
+                x: center.x + (localCorner.x * cosine) - (localCorner.y * sine),
+                y: center.y + (localCorner.x * sine) + (localCorner.y * cosine)
+            )
+            if index == 0 {
+                path.move(to: rotatedCorner)
+            } else {
+                path.addLine(to: rotatedCorner)
+            }
+        }
+
+        path.closeSubpath()
+        return path
     }
 
     private static func quadPath(for quad: CanvasQuad) -> CGPath {
