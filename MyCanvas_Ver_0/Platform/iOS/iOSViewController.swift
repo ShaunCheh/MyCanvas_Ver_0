@@ -107,6 +107,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
     private static let cropOutlineHitTargetWidth: CGFloat = 20
     private static let minimumCropViewportDimension: CGFloat = 28
     private static let rotateHandleHitTargetSize: CGFloat = 32
+    private let miniMapLayoutSolver = CanvasOverlayLayoutSolver()
+    var miniMapConfiguration = CanvasMiniMapConfiguration()
     private let scene = CanvasScene()
     private var camera = CanvasCamera()
     private let renderer = CanvasRenderer()
@@ -115,6 +117,26 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         view.translatesAutoresizingMaskIntoConstraints = false
         view.backgroundColor = .systemBackground
         view.clipsToBounds = true
+        return view
+    }()
+    private let chromeOverlayView: iOSCanvasChromeOverlayView = {
+        let view = iOSCanvasChromeOverlayView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        return view
+    }()
+    private let controlsStackView: iOSCanvasChromeStackView = {
+        let stackView = iOSCanvasChromeStackView()
+        stackView.translatesAutoresizingMaskIntoConstraints = false
+        stackView.axis = .vertical
+        stackView.alignment = .trailing
+        stackView.distribution = .fill
+        stackView.spacing = 12
+        return stackView
+    }()
+    private let miniMapMountView: iOSCanvasChromeOverlayView = {
+        let view = iOSCanvasChromeOverlayView()
+        view.translatesAutoresizingMaskIntoConstraints = true
+        view.isHidden = true
         return view
     }()
     private let importButton: UIButton = {
@@ -197,6 +219,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
             canvasViewportView.bounds.size,
             source: "controller layout fallback"
         )
+        updateChromeOverlayLayout()
     }
 
     // Future canvas viewport views should always be mounted through this host.
@@ -219,36 +242,69 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
     private func setupViewHierarchy() {
         view.backgroundColor = .systemBackground
         view.addSubview(canvasHostView)
-        view.addSubview(cropButton)
-        view.addSubview(undoButton)
-        view.addSubview(redoButton)
-        view.addSubview(saveButton)
-        view.addSubview(importButton)
+        view.addSubview(chromeOverlayView)
+        chromeOverlayView.addSubview(miniMapMountView)
+        chromeOverlayView.addSubview(controlsStackView)
+        controlsStackView.addArrangedSubview(cropButton)
+        controlsStackView.addArrangedSubview(undoButton)
+        controlsStackView.addArrangedSubview(redoButton)
+        controlsStackView.addArrangedSubview(saveButton)
+        controlsStackView.addArrangedSubview(importButton)
     }
 
     private func setupConstraints() {
-        let safeAreaLayoutGuide = view.safeAreaLayoutGuide
+        let safeAreaLayoutGuide = chromeOverlayView.safeAreaLayoutGuide
         NSLayoutConstraint.activate([
             canvasHostView.topAnchor.constraint(equalTo: view.topAnchor),
             canvasHostView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             canvasHostView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             canvasHostView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            cropButton.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -20),
-            cropButton.bottomAnchor.constraint(equalTo: undoButton.topAnchor, constant: -12),
-            undoButton.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -20),
-            undoButton.bottomAnchor.constraint(equalTo: redoButton.topAnchor, constant: -12),
-            redoButton.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -20),
-            redoButton.bottomAnchor.constraint(equalTo: saveButton.topAnchor, constant: -12),
-            saveButton.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -20),
-            saveButton.bottomAnchor.constraint(equalTo: importButton.topAnchor, constant: -12),
-            importButton.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -20),
-            importButton.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -20),
+            chromeOverlayView.topAnchor.constraint(equalTo: view.topAnchor),
+            chromeOverlayView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            chromeOverlayView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            chromeOverlayView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            controlsStackView.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -20),
+            controlsStackView.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -20),
             cropButton.heightAnchor.constraint(equalToConstant: 40),
             undoButton.heightAnchor.constraint(equalToConstant: 40),
             redoButton.heightAnchor.constraint(equalToConstant: 40),
             saveButton.heightAnchor.constraint(equalToConstant: 40),
             importButton.heightAnchor.constraint(equalToConstant: 56)
         ])
+    }
+
+    private func updateChromeOverlayLayout() {
+        let safeBounds = chromeSafeBounds()
+        let occupiedRects = chromeOccupiedRects()
+        let miniMapFrame = miniMapLayoutSolver.resolveMiniMapFrame(
+            safeBounds: safeBounds,
+            occupiedRects: occupiedRects,
+            configuration: miniMapConfiguration
+        )?.integral ?? .zero
+        if miniMapMountView.frame != miniMapFrame {
+            miniMapMountView.frame = miniMapFrame
+        }
+    }
+
+    private func chromeSafeBounds() -> CGRect {
+        let safeAreaInsets = view.safeAreaInsets
+        return CGRect(
+            x: view.bounds.minX + safeAreaInsets.left,
+            y: view.bounds.minY + safeAreaInsets.top,
+            width: max(view.bounds.width - safeAreaInsets.left - safeAreaInsets.right, 0),
+            height: max(view.bounds.height - safeAreaInsets.top - safeAreaInsets.bottom, 0)
+        ).standardized
+    }
+
+    private func chromeOccupiedRects() -> [CGRect] {
+        guard
+            controlsStackView.bounds.width > 0,
+            controlsStackView.bounds.height > 0
+        else {
+            return []
+        }
+
+        return [controlsStackView.frame.standardized]
     }
 
     private func setupImportButton() {
