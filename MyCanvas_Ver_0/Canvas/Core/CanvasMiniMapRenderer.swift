@@ -27,6 +27,7 @@ struct CanvasMiniMapRenderer {
         )
         let displayWorldRect = resolveDisplayWorldRect(
             boardWorldRect: boardWorldRect,
+            visibleWorldRect: visibleWorldRect,
             nodes: nodes,
             fallbackVisibleWorldRect: visibleWorldRect
         )
@@ -76,20 +77,38 @@ struct CanvasMiniMapRenderer {
 
     private func resolveDisplayWorldRect(
         boardWorldRect: CGRect,
+        visibleWorldRect: CGRect,
         nodes: [CanvasMiniMapNode],
         fallbackVisibleWorldRect: CGRect
     ) -> CGRect {
-        guard let previewWorldBounds = combinedWorldBounds(
+        var resolvedDisplayWorldRect = sanitizedWorldRect(boardWorldRect)
+            ?? sanitizedWorldRect(fallbackVisibleWorldRect)
+
+        if let previewWorldBounds = combinedWorldBounds(
             of: nodes.filter(\.isPreviewActive)
-        ) else {
-            return sanitizedWorldRect(boardWorldRect) ?? fallbackVisibleWorldRect
+        ) {
+            if let currentDisplayWorldRect = resolvedDisplayWorldRect {
+                resolvedDisplayWorldRect = currentDisplayWorldRect
+                    .union(previewWorldBounds)
+                    .standardized
+            } else {
+                resolvedDisplayWorldRect = previewWorldBounds
+            }
         }
 
-        guard let sanitizedBoardWorldRect = sanitizedWorldRect(boardWorldRect) else {
-            return previewWorldBounds
+        // Keep the viewport frame representable even if the user pans outside the
+        // committed board bounds before any board expansion happens.
+        if let sanitizedVisibleWorldRect = sanitizedWorldRect(visibleWorldRect) {
+            if let currentDisplayWorldRect = resolvedDisplayWorldRect {
+                resolvedDisplayWorldRect = currentDisplayWorldRect
+                    .union(sanitizedVisibleWorldRect)
+                    .standardized
+            } else {
+                resolvedDisplayWorldRect = sanitizedVisibleWorldRect
+            }
         }
 
-        return sanitizedBoardWorldRect.union(previewWorldBounds).standardized
+        return resolvedDisplayWorldRect ?? fallbackVisibleWorldRect
     }
 
     private func combinedWorldBounds(of nodes: [CanvasMiniMapNode]) -> CGRect? {
