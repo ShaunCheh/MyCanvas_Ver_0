@@ -685,8 +685,8 @@ final class macOSCanvasViewportView: NSView {
     ) -> CGRect {
         let textBounds = attributedText.boundingRect(
             with: CGSize(
-                width: .greatestFiniteMagnitude,
-                height: .greatestFiniteMagnitude
+                width: CGFloat.greatestFiniteMagnitude,
+                height: CGFloat.greatestFiniteMagnitude
             ),
             options: [
                 .usesLineFragmentOrigin,
