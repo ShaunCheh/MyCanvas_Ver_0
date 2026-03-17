@@ -149,18 +149,12 @@ final class macOSViewController: NSViewController {
         button.imagePosition = .imageLeading
         return button
     }()
-    private let rotateButton: NSButton = {
-        let button = NSButton(title: "Rotate", target: nil, action: nil)
-        button.translatesAutoresizingMaskIntoConstraints = false
-        button.bezelStyle = .rounded
-        button.imagePosition = .imageLeading
-        return button
-    }()
     private let canvasViewportView = macOSCanvasViewportView()
     private var canvasContentView: NSView?
     private var boardState: CanvasBoardState?
     private var interactionState = CanvasInteractionState()
     private var inlineEditState: CanvasInlineEditState?
+    private var rotationPreviewState: CanvasRotationPreviewState?
     private var lastRenderSnapshot: CanvasRenderSnapshot = .empty
     private var pointerDragState: PointerDragState = .idle
     private var activeBoardID: UUID?
@@ -187,7 +181,6 @@ final class macOSViewController: NSViewController {
         setupImportButton()
         setupSaveButton()
         setupCropButton()
-        setupRotateButton()
         restorePersistedBoardIfPossible()
         setupCanvasViewport()
     }
@@ -216,7 +209,6 @@ final class macOSViewController: NSViewController {
 
     private func setupViewHierarchy() {
         view.addSubview(canvasHostView)
-        view.addSubview(rotateButton)
         view.addSubview(cropButton)
         view.addSubview(saveButton)
         view.addSubview(importButton)
@@ -228,8 +220,6 @@ final class macOSViewController: NSViewController {
             canvasHostView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             canvasHostView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             canvasHostView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            rotateButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
-            rotateButton.bottomAnchor.constraint(equalTo: cropButton.topAnchor, constant: -12),
             cropButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
             cropButton.bottomAnchor.constraint(equalTo: saveButton.topAnchor, constant: -12),
             saveButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
@@ -253,12 +243,6 @@ final class macOSViewController: NSViewController {
     private func setupCropButton() {
         cropButton.target = self
         cropButton.action = #selector(handleCropButtonClick)
-        updateInlineEditButtonsAppearance()
-    }
-
-    private func setupRotateButton() {
-        rotateButton.target = self
-        rotateButton.action = #selector(handleRotateButtonClick)
         updateInlineEditButtonsAppearance()
     }
 
@@ -521,7 +505,8 @@ final class macOSViewController: NSViewController {
             boardState: boardState,
             camera: camera,
             interactionState: interactionState,
-            inlineEditState: inlineEditState
+            inlineEditState: inlineEditState,
+            rotationPreviewState: rotationPreviewState
         )
         lastRenderSnapshot = snapshot
         canvasViewportView.apply(snapshot)
@@ -599,15 +584,6 @@ final class macOSViewController: NSViewController {
             endInlineEditMode(reason: "exit crop mode")
         } else {
             beginCropModeIfPossible()
-        }
-    }
-
-    @objc
-    private func handleRotateButtonClick() {
-        if isInlineRotateModeActive {
-            endInlineEditMode(reason: "exit rotate mode")
-        } else {
-            beginRotateModeIfPossible()
         }
     }
 
@@ -733,11 +709,15 @@ final class macOSViewController: NSViewController {
             }
 
             return .crop(role: role, itemID: editOverlay.itemID)
-        case .selection, .rotate:
-            if
-                case let .rotate(payload) = editOverlay.payload,
-                Self.rotateHandleHitRect(centeredAt: payload.handle.screenCenter)
-                    .contains(viewportLocation)
+        case .selection:
+            guard
+                case let .selection(payload) = editOverlay.payload
+            else {
+                return nil
+            }
+
+            if Self.rotateHandleHitRect(centeredAt: payload.rotateAffordance.handle.screenCenter)
+                .contains(viewportLocation)
             {
                 return .rotate(itemID: editOverlay.itemID)
             }
@@ -808,10 +788,8 @@ final class macOSViewController: NSViewController {
         initialViewportLocation: CGPoint
     ) -> PointerRotateState? {
         guard
-            let item = scene.item(withID: itemID),
-            let inlineEditState,
-            inlineEditState.mode == .rotate,
-            inlineEditState.itemID == itemID
+            inlineEditState == nil,
+            let item = scene.item(withID: itemID)
         else {
             return nil
         }
@@ -825,7 +803,7 @@ final class macOSViewController: NSViewController {
             itemID: itemID,
             referenceCenter: item.center,
             rotationOffsetToPointerAngle: normalizedCanvasAngle(
-                inlineEditState.draftRotationRadians - initialPointerAngle
+                displayedRotationRadians(for: item) - initialPointerAngle
             )
         )
     }
@@ -984,9 +962,8 @@ final class macOSViewController: NSViewController {
         to viewportLocation: CGPoint
     ) {
         guard
-            var inlineEditState,
-            inlineEditState.mode == .rotate,
-            inlineEditState.itemID == rotateState.itemID
+            inlineEditState == nil,
+            let item = scene.item(withID: rotateState.itemID)
         else {
             return
         }
@@ -999,44 +976,62 @@ final class macOSViewController: NSViewController {
             pointerAngle + rotateState.rotationOffsetToPointerAngle
         )
         guard !anglesMatch(
-            inlineEditState.draftRotationRadians,
+            displayedRotationRadians(for: item),
             draftRotationRadians
         ) else {
             return
         }
 
-        inlineEditState.draftRotationRadians = draftRotationRadians
-        self.inlineEditState = inlineEditState
+        rotationPreviewState = CanvasRotationPreviewState(
+            itemID: rotateState.itemID,
+            draftRotationRadians: draftRotationRadians
+        )
         refreshCanvas()
     }
 
     private func commitRotationDraftIfNeeded() {
         guard
-            let inlineEditState,
-            inlineEditState.mode == .rotate,
-            let item = scene.item(withID: inlineEditState.itemID)
+            let rotationPreviewState,
+            let item = scene.item(withID: rotationPreviewState.itemID)
         else {
             historyController.cancelPendingTransaction()
             return
         }
 
-        guard !anglesMatch(item.rotationRadians, inlineEditState.draftRotationRadians) else {
+        guard !anglesMatch(item.rotationRadians, rotationPreviewState.draftRotationRadians) else {
+            clearRotationPreviewState()
             historyController.cancelPendingTransaction()
             return
         }
 
         guard let rotatedItem = scene.rotateItem(
-            withID: inlineEditState.itemID,
-            to: inlineEditState.draftRotationRadians
+            withID: rotationPreviewState.itemID,
+            to: rotationPreviewState.draftRotationRadians
         ) else {
+            clearRotationPreviewState()
             historyController.cancelPendingTransaction()
             return
         }
 
         expandBoardIfNeeded(toInclude: rotatedItem.worldBounds)
-        self.inlineEditState = CanvasInlineEditState(item: rotatedItem, mode: .rotate)
+        self.rotationPreviewState = nil
         refreshCanvas()
         commitPendingPointerHistoryTransaction(autosaveReason: "rotate item")
+    }
+
+    private func displayedRotationRadians(for item: CanvasImageItem) -> CGFloat {
+        guard
+            let rotationPreviewState,
+            rotationPreviewState.itemID == item.id
+        else {
+            return item.rotationRadians
+        }
+
+        return rotationPreviewState.draftRotationRadians
+    }
+
+    private func clearRotationPreviewState() {
+        rotationPreviewState = nil
     }
 
     private func moveSelectedItem(
@@ -1722,6 +1717,7 @@ final class macOSViewController: NSViewController {
         camera = runtimeState.camera
         interactionState = runtimeState.interactionState
         inlineEditState = nil
+        rotationPreviewState = nil
         updateInlineEditButtonsAppearance()
     }
 
@@ -1742,6 +1738,7 @@ final class macOSViewController: NSViewController {
             scene.setItems(snapshot.items)
             boardState = snapshot.boardState
             interactionState = snapshot.interactionState
+            rotationPreviewState = nil
         }
 
         refreshCanvas()
@@ -1834,38 +1831,20 @@ final class macOSViewController: NSViewController {
         inlineEditState?.mode == .crop
     }
 
-    private var isInlineRotateModeActive: Bool {
-        inlineEditState?.mode == .rotate
-    }
-
     private var isInlineEditModeActive: Bool {
         inlineEditState != nil
     }
 
     private func beginCropModeIfPossible() {
         guard
-            !isInlineRotateModeActive,
             let selectedItemID = interactionState.selectedItemID,
             let item = scene.item(withID: selectedItemID)
         else {
             return
         }
 
+        clearRotationPreviewState()
         inlineEditState = CanvasInlineEditState(item: item, mode: .crop)
-        updateInlineEditButtonsAppearance()
-        refreshCanvas()
-    }
-
-    private func beginRotateModeIfPossible() {
-        guard
-            !isInlineCropModeActive,
-            let selectedItemID = interactionState.selectedItemID,
-            let item = scene.item(withID: selectedItemID)
-        else {
-            return
-        }
-
-        inlineEditState = CanvasInlineEditState(item: item, mode: .rotate)
         updateInlineEditButtonsAppearance()
         refreshCanvas()
     }
@@ -1881,6 +1860,13 @@ final class macOSViewController: NSViewController {
     }
 
     private func syncInlineEditStateWithSelection() {
+        if
+            let rotationPreviewState,
+            interactionState.selectedItemID != rotationPreviewState.itemID
+        {
+            clearRotationPreviewState()
+        }
+
         guard let inlineEditState else {
             updateInlineEditButtonsAppearance()
             return
@@ -2011,27 +1997,15 @@ final class macOSViewController: NSViewController {
 
     private func updateInlineEditButtonsAppearance() {
         updateCropButtonAppearance()
-        updateRotateButtonAppearance()
     }
 
     private func updateCropButtonAppearance() {
         let isActive = isInlineCropModeActive
-        let isEnabled = isActive || (interactionState.selectedItemID != nil && !isInlineRotateModeActive)
+        let isEnabled = isActive || interactionState.selectedItemID != nil
         applyCropButtonAppearance(
             title: isActive ? "Done" : "Crop",
             systemImageName: isActive ? "checkmark" : "crop",
             tintColor: isActive ? .systemOrange : .controlAccentColor,
-            isEnabled: isEnabled
-        )
-    }
-
-    private func updateRotateButtonAppearance() {
-        let isActive = isInlineRotateModeActive
-        let isEnabled = isActive || (interactionState.selectedItemID != nil && !isInlineCropModeActive)
-        applyRotateButtonAppearance(
-            title: isActive ? "Done" : "Rotate",
-            systemImageName: isActive ? "checkmark" : "rotate.right",
-            tintColor: isActive ? .systemPurple : .systemTeal,
             isEnabled: isEnabled
         )
     }
@@ -2062,21 +2036,6 @@ final class macOSViewController: NSViewController {
         )
         cropButton.contentTintColor = isEnabled ? tintColor : .secondaryLabelColor
         cropButton.isEnabled = isEnabled
-    }
-
-    private func applyRotateButtonAppearance(
-        title: String,
-        systemImageName: String,
-        tintColor: NSColor,
-        isEnabled: Bool
-    ) {
-        rotateButton.title = title
-        rotateButton.image = NSImage(
-            systemSymbolName: systemImageName,
-            accessibilityDescription: title
-        )
-        rotateButton.contentTintColor = isEnabled ? tintColor : .secondaryLabelColor
-        rotateButton.isEnabled = isEnabled
     }
 
     private func presentSaveError(message: String) {

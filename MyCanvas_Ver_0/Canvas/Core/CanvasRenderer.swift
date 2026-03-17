@@ -9,7 +9,8 @@ struct CanvasRenderer {
         boardState: CanvasBoardState? = nil,
         camera: CanvasCamera,
         interactionState: CanvasInteractionState = CanvasInteractionState(),
-        inlineEditState: CanvasInlineEditState? = nil
+        inlineEditState: CanvasInlineEditState? = nil,
+        rotationPreviewState: CanvasRotationPreviewState? = nil
     ) -> CanvasRenderSnapshot {
         let visibleWorldRect = camera.visibleWorldRect
         // Avoid turning an invalid zero-sized viewport into point-based culling.
@@ -24,7 +25,8 @@ struct CanvasRenderer {
             makeRenderItem(
                 for: item,
                 camera: camera,
-                inlineEditState: inlineEditState
+                inlineEditState: inlineEditState,
+                rotationPreviewState: rotationPreviewState
             )
         }
 
@@ -39,7 +41,8 @@ struct CanvasRenderer {
             scene: scene,
             camera: camera,
             interactionState: interactionState,
-            inlineEditState: inlineEditState
+            inlineEditState: inlineEditState,
+            rotationPreviewState: rotationPreviewState
         )
 
         return CanvasRenderSnapshot(
@@ -55,7 +58,8 @@ struct CanvasRenderer {
         scene: CanvasScene,
         camera: CanvasCamera,
         interactionState: CanvasInteractionState,
-        inlineEditState: CanvasInlineEditState?
+        inlineEditState: CanvasInlineEditState?,
+        rotationPreviewState: CanvasRotationPreviewState?
     ) -> CanvasEditRenderOverlay? {
         if let cropEditOverlay = makeCropEditOverlay(
             scene: scene,
@@ -65,19 +69,12 @@ struct CanvasRenderer {
             return cropEditOverlay
         }
 
-        if let rotateEditOverlay = makeRotateEditOverlay(
-            scene: scene,
-            camera: camera,
-            inlineEditState: inlineEditState
-        ) {
-            return rotateEditOverlay
-        }
-
         if let selectionEditOverlay = makeSelectionEditOverlay(
             scene: scene,
             camera: camera,
             interactionState: interactionState,
-            inlineEditState: inlineEditState
+            inlineEditState: inlineEditState,
+            rotationPreviewState: rotationPreviewState
         ) {
             return selectionEditOverlay
         }
@@ -89,7 +86,8 @@ struct CanvasRenderer {
         scene: CanvasScene,
         camera: CanvasCamera,
         interactionState: CanvasInteractionState,
-        inlineEditState: CanvasInlineEditState?
+        inlineEditState: CanvasInlineEditState?,
+        rotationPreviewState: CanvasRotationPreviewState?
     ) -> CanvasEditRenderOverlay? {
         guard inlineEditState == nil else {
             return nil
@@ -102,16 +100,28 @@ struct CanvasRenderer {
             return nil
         }
 
-        let worldQuad = selectedItem.worldQuad
+        let previewItem = previewedItem(
+            for: selectedItem,
+            inlineEditState: inlineEditState,
+            rotationPreviewState: rotationPreviewState
+        )
+        let worldQuad = previewItem.worldQuad
         let screenQuad = camera.worldToViewport(worldQuad)
+        let selectionPayload = CanvasEditSelectionOverlayPayload(
+            rotateAffordance: makeRotateAffordance(
+                for: previewItem,
+                camera: camera,
+                screenQuad: screenQuad
+            )
+        )
 
         return CanvasEditRenderOverlay(
-            itemID: selectedItemID,
+            itemID: previewItem.id,
             kind: .selection,
             activeWorldQuad: worldQuad,
             activeScreenQuad: screenQuad,
             handles: makeCornerEditHandles(for: screenQuad),
-            payload: .selection
+            payload: .selection(selectionPayload)
         )
     }
 
@@ -122,15 +132,16 @@ struct CanvasRenderer {
     ) -> CanvasEditRenderOverlay? {
         guard
             let inlineEditState,
-            let cropSession = inlineEditState.cropSession,
             let item = scene.item(withID: inlineEditState.itemID)
         else {
             return nil
         }
 
+        let cropSession = inlineEditState.cropSession
         let previewItem = previewedItem(
             for: item,
-            inlineEditState: inlineEditState
+            inlineEditState: inlineEditState,
+            rotationPreviewState: nil
         )
         let fullImageWorldQuad = previewItem.fullImageWorldQuad
         let cropWorldQuad = previewItem.worldQuad(
@@ -157,64 +168,16 @@ struct CanvasRenderer {
         )
     }
 
-    private func makeRotateEditOverlay(
-        scene: CanvasScene,
-        camera: CanvasCamera,
-        inlineEditState: CanvasInlineEditState?
-    ) -> CanvasEditRenderOverlay? {
-        guard
-            let inlineEditState,
-            inlineEditState.rotateSession != nil,
-            let item = scene.item(withID: inlineEditState.itemID)
-        else {
-            return nil
-        }
-
-        let previewItem = previewedItem(
-            for: item,
-            inlineEditState: inlineEditState
-        )
-        let worldQuad = previewItem.worldQuad
-        let screenQuad = camera.worldToViewport(worldQuad)
-        let screenCenter = camera.worldToViewport(previewItem.center)
-        let guideScreenStart = screenQuad.topMidpoint
-        let outwardDirection = normalizedDirection(
-            from: screenCenter,
-            to: guideScreenStart
-        )
-        let guideScreenEnd = CGPoint(
-            x: guideScreenStart.x + (outwardDirection.x * Self.rotateHandleScreenOffset),
-            y: guideScreenStart.y + (outwardDirection.y * Self.rotateHandleScreenOffset)
-        )
-        let rotationRadians = editHandleRotation(for: screenQuad)
-        return CanvasEditRenderOverlay(
-            itemID: previewItem.id,
-            kind: .rotate,
-            activeWorldQuad: worldQuad,
-            activeScreenQuad: screenQuad,
-            handles: makeCornerEditHandles(for: screenQuad),
-            payload: .rotate(
-                CanvasEditRotateOverlayPayload(
-                    guideScreenStart: guideScreenStart,
-                    guideScreenEnd: guideScreenEnd,
-                    handle: CanvasEditHandleGeometry(
-                        role: .rotate,
-                        screenCenter: guideScreenEnd,
-                        screenRotationRadians: rotationRadians
-                    )
-                )
-            )
-        )
-    }
-
     private func makeRenderItem(
         for item: CanvasImageItem,
         camera: CanvasCamera,
-        inlineEditState: CanvasInlineEditState?
+        inlineEditState: CanvasInlineEditState?,
+        rotationPreviewState: CanvasRotationPreviewState?
     ) -> CanvasRenderItem {
         let previewItem = previewedItem(
             for: item,
-            inlineEditState: inlineEditState
+            inlineEditState: inlineEditState,
+            rotationPreviewState: rotationPreviewState
         )
         let isEditingCropItem =
             inlineEditState?.mode == .crop &&
@@ -326,25 +289,55 @@ struct CanvasRenderer {
         )
     }
 
+    private func makeRotateAffordance(
+        for item: CanvasImageItem,
+        camera: CanvasCamera,
+        screenQuad: CanvasQuad
+    ) -> CanvasEditRotateOverlayPayload {
+        let screenCenter = camera.worldToViewport(item.center)
+        let guideScreenStart = screenQuad.topMidpoint
+        let outwardDirection = normalizedDirection(
+            from: screenCenter,
+            to: guideScreenStart
+        )
+        let guideScreenEnd = CGPoint(
+            x: guideScreenStart.x + (outwardDirection.x * Self.rotateHandleScreenOffset),
+            y: guideScreenStart.y + (outwardDirection.y * Self.rotateHandleScreenOffset)
+        )
+        let rotationRadians = editHandleRotation(for: screenQuad)
+        return CanvasEditRotateOverlayPayload(
+            guideScreenStart: guideScreenStart,
+            guideScreenEnd: guideScreenEnd,
+            handle: CanvasEditHandleGeometry(
+                role: .rotate,
+                screenCenter: guideScreenEnd,
+                screenRotationRadians: rotationRadians
+            )
+        )
+    }
+
     private func previewedItem(
         for item: CanvasImageItem,
-        inlineEditState: CanvasInlineEditState?
+        inlineEditState: CanvasInlineEditState?,
+        rotationPreviewState: CanvasRotationPreviewState?
     ) -> CanvasImageItem {
-        guard
+        if
             let inlineEditState,
             inlineEditState.itemID == item.id
+        {
+            return item
+        }
+
+        guard
+            let rotationPreviewState,
+            rotationPreviewState.itemID == item.id
         else {
             return item
         }
 
         var previewItem = item
-        switch inlineEditState.session {
-        case .crop:
-            return previewItem
-        case let .rotate(rotateSession):
-            previewItem.rotationRadians = rotateSession.draftRotationRadians
-            return previewItem
-        }
+        previewItem.rotationRadians = rotationPreviewState.draftRotationRadians
+        return previewItem
     }
 
     private func normalizedDirection(

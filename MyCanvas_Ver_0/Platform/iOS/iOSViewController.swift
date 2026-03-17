@@ -159,17 +159,13 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         button.translatesAutoresizingMaskIntoConstraints = false
         return button
     }()
-    private let rotateButton: UIButton = {
-        let button = UIButton(type: .system)
-        button.translatesAutoresizingMaskIntoConstraints = false
-        return button
-    }()
     private let canvasViewportView = iOSCanvasViewportView()
     private var canvasContentView: UIView?
     private var pendingRefreshReason: String?
     private var boardState: CanvasBoardState?
     private var interactionState = CanvasInteractionState()
     private var inlineEditState: CanvasInlineEditState?
+    private var rotationPreviewState: CanvasRotationPreviewState?
     private var lastRenderSnapshot: CanvasRenderSnapshot = .empty
     private var pointerDragState: PointerDragState = .idle
     private var activeBoardID: UUID?
@@ -191,7 +187,6 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         setupCropButton()
         setupUndoButton()
         setupRedoButton()
-        setupRotateButton()
         restorePersistedBoardIfPossible()
         setupCanvasViewport()
     }
@@ -224,7 +219,6 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
     private func setupViewHierarchy() {
         view.backgroundColor = .systemBackground
         view.addSubview(canvasHostView)
-        view.addSubview(rotateButton)
         view.addSubview(cropButton)
         view.addSubview(undoButton)
         view.addSubview(redoButton)
@@ -239,8 +233,6 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
             canvasHostView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             canvasHostView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             canvasHostView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            rotateButton.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -20),
-            rotateButton.bottomAnchor.constraint(equalTo: cropButton.topAnchor, constant: -12),
             cropButton.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -20),
             cropButton.bottomAnchor.constraint(equalTo: undoButton.topAnchor, constant: -12),
             undoButton.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -20),
@@ -251,7 +243,6 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
             saveButton.bottomAnchor.constraint(equalTo: importButton.topAnchor, constant: -12),
             importButton.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -20),
             importButton.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -20),
-            rotateButton.heightAnchor.constraint(equalToConstant: 40),
             cropButton.heightAnchor.constraint(equalToConstant: 40),
             undoButton.heightAnchor.constraint(equalToConstant: 40),
             redoButton.heightAnchor.constraint(equalToConstant: 40),
@@ -281,11 +272,6 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
     private func setupRedoButton() {
         redoButton.addTarget(self, action: #selector(handleRedoButtonTap), for: .touchUpInside)
         updateHistoryButtonsAppearance()
-    }
-
-    private func setupRotateButton() {
-        rotateButton.addTarget(self, action: #selector(handleRotateButtonTap), for: .touchUpInside)
-        updateInlineEditButtonsAppearance()
     }
 
     private func setupCanvasViewport() {
@@ -607,7 +593,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
             boardState: boardState,
             camera: camera,
             interactionState: interactionState,
-            inlineEditState: inlineEditState
+            inlineEditState: inlineEditState,
+            rotationPreviewState: rotationPreviewState
         )
         lastRenderSnapshot = snapshot
         canvasViewportView.apply(snapshot)
@@ -671,15 +658,6 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
             endInlineEditMode(reason: "exit crop mode")
         } else {
             beginCropModeIfPossible()
-        }
-    }
-
-    @objc
-    private func handleRotateButtonTap() {
-        if isInlineRotateModeActive {
-            endInlineEditMode(reason: "exit rotate mode")
-        } else {
-            beginRotateModeIfPossible()
         }
     }
 
@@ -849,11 +827,15 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
             }
 
             return .crop(role: role, itemID: editOverlay.itemID)
-        case .selection, .rotate:
-            if
-                case let .rotate(payload) = editOverlay.payload,
-                Self.rotateHandleHitRect(centeredAt: payload.handle.screenCenter)
-                    .contains(viewportLocation)
+        case .selection:
+            guard
+                case let .selection(payload) = editOverlay.payload
+            else {
+                return nil
+            }
+
+            if Self.rotateHandleHitRect(centeredAt: payload.rotateAffordance.handle.screenCenter)
+                .contains(viewportLocation)
             {
                 return .rotate(itemID: editOverlay.itemID)
             }
@@ -924,10 +906,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         initialViewportLocation: CGPoint
     ) -> PointerRotateState? {
         guard
-            let item = scene.item(withID: itemID),
-            let inlineEditState,
-            inlineEditState.mode == .rotate,
-            inlineEditState.itemID == itemID
+            inlineEditState == nil,
+            let item = scene.item(withID: itemID)
         else {
             return nil
         }
@@ -941,7 +921,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
             itemID: itemID,
             referenceCenter: item.center,
             rotationOffsetToPointerAngle: normalizedCanvasAngle(
-                inlineEditState.draftRotationRadians - initialPointerAngle
+                displayedRotationRadians(for: item) - initialPointerAngle
             )
         )
     }
@@ -1100,9 +1080,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         to viewportLocation: CGPoint
     ) {
         guard
-            var inlineEditState,
-            inlineEditState.mode == .rotate,
-            inlineEditState.itemID == rotateState.itemID
+            inlineEditState == nil,
+            let item = scene.item(withID: rotateState.itemID)
         else {
             return
         }
@@ -1115,44 +1094,62 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
             pointerAngle + rotateState.rotationOffsetToPointerAngle
         )
         guard !anglesMatch(
-            inlineEditState.draftRotationRadians,
+            displayedRotationRadians(for: item),
             draftRotationRadians
         ) else {
             return
         }
 
-        inlineEditState.draftRotationRadians = draftRotationRadians
-        self.inlineEditState = inlineEditState
+        rotationPreviewState = CanvasRotationPreviewState(
+            itemID: rotateState.itemID,
+            draftRotationRadians: draftRotationRadians
+        )
         requestCanvasRefresh(reason: "update rotate draft")
     }
 
     private func commitRotationDraftIfNeeded() {
         guard
-            let inlineEditState,
-            inlineEditState.mode == .rotate,
-            let item = scene.item(withID: inlineEditState.itemID)
+            let rotationPreviewState,
+            let item = scene.item(withID: rotationPreviewState.itemID)
         else {
             historyController.cancelPendingTransaction()
             return
         }
 
-        guard !anglesMatch(item.rotationRadians, inlineEditState.draftRotationRadians) else {
+        guard !anglesMatch(item.rotationRadians, rotationPreviewState.draftRotationRadians) else {
+            clearRotationPreviewState()
             historyController.cancelPendingTransaction()
             return
         }
 
         guard let rotatedItem = scene.rotateItem(
-            withID: inlineEditState.itemID,
-            to: inlineEditState.draftRotationRadians
+            withID: rotationPreviewState.itemID,
+            to: rotationPreviewState.draftRotationRadians
         ) else {
+            clearRotationPreviewState()
             historyController.cancelPendingTransaction()
             return
         }
 
         expandBoardIfNeeded(toInclude: rotatedItem.worldBounds)
-        self.inlineEditState = CanvasInlineEditState(item: rotatedItem, mode: .rotate)
+        self.rotationPreviewState = nil
         requestCanvasRefresh(reason: "commit rotate item")
         commitPendingPointerHistoryTransaction(autosaveReason: "rotate item")
+    }
+
+    private func displayedRotationRadians(for item: CanvasImageItem) -> CGFloat {
+        guard
+            let rotationPreviewState,
+            rotationPreviewState.itemID == item.id
+        else {
+            return item.rotationRadians
+        }
+
+        return rotationPreviewState.draftRotationRadians
+    }
+
+    private func clearRotationPreviewState() {
+        rotationPreviewState = nil
     }
 
     private func moveSelectedItem(
@@ -1844,6 +1841,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         camera = runtimeState.camera
         interactionState = runtimeState.interactionState
         inlineEditState = nil
+        rotationPreviewState = nil
         updateInlineEditButtonsAppearance()
     }
 
@@ -1864,6 +1862,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
             scene.setItems(snapshot.items)
             boardState = snapshot.boardState
             interactionState = snapshot.interactionState
+            rotationPreviewState = nil
         }
 
         requestCanvasRefresh(reason: "apply history snapshot")
@@ -1965,40 +1964,22 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         inlineEditState?.mode == .crop
     }
 
-    private var isInlineRotateModeActive: Bool {
-        inlineEditState?.mode == .rotate
-    }
-
     private var isInlineEditModeActive: Bool {
         inlineEditState != nil
     }
 
     private func beginCropModeIfPossible() {
         guard
-            !isInlineRotateModeActive,
             let selectedItemID = interactionState.selectedItemID,
             let item = scene.item(withID: selectedItemID)
         else {
             return
         }
 
+        clearRotationPreviewState()
         inlineEditState = CanvasInlineEditState(item: item, mode: .crop)
         updateInlineEditButtonsAppearance()
         requestCanvasRefresh(reason: "enter crop mode")
-    }
-
-    private func beginRotateModeIfPossible() {
-        guard
-            !isInlineCropModeActive,
-            let selectedItemID = interactionState.selectedItemID,
-            let item = scene.item(withID: selectedItemID)
-        else {
-            return
-        }
-
-        inlineEditState = CanvasInlineEditState(item: item, mode: .rotate)
-        updateInlineEditButtonsAppearance()
-        requestCanvasRefresh(reason: "enter rotate mode")
     }
 
     private func endInlineEditMode(reason: String) {
@@ -2012,6 +1993,13 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
     }
 
     private func syncInlineEditStateWithSelection() {
+        if
+            let rotationPreviewState,
+            interactionState.selectedItemID != rotationPreviewState.itemID
+        {
+            clearRotationPreviewState()
+        }
+
         guard let inlineEditState else {
             updateInlineEditButtonsAppearance()
             return
@@ -2142,13 +2130,12 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
 
     private func updateInlineEditButtonsAppearance() {
         updateCropButtonAppearance()
-        updateRotateButtonAppearance()
         updateHistoryButtonsAppearance()
     }
 
     private func updateCropButtonAppearance() {
         let isActive = isInlineCropModeActive
-        let isEnabled = isActive || (interactionState.selectedItemID != nil && !isInlineRotateModeActive)
+        let isEnabled = isActive || interactionState.selectedItemID != nil
         applyCropButtonAppearance(
             title: isActive ? "Done" : "Crop",
             systemImageName: isActive ? "checkmark" : "crop",
@@ -2177,17 +2164,6 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
             systemImageName: "arrow.uturn.forward",
             backgroundColor: .systemIndigo,
             isEnabled: canRedoCommand
-        )
-    }
-
-    private func updateRotateButtonAppearance() {
-        let isActive = isInlineRotateModeActive
-        let isEnabled = isActive || (interactionState.selectedItemID != nil && !isInlineCropModeActive)
-        applyRotateButtonAppearance(
-            title: isActive ? "Done" : "Rotate",
-            systemImageName: isActive ? "checkmark" : "rotate.right",
-            backgroundColor: isActive ? .systemPurple : .systemTeal,
-            isEnabled: isEnabled
         )
     }
 
@@ -2258,25 +2234,6 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         configuration.image = UIImage(systemName: systemImageName)
         configuration.baseBackgroundColor = isEnabled ? backgroundColor : .systemGray3
         redoButton.configuration = configuration
-    }
-
-    private func applyRotateButtonAppearance(
-        title: String,
-        systemImageName: String,
-        backgroundColor: UIColor,
-        isEnabled: Bool
-    ) {
-        rotateButton.isEnabled = isEnabled
-        var configuration = rotateButton.configuration ?? UIButton.Configuration.filled()
-        configuration.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
-        configuration.imagePlacement = .leading
-        configuration.imagePadding = 6
-        configuration.cornerStyle = .capsule
-        configuration.baseForegroundColor = .white
-        configuration.title = title
-        configuration.image = UIImage(systemName: systemImageName)
-        configuration.baseBackgroundColor = isEnabled ? backgroundColor : .systemGray3
-        rotateButton.configuration = configuration
     }
 
     private func presentSaveError(message: String) {

@@ -4,25 +4,25 @@ overview: 将独立的 `rotate mode` 重构为普通选中态上的蓝色旋转 
 todos:
   - id: phase1-rotation-preview
     content: 引入独立 transient rotation preview，并让 renderer 先脱离 `CanvasInlineEditState.rotate` 预览链路
-    status: pending
+    status: completed
   - id: phase2-crop-only-inline
     content: 收缩 inline edit 语义为 crop-only，梳理 undo/redo、selection sync、restore 对 preview state 的清理
-    status: pending
+    status: completed
   - id: phase3-overlay-contract
     content: 把 rotate affordance 并入 selection overlay contract，取消 shared 层对独立 `.rotate` overlay 的依赖
-    status: pending
+    status: completed
   - id: phase4-viewport-blue-chrome
     content: 迁移 iOS/macOS viewport 到“蓝色 selection chrome + 蓝色 rotate guide/handle”的统一绘制
-    status: pending
+    status: completed
   - id: phase5-controller-rewire
     content: 重接 iOS/macOS controller 的 rotate hit-test、draft、commit 与 history 事务链路
-    status: pending
+    status: completed
   - id: phase6-delete-rotate-mode
     content: 删除 rotate mode、按钮 toggle 语义和相关 dead code，保留 crop 独占模式
-    status: pending
+    status: completed
   - id: phase7-validate
     content: 完成 lints、双平台构建与关键交互回归验证
-    status: pending
+    status: completed
 isProject: false
 ---
 

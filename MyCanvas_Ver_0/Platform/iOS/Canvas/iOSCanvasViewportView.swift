@@ -29,20 +29,6 @@ final class iOSCanvasViewportView: UIView {
     private static let cropOutlineLineWidth: CGFloat = 2
     private static let cropHandleLineWidth: CGFloat = 2
     private static let cropHandleSize: CGFloat = 12
-    private static let rotateOutlineStrokeColor = CGColor(
-        red: 175.0 / 255.0,
-        green: 82.0 / 255.0,
-        blue: 222.0 / 255.0,
-        alpha: 1
-    )
-    private static let rotateGuideStrokeColor = CGColor(
-        red: 175.0 / 255.0,
-        green: 82.0 / 255.0,
-        blue: 222.0 / 255.0,
-        alpha: 0.9
-    )
-    private static let rotateHandleFillColor = CGColor(gray: 1, alpha: 1)
-    private static let rotateOutlineLineWidth: CGFloat = 2
     private static let rotateGuideLineWidth: CGFloat = 2
     private static let rotateHandleLineWidth: CGFloat = 2
     private static let rotateHandleSize: CGFloat = 14
@@ -63,7 +49,6 @@ final class iOSCanvasViewportView: UIView {
     private let cropMaskLayer = CAShapeLayer()
     private let cropOutlineLayer = CAShapeLayer()
     private var cropHandleLayers: [CanvasCropHandleRole: CAShapeLayer] = [:]
-    private let rotateOutlineLayer = CAShapeLayer()
     private let rotateGuideLayer = CAShapeLayer()
     private let rotateHandleLayer = CAShapeLayer()
     private var imageLayers: [CanvasImageItemID: CanvasImageLayer] = [:]
@@ -207,7 +192,6 @@ final class iOSCanvasViewportView: UIView {
         overlayLayer.addSublayer(cropMaskLayer)
         overlayLayer.addSublayer(cropOutlineLayer)
         overlayLayer.addSublayer(rotateGuideLayer)
-        overlayLayer.addSublayer(rotateOutlineLayer)
         overlayLayer.addSublayer(rotateHandleLayer)
         addGestureRecognizer(pinchGestureRecognizer)
 
@@ -218,7 +202,6 @@ final class iOSCanvasViewportView: UIView {
         configureCropOutlineLayer()
         configureCropHandleLayers()
         configureRotateGuideLayer()
-        configureRotateOutlineLayer()
         configureRotateHandleLayer()
         updateBackgroundAppearance()
     }
@@ -254,10 +237,6 @@ final class iOSCanvasViewportView: UIView {
 
         if rotateGuideLayer.frame != bounds {
             rotateGuideLayer.frame = bounds
-        }
-
-        if rotateOutlineLayer.frame != bounds {
-            rotateOutlineLayer.frame = bounds
         }
     }
 
@@ -345,22 +324,15 @@ final class iOSCanvasViewportView: UIView {
 
     private func configureRotateGuideLayer() {
         rotateGuideLayer.fillColor = nil
-        rotateGuideLayer.strokeColor = Self.rotateGuideStrokeColor
+        rotateGuideLayer.strokeColor = Self.selectionStrokeColor
         rotateGuideLayer.lineWidth = Self.rotateGuideLineWidth
         rotateGuideLayer.lineCap = .round
         rotateGuideLayer.isHidden = true
     }
 
-    private func configureRotateOutlineLayer() {
-        rotateOutlineLayer.fillColor = nil
-        rotateOutlineLayer.strokeColor = Self.rotateOutlineStrokeColor
-        rotateOutlineLayer.lineWidth = Self.rotateOutlineLineWidth
-        rotateOutlineLayer.isHidden = true
-    }
-
     private func configureRotateHandleLayer() {
-        rotateHandleLayer.fillColor = Self.rotateHandleFillColor
-        rotateHandleLayer.strokeColor = Self.rotateOutlineStrokeColor
+        rotateHandleLayer.fillColor = Self.selectionHandleFillColor
+        rotateHandleLayer.strokeColor = Self.selectionStrokeColor
         rotateHandleLayer.lineWidth = Self.rotateHandleLineWidth
         rotateHandleLayer.isHidden = true
     }
@@ -386,15 +358,9 @@ final class iOSCanvasViewportView: UIView {
         switch editOverlay.kind {
         case .selection:
             refreshSelectionChrome(from: editOverlay)
-            hideRotateOverlay()
-            hideCropOverlay()
-        case .rotate:
-            refreshSelectionChrome(from: editOverlay)
-            refreshRotateChrome(from: editOverlay)
             hideCropOverlay()
         case .crop:
             hideSelectionOverlay()
-            hideRotateOverlay()
             refreshCropChrome(from: editOverlay)
         }
     }
@@ -446,8 +412,13 @@ final class iOSCanvasViewportView: UIView {
     private func refreshSelectionChrome(
         from editOverlay: CanvasEditRenderOverlay
     ) {
-        // Selection and rotate now share one neutral edit overlay source; the
-        // viewport only decides stroke, handle size, and per-platform drawing.
+        guard case let .selection(payload) = editOverlay.payload else {
+            hideSelectionOverlay()
+            return
+        }
+
+        // Selection owns both the outline/resize handles and the rotate
+        // affordance so the viewport can keep one coherent blue chrome.
         selectionOutlineLayer.path = Self.quadPath(for: editOverlay.activeScreenQuad)
         selectionOutlineLayer.isHidden = false
         selectionOutlineLayer.contentsScale = currentContentsScale
@@ -473,27 +444,21 @@ final class iOSCanvasViewportView: UIView {
             handleLayer.isHidden = false
             handleLayer.contentsScale = currentContentsScale
         }
+
+        refreshRotateAffordance(payload.rotateAffordance)
     }
 
-    private func refreshRotateChrome(
-        from editOverlay: CanvasEditRenderOverlay
+    private func refreshRotateAffordance(
+        _ rotateAffordance: CanvasEditRotateOverlayPayload
     ) {
-        guard case let .rotate(payload) = editOverlay.payload else {
-            hideRotateOverlay()
-            return
-        }
-
         let guidePath = CGMutablePath()
-        guidePath.move(to: payload.guideScreenStart)
-        guidePath.addLine(to: payload.guideScreenEnd)
+        guidePath.move(to: rotateAffordance.guideScreenStart)
+        guidePath.addLine(to: rotateAffordance.guideScreenEnd)
         rotateGuideLayer.path = guidePath
         rotateGuideLayer.isHidden = false
         rotateGuideLayer.contentsScale = currentContentsScale
 
-        rotateOutlineLayer.path = nil
-        rotateOutlineLayer.isHidden = true
-
-        let handleRect = Self.rotateHandleRect(centeredAt: payload.handle.screenCenter)
+        let handleRect = Self.rotateHandleRect(centeredAt: rotateAffordance.handle.screenCenter)
         rotateHandleLayer.frame = handleRect
         rotateHandleLayer.path = CGPath(
             ellipseIn: CGRect(origin: .zero, size: handleRect.size),
@@ -505,7 +470,6 @@ final class iOSCanvasViewportView: UIView {
 
     private func hideEditOverlay() {
         hideSelectionOverlay()
-        hideRotateOverlay()
         hideCropOverlay()
     }
 
@@ -518,6 +482,12 @@ final class iOSCanvasViewportView: UIView {
             handleLayer.frame = .zero
             handleLayer.isHidden = true
         }
+
+        rotateGuideLayer.path = nil
+        rotateGuideLayer.isHidden = true
+        rotateHandleLayer.path = nil
+        rotateHandleLayer.frame = .zero
+        rotateHandleLayer.isHidden = true
     }
 
     private func hideCropOverlay() {
@@ -531,16 +501,6 @@ final class iOSCanvasViewportView: UIView {
             handleLayer.frame = .zero
             handleLayer.isHidden = true
         }
-    }
-
-    private func hideRotateOverlay() {
-        rotateGuideLayer.path = nil
-        rotateGuideLayer.isHidden = true
-        rotateOutlineLayer.path = nil
-        rotateOutlineLayer.isHidden = true
-        rotateHandleLayer.path = nil
-        rotateHandleLayer.frame = .zero
-        rotateHandleLayer.isHidden = true
     }
 
     private static func rotateHandleRect(centeredAt center: CGPoint) -> CGRect {

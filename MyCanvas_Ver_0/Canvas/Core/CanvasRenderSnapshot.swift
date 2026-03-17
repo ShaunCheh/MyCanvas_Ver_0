@@ -29,7 +29,6 @@ enum CanvasSelectionHandleRole: CaseIterable {
 
 enum CanvasEditOverlayKind {
     case selection
-    case rotate
     case crop
 }
 
@@ -59,6 +58,10 @@ struct CanvasEditRotateOverlayPayload {
     let handle: CanvasEditHandleGeometry
 }
 
+struct CanvasEditSelectionOverlayPayload {
+    let rotateAffordance: CanvasEditRotateOverlayPayload
+}
+
 struct CanvasEditCropOverlayPayload {
     let fullImageWorldQuad: CanvasQuad
     let fullImageScreenQuad: CanvasQuad
@@ -68,13 +71,13 @@ struct CanvasEditCropOverlayPayload {
 }
 
 enum CanvasEditRenderOverlayPayload {
-    case selection
-    case rotate(CanvasEditRotateOverlayPayload)
+    case selection(CanvasEditSelectionOverlayPayload)
     case crop(CanvasEditCropOverlayPayload)
 }
 
-// Edit overlay is now the single shared source of truth for selection, rotate,
-// and crop chrome across renderer, viewport, and controller layers.
+// Edit overlay is now the single shared source of truth for selection chrome
+// (including rotate affordances) and crop chrome across renderer, viewport,
+// and controller layers.
 struct CanvasEditRenderOverlay {
     let itemID: CanvasImageItemID
     let kind: CanvasEditOverlayKind
