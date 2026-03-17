@@ -105,3 +105,71 @@ struct CanvasQuad: Equatable {
 func normalizedCanvasAngle(_ radians: CGFloat) -> CGFloat {
     atan2(sin(radians), cos(radians))
 }
+
+func normalizedCanvasDegrees0To360(_ degrees: CGFloat) -> CGFloat {
+    let normalizedDegrees = degrees.truncatingRemainder(dividingBy: 360)
+    return normalizedDegrees >= 0
+        ? normalizedDegrees
+        : normalizedDegrees + 360
+}
+
+func canvasDisplayDegrees0To360(
+    forRotationRadians radians: CGFloat
+) -> CGFloat {
+    normalizedCanvasDegrees0To360(radians * 180 / .pi)
+}
+
+func canvasCircleRect(
+    centeredAt center: CGPoint,
+    radius: CGFloat
+) -> CGRect {
+    let resolvedRadius = max(radius, 0)
+    return CGRect(
+        x: center.x - resolvedRadius,
+        y: center.y - resolvedRadius,
+        width: resolvedRadius * 2,
+        height: resolvedRadius * 2
+    ).standardized
+}
+
+func canvasPointOnInteractionCircle(
+    centeredAt center: CGPoint,
+    radius: CGFloat,
+    displayDegrees0To360 degrees: CGFloat,
+    zeroReference: CanvasInteractionAngleZeroReference = .up
+) -> CGPoint {
+    let resolvedRadius = max(radius, 0)
+    let normalizedDegrees = normalizedCanvasDegrees0To360(degrees)
+    let radians = normalizedDegrees * .pi / 180
+
+    switch zeroReference {
+    case .up:
+        return CGPoint(
+            x: center.x + (sin(radians) * resolvedRadius),
+            y: center.y - (cos(radians) * resolvedRadius)
+        )
+    }
+}
+
+func canvasRadialSegment(
+    centeredAt center: CGPoint,
+    startRadius: CGFloat,
+    endRadius: CGFloat,
+    displayDegrees0To360 degrees: CGFloat,
+    zeroReference: CanvasInteractionAngleZeroReference = .up
+) -> CanvasInteractionLineSegment {
+    CanvasInteractionLineSegment(
+        start: canvasPointOnInteractionCircle(
+            centeredAt: center,
+            radius: startRadius,
+            displayDegrees0To360: degrees,
+            zeroReference: zeroReference
+        ),
+        end: canvasPointOnInteractionCircle(
+            centeredAt: center,
+            radius: endRadius,
+            displayDegrees0To360: degrees,
+            zeroReference: zeroReference
+        )
+    )
+}

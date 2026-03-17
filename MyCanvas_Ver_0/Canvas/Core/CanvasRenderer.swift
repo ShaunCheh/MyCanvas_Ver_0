@@ -4,6 +4,9 @@ import Foundation
 struct CanvasRenderer {
     private static let rotateHandleScreenOffset: CGFloat = 28
     private static let rotationInteractionTickStepDegrees: CGFloat = 10
+    private static let minimumRotationInteractionRingRadius: CGFloat = 48
+    private static let rotationInteractionTickLength: CGFloat = 8
+    private static let rotationInteractionTextOffset: CGFloat = 18
     private let presentationResolver = CanvasImagePresentationResolver()
 
     func makeSnapshot(
@@ -185,6 +188,24 @@ struct CanvasRenderer {
         rotationPreviewState: CanvasRotationPreviewState?,
         rotationInteractionState: CanvasRotationInteractionState?
     ) -> CanvasInteractionRenderOverlay? {
+        makeRotationInteractionOverlay(
+            scene: scene,
+            camera: camera,
+            interactionState: interactionState,
+            inlineEditState: inlineEditState,
+            rotationPreviewState: rotationPreviewState,
+            rotationInteractionState: rotationInteractionState
+        )
+    }
+
+    private func makeRotationInteractionOverlay(
+        scene: CanvasScene,
+        camera: CanvasCamera,
+        interactionState: CanvasInteractionState,
+        inlineEditState: CanvasInlineEditState?,
+        rotationPreviewState: CanvasRotationPreviewState?,
+        rotationInteractionState: CanvasRotationInteractionState?
+    ) -> CanvasInteractionRenderOverlay? {
         guard inlineEditState == nil else {
             return nil
         }
@@ -209,6 +230,43 @@ struct CanvasRenderer {
             screenQuad: screenQuad
         )
         let screenCenter = camera.worldToViewport(item.center)
+        let currentRotationRadians = normalizedCanvasAngle(
+            presentation.effectiveRotationRadians
+        )
+        let displayDegrees0To360 = canvasDisplayDegrees0To360(
+            forRotationRadians: currentRotationRadians
+        )
+        let zeroReference: CanvasInteractionAngleZeroReference = .up
+        let ringRadius = max(
+            Self.minimumRotationInteractionRingRadius,
+            distance(
+                from: screenCenter,
+                to: rotateAffordance.handle.screenCenter
+            )
+        )
+        let tickSegments = makeRotationInteractionTickSegments(
+            centeredAt: screenCenter,
+            ringRadius: ringRadius,
+            zeroReference: zeroReference
+        )
+        let zeroReferenceSegment = canvasRadialSegment(
+            centeredAt: screenCenter,
+            startRadius: 0,
+            endRadius: ringRadius,
+            displayDegrees0To360: 0,
+            zeroReference: zeroReference
+        )
+        let currentAngleSegment = canvasRadialSegment(
+            centeredAt: screenCenter,
+            startRadius: 0,
+            endRadius: ringRadius,
+            displayDegrees0To360: displayDegrees0To360,
+            zeroReference: zeroReference
+        )
+        let textScreenAnchor = CGPoint(
+            x: screenCenter.x,
+            y: screenCenter.y - ringRadius - Self.rotationInteractionTextOffset
+        )
 
         return CanvasInteractionRenderOverlay(
             itemID: presentation.itemID,
@@ -216,13 +274,19 @@ struct CanvasRenderer {
             payload: .rotation(
                 CanvasRotationInteractionOverlayPayload(
                     screenCenter: screenCenter,
-                    currentRotationRadians: presentation.effectiveRotationRadians,
-                    zeroReference: .up,
+                    currentRotationRadians: currentRotationRadians,
+                    displayDegrees0To360: displayDegrees0To360,
+                    zeroReference: zeroReference,
                     tickStepDegrees: Self.rotationInteractionTickStepDegrees,
-                    ringRadius: distance(
-                        from: screenCenter,
-                        to: rotateAffordance.handle.screenCenter
+                    ringRadius: ringRadius,
+                    ringScreenRect: canvasCircleRect(
+                        centeredAt: screenCenter,
+                        radius: ringRadius
                     ),
+                    tickSegments: tickSegments,
+                    zeroReferenceSegment: zeroReferenceSegment,
+                    currentAngleSegment: currentAngleSegment,
+                    textScreenAnchor: textScreenAnchor,
                     isActive: true
                 )
             )
@@ -393,5 +457,29 @@ struct CanvasRenderer {
         to end: CGPoint
     ) -> CGFloat {
         hypot(end.x - start.x, end.y - start.y)
+    }
+
+    private func makeRotationInteractionTickSegments(
+        centeredAt center: CGPoint,
+        ringRadius: CGFloat,
+        zeroReference: CanvasInteractionAngleZeroReference
+    ) -> [CanvasInteractionLineSegment] {
+        let tickStartRadius = max(
+            ringRadius - Self.rotationInteractionTickLength,
+            0
+        )
+        return stride(
+            from: CGFloat(0),
+            to: 360,
+            by: Self.rotationInteractionTickStepDegrees
+        ).map { degrees in
+            canvasRadialSegment(
+                centeredAt: center,
+                startRadius: tickStartRadius,
+                endRadius: ringRadius,
+                displayDegrees0To360: degrees,
+                zeroReference: zeroReference
+            )
+        }
     }
 }

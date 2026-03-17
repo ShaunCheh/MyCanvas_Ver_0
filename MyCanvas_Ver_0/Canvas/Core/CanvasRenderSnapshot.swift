@@ -87,6 +87,11 @@ struct CanvasEditRenderOverlay {
     let payload: CanvasEditRenderOverlayPayload
 }
 
+struct CanvasInteractionLineSegment {
+    let start: CGPoint
+    let end: CGPoint
+}
+
 enum CanvasInteractionOverlayKind {
     case rotation
 }
@@ -98,18 +103,16 @@ enum CanvasInteractionAngleZeroReference {
 struct CanvasRotationInteractionOverlayPayload {
     let screenCenter: CGPoint
     let currentRotationRadians: CGFloat
+    let displayDegrees0To360: CGFloat
     let zeroReference: CanvasInteractionAngleZeroReference
     let tickStepDegrees: CGFloat
     let ringRadius: CGFloat
+    let ringScreenRect: CGRect
+    let tickSegments: [CanvasInteractionLineSegment]
+    let zeroReferenceSegment: CanvasInteractionLineSegment
+    let currentAngleSegment: CanvasInteractionLineSegment
+    let textScreenAnchor: CGPoint
     let isActive: Bool
-
-    var displayDegrees0To360: CGFloat {
-        let normalizedDegrees = (currentRotationRadians * 180 / .pi)
-            .truncatingRemainder(dividingBy: 360)
-        return normalizedDegrees >= 0
-            ? normalizedDegrees
-            : normalizedDegrees + 360
-    }
 }
 
 enum CanvasInteractionRenderOverlayPayload {
