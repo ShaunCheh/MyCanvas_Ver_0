@@ -51,15 +51,105 @@ struct CanvasRenderer {
             camera: camera,
             inlineEditState: inlineEditState
         )
+        let editOverlay = makeEditOverlay(
+            selectionOverlay: selectionOverlay,
+            cropOverlay: cropOverlay,
+            rotateOverlay: rotateOverlay
+        )
 
         return CanvasRenderSnapshot(
             viewportBounds: camera.viewportBounds,
             visibleWorldRect: visibleWorldRect,
             boardOverlay: boardOverlay,
             items: renderItems,
+            editOverlay: editOverlay,
             selectionOverlay: selectionOverlay,
             cropOverlay: cropOverlay,
             rotateOverlay: rotateOverlay
+        )
+    }
+
+    private func makeEditOverlay(
+        selectionOverlay: CanvasSelectionRenderOverlay?,
+        cropOverlay: CanvasCropRenderOverlay?,
+        rotateOverlay: CanvasRotateRenderOverlay?
+    ) -> CanvasEditRenderOverlay? {
+        if let cropOverlay {
+            return makeEditOverlay(from: cropOverlay)
+        }
+
+        if let rotateOverlay {
+            return makeEditOverlay(from: rotateOverlay)
+        }
+
+        if let selectionOverlay {
+            return makeEditOverlay(from: selectionOverlay)
+        }
+
+        return nil
+    }
+
+    private func makeEditOverlay(
+        from selectionOverlay: CanvasSelectionRenderOverlay
+    ) -> CanvasEditRenderOverlay {
+        CanvasEditRenderOverlay(
+            itemID: selectionOverlay.itemID,
+            kind: .selection,
+            activeWorldQuad: selectionOverlay.worldQuad,
+            activeScreenQuad: selectionOverlay.screenQuad,
+            cornerHandles: makeEditCornerHandles(
+                from: selectionOverlay.handles,
+                in: selectionOverlay.screenQuad
+            ),
+            payload: .selection
+        )
+    }
+
+    private func makeEditOverlay(
+        from rotateOverlay: CanvasRotateRenderOverlay
+    ) -> CanvasEditRenderOverlay {
+        let rotationRadians = editHandleRotation(for: rotateOverlay.screenQuad)
+        return CanvasEditRenderOverlay(
+            itemID: rotateOverlay.itemID,
+            kind: .rotate,
+            activeWorldQuad: rotateOverlay.worldQuad,
+            activeScreenQuad: rotateOverlay.screenQuad,
+            cornerHandles: makeEditCornerHandles(for: rotateOverlay.screenQuad),
+            payload: .rotate(
+                CanvasEditRotateOverlayPayload(
+                    guideScreenStart: rotateOverlay.guideScreenStart,
+                    guideScreenEnd: rotateOverlay.guideScreenEnd,
+                    handle: CanvasEditHandleGeometry(
+                        role: .rotate,
+                        screenCenter: rotateOverlay.handle.screenCenter,
+                        screenRotationRadians: rotationRadians
+                    )
+                )
+            )
+        )
+    }
+
+    private func makeEditOverlay(
+        from cropOverlay: CanvasCropRenderOverlay
+    ) -> CanvasEditRenderOverlay {
+        CanvasEditRenderOverlay(
+            itemID: cropOverlay.itemID,
+            kind: .crop,
+            activeWorldQuad: cropOverlay.cropWorldQuad,
+            activeScreenQuad: cropOverlay.cropScreenQuad,
+            cornerHandles: makeEditCornerHandles(
+                from: cropOverlay.handles,
+                in: cropOverlay.cropScreenQuad
+            ),
+            payload: .crop(
+                CanvasEditCropOverlayPayload(
+                    fullImageWorldQuad: cropOverlay.fullImageWorldQuad,
+                    fullImageScreenQuad: cropOverlay.fullImageScreenQuad,
+                    cropRectNormalized: cropOverlay.cropRectNormalized,
+                    cropWorldQuad: cropOverlay.cropWorldQuad,
+                    cropScreenQuad: cropOverlay.cropScreenQuad
+                )
+            )
         )
     }
 
@@ -250,6 +340,103 @@ struct CanvasRenderer {
             return screenQuad.bottomLeading
         case .bottomTrailing:
             return screenQuad.bottomTrailing
+        }
+    }
+
+    private func makeEditCornerHandles(
+        from handles: [CanvasSelectionHandleGeometry],
+        in screenQuad: CanvasQuad
+    ) -> [CanvasEditHandleGeometry] {
+        let rotationRadians = editHandleRotation(for: screenQuad)
+        return handles.map { handle in
+            CanvasEditHandleGeometry(
+                role: editHandleRole(for: handle.role),
+                screenCenter: handle.screenCenter,
+                screenRotationRadians: rotationRadians
+            )
+        }
+    }
+
+    private func makeEditCornerHandles(
+        from handles: [CanvasCropHandleGeometry],
+        in screenQuad: CanvasQuad
+    ) -> [CanvasEditHandleGeometry] {
+        let rotationRadians = editHandleRotation(for: screenQuad)
+        return handles.map { handle in
+            CanvasEditHandleGeometry(
+                role: editHandleRole(for: handle.role),
+                screenCenter: handle.screenCenter,
+                screenRotationRadians: rotationRadians
+            )
+        }
+    }
+
+    private func makeEditCornerHandles(
+        for screenQuad: CanvasQuad
+    ) -> [CanvasEditHandleGeometry] {
+        let rotationRadians = editHandleRotation(for: screenQuad)
+        return [
+            CanvasEditHandleGeometry(
+                role: .topLeading,
+                screenCenter: screenQuad.topLeading,
+                screenRotationRadians: rotationRadians
+            ),
+            CanvasEditHandleGeometry(
+                role: .topTrailing,
+                screenCenter: screenQuad.topTrailing,
+                screenRotationRadians: rotationRadians
+            ),
+            CanvasEditHandleGeometry(
+                role: .bottomLeading,
+                screenCenter: screenQuad.bottomLeading,
+                screenRotationRadians: rotationRadians
+            ),
+            CanvasEditHandleGeometry(
+                role: .bottomTrailing,
+                screenCenter: screenQuad.bottomTrailing,
+                screenRotationRadians: rotationRadians
+            )
+        ]
+    }
+
+    private func editHandleRotation(
+        for screenQuad: CanvasQuad
+    ) -> CGFloat {
+        normalizedCanvasAngle(
+            atan2(
+                screenQuad.topTrailing.y - screenQuad.topLeading.y,
+                screenQuad.topTrailing.x - screenQuad.topLeading.x
+            )
+        )
+    }
+
+    private func editHandleRole(
+        for role: CanvasSelectionHandleRole
+    ) -> CanvasEditHandleRole {
+        switch role {
+        case .topLeading:
+            return .topLeading
+        case .topTrailing:
+            return .topTrailing
+        case .bottomLeading:
+            return .bottomLeading
+        case .bottomTrailing:
+            return .bottomTrailing
+        }
+    }
+
+    private func editHandleRole(
+        for role: CanvasCropHandleRole
+    ) -> CanvasEditHandleRole {
+        switch role {
+        case .topLeading:
+            return .topLeading
+        case .topTrailing:
+            return .topTrailing
+        case .bottomLeading:
+            return .bottomLeading
+        case .bottomTrailing:
+            return .bottomTrailing
         }
     }
 

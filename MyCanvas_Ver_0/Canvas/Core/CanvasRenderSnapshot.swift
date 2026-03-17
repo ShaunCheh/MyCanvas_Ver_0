@@ -32,6 +32,60 @@ struct CanvasSelectionHandleGeometry {
     let screenCenter: CGPoint
 }
 
+enum CanvasEditOverlayKind {
+    case selection
+    case rotate
+    case crop
+}
+
+enum CanvasEditHandleRole: CaseIterable {
+    case topLeading
+    case topTrailing
+    case bottomLeading
+    case bottomTrailing
+    case rotate
+}
+
+// Unified edit handles carry both their anchor point and the current chrome
+// rotation so later stages can keep the resize squares visually aligned.
+struct CanvasEditHandleGeometry {
+    let role: CanvasEditHandleRole
+    let screenCenter: CGPoint
+    let screenRotationRadians: CGFloat
+}
+
+struct CanvasEditRotateOverlayPayload {
+    let guideScreenStart: CGPoint
+    let guideScreenEnd: CGPoint
+    let handle: CanvasEditHandleGeometry
+}
+
+struct CanvasEditCropOverlayPayload {
+    let fullImageWorldQuad: CanvasQuad
+    let fullImageScreenQuad: CanvasQuad
+    let cropRectNormalized: CanvasImageCropRect
+    let cropWorldQuad: CanvasQuad
+    let cropScreenQuad: CanvasQuad
+}
+
+enum CanvasEditRenderOverlayPayload {
+    case selection
+    case rotate(CanvasEditRotateOverlayPayload)
+    case crop(CanvasEditCropOverlayPayload)
+}
+
+// Edit overlay is the future single source of truth for selection, rotate, and
+// crop chrome. Old overlay structs remain during the migration so platforms can
+// switch over incrementally.
+struct CanvasEditRenderOverlay {
+    let itemID: CanvasImageItemID
+    let kind: CanvasEditOverlayKind
+    let activeWorldQuad: CanvasQuad
+    let activeScreenQuad: CanvasQuad
+    let cornerHandles: [CanvasEditHandleGeometry]
+    let payload: CanvasEditRenderOverlayPayload
+}
+
 // Shared selection geometry is intentionally platform-neutral: it describes what
 // is selected and where it is, while each platform decides visual size and hit slop.
 struct CanvasSelectionRenderOverlay {
@@ -91,6 +145,7 @@ struct CanvasRenderSnapshot {
     let visibleWorldRect: CGRect
     let boardOverlay: CanvasBoardRenderOverlay?
     let items: [CanvasRenderItem]
+    let editOverlay: CanvasEditRenderOverlay?
     let selectionOverlay: CanvasSelectionRenderOverlay?
     let cropOverlay: CanvasCropRenderOverlay?
     let rotateOverlay: CanvasRotateRenderOverlay?
@@ -100,6 +155,7 @@ struct CanvasRenderSnapshot {
         visibleWorldRect: .zero,
         boardOverlay: nil,
         items: [],
+        editOverlay: nil,
         selectionOverlay: nil,
         cropOverlay: nil,
         rotateOverlay: nil
