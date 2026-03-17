@@ -8,8 +8,9 @@ final class iOSCanvasChromeOverlayView: UIView {
         isOpaque = false
     }
 
+    @available(*, unavailable)
     required init?(coder: NSCoder) {
-        return nil
+        fatalError("init(coder:) has not been implemented")
     }
 
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
@@ -23,8 +24,9 @@ final class iOSCanvasChromeStackView: UIStackView {
         super.init(frame: frame)
     }
 
+    @available(*, unavailable)
     required init(coder: NSCoder) {
-        return nil
+        fatalError("init(coder:) has not been implemented")
     }
 
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
