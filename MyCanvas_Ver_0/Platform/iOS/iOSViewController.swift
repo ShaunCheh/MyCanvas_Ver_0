@@ -29,6 +29,27 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         }
     }
 
+    private enum EditHandleHit {
+        case rotate(itemID: CanvasImageItemID)
+        case resize(role: CanvasSelectionHandleRole, itemID: CanvasImageItemID)
+
+        var itemID: CanvasImageItemID {
+            switch self {
+            case let .rotate(itemID), let .resize(_, itemID):
+                return itemID
+            }
+        }
+
+        var pressTarget: PointerPressTarget {
+            switch self {
+            case let .rotate(itemID):
+                return .rotateHandle(itemID: itemID)
+            case let .resize(role, itemID):
+                return .handle(role: role, itemID: itemID)
+            }
+        }
+    }
+
     private struct PointerResizeState {
         let itemID: CanvasImageItemID
         let handleRole: CanvasSelectionHandleRole
@@ -410,7 +431,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
             }
 
             let pressedItemID = pressTarget.itemID
-            let releasedHandleHit = hitTestSelectionHandle(at: location)
+            let releasedHandleHit = hitTestEditHandle(at: location)
             let releasedItemID = hitTestItemID(at: location) ?? releasedHandleHit?.itemID
             let previousSelectedItemID = interactionState.selectedItemID
             var clickTarget = "blank"
@@ -780,15 +801,34 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         )
     }
 
-    private func hitTestSelectionHandle(at viewportLocation: CGPoint) -> (role: CanvasSelectionHandleRole, itemID: CanvasImageItemID)? {
-        guard let selectionOverlay = lastRenderSnapshot.selectionOverlay else {
+    private func hitTestEditHandle(at viewportLocation: CGPoint) -> EditHandleHit? {
+        guard let editOverlay = lastRenderSnapshot.editOverlay else {
             return nil
         }
 
-        return selectionOverlay.handles.first(where: { handle in
-            Self.selectionHandleHitRect(centeredAt: handle.screenCenter).contains(viewportLocation)
-        }).map { handle in
-            (role: handle.role, itemID: selectionOverlay.itemID)
+        switch editOverlay.kind {
+        case .crop:
+            return nil
+        case .selection, .rotate:
+            if
+                case let .rotate(payload) = editOverlay.payload,
+                Self.rotateHandleHitRect(centeredAt: payload.handle.screenCenter)
+                    .contains(viewportLocation)
+            {
+                return .rotate(itemID: editOverlay.itemID)
+            }
+
+            guard
+                let handle = editOverlay.cornerHandles.first(where: { handle in
+                    Self.selectionHandleHitRect(centeredAt: handle.screenCenter)
+                        .contains(viewportLocation)
+                }),
+                let role = selectionHandleRole(for: handle.role)
+            else {
+                return nil
+            }
+
+            return .resize(role: role, itemID: editOverlay.itemID)
         }
     }
 
@@ -804,20 +844,6 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         }
     }
 
-    private func hitTestRotateHandle(at viewportLocation: CGPoint) -> CanvasImageItemID? {
-        guard let rotateOverlay = lastRenderSnapshot.rotateOverlay else {
-            return nil
-        }
-
-        guard Self.rotateHandleHitRect(
-            centeredAt: rotateOverlay.handle.screenCenter
-        ).contains(viewportLocation) else {
-            return nil
-        }
-
-        return rotateOverlay.itemID
-    }
-
     // Keep interaction priority aligned with common editors: resize handles win
     // over body hits so a visible handle is always the first-class press target.
     private func pointerPressTarget(at viewportLocation: CGPoint) -> PointerPressTarget {
@@ -829,16 +855,12 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
             return .blank
         }
 
-        if isInlineRotateModeActive {
-            if let rotateHandleItemID = hitTestRotateHandle(at: viewportLocation) {
-                return .rotateHandle(itemID: rotateHandleItemID)
-            }
-
-            return .blank
+        if let editHandleHit = hitTestEditHandle(at: viewportLocation) {
+            return editHandleHit.pressTarget
         }
 
-        if let handleHit = hitTestSelectionHandle(at: viewportLocation) {
-            return .handle(role: handleHit.role, itemID: handleHit.itemID)
+        if isInlineRotateModeActive {
+            return .blank
         }
 
         guard let itemID = hitTestItemID(at: viewportLocation) else {
@@ -1286,6 +1308,23 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
             width: rotateHandleHitTargetSize,
             height: rotateHandleHitTargetSize
         ).standardized
+    }
+
+    private func selectionHandleRole(
+        for editHandleRole: CanvasEditHandleRole
+    ) -> CanvasSelectionHandleRole? {
+        switch editHandleRole {
+        case .topLeading:
+            return .topLeading
+        case .topTrailing:
+            return .topTrailing
+        case .bottomLeading:
+            return .bottomLeading
+        case .bottomTrailing:
+            return .bottomTrailing
+        case .rotate:
+            return nil
+        }
     }
 
     private func referenceLocalPoint(
