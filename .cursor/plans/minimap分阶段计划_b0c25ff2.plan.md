@@ -4,25 +4,25 @@ overview: 在不修改文档持久化结构的前提下，为当前画板架构�
 todos:
   - id: extract-presentation-resolver
     content: 抽取共享的元素展示几何解析层，统一正式状态与裁切/旋转预览态
-    status: pending
+    status: completed
   - id: add-minimap-renderer
     content: 新增 minimap snapshot 与 renderer，独立于主画板 renderer
-    status: pending
+    status: completed
   - id: refactor-overlay-layout
     content: 重构 controller 的 overlay/chrome 布局，建立可避让的 minimap 放置规则
-    status: pending
+    status: completed
   - id: build-ios-minimap-view
     content: 实现 iOS minimap 视图与 layer 绘制
-    status: pending
+    status: completed
   - id: build-macos-minimap-view
     content: 实现 macOS minimap 视图与 layer 绘制
-    status: pending
+    status: completed
   - id: wire-controller-interactions
     content: 接入 controller 刷新链路与 minimap 点击/拖动导航交互
-    status: pending
+    status: completed
   - id: verify-regressions
     content: 验证裁切/旋转预览同步、按钮避让、跨平台布局与回归风险
-    status: pending
+    status: completed
 isProject: false
 ---
 

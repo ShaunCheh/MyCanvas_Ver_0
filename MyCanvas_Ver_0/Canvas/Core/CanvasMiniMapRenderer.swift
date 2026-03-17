@@ -2,26 +2,20 @@ import CoreGraphics
 import Foundation
 
 struct CanvasMiniMapRenderer {
-    private let presentationResolver = CanvasImagePresentationResolver()
+    private let nodeProviders: [any CanvasMiniMapNodeProviding]
+
+    init(nodeProviders: [any CanvasMiniMapNodeProviding]? = nil) {
+        self.nodeProviders = nodeProviders ?? [CanvasMiniMapImageNodeProvider()]
+    }
 
     func makeSnapshot(
-        scene: CanvasScene,
-        boardState: CanvasBoardState? = nil,
-        camera: CanvasCamera,
-        inlineEditState: CanvasInlineEditState? = nil,
-        rotationPreviewState: CanvasRotationPreviewState? = nil
+        context: CanvasMiniMapRenderContext
     ) -> CanvasMiniMapSnapshot {
-        let visibleWorldRect = sanitizedWorldRect(camera.visibleWorldRect) ?? .zero
-        let nodes = scene.orderedItems().map { item in
-            makeNode(
-                for: item,
-                inlineEditState: inlineEditState,
-                rotationPreviewState: rotationPreviewState
-            )
-        }
+        let visibleWorldRect = sanitizedWorldRect(context.camera.visibleWorldRect) ?? .zero
+        let nodes = resolveNodes(using: context.nodeProviderContext)
 
         let boardWorldRect = resolveBoardWorldRect(
-            boardState: boardState,
+            boardState: context.boardState,
             nodes: nodes,
             fallbackVisibleWorldRect: visibleWorldRect
         )
@@ -40,23 +34,18 @@ struct CanvasMiniMapRenderer {
         )
     }
 
-    private func makeNode(
-        for item: CanvasImageItem,
-        inlineEditState: CanvasInlineEditState?,
-        rotationPreviewState: CanvasRotationPreviewState?
-    ) -> CanvasMiniMapNode {
-        let presentation = presentationResolver.resolve(
-            item: item,
-            inlineEditState: inlineEditState,
-            rotationPreviewState: rotationPreviewState
-        )
-        return CanvasMiniMapNode(
-            id: presentation.itemID,
-            kind: .image,
-            worldQuad: presentation.visibleWorldQuad,
-            zIndex: presentation.zIndex,
-            isPreviewActive: presentation.isCropPreviewActive || presentation.isRotationPreviewActive
-        )
+    private func resolveNodes(
+        using context: CanvasMiniMapNodeProviderContext
+    ) -> [CanvasMiniMapNode] {
+        nodeProviders
+            .flatMap { $0.makeNodes(context: context) }
+            .sorted { lhs, rhs in
+                if lhs.zIndex == rhs.zIndex {
+                    return lhs.id.uuidString < rhs.id.uuidString
+                }
+
+                return lhs.zIndex < rhs.zIndex
+            }
     }
 
     private func resolveBoardWorldRect(

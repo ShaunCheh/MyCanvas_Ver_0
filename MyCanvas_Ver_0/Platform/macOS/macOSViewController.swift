@@ -592,11 +592,13 @@ final class macOSViewController: NSViewController {
 
     private func refreshMiniMap() {
         let snapshot = miniMapRenderer.makeSnapshot(
-            scene: scene,
-            boardState: boardState,
-            camera: camera,
-            inlineEditState: inlineEditState,
-            rotationPreviewState: rotationPreviewState
+            context: CanvasMiniMapRenderContext(
+                scene: scene,
+                boardState: boardState,
+                camera: camera,
+                imageInlineEditState: inlineEditState,
+                imageRotationPreviewState: rotationPreviewState
+            )
         )
         miniMapView.apply(snapshot)
     }
