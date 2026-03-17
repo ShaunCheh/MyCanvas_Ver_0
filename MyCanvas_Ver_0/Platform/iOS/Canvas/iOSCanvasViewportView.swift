@@ -433,11 +433,10 @@ final class iOSCanvasViewportView: UIView {
                 continue
             }
 
-            let handleRect = Self.cropHandleRect(centeredAt: handle.screenCenter)
-            handleLayer.frame = handleRect
-            handleLayer.path = CGPath(
-                rect: CGRect(origin: .zero, size: handleRect.size),
-                transform: nil
+            handleLayer.frame = bounds
+            handleLayer.path = Self.cropHandlePath(
+                centeredAt: handle.screenCenter,
+                rotationRadians: handle.screenRotationRadians
             )
             handleLayer.isHidden = false
             handleLayer.contentsScale = currentContentsScale
@@ -544,15 +543,6 @@ final class iOSCanvasViewportView: UIView {
         rotateHandleLayer.isHidden = true
     }
 
-    private static func cropHandleRect(centeredAt center: CGPoint) -> CGRect {
-        CGRect(
-            x: center.x - cropHandleSize / 2,
-            y: center.y - cropHandleSize / 2,
-            width: cropHandleSize,
-            height: cropHandleSize
-        ).standardized
-    }
-
     private static func rotateHandleRect(centeredAt center: CGPoint) -> CGRect {
         CGRect(
             x: center.x - rotateHandleSize / 2,
@@ -592,11 +582,34 @@ final class iOSCanvasViewportView: UIView {
         }
     }
 
+    private static func cropHandlePath(
+        centeredAt center: CGPoint,
+        rotationRadians: CGFloat
+    ) -> CGPath {
+        squareHandlePath(
+            centeredAt: center,
+            size: cropHandleSize,
+            rotationRadians: rotationRadians
+        )
+    }
+
     private static func selectionHandlePath(
         centeredAt center: CGPoint,
         rotationRadians: CGFloat
     ) -> CGPath {
-        let halfSize = selectionHandleSize / 2
+        squareHandlePath(
+            centeredAt: center,
+            size: selectionHandleSize,
+            rotationRadians: rotationRadians
+        )
+    }
+
+    private static func squareHandlePath(
+        centeredAt center: CGPoint,
+        size: CGFloat,
+        rotationRadians: CGFloat
+    ) -> CGPath {
+        let halfSize = size / 2
         let cosine = cos(rotationRadians)
         let sine = sin(rotationRadians)
         let localCorners = [
