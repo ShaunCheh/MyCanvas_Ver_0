@@ -2,7 +2,9 @@
 import AppKit
 
 final class macOSBoardListViewController: NSViewController {
-    var onOpenCanvas: (() -> Void)?
+    var onOpenBoard: ((UUID) -> Void)?
+    var onCreateBoard: (() -> Void)?
+    private var availableBoards: [BoardSummary] = []
 
     private let titleLabel: NSTextField = {
         let label = NSTextField(labelWithString: "Board List")
@@ -21,9 +23,10 @@ final class macOSBoardListViewController: NSViewController {
     }()
 
     private let openCanvasButton: NSButton = {
-        let button = NSButton(title: "Open Canvas", target: nil, action: nil)
+        let button = NSButton(title: "Select Folder First", target: nil, action: nil)
         button.translatesAutoresizingMaskIntoConstraints = false
         button.bezelStyle = .rounded
+        button.isEnabled = false
         return button
     }()
 
@@ -95,13 +98,32 @@ final class macOSBoardListViewController: NSViewController {
     private func refreshBookmarkStatus() {
         let bookmarkText = FolderBookmarkStore.statusText()
         do {
-            let boardCount = try BoardStore.listBoards().count
-            bookmarkStatusLabel.stringValue = "\(bookmarkText)\n\nBoards available: \(boardCount)"
+            let boards = try BoardStore.listBoards()
+            availableBoards = boards
+            bookmarkStatusLabel.stringValue = "\(bookmarkText)\n\nBoards available: \(boards.count)"
+            updateOpenCanvasButtonState(hasSelectedFolder: true)
         } catch FolderBookmarkStoreError.missingBookmarkData {
+            availableBoards = []
             bookmarkStatusLabel.stringValue = bookmarkText
+            updateOpenCanvasButtonState(hasSelectedFolder: false)
         } catch {
+            availableBoards = []
             bookmarkStatusLabel.stringValue = "\(bookmarkText)\n\nStorage error: \(error.localizedDescription)"
+            updateOpenCanvasButtonState(hasSelectedFolder: false)
         }
+    }
+
+    private func updateOpenCanvasButtonState(hasSelectedFolder: Bool) {
+        guard hasSelectedFolder else {
+            openCanvasButton.title = "Select Folder First"
+            openCanvasButton.isEnabled = false
+            return
+        }
+
+        openCanvasButton.title = availableBoards.isEmpty
+            ? "Create Board"
+            : "Open Latest Board"
+        openCanvasButton.isEnabled = true
     }
 
     @objc
@@ -122,7 +144,15 @@ final class macOSBoardListViewController: NSViewController {
 
     @objc
     private func handleOpenCanvasButtonClick() {
-        onOpenCanvas?()
+        guard FolderBookmarkStore.hasStoredBookmarkData() else {
+            return
+        }
+
+        if let latestBoard = availableBoards.first {
+            onOpenBoard?(latestBoard.boardID)
+        } else {
+            onCreateBoard?()
+        }
     }
 
     private func presentSelectionError(_ error: Error) {

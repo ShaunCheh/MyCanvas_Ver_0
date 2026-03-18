@@ -53,12 +53,17 @@ final class macOSAppRootViewController: NSViewController {
         switch destination {
         case .boardList:
             let viewController = macOSBoardListViewController()
-            viewController.onOpenCanvas = { [weak self] in
-                self?.display(.canvas)
+            viewController.onOpenBoard = { [weak self] boardID in
+                self?.display(.canvas(.existing(boardID: boardID)))
+            }
+            viewController.onCreateBoard = { [weak self] in
+                self?.display(.canvas(.newBoard))
             }
             return viewController
-        case .canvas:
-            return macOSViewController()
+        case let .canvas(launchContext):
+            let viewController = macOSViewController()
+            viewController.launchContext = launchContext
+            return viewController
         }
     }
 
@@ -107,8 +112,17 @@ private func describeAppRootDestination(_ destination: AppLaunchDestination) -> 
     switch destination {
     case .boardList:
         return "boardList"
-    case .canvas:
-        return "canvas"
+    case let .canvas(launchContext):
+        return "canvas.\(describeCanvasLaunchContext(launchContext))"
+    }
+}
+
+private func describeCanvasLaunchContext(_ launchContext: CanvasLaunchContext) -> String {
+    switch launchContext {
+    case let .existing(boardID):
+        return "existing(\(boardID.uuidString))"
+    case .newBoard:
+        return "newBoard"
     }
 }
 

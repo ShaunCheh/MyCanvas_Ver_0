@@ -126,6 +126,38 @@ final class CanvasEditorSession {
         return true
     }
 
+    func loadBoard(id: UUID) throws {
+        let runtimeState = try BoardStore.loadBoard(id: id)
+        print(
+            "[Canvas Shared][RuntimeRestore] " +
+            "action=loadBoard " +
+            "boardID=\(runtimeState.boardID.uuidString) " +
+            "items=\(runtimeState.items.count) " +
+            "cameraCenter=\(describeRuntimeRestorePoint(runtimeState.camera.center)) " +
+            "cameraZoomScale=\(formatRuntimeRestoreValue(runtimeState.camera.zoomScale)) " +
+            "cameraViewportSize=\(describeRuntimeRestoreSize(runtimeState.camera.viewportSize)) " +
+            "selectedItemID=\(describeRuntimeRestoreItemID(runtimeState.interactionState.selectedItemID))"
+        )
+        applyBoardRuntimeState(runtimeState)
+        resetHistory()
+    }
+
+    func startNewBoard(now: Date = Date()) {
+        let runtimeState = BoardRuntimeState.makeEmpty(now: now)
+        print(
+            "[Canvas Shared][RuntimeRestore] " +
+            "action=startNewBoard " +
+            "boardID=\(runtimeState.boardID.uuidString) " +
+            "items=\(runtimeState.items.count) " +
+            "cameraCenter=\(describeRuntimeRestorePoint(runtimeState.camera.center)) " +
+            "cameraZoomScale=\(formatRuntimeRestoreValue(runtimeState.camera.zoomScale)) " +
+            "cameraViewportSize=\(describeRuntimeRestoreSize(runtimeState.camera.viewportSize)) " +
+            "selectedItemID=\(describeRuntimeRestoreItemID(runtimeState.interactionState.selectedItemID))"
+        )
+        applyBoardRuntimeState(runtimeState)
+        resetHistory()
+    }
+
     func restorePersistedBoardIfPossible() {
         do {
             let runtimeState = try BoardStore.loadOrCreateInitialBoard()

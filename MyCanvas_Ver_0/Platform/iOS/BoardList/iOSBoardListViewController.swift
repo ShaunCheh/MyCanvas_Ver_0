@@ -3,7 +3,9 @@ import UIKit
 
 final class iOSBoardListViewController: UIViewController {
     private let folderPicker = FolderPicker()
-    var onOpenCanvas: (() -> Void)?
+    var onOpenBoard: ((UUID) -> Void)?
+    var onCreateBoard: (() -> Void)?
+    private var availableBoards: [BoardSummary] = []
 
     private let titleLabel: UILabel = {
         let label = UILabel()
@@ -40,9 +42,10 @@ final class iOSBoardListViewController: UIViewController {
         let button = UIButton(type: .system)
         button.translatesAutoresizingMaskIntoConstraints = false
         var configuration = UIButton.Configuration.tinted()
-        configuration.title = "Open Canvas"
+        configuration.title = "Select Folder First"
         configuration.cornerStyle = .medium
         button.configuration = configuration
+        button.isEnabled = false
         return button
     }()
 
@@ -100,13 +103,33 @@ final class iOSBoardListViewController: UIViewController {
     private func refreshBookmarkStatus() {
         let bookmarkText = FolderBookmarkStore.statusText()
         do {
-            let boardCount = try BoardStore.listBoards().count
-            bookmarkStatusLabel.text = "\(bookmarkText)\n\nBoards available: \(boardCount)"
+            let boards = try BoardStore.listBoards()
+            availableBoards = boards
+            bookmarkStatusLabel.text = "\(bookmarkText)\n\nBoards available: \(boards.count)"
+            updateOpenCanvasButtonState(hasSelectedFolder: true)
         } catch FolderBookmarkStoreError.missingBookmarkData {
+            availableBoards = []
             bookmarkStatusLabel.text = bookmarkText
+            updateOpenCanvasButtonState(hasSelectedFolder: false)
         } catch {
+            availableBoards = []
             bookmarkStatusLabel.text = "\(bookmarkText)\n\nStorage error: \(error.localizedDescription)"
+            updateOpenCanvasButtonState(hasSelectedFolder: false)
         }
+    }
+
+    private func updateOpenCanvasButtonState(hasSelectedFolder: Bool) {
+        var configuration = openCanvasButton.configuration ?? UIButton.Configuration.tinted()
+        if hasSelectedFolder {
+            configuration.title = availableBoards.isEmpty
+                ? "Create Board"
+                : "Open Latest Board"
+            openCanvasButton.isEnabled = true
+        } else {
+            configuration.title = "Select Folder First"
+            openCanvasButton.isEnabled = false
+        }
+        openCanvasButton.configuration = configuration
     }
 
     @objc
@@ -126,7 +149,15 @@ final class iOSBoardListViewController: UIViewController {
 
     @objc
     private func handleOpenCanvasButtonTap() {
-        onOpenCanvas?()
+        guard FolderBookmarkStore.hasStoredBookmarkData() else {
+            return
+        }
+
+        if let latestBoard = availableBoards.first {
+            onOpenBoard?(latestBoard.boardID)
+        } else {
+            onCreateBoard?()
+        }
     }
 
     private func presentSelectionError(_ error: Error) {

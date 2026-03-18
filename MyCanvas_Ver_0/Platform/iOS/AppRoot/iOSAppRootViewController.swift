@@ -29,12 +29,17 @@ final class iOSAppRootViewController: UIViewController {
         switch destination {
         case .boardList:
             let viewController = iOSBoardListViewController()
-            viewController.onOpenCanvas = { [weak self] in
-                self?.display(.canvas)
+            viewController.onOpenBoard = { [weak self] boardID in
+                self?.display(.canvas(.existing(boardID: boardID)))
+            }
+            viewController.onCreateBoard = { [weak self] in
+                self?.display(.canvas(.newBoard))
             }
             return viewController
-        case .canvas:
-            return iOSViewController()
+        case let .canvas(launchContext):
+            let viewController = iOSViewController()
+            viewController.launchContext = launchContext
+            return viewController
         }
     }
 

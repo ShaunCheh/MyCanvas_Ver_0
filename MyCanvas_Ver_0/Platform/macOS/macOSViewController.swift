@@ -67,6 +67,7 @@ final class macOSViewController: NSViewController {
 
     private let miniMapLayoutSolver = CanvasOverlayLayoutSolver()
     var miniMapConfiguration = CanvasMiniMapConfiguration()
+    var launchContext: CanvasLaunchContext?
     private let editorSession = CanvasEditorSession(
         saveQueueLabel: "MyCanvas.BoardSave.macOS",
         logPrefix: "[BoardStore][macOS]"
@@ -363,7 +364,7 @@ final class macOSViewController: NSViewController {
         setupCropButton()
         setupMiniMapView()
         setupContextMenuHostView()
-        restorePersistedBoardIfPossible()
+        restoreInitialBoardState()
         setupCanvasViewport()
         print(
             "[Canvas macOS][ControllerLifecycle] " +
@@ -2160,6 +2161,68 @@ final class macOSViewController: NSViewController {
 
     private func configureBoardStateIfNeeded(for viewportSize: CGSize) -> Bool {
         editorSession.configureBoardStateIfNeeded(for: viewportSize)
+    }
+
+    private func restoreInitialBoardState() {
+        switch launchContext {
+        case let .existing(boardID):
+            restoreBoard(withID: boardID)
+        case .newBoard:
+            startNewBoard()
+        case .none:
+            restorePersistedBoardIfPossible()
+        }
+    }
+
+    private func restoreBoard(withID boardID: UUID) {
+        print(
+            "[Canvas macOS][RuntimeRestore] " +
+            "action=controllerLoadBoard.begin " +
+            "boardID=\(boardID.uuidString) " +
+            "viewBounds=\(describe(rect: view.bounds)) " +
+            "cameraViewportSize=\(describe(size: camera.viewportSize)) " +
+            "selectedItemID=\(describe(itemID: interactionState.selectedItemID))"
+        )
+        do {
+            try editorSession.loadBoard(id: boardID)
+        } catch {
+            print(
+                "[Canvas macOS][RuntimeRestore] " +
+                "action=controllerLoadBoard.failed " +
+                "boardID=\(boardID.uuidString) " +
+                "error=\(error)"
+            )
+        }
+        updateInlineEditButtonsAppearance()
+        print(
+            "[Canvas macOS][RuntimeRestore] " +
+            "action=controllerLoadBoard.end " +
+            "boardID=\(boardID.uuidString) " +
+            "cameraCenter=\(describe(point: camera.center)) " +
+            "zoom=\(String(format: "%.4f", Double(camera.zoomScale))) " +
+            "cameraViewportSize=\(describe(size: camera.viewportSize)) " +
+            "selectedItemID=\(describe(itemID: interactionState.selectedItemID))"
+        )
+    }
+
+    private func startNewBoard() {
+        print(
+            "[Canvas macOS][RuntimeRestore] " +
+            "action=controllerStartNewBoard.begin " +
+            "viewBounds=\(describe(rect: view.bounds)) " +
+            "cameraViewportSize=\(describe(size: camera.viewportSize)) " +
+            "selectedItemID=\(describe(itemID: interactionState.selectedItemID))"
+        )
+        editorSession.startNewBoard()
+        updateInlineEditButtonsAppearance()
+        print(
+            "[Canvas macOS][RuntimeRestore] " +
+            "action=controllerStartNewBoard.end " +
+            "cameraCenter=\(describe(point: camera.center)) " +
+            "zoom=\(String(format: "%.4f", Double(camera.zoomScale))) " +
+            "cameraViewportSize=\(describe(size: camera.viewportSize)) " +
+            "selectedItemID=\(describe(itemID: interactionState.selectedItemID))"
+        )
     }
 
     private func restorePersistedBoardIfPossible() {

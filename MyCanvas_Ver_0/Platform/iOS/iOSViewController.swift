@@ -66,6 +66,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
     private static let rotateHandleHitTargetSize: CGFloat = 32
     private let miniMapLayoutSolver = CanvasOverlayLayoutSolver()
     var miniMapConfiguration = CanvasMiniMapConfiguration()
+    var launchContext: CanvasLaunchContext?
     private let editorSession = CanvasEditorSession(
         saveQueueLabel: "MyCanvas.BoardSave.iOS",
         logPrefix: "[BoardStore][iOS]"
@@ -336,7 +337,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         setupRedoButton()
         setupMiniMapView()
         setupContextMenuHostView()
-        restorePersistedBoardIfPossible()
+        restoreInitialBoardState()
         setupCanvasViewport()
     }
 
@@ -2000,6 +2001,36 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
 
     private func configureBoardStateIfNeeded(for viewportSize: CGSize) -> Bool {
         editorSession.configureBoardStateIfNeeded(for: viewportSize)
+    }
+
+    private func restoreInitialBoardState() {
+        switch launchContext {
+        case let .existing(boardID):
+            restoreBoard(withID: boardID)
+        case .newBoard:
+            startNewBoard()
+        case .none:
+            restorePersistedBoardIfPossible()
+        }
+    }
+
+    private func restoreBoard(withID boardID: UUID) {
+        do {
+            try editorSession.loadBoard(id: boardID)
+        } catch {
+            print(
+                "[Canvas iOS][RuntimeRestore] " +
+                "action=controllerLoadBoard.failed " +
+                "boardID=\(boardID.uuidString) " +
+                "error=\(error)"
+            )
+        }
+        updateInlineEditButtonsAppearance()
+    }
+
+    private func startNewBoard() {
+        editorSession.startNewBoard()
+        updateInlineEditButtonsAppearance()
     }
 
     private func restorePersistedBoardIfPossible() {
