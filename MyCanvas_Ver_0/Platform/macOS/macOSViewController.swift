@@ -135,6 +135,7 @@ final class macOSViewController: NSViewController {
     }()
     private let canvasViewportView = macOSCanvasViewportView()
     private var canvasContentView: NSView?
+    private var pendingRefreshReason: String?
     private var pointerDragState: PointerDragState = .idle
     private var saveButtonResetWorkItem: DispatchWorkItem?
     private lazy var commandExecutor = CanvasCommandExecutor(
@@ -402,6 +403,7 @@ final class macOSViewController: NSViewController {
             "canvasViewportFrame=\(describe(rect: canvasViewportView.frame)) " +
             "cameraViewportSize=\(describe(size: camera.viewportSize))"
         )
+        updateCameraViewportSizeIfNeeded(trigger: "viewDidAppear")
     }
 
     override func viewDidLayout() {
@@ -642,6 +644,12 @@ final class macOSViewController: NSViewController {
         canvasViewportView.onZoom = { [weak self] scaleDelta, anchor in
             self?.handleZoom(scaleDelta, around: anchor)
         }
+        canvasViewportView.onViewportSizeChange = { [weak self] viewportSize in
+            self?.syncCameraViewportSizeIfNeeded(
+                viewportSize,
+                source: "viewport layout"
+            )
+        }
 
         installCanvasContentView(canvasViewportView)
         print(
@@ -658,12 +666,21 @@ final class macOSViewController: NSViewController {
     private func updateCameraViewportSizeIfNeeded(
         trigger: String = "unspecified"
     ) {
+        syncCameraViewportSizeIfNeeded(
+            canvasViewportView.bounds.size,
+            source: trigger
+        )
+    }
+
+    private func syncCameraViewportSizeIfNeeded(
+        _ viewportSize: CGSize,
+        source: String
+    ) {
         let cameraBeforeSync = camera
         let snapshotBeforeSync = lastRenderSnapshot
-        let viewportSize = canvasViewportView.bounds.size
         print(
             "[Canvas macOS][ViewportSync] " +
-            "trigger=\(trigger) " +
+            "trigger=\(source) " +
             "phase=begin " +
             "viewBoundsSize=\(describe(size: view.bounds.size)) " +
             "canvasHostBounds=\(describe(rect: canvasHostView.bounds)) " +
@@ -672,10 +689,10 @@ final class macOSViewController: NSViewController {
             "cameraViewportSizeBefore=\(describe(size: cameraBeforeSync.viewportSize)) " +
             "snapshotViewportBoundsBefore=\(describe(rect: snapshotBeforeSync.viewportBounds))"
         )
-        guard viewportSize.width > 0, viewportSize.height > 0 else {
+        guard isRenderable(viewportSize: viewportSize) else {
             print(
                 "[Canvas macOS][ViewportSync] " +
-                "trigger=\(trigger) " +
+                "trigger=\(source) " +
                 "phase=skipEmptyViewport " +
                 "viewBoundsSize=\(describe(size: view.bounds.size)) " +
                 "canvasViewportBounds=\(describe(rect: canvasViewportView.bounds)) " +
@@ -692,10 +709,11 @@ final class macOSViewController: NSViewController {
         }
 
         let didConfigureBoardState = configureBoardStateIfNeeded(for: viewportSize)
-        guard sizeChanged || didConfigureBoardState else {
+        let deferredReason = pendingRefreshReason
+        guard sizeChanged || didConfigureBoardState || deferredReason != nil else {
             print(
                 "[Canvas macOS][ViewportSync] " +
-                "trigger=\(trigger) " +
+                "trigger=\(source) " +
                 "phase=noChange " +
                 "viewBoundsSize=\(describe(size: viewportSize)) " +
                 "cameraViewportSizeBefore=\(describe(size: cameraBeforeSync.viewportSize)) " +
@@ -716,13 +734,21 @@ final class macOSViewController: NSViewController {
             return
         }
 
-        refreshCanvas(
-            reason: "viewport sync trigger=\(trigger) sizeChanged=\(sizeChanged) didConfigureBoardState=\(didConfigureBoardState)"
-        )
+        pendingRefreshReason = nil
+
+        if let deferredReason {
+            performCanvasRefresh(
+                reason: "flush deferred refresh (\(deferredReason)) after \(source) size=\(describe(size: viewportSize))"
+            )
+        } else {
+            performCanvasRefresh(
+                reason: "viewport sync trigger=\(source) sizeChanged=\(sizeChanged) didConfigureBoardState=\(didConfigureBoardState)"
+            )
+        }
 
         print(
             "[Canvas macOS][ViewportSync] " +
-            "trigger=\(trigger) " +
+            "trigger=\(source) " +
             "viewBoundsSize=\(describe(size: viewportSize)) " +
             "cameraViewportSizeBefore=\(describe(size: cameraBeforeSync.viewportSize)) " +
             "cameraViewportSizeAfter=\(describe(size: camera.viewportSize)) " +
@@ -1076,6 +1102,34 @@ final class macOSViewController: NSViewController {
     }
 
     private func refreshCanvas(reason: String = "unspecified") {
+        syncCameraViewportSizeFromCurrentBoundsIfPossible()
+        guard hasRenderableViewportSize else {
+            pendingRefreshReason = reason
+            logDeferredCanvasRefresh(
+                reason: reason,
+                actualViewportSize: canvasViewportView.bounds.size
+            )
+            return
+        }
+
+        pendingRefreshReason = nil
+        performCanvasRefresh(reason: reason)
+    }
+
+    private func syncCameraViewportSizeFromCurrentBoundsIfPossible() {
+        let viewportSize = canvasViewportView.bounds.size
+        guard
+            isRenderable(viewportSize: viewportSize),
+            viewportSize != camera.viewportSize
+        else {
+            return
+        }
+
+        camera.setViewportSize(viewportSize)
+        _ = configureBoardStateIfNeeded(for: viewportSize)
+    }
+
+    private func performCanvasRefresh(reason: String) {
         let snapshot = editorSession.makeCanvasSnapshot()
         logCanvasState(reason: reason, snapshot: snapshot)
         canvasViewportView.apply(snapshot)
@@ -2313,6 +2367,14 @@ final class macOSViewController: NSViewController {
         }
     }
 
+    private var hasRenderableViewportSize: Bool {
+        isRenderable(viewportSize: camera.viewportSize)
+    }
+
+    private func isRenderable(viewportSize: CGSize) -> Bool {
+        viewportSize.width > 0 && viewportSize.height > 0
+    }
+
     private func describe(point: CGPoint) -> String {
         "{\(formatCoordinate(point.x)), \(formatCoordinate(point.y))}"
     }
@@ -2356,6 +2418,19 @@ final class macOSViewController: NSViewController {
         case .draggingCanvas:
             return "draggingCanvas"
         }
+    }
+
+    private func logDeferredCanvasRefresh(
+        reason: String,
+        actualViewportSize: CGSize
+    ) {
+        print(
+            "[Canvas macOS][CanvasRefresh] " +
+            "phase=deferred " +
+            "reason=\(reason) " +
+            "cameraViewportSize=\(describe(size: camera.viewportSize)) " +
+            "viewBoundsSize=\(describe(size: actualViewportSize))"
+        )
     }
 
     private func logCanvasState(reason: String, snapshot: CanvasRenderSnapshot) {

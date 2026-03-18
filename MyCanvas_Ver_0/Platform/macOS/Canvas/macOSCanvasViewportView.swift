@@ -55,6 +55,7 @@ final class macOSCanvasViewportView: NSView {
     private let rotateGuideLayer = CAShapeLayer()
     private let rotateHandleLayer = CAShapeLayer()
     private var imageLayers: [CanvasImageItemID: CanvasImageLayer] = [:]
+    private var lastReportedViewportSize: CGSize?
     private var snapshot: CanvasRenderSnapshot = .empty
     private var lastPrimaryPointerLocation: CGPoint?
     var onPointerDown: ((CGPoint) -> Void)?
@@ -64,6 +65,7 @@ final class macOSCanvasViewportView: NSView {
     var onSecondaryClick: ((CGPoint) -> Void)?
     var onPan: ((CGPoint) -> Void)?
     var onZoom: ((CGFloat, CGPoint) -> Void)?
+    var onViewportSizeChange: ((CGSize) -> Void)?
 
     override var isFlipped: Bool {
         true
@@ -94,6 +96,7 @@ final class macOSCanvasViewportView: NSView {
         performWithoutLayerActions {
             updateLayerFrames()
         }
+        reportViewportSizeIfNeeded()
     }
 
     override func viewDidMoveToWindow() {
@@ -201,6 +204,16 @@ final class macOSCanvasViewportView: NSView {
         if rotateGuideLayer.frame != bounds {
             rotateGuideLayer.frame = bounds
         }
+    }
+
+    private func reportViewportSizeIfNeeded() {
+        let viewportSize = bounds.size
+        guard viewportSize != lastReportedViewportSize else {
+            return
+        }
+
+        lastReportedViewportSize = viewportSize
+        onViewportSizeChange?(viewportSize)
     }
 
     private func updateBackgroundAppearance() {
