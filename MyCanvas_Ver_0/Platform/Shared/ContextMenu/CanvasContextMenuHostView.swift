@@ -19,6 +19,10 @@ final class CanvasContextMenuHostView: UIView {
         effect: UIBlurEffect(style: .systemChromeMaterial)
     )
     private let commandStackView = UIStackView()
+    private var menuLeadingConstraint: NSLayoutConstraint!
+    private var menuTopConstraint: NSLayoutConstraint!
+    private var menuWidthConstraint: NSLayoutConstraint!
+    private var menuHeightConstraint: NSLayoutConstraint!
     private var commandIDs: [CanvasCommandID] = []
     private(set) var currentState: CanvasContextMenuState?
     private var lastRuntimeLogSignature: String?
@@ -43,7 +47,15 @@ final class CanvasContextMenuHostView: UIView {
 
         addSubview(menuContainerView)
         menuContainerView.contentView.addSubview(commandStackView)
+        menuLeadingConstraint = menuContainerView.leadingAnchor.constraint(equalTo: leadingAnchor)
+        menuTopConstraint = menuContainerView.topAnchor.constraint(equalTo: topAnchor)
+        menuWidthConstraint = menuContainerView.widthAnchor.constraint(equalToConstant: 0)
+        menuHeightConstraint = menuContainerView.heightAnchor.constraint(equalToConstant: 0)
         NSLayoutConstraint.activate([
+            menuLeadingConstraint,
+            menuTopConstraint,
+            menuWidthConstraint,
+            menuHeightConstraint,
             commandStackView.topAnchor.constraint(equalTo: menuContainerView.contentView.topAnchor, constant: 10),
             commandStackView.leadingAnchor.constraint(equalTo: menuContainerView.contentView.leadingAnchor, constant: 10),
             commandStackView.trailingAnchor.constraint(equalTo: menuContainerView.contentView.trailingAnchor, constant: -10),
@@ -126,7 +138,7 @@ final class CanvasContextMenuHostView: UIView {
                 preferredSize: preferredSize,
                 resolvedMenuFrame: nil
             )
-            menuContainerView.frame = .zero
+            updateMenuContainerConstraints(.zero)
             return
         }
 
@@ -139,7 +151,8 @@ final class CanvasContextMenuHostView: UIView {
             preferredSize: preferredSize,
             resolvedMenuFrame: menuFrame
         )
-        menuContainerView.frame = menuFrame.integral
+        updateMenuContainerConstraints(menuFrame.integral)
+        layoutIfNeeded()
         logRuntimeState(reason: "updateLayout")
         DispatchQueue.main.async { [weak self] in
             self?.logRuntimeState(reason: "asyncAfterUpdateLayout")
@@ -153,7 +166,7 @@ final class CanvasContextMenuHostView: UIView {
             commandStackView.removeArrangedSubview(arrangedSubview)
             arrangedSubview.removeFromSuperview()
         }
-        menuContainerView.frame = .zero
+        updateMenuContainerConstraints(.zero)
         menuContainerView.isHidden = true
         isHidden = true
     }
@@ -215,6 +228,14 @@ final class CanvasContextMenuHostView: UIView {
         }
 
         onCommandSelected?(commandIDs[index])
+    }
+
+    private func updateMenuContainerConstraints(_ frame: CGRect) {
+        let standardizedFrame = frame.standardized
+        menuLeadingConstraint.constant = standardizedFrame.minX
+        menuTopConstraint.constant = standardizedFrame.minY
+        menuWidthConstraint.constant = max(0, standardizedFrame.width)
+        menuHeightConstraint.constant = max(0, standardizedFrame.height)
     }
 
     private func preferredMenuSize() -> CGSize {

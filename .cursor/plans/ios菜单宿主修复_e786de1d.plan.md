@@ -4,16 +4,16 @@ overview: 修复 iOS 上上下文菜单在异步布局后跳回左上角的问�
 todos:
   - id: lock-ios-menu-container-layout
     content: 收敛 iOS `menuContainerView` 的布局机制，消除 frame 与 Auto Layout 的混用
-    status: pending
+    status: completed
   - id: stabilize-menu-measurement
     content: 稳定 `preferredMenuSize()` 与内部内容布局时序，避免首帧与最终帧尺寸漂移
-    status: pending
+    status: completed
   - id: trim-runtime-logs
     content: 保留证明修复有效的关键日志，移除过深的逐按钮诊断输出
     status: pending
   - id: verify-ios-macos-context-menu
     content: 回归 iOS 定位/命中/覆盖行为，并做 macOS 共享层冒烟验证
-    status: pending
+    status: completed
 isProject: false
 ---
 
