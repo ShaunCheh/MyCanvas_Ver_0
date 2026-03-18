@@ -3,6 +3,17 @@ import Foundation
 import ImageIO
 import UniformTypeIdentifiers
 
+struct BoardDocumentCatalogEntry {
+    let boardDirectoryURL: URL
+    let documentURL: URL
+    let assetsDirectoryURL: URL
+    let document: BoardDocument
+
+    var summary: BoardSummary {
+        document.summary
+    }
+}
+
 enum BoardStoreError: LocalizedError {
     case invalidBoardDirectory
     case invalidBoardImageAsset(filename: String)
@@ -27,35 +38,7 @@ enum BoardStore {
     static func listBoards(
         userDefaults: UserDefaults = .standard
     ) throws -> [BoardSummary] {
-        try SelectedFolderAccess.withBoardsDirectoryURL(userDefaults: userDefaults) { boardsDirectoryURL in
-            try CoordinatedFileIO.ensureDirectory(at: boardsDirectoryURL)
-            let candidateURLs = try CoordinatedFileIO.contentsOfDirectory(
-                at: boardsDirectoryURL
-            )
-
-            var summaries: [BoardSummary] = []
-            for candidateURL in candidateURLs {
-                guard try isDirectory(candidateURL) else {
-                    continue
-                }
-
-                let boardDocumentURL = candidateURL.appendingPathComponent(boardDocumentFilename)
-                guard FileManager.default.fileExists(atPath: boardDocumentURL.path) else {
-                    continue
-                }
-
-                let document = try readBoardDocument(at: boardDocumentURL)
-                summaries.append(document.summary)
-            }
-
-            return summaries.sorted { lhs, rhs in
-                if lhs.updatedAt == rhs.updatedAt {
-                    return lhs.boardID.uuidString < rhs.boardID.uuidString
-                }
-
-                return lhs.updatedAt > rhs.updatedAt
-            }
-        }
+        try listBoardDocumentEntries(userDefaults: userDefaults).map(\.summary)
     }
 
     static func loadBoard(
@@ -181,6 +164,50 @@ enum BoardStore {
             "cameraViewportSize=\(describeBoardStoreSize(runtimeState.camera.viewportSize))"
         )
         return runtimeState
+    }
+
+    static func listBoardDocumentEntries(
+        userDefaults: UserDefaults = .standard
+    ) throws -> [BoardDocumentCatalogEntry] {
+        try SelectedFolderAccess.withBoardsDirectoryURL(userDefaults: userDefaults) { boardsDirectoryURL in
+            try CoordinatedFileIO.ensureDirectory(at: boardsDirectoryURL)
+            let candidateURLs = try CoordinatedFileIO.contentsOfDirectory(
+                at: boardsDirectoryURL
+            )
+
+            var entries: [BoardDocumentCatalogEntry] = []
+            for candidateURL in candidateURLs {
+                guard try isDirectory(candidateURL) else {
+                    continue
+                }
+
+                let boardDocumentURL = candidateURL.appendingPathComponent(boardDocumentFilename)
+                guard FileManager.default.fileExists(atPath: boardDocumentURL.path) else {
+                    continue
+                }
+
+                let document = try readBoardDocument(at: boardDocumentURL)
+                entries.append(
+                    BoardDocumentCatalogEntry(
+                        boardDirectoryURL: candidateURL,
+                        documentURL: boardDocumentURL,
+                        assetsDirectoryURL: candidateURL.appendingPathComponent(
+                            assetsDirectoryName,
+                            isDirectory: true
+                        ),
+                        document: document
+                    )
+                )
+            }
+
+            return entries.sorted { lhs, rhs in
+                if lhs.document.updatedAt == rhs.document.updatedAt {
+                    return lhs.document.boardID.uuidString < rhs.document.boardID.uuidString
+                }
+
+                return lhs.document.updatedAt > rhs.document.updatedAt
+            }
+        }
     }
 
     private static func boardDirectoryURL(

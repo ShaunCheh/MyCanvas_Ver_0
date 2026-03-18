@@ -4,7 +4,8 @@ import AppKit
 final class macOSBoardListViewController: NSViewController {
     var onOpenBoard: ((UUID) -> Void)?
     var onCreateBoard: (() -> Void)?
-    private var availableBoards: [BoardSummary] = []
+    private let catalogLoader = BoardCatalogLoader()
+    private var availableBoards: [BoardCatalogItem] = []
 
     private let titleLabel: NSTextField = {
         let label = NSTextField(labelWithString: "Board List")
@@ -98,7 +99,7 @@ final class macOSBoardListViewController: NSViewController {
     private func refreshBookmarkStatus() {
         let bookmarkText = FolderBookmarkStore.statusText()
         do {
-            let boards = try BoardStore.listBoards()
+            let boards = try catalogLoader.loadCatalog()
             availableBoards = boards
             bookmarkStatusLabel.stringValue = "\(bookmarkText)\n\nBoards available: \(boards.count)"
             updateOpenCanvasButtonState(hasSelectedFolder: true)

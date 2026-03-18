@@ -5,7 +5,8 @@ final class iOSBoardListViewController: UIViewController {
     private let folderPicker = FolderPicker()
     var onOpenBoard: ((UUID) -> Void)?
     var onCreateBoard: (() -> Void)?
-    private var availableBoards: [BoardSummary] = []
+    private let catalogLoader = BoardCatalogLoader()
+    private var availableBoards: [BoardCatalogItem] = []
 
     private let titleLabel: UILabel = {
         let label = UILabel()
@@ -103,7 +104,7 @@ final class iOSBoardListViewController: UIViewController {
     private func refreshBookmarkStatus() {
         let bookmarkText = FolderBookmarkStore.statusText()
         do {
-            let boards = try BoardStore.listBoards()
+            let boards = try catalogLoader.loadCatalog()
             availableBoards = boards
             bookmarkStatusLabel.text = "\(bookmarkText)\n\nBoards available: \(boards.count)"
             updateOpenCanvasButtonState(hasSelectedFolder: true)
