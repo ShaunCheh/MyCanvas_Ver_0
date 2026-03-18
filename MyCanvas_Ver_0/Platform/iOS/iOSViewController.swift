@@ -214,22 +214,28 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
     }
 
     private func frozenContextMenuCommandStates(
-        for commandIDs: [CanvasCommandID]
+        for commandIDs: [CanvasCommandID],
+        context: CanvasContextMenuContext
     ) -> [CanvasContextMenuCommandState] {
         commandIDs.map { commandID in
             CanvasContextMenuCommandState(
                 commandID: commandID,
-                descriptor: commandDescriptor(for: commandID)
+                descriptor: commandDescriptor(
+                    for: commandID,
+                    context: context
+                )
             )
         }
     }
 
     private func commandDescriptor(
-        for commandID: CanvasCommandID
+        for commandID: CanvasCommandID,
+        context: CanvasContextMenuContext? = nil
     ) -> CanvasCommandDescriptor {
         commandCatalog.descriptor(
             for: commandID,
-            session: editorSession
+            session: editorSession,
+            context: context
         )
     }
 
@@ -265,7 +271,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
             session: editorSession
         )
         let commandStates = frozenContextMenuCommandStates(
-            for: commandIDs
+            for: commandIDs,
+            context: resolvedContext
         )
         guard commandStates.isEmpty == false else {
             dismissContextMenu()

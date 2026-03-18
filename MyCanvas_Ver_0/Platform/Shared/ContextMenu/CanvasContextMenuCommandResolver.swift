@@ -7,41 +7,12 @@ struct CanvasContextMenuCommandResolver {
         for context: CanvasContextMenuContext,
         session: CanvasEditorSession
     ) -> [CanvasCommandID] {
-        let candidateIDs: [CanvasCommandID]
-
-        switch context.targetKind {
-        case .blank:
-            candidateIDs = [
-                .clearSelection,
-                .undo,
-                .redo
-            ]
-        case .selectedItemBody:
-            candidateIDs = [
-                .crop,
-                .clearSelection,
-                .undo,
-                .redo
-            ]
-        case .unselectedItemBody:
-            // Keep invocation target and current selection separate so secondary
-            // click does not mutate selection/history before the user picks a
-            // concrete command.
-            candidateIDs = [
-                .selectItem,
-                .undo,
-                .redo
-            ]
-        case .rotateHandle, .cropHandle, .cropOutline, .selectionHandle:
-            return []
-        }
-
-        return candidateIDs.filter { commandID in
-            canPresent(
-                commandID,
-                for: context,
-                session: session
-            )
+        candidateCommandIDs(for: context).filter { commandID in
+            commandCatalog.descriptor(
+                for: commandID,
+                session: session,
+                context: context
+            ).isEnabled
         }
     }
 
@@ -67,33 +38,113 @@ struct CanvasContextMenuCommandResolver {
             )
         case .clearSelection:
             return .clearSelection(recordHistory: true)
+        case .duplicateItem:
+            guard let itemID = context.targetItemID else {
+                return nil
+            }
+
+            return .duplicateItem(
+                itemID: itemID,
+                recordHistory: true
+            )
+        case .deleteItem:
+            guard let itemID = context.targetItemID else {
+                return nil
+            }
+
+            return .deleteItem(
+                itemID: itemID,
+                recordHistory: true
+            )
+        case .bringItemForward:
+            guard let itemID = context.targetItemID else {
+                return nil
+            }
+
+            return .bringItemForward(
+                itemID: itemID,
+                recordHistory: true
+            )
+        case .sendItemBackward:
+            guard let itemID = context.targetItemID else {
+                return nil
+            }
+
+            return .sendItemBackward(
+                itemID: itemID,
+                recordHistory: true
+            )
+        case .bringItemToFront:
+            guard let itemID = context.targetItemID else {
+                return nil
+            }
+
+            return .bringItemToFront(
+                itemID: itemID,
+                recordHistory: true
+            )
+        case .sendItemToBack:
+            guard let itemID = context.targetItemID else {
+                return nil
+            }
+
+            return .sendItemToBack(
+                itemID: itemID,
+                recordHistory: true
+            )
         }
     }
 
-    private func canPresent(
-        _ commandID: CanvasCommandID,
-        for context: CanvasContextMenuContext,
-        session: CanvasEditorSession
-    ) -> Bool {
-        switch commandID {
-        case .selectItem:
-            guard
-                let itemID = context.targetItemID,
-                session.canSelectItem(withID: itemID)
-            else {
-                return false
-            }
-        case .clearSelection:
-            guard context.selectedItemID != nil else {
-                return false
-            }
-        case .crop, .undo, .redo:
-            break
+    private func candidateCommandIDs(
+        for context: CanvasContextMenuContext
+    ) -> [CanvasCommandID] {
+        switch context.targetKind {
+        case .blank:
+            return [
+                .clearSelection,
+                .undo,
+                .redo
+            ]
+        case .selectedItemBody, .selectionHandle, .rotateHandle:
+            return selectedItemCommandIDs(includeCropCommand: true)
+        case .unselectedItemBody:
+            // Keep invocation target and current selection separate so opening a
+            // menu does not rewrite selection/history before the user chooses an
+            // explicit command.
+            return [
+                .selectItem,
+                .duplicateItem,
+                .deleteItem,
+                .bringItemForward,
+                .sendItemBackward,
+                .bringItemToFront,
+                .sendItemToBack,
+                .undo,
+                .redo
+            ]
+        case .cropHandle, .cropOutline:
+            return selectedItemCommandIDs(includeCropCommand: true)
         }
+    }
 
-        return commandCatalog.descriptor(
-            for: commandID,
-            session: session
-        ).isEnabled
+    private func selectedItemCommandIDs(
+        includeCropCommand: Bool
+    ) -> [CanvasCommandID] {
+        var commandIDs: [CanvasCommandID] = []
+        if includeCropCommand {
+            commandIDs.append(.crop)
+        }
+        commandIDs.append(contentsOf: [
+            .duplicateItem,
+            .deleteItem,
+            .bringItemForward,
+            .sendItemBackward,
+            .bringItemToFront,
+            .sendItemToBack,
+            .clearSelection,
+            .undo,
+            .redo
+        ])
+        return commandIDs
     }
 }

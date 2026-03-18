@@ -286,7 +286,35 @@ final class CanvasEditorSession {
     }
 
     func canSelectItem(withID itemID: CanvasImageItemID) -> Bool {
-        interactionState.selectedItemID != itemID
+        guard scene.item(withID: itemID) != nil else {
+            return false
+        }
+
+        return interactionState.selectedItemID != itemID
+    }
+
+    func canDeleteItem(withID itemID: CanvasImageItemID) -> Bool {
+        scene.item(withID: itemID) != nil
+    }
+
+    func canDuplicateItem(withID itemID: CanvasImageItemID) -> Bool {
+        scene.item(withID: itemID) != nil
+    }
+
+    func canBringItemForward(withID itemID: CanvasImageItemID) -> Bool {
+        scene.canBringItemForward(withID: itemID)
+    }
+
+    func canSendItemBackward(withID itemID: CanvasImageItemID) -> Bool {
+        scene.canSendItemBackward(withID: itemID)
+    }
+
+    func canBringItemToFront(withID itemID: CanvasImageItemID) -> Bool {
+        scene.canBringItemToFront(withID: itemID)
+    }
+
+    func canSendItemToBack(withID itemID: CanvasImageItemID) -> Bool {
+        scene.canSendItemToBack(withID: itemID)
     }
 
     @discardableResult
@@ -326,6 +354,169 @@ final class CanvasEditorSession {
             _ = recordImmediateHistoryChange(
                 from: beforeSnapshot,
                 reason: "clear selection"
+            )
+        }
+
+        return true
+    }
+
+    @discardableResult
+    func deleteItem(
+        withID itemID: CanvasImageItemID,
+        recordHistory: Bool = false
+    ) -> Bool {
+        guard canDeleteItem(withID: itemID) else {
+            return false
+        }
+
+        let beforeSnapshot = recordHistory ? currentBoardHistorySnapshot() : nil
+        guard scene.removeItem(withID: itemID) else {
+            return false
+        }
+
+        if interactionState.selectedItemID == itemID {
+            interactionState.selectedItemID = nil
+        }
+        syncInlineEditStateWithSelection()
+
+        if let beforeSnapshot {
+            _ = recordImmediateHistoryChange(
+                from: beforeSnapshot,
+                reason: "delete item"
+            )
+        }
+
+        return true
+    }
+
+    @discardableResult
+    func duplicateItem(
+        withID itemID: CanvasImageItemID,
+        selectDuplicatedItem: Bool = true,
+        recordHistory: Bool = false
+    ) -> CanvasImageItem? {
+        guard canDuplicateItem(withID: itemID) else {
+            return nil
+        }
+
+        let beforeSnapshot = recordHistory ? currentBoardHistorySnapshot() : nil
+        guard let duplicatedItem = scene.duplicateItem(
+            withID: itemID,
+            offsetInWorld: duplicateOffsetInWorld()
+        ) else {
+            return nil
+        }
+
+        expandBoardIfNeeded(toInclude: duplicatedItem.worldBounds)
+        if selectDuplicatedItem {
+            interactionState.selectedItemID = duplicatedItem.id
+        }
+        syncInlineEditStateWithSelection()
+
+        if let beforeSnapshot {
+            _ = recordImmediateHistoryChange(
+                from: beforeSnapshot,
+                reason: "duplicate item"
+            )
+        }
+
+        return duplicatedItem
+    }
+
+    @discardableResult
+    func bringItemForward(
+        withID itemID: CanvasImageItemID,
+        recordHistory: Bool = false
+    ) -> Bool {
+        guard canBringItemForward(withID: itemID) else {
+            return false
+        }
+
+        let beforeSnapshot = recordHistory ? currentBoardHistorySnapshot() : nil
+        guard scene.bringItemForward(withID: itemID) != nil else {
+            return false
+        }
+        syncInlineEditStateWithSelection()
+
+        if let beforeSnapshot {
+            _ = recordImmediateHistoryChange(
+                from: beforeSnapshot,
+                reason: "bring item forward"
+            )
+        }
+
+        return true
+    }
+
+    @discardableResult
+    func sendItemBackward(
+        withID itemID: CanvasImageItemID,
+        recordHistory: Bool = false
+    ) -> Bool {
+        guard canSendItemBackward(withID: itemID) else {
+            return false
+        }
+
+        let beforeSnapshot = recordHistory ? currentBoardHistorySnapshot() : nil
+        guard scene.sendItemBackward(withID: itemID) != nil else {
+            return false
+        }
+        syncInlineEditStateWithSelection()
+
+        if let beforeSnapshot {
+            _ = recordImmediateHistoryChange(
+                from: beforeSnapshot,
+                reason: "send item backward"
+            )
+        }
+
+        return true
+    }
+
+    @discardableResult
+    func bringItemToFront(
+        withID itemID: CanvasImageItemID,
+        recordHistory: Bool = false
+    ) -> Bool {
+        guard canBringItemToFront(withID: itemID) else {
+            return false
+        }
+
+        let beforeSnapshot = recordHistory ? currentBoardHistorySnapshot() : nil
+        guard scene.bringItemToFront(withID: itemID) != nil else {
+            return false
+        }
+        syncInlineEditStateWithSelection()
+
+        if let beforeSnapshot {
+            _ = recordImmediateHistoryChange(
+                from: beforeSnapshot,
+                reason: "bring item to front"
+            )
+        }
+
+        return true
+    }
+
+    @discardableResult
+    func sendItemToBack(
+        withID itemID: CanvasImageItemID,
+        recordHistory: Bool = false
+    ) -> Bool {
+        guard canSendItemToBack(withID: itemID) else {
+            return false
+        }
+
+        let beforeSnapshot = recordHistory ? currentBoardHistorySnapshot() : nil
+        guard scene.sendItemToBack(withID: itemID) != nil else {
+            return false
+        }
+        syncInlineEditStateWithSelection()
+
+        if let beforeSnapshot {
+            _ = recordImmediateHistoryChange(
+                from: beforeSnapshot,
+                reason: "send item to back"
             )
         }
 
@@ -425,6 +616,15 @@ final class CanvasEditorSession {
 
     func nextImageZIndex() -> CGFloat {
         (scene.orderedItems().last?.zIndex ?? -1) + 1
+    }
+
+    func duplicateOffsetInWorld() -> CGPoint {
+        let viewportOffset: CGFloat = 24
+        let worldOffset = viewportOffset / max(camera.zoomScale, 0.01)
+        return CGPoint(
+            x: worldOffset,
+            y: worldOffset
+        )
     }
 
     @discardableResult

@@ -6,6 +6,12 @@ enum CanvasCommandID: String {
     case redo
     case selectItem
     case clearSelection
+    case duplicateItem
+    case deleteItem
+    case bringItemForward
+    case sendItemBackward
+    case bringItemToFront
+    case sendItemToBack
 }
 
 enum CanvasCommand {
@@ -14,6 +20,12 @@ enum CanvasCommand {
     case redo
     case selectItem(itemID: CanvasImageItemID, recordHistory: Bool)
     case clearSelection(recordHistory: Bool)
+    case duplicateItem(itemID: CanvasImageItemID, recordHistory: Bool)
+    case deleteItem(itemID: CanvasImageItemID, recordHistory: Bool)
+    case bringItemForward(itemID: CanvasImageItemID, recordHistory: Bool)
+    case sendItemBackward(itemID: CanvasImageItemID, recordHistory: Bool)
+    case bringItemToFront(itemID: CanvasImageItemID, recordHistory: Bool)
+    case sendItemToBack(itemID: CanvasImageItemID, recordHistory: Bool)
 
     var id: CanvasCommandID {
         switch self {
@@ -27,6 +39,18 @@ enum CanvasCommand {
             return .selectItem
         case .clearSelection:
             return .clearSelection
+        case .duplicateItem:
+            return .duplicateItem
+        case .deleteItem:
+            return .deleteItem
+        case .bringItemForward:
+            return .bringItemForward
+        case .sendItemBackward:
+            return .sendItemBackward
+        case .bringItemToFront:
+            return .bringItemToFront
+        case .sendItemToBack:
+            return .sendItemToBack
         }
     }
 
@@ -34,7 +58,17 @@ enum CanvasCommand {
     // controllers should cancel active rotation before applying these commands.
     var shouldCancelActiveRotation: Bool {
         switch self {
-        case .crop, .undo, .redo, .selectItem, .clearSelection:
+        case .crop,
+             .undo,
+             .redo,
+             .selectItem,
+             .clearSelection,
+             .duplicateItem,
+             .deleteItem,
+             .bringItemForward,
+             .sendItemBackward,
+             .bringItemToFront,
+             .sendItemToBack:
             return true
         }
     }

@@ -203,22 +203,28 @@ final class macOSViewController: NSViewController {
     }
 
     private func frozenContextMenuCommandStates(
-        for commandIDs: [CanvasCommandID]
+        for commandIDs: [CanvasCommandID],
+        context: CanvasContextMenuContext
     ) -> [CanvasContextMenuCommandState] {
         commandIDs.map { commandID in
             CanvasContextMenuCommandState(
                 commandID: commandID,
-                descriptor: commandDescriptor(for: commandID)
+                descriptor: commandDescriptor(
+                    for: commandID,
+                    context: context
+                )
             )
         }
     }
 
     private func commandDescriptor(
-        for commandID: CanvasCommandID
+        for commandID: CanvasCommandID,
+        context: CanvasContextMenuContext? = nil
     ) -> CanvasCommandDescriptor {
         commandCatalog.descriptor(
             for: commandID,
-            session: editorSession
+            session: editorSession,
+            context: context
         )
     }
 
@@ -254,7 +260,8 @@ final class macOSViewController: NSViewController {
             session: editorSession
         )
         let commandStates = frozenContextMenuCommandStates(
-            for: commandIDs
+            for: commandIDs,
+            context: resolvedContext
         )
         guard commandStates.isEmpty == false else {
             dismissContextMenu()
@@ -314,7 +321,14 @@ final class macOSViewController: NSViewController {
             performCommand(CanvasCommand.undo)
         case .redo:
             performCommand(CanvasCommand.redo)
-        case .selectItem, .clearSelection:
+        case .selectItem,
+             .clearSelection,
+             .duplicateItem,
+             .deleteItem,
+             .bringItemForward,
+             .sendItemBackward,
+             .bringItemToFront,
+             .sendItemToBack:
             break
         }
     }

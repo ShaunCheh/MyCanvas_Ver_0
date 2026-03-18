@@ -19,6 +19,18 @@ final class CanvasCommandExecutor {
             return session.canSelectItem(withID: itemID)
         case .clearSelection:
             return session.canClearSelection
+        case let .duplicateItem(itemID, _):
+            return session.canDuplicateItem(withID: itemID)
+        case let .deleteItem(itemID, _):
+            return session.canDeleteItem(withID: itemID)
+        case let .bringItemForward(itemID, _):
+            return session.canBringItemForward(withID: itemID)
+        case let .sendItemBackward(itemID, _):
+            return session.canSendItemBackward(withID: itemID)
+        case let .bringItemToFront(itemID, _):
+            return session.canBringItemToFront(withID: itemID)
+        case let .sendItemToBack(itemID, _):
+            return session.canSendItemToBack(withID: itemID)
         }
     }
 
@@ -81,6 +93,78 @@ final class CanvasCommandExecutor {
 
             return CanvasCommandExecutionResult(
                 refreshReason: "clear selection"
+            )
+        case let .duplicateItem(itemID, recordHistory):
+            guard let duplicatedItem = session.duplicateItem(
+                withID: itemID,
+                recordHistory: recordHistory
+            ) else {
+                return nil
+            }
+
+            session.scheduleAutosave(reason: "duplicate item")
+            return CanvasCommandExecutionResult(
+                refreshReason: "duplicate item \(duplicatedItem.id.uuidString)"
+            )
+        case let .deleteItem(itemID, recordHistory):
+            guard session.deleteItem(
+                withID: itemID,
+                recordHistory: recordHistory
+            ) else {
+                return nil
+            }
+
+            session.scheduleAutosave(reason: "delete item")
+            return CanvasCommandExecutionResult(
+                refreshReason: "delete item \(itemID.uuidString)"
+            )
+        case let .bringItemForward(itemID, recordHistory):
+            guard session.bringItemForward(
+                withID: itemID,
+                recordHistory: recordHistory
+            ) else {
+                return nil
+            }
+
+            session.scheduleAutosave(reason: "bring item forward")
+            return CanvasCommandExecutionResult(
+                refreshReason: "bring item forward \(itemID.uuidString)"
+            )
+        case let .sendItemBackward(itemID, recordHistory):
+            guard session.sendItemBackward(
+                withID: itemID,
+                recordHistory: recordHistory
+            ) else {
+                return nil
+            }
+
+            session.scheduleAutosave(reason: "send item backward")
+            return CanvasCommandExecutionResult(
+                refreshReason: "send item backward \(itemID.uuidString)"
+            )
+        case let .bringItemToFront(itemID, recordHistory):
+            guard session.bringItemToFront(
+                withID: itemID,
+                recordHistory: recordHistory
+            ) else {
+                return nil
+            }
+
+            session.scheduleAutosave(reason: "bring item to front")
+            return CanvasCommandExecutionResult(
+                refreshReason: "bring item to front \(itemID.uuidString)"
+            )
+        case let .sendItemToBack(itemID, recordHistory):
+            guard session.sendItemToBack(
+                withID: itemID,
+                recordHistory: recordHistory
+            ) else {
+                return nil
+            }
+
+            session.scheduleAutosave(reason: "send item to back")
+            return CanvasCommandExecutionResult(
+                refreshReason: "send item to back \(itemID.uuidString)"
             )
         }
     }
