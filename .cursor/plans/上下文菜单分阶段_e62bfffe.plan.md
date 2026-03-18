@@ -10,7 +10,7 @@ todos:
     status: completed
   - id: phase3-context-resolver
     content: 建立 CanvasContextMenuContext 与 CanvasContextResolver，统一位置语义与 hit test 优先级
-    status: pending
+    status: completed
   - id: phase4-menu-state-host
     content: 建立 CanvasContextMenuState 与 CanvasContextMenuHostView，补齐菜单展示态与宿主能力
     status: pending

@@ -17,6 +17,7 @@ final class CanvasEditorSession {
 
     private let renderer = CanvasRenderer()
     private let miniMapRenderer = CanvasMiniMapRenderer()
+    private let contextResolver = CanvasContextResolver()
     private let saveCoordinator: BoardSaveCoordinator
     private let historyController = BoardHistoryController()
     private let boardStoreLogPrefix: String
@@ -83,6 +84,22 @@ final class CanvasEditorSession {
                 imageInlineEditState: inlineEditState,
                 imageRotationPreviewState: rotationPreviewState
             )
+        )
+    }
+
+    func resolveContext(
+        at viewportPoint: CGPoint,
+        interactionMetrics: CanvasContextResolverMetrics
+    ) -> CanvasContextMenuContext {
+        contextResolver.resolveContext(
+            at: viewportPoint,
+            scene: scene,
+            camera: camera,
+            renderSnapshot: lastRenderSnapshot,
+            selectedItemID: interactionState.selectedItemID,
+            isInlineEditModeActive: isInlineEditModeActive,
+            isInlineCropModeActive: isInlineCropModeActive,
+            interactionMetrics: interactionMetrics
         )
     }
 

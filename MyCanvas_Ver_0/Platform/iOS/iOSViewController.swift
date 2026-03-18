@@ -11,49 +11,6 @@ import UniformTypeIdentifiers
 import UIKit
 
 final class iOSViewController: UIViewController, PHPickerViewControllerDelegate {
-    private enum PointerPressTarget {
-        case rotateHandle(itemID: CanvasImageItemID)
-        case cropHandle(role: CanvasCropHandleRole, itemID: CanvasImageItemID)
-        case cropOutline(itemID: CanvasImageItemID)
-        case handle(role: CanvasSelectionHandleRole, itemID: CanvasImageItemID)
-        case selectedBody(itemID: CanvasImageItemID)
-        case unselectedItem(itemID: CanvasImageItemID)
-        case blank
-
-        var itemID: CanvasImageItemID? {
-            switch self {
-            case let .rotateHandle(itemID), let .cropHandle(_, itemID), let .cropOutline(itemID), let .handle(_, itemID), let .selectedBody(itemID), let .unselectedItem(itemID):
-                return itemID
-            case .blank:
-                return nil
-            }
-        }
-    }
-
-    private enum EditHandleHit {
-        case rotate(itemID: CanvasImageItemID)
-        case crop(role: CanvasCropHandleRole, itemID: CanvasImageItemID)
-        case resize(role: CanvasSelectionHandleRole, itemID: CanvasImageItemID)
-
-        var itemID: CanvasImageItemID {
-            switch self {
-            case let .rotate(itemID), let .crop(_, itemID), let .resize(_, itemID):
-                return itemID
-            }
-        }
-
-        var pressTarget: PointerPressTarget {
-            switch self {
-            case let .rotate(itemID):
-                return .rotateHandle(itemID: itemID)
-            case let .crop(role, itemID):
-                return .cropHandle(role: role, itemID: itemID)
-            case let .resize(role, itemID):
-                return .handle(role: role, itemID: itemID)
-            }
-        }
-    }
-
     private struct PointerResizeState {
         let itemID: CanvasImageItemID
         let handleRole: CanvasSelectionHandleRole
@@ -89,7 +46,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         case idle
         case pressed(
             pressedLocation: CGPoint,
-            pressTarget: PointerPressTarget
+            pressContext: CanvasContextMenuContext
         )
         case croppingSelectedItem(PointerCropState)
         case movingCropFrame(PointerCropTranslationState)
@@ -229,6 +186,24 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
 
     private var lastRenderSnapshot: CanvasRenderSnapshot {
         editorSession.lastRenderSnapshot
+    }
+
+    private var contextResolverMetrics: CanvasContextResolverMetrics {
+        CanvasContextResolverMetrics(
+            selectionHandleHitTargetSize: Self.selectionHandleHitTargetSize,
+            cropHandleHitTargetSize: Self.cropHandleHitTargetSize,
+            cropOutlineHitTargetWidth: Self.cropOutlineHitTargetWidth,
+            rotateHandleHitTargetSize: Self.rotateHandleHitTargetSize
+        )
+    }
+
+    private func resolveContext(
+        at viewportLocation: CGPoint
+    ) -> CanvasContextMenuContext {
+        editorSession.resolveContext(
+            at: viewportLocation,
+            interactionMetrics: contextResolverMetrics
+        )
     }
 
     private func commandDescriptor(
@@ -476,12 +451,12 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
             return
         }
 
-        let pressTarget = pointerPressTarget(at: location)
+        let pressContext = resolveContext(at: location)
         pointerDragState = .pressed(
             pressedLocation: location,
-            pressTarget: pressTarget
+            pressContext: pressContext
         )
-        beginPointerHistoryTransactionIfNeeded(for: pressTarget)
+        beginPointerHistoryTransactionIfNeeded(for: pressContext)
     }
 
     private func handlePrimaryPointerMove(to location: CGPoint, from previousLocation: CGPoint) {
@@ -492,13 +467,19 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         }
 
         switch pointerDragState {
-        case let .pressed(pressedLocation, pressTarget):
+        case let .pressed(pressedLocation, pressContext):
             guard hasExceededPointerDragActivationDistance(from: pressedLocation, to: location) else {
                 return
             }
 
-            switch pressTarget {
-            case let .rotateHandle(itemID):
+            switch pressContext.targetKind {
+            case .rotateHandle:
+                guard let itemID = pressContext.targetItemID else {
+                    editorSession.cancelPendingHistoryTransaction()
+                    pointerDragState = .idle
+                    return
+                }
+
                 guard let rotateState = makePointerRotateState(
                     itemID: itemID,
                     initialViewportLocation: pressedLocation
@@ -511,7 +492,13 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
                 pointerDragState = .rotatingSelectedItem(rotateState)
                 beginRotationInteraction(for: itemID)
                 updateRotationDraft(using: rotateState, to: location)
-            case let .cropHandle(handleRole, itemID):
+            case let .cropHandle(handleRole):
+                guard let itemID = pressContext.targetItemID else {
+                    editorSession.cancelPendingHistoryTransaction()
+                    pointerDragState = .idle
+                    return
+                }
+
                 guard let cropState = makePointerCropState(itemID: itemID, handleRole: handleRole) else {
                     editorSession.cancelPendingHistoryTransaction()
                     pointerDragState = .idle
@@ -520,7 +507,13 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
 
                 pointerDragState = .croppingSelectedItem(cropState)
                 updateCropDraft(using: cropState, to: location)
-            case let .cropOutline(itemID):
+            case .cropOutline:
+                guard let itemID = pressContext.targetItemID else {
+                    editorSession.cancelPendingHistoryTransaction()
+                    pointerDragState = .idle
+                    return
+                }
+
                 guard let translationState = makePointerCropTranslationState(
                     itemID: itemID,
                     initialViewportLocation: pressedLocation
@@ -532,7 +525,12 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
 
                 pointerDragState = .movingCropFrame(translationState)
                 updateTranslatedCropDraft(using: translationState, to: location)
-            case let .handle(handleRole, itemID):
+            case let .selectionHandle(handleRole):
+                guard let itemID = pressContext.targetItemID else {
+                    pointerDragState = .idle
+                    return
+                }
+
                 guard let resizeState = makePointerResizeState(itemID: itemID, handleRole: handleRole) else {
                     pointerDragState = .idle
                     return
@@ -540,10 +538,15 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
 
                 pointerDragState = .resizingSelectedItem(resizeState)
                 resizeSelectedItem(using: resizeState, to: location)
-            case let .selectedBody(itemID):
+            case .selectedItemBody:
+                guard let itemID = pressContext.targetItemID else {
+                    pointerDragState = .idle
+                    return
+                }
+
                 pointerDragState = .draggingSelectedItem(itemID: itemID)
                 moveSelectedItem(withID: itemID, from: pressedLocation, to: location)
-            case .unselectedItem, .blank:
+            case .unselectedItemBody, .blank:
                 pointerDragState = .draggingCanvas
                 panCanvas(from: pressedLocation, to: location)
             }
@@ -570,35 +573,37 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         }
 
         switch pointerDragState {
-        case let .pressed(_, pressTarget):
+        case let .pressed(_, pressContext):
             if isInlineEditModeActive {
                 editorSession.cancelPendingHistoryTransaction()
                 return
             }
 
-            let pressedItemID = pressTarget.itemID
-            let releasedHandleHit = hitTestEditHandle(at: location)
-            let releasedItemID = hitTestItemID(at: location) ?? releasedHandleHit?.itemID
+            let pressedItemID = pressContext.targetItemID
+            let releasedContext = resolveContext(at: location)
+            let releasedItemID = releasedContext.targetItemID
             let previousSelectedItemID = interactionState.selectedItemID
             var clickTarget = "blank"
             var clickResult = "selection_unchanged"
             var affectedItemID: CanvasImageItemID?
 
-            switch pressTarget {
-            case let .rotateHandle(itemID):
+            switch pressContext.targetKind {
+            case .rotateHandle:
                 clickTarget = "rotate_handle"
-                affectedItemID = itemID
-            case let .cropHandle(_, itemID):
+                affectedItemID = pressContext.targetItemID
+            case .cropHandle:
                 clickTarget = "crop_handle"
-                affectedItemID = itemID
-            case let .cropOutline(itemID):
+                affectedItemID = pressContext.targetItemID
+            case .cropOutline:
                 clickTarget = "crop_outline"
-                affectedItemID = itemID
-            case let .handle(_, itemID):
+                affectedItemID = pressContext.targetItemID
+            case .selectionHandle:
                 clickTarget = "handle"
-                affectedItemID = itemID
-            case let .selectedBody(itemID), let .unselectedItem(itemID):
-                if releasedItemID == itemID {
+                affectedItemID = pressContext.targetItemID
+            case .selectedItemBody, .unselectedItemBody:
+                if let itemID = pressContext.targetItemID,
+                   releasedItemID == itemID
+                {
                     clickTarget = "image"
                     affectedItemID = itemID
                     selectItem(
@@ -610,7 +615,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
                     }
                 } else {
                     clickTarget = "mismatched_hit_test"
-                    affectedItemID = releasedItemID ?? itemID
+                    affectedItemID = releasedItemID ?? pressContext.targetItemID
                 }
             case .blank:
                 if releasedItemID == nil {
@@ -890,104 +895,6 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
             "currentSelectedItemID=\(describe(itemID: currentSelectedItemID)) " +
             "affectedItemID=\(describe(itemID: affectedItemID))"
         )
-    }
-
-    private func hitTestItemID(at viewportLocation: CGPoint) -> CanvasImageItemID? {
-        scene.topmostItemID(
-            containing: camera.viewportToWorld(viewportLocation)
-        )
-    }
-
-    private func hitTestEditHandle(at viewportLocation: CGPoint) -> EditHandleHit? {
-        guard let editOverlay = lastRenderSnapshot.editOverlay else {
-            return nil
-        }
-
-        switch editOverlay.kind {
-        case .crop:
-            guard
-                let handle = editOverlay.handles.first(where: { handle in
-                    Self.cropHandleHitRect(centeredAt: handle.screenCenter)
-                        .contains(viewportLocation)
-                }),
-                let role = handle.role.cropHandleRole
-            else {
-                return nil
-            }
-
-            return .crop(role: role, itemID: editOverlay.itemID)
-        case .selection:
-            guard
-                case let .selection(payload) = editOverlay.payload
-            else {
-                return nil
-            }
-
-            if Self.rotateHandleHitRect(centeredAt: payload.rotateAffordance.handle.screenCenter)
-                .contains(viewportLocation)
-            {
-                return .rotate(itemID: editOverlay.itemID)
-            }
-
-            guard
-                let handle = editOverlay.handles.first(where: { handle in
-                    Self.selectionHandleHitRect(centeredAt: handle.screenCenter)
-                        .contains(viewportLocation)
-                }),
-                let role = handle.role.selectionHandleRole
-            else {
-                return nil
-            }
-
-            return .resize(role: role, itemID: editOverlay.itemID)
-        }
-    }
-
-    private func hitTestCropOutline(at viewportLocation: CGPoint) -> CanvasImageItemID? {
-        guard
-            let editOverlay = lastRenderSnapshot.editOverlay,
-            case let .crop(payload) = editOverlay.payload
-        else {
-            return nil
-        }
-
-        for (start, end) in Self.quadEdges(for: payload.cropScreenQuad) {
-            if Self.distance(
-                from: viewportLocation,
-                toSegmentStart: start,
-                segmentEnd: end
-            ) <= (Self.cropOutlineHitTargetWidth / 2) {
-                return editOverlay.itemID
-            }
-        }
-
-        return nil
-    }
-
-    // Keep interaction priority aligned with common editors: resize handles win
-    // over body hits so a visible handle is always the first-class press target.
-    private func pointerPressTarget(at viewportLocation: CGPoint) -> PointerPressTarget {
-        if let editHandleHit = hitTestEditHandle(at: viewportLocation) {
-            return editHandleHit.pressTarget
-        }
-
-        if let cropOutlineItemID = hitTestCropOutline(at: viewportLocation) {
-            return .cropOutline(itemID: cropOutlineItemID)
-        }
-
-        if isInlineEditModeActive {
-            return .blank
-        }
-
-        guard let itemID = hitTestItemID(at: viewportLocation) else {
-            return .blank
-        }
-
-        if itemID == interactionState.selectedItemID {
-            return .selectedBody(itemID: itemID)
-        }
-
-        return .unselectedItem(itemID: itemID)
     }
 
     private func makePointerRotateState(
@@ -1516,65 +1423,6 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         }
     }
 
-    private static func selectionHandleHitRect(centeredAt center: CGPoint) -> CGRect {
-        CGRect(
-            x: center.x - selectionHandleHitTargetSize / 2,
-            y: center.y - selectionHandleHitTargetSize / 2,
-            width: selectionHandleHitTargetSize,
-            height: selectionHandleHitTargetSize
-        ).standardized
-    }
-
-    private static func cropHandleHitRect(centeredAt center: CGPoint) -> CGRect {
-        CGRect(
-            x: center.x - cropHandleHitTargetSize / 2,
-            y: center.y - cropHandleHitTargetSize / 2,
-            width: cropHandleHitTargetSize,
-            height: cropHandleHitTargetSize
-        ).standardized
-    }
-
-    private static func rotateHandleHitRect(centeredAt center: CGPoint) -> CGRect {
-        CGRect(
-            x: center.x - rotateHandleHitTargetSize / 2,
-            y: center.y - rotateHandleHitTargetSize / 2,
-            width: rotateHandleHitTargetSize,
-            height: rotateHandleHitTargetSize
-        ).standardized
-    }
-
-    private static func quadEdges(
-        for quad: CanvasQuad
-    ) -> [(start: CGPoint, end: CGPoint)] {
-        [
-            (quad.topLeading, quad.topTrailing),
-            (quad.topTrailing, quad.bottomTrailing),
-            (quad.bottomTrailing, quad.bottomLeading),
-            (quad.bottomLeading, quad.topLeading)
-        ]
-    }
-
-    private static func distance(
-        from point: CGPoint,
-        toSegmentStart start: CGPoint,
-        segmentEnd end: CGPoint
-    ) -> CGFloat {
-        let dx = end.x - start.x
-        let dy = end.y - start.y
-        let lengthSquared = (dx * dx) + (dy * dy)
-        guard lengthSquared > 0 else {
-            return hypot(point.x - start.x, point.y - start.y)
-        }
-
-        let projection = ((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSquared
-        let clampedProjection = min(max(projection, 0), 1)
-        let closestPoint = CGPoint(
-            x: start.x + (clampedProjection * dx),
-            y: start.y + (clampedProjection * dy)
-        )
-        return hypot(point.x - closestPoint.x, point.y - closestPoint.y)
-    }
-
     private func referenceLocalPoint(
         fromWorld worldPoint: CGPoint,
         center: CGPoint,
@@ -1965,19 +1813,19 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
     }
 
     private func beginPointerHistoryTransactionIfNeeded(
-        for pressTarget: PointerPressTarget
+        for pressContext: CanvasContextMenuContext
     ) {
         let reason: String
-        switch pressTarget {
+        switch pressContext.targetKind {
         case .rotateHandle:
             reason = "rotate item"
         case .cropHandle, .cropOutline:
             reason = "crop item"
-        case .handle:
+        case .selectionHandle:
             reason = "resize item"
-        case .selectedBody:
+        case .selectedItemBody:
             reason = "move item"
-        case .unselectedItem, .blank:
+        case .unselectedItemBody, .blank:
             return
         }
 
