@@ -16,12 +16,25 @@ struct CanvasContextMenuState {
     }
 }
 
+enum CanvasContextMenuOcclusionPolicy {
+    case avoidOverlayChrome
+    case allowChromeOverlap
+}
+
+enum CanvasContextMenuPlacementStyle {
+    case cursorPreferred
+    case fingerPreferred
+    case fixedRightOfAnchor
+}
+
 struct CanvasContextMenuLayoutConfiguration {
     var minimumWidth: CGFloat = 180
     var maximumWidth: CGFloat = 280
     var edgeInset: CGFloat = 16
     var anchorSpacing: CGFloat = 10
     var chromeClearance: CGFloat = 12
+    var occlusionPolicy: CanvasContextMenuOcclusionPolicy = .allowChromeOverlap
+    var placementStyle: CanvasContextMenuPlacementStyle = .cursorPreferred
 }
 
 struct CanvasContextMenuLayoutSolver {
@@ -52,22 +65,34 @@ struct CanvasContextMenuLayoutSolver {
             return nil
         }
 
-        let blockerRects = occupiedRects
-            .map(\.standardized)
-            .filter { $0.isEmpty == false }
-            .map {
-                $0.insetBy(
-                    dx: -configuration.chromeClearance,
-                    dy: -configuration.chromeClearance
-                )
-            }
-
-        let placements = candidatePlacements(
-            around: anchorPoint,
-            menuSize: resolvedSize,
-            within: layoutBounds,
-            anchorSpacing: configuration.anchorSpacing
-        )
+        let blockerRects: [CGRect]
+        let placements: [Placement]
+        switch configuration.occlusionPolicy {
+        case .avoidOverlayChrome:
+            blockerRects = occupiedRects
+                .map(\.standardized)
+                .filter { $0.isEmpty == false }
+                .map {
+                    $0.insetBy(
+                        dx: -configuration.chromeClearance,
+                        dy: -configuration.chromeClearance
+                    )
+                }
+            placements = candidatePlacements(
+                for: configuration.placementStyle,
+                around: anchorPoint,
+                size: resolvedSize,
+                within: layoutBounds,
+                anchorSpacing: configuration.anchorSpacing,
+                configuration: configuration
+            )
+        case .allowChromeOverlap:
+            // Keep safeBounds as the hard boundary, but allow menus to cover
+            // floating buttons and the minimap. Placement style still controls
+            // whether the menu prefers finger-above or cursor-near behavior.
+            blockerRects = []
+            placements = preferredPlacements(for: configuration.placementStyle)
+        }
 
         var bestFrame: CGRect?
         var bestScore = CGFloat.greatestFiniteMagnitude
@@ -79,22 +104,30 @@ struct CanvasContextMenuLayoutSolver {
                 placement: placement,
                 anchorSpacing: configuration.anchorSpacing
             )
-            let clampedFrame = clampedFrame(
-                rawFrame,
-                within: layoutBounds
-            )
+            let resolvedFrame: CGRect
+            if shouldClamp(
+                placement: placement,
+                configuration: configuration
+            ) {
+                resolvedFrame = clampedFrame(
+                    rawFrame,
+                    within: layoutBounds
+                )
+            } else {
+                resolvedFrame = rawFrame.standardized
+            }
             let overlapScore = totalOverlapArea(
-                of: clampedFrame,
+                of: resolvedFrame,
                 with: blockerRects
             )
 
             if overlapScore == 0 {
-                return clampedFrame.standardized
+                return resolvedFrame.standardized
             }
 
             if overlapScore < bestScore {
                 bestScore = overlapScore
-                bestFrame = clampedFrame.standardized
+                bestFrame = resolvedFrame.standardized
             }
         }
 
@@ -118,49 +151,103 @@ struct CanvasContextMenuLayoutSolver {
         )
     }
 
-    private func candidatePlacements(
-        around anchorPoint: CGPoint,
-        menuSize: CGSize,
-        within layoutBounds: CGRect,
-        anchorSpacing: CGFloat
+    private func preferredPlacements(
+        for placementStyle: CanvasContextMenuPlacementStyle
     ) -> [Placement] {
-        let placements = [
-            Placement(
-                attachesTrailing: true,
-                attachesBottom: true,
-                defaultPreferenceRank: 0
-            ),
-            Placement(
-                attachesTrailing: true,
-                attachesBottom: false,
-                defaultPreferenceRank: 1
-            ),
-            Placement(
-                attachesTrailing: false,
-                attachesBottom: true,
-                defaultPreferenceRank: 2
-            ),
-            Placement(
-                attachesTrailing: false,
-                attachesBottom: false,
-                defaultPreferenceRank: 3
-            )
-        ]
+        switch placementStyle {
+        case .cursorPreferred:
+            return [
+                Placement(
+                    horizontalAlignment: .trailing,
+                    verticalAlignment: .below,
+                    defaultPreferenceRank: 0
+                ),
+                Placement(
+                    horizontalAlignment: .trailing,
+                    verticalAlignment: .above,
+                    defaultPreferenceRank: 1
+                ),
+                Placement(
+                    horizontalAlignment: .leading,
+                    verticalAlignment: .below,
+                    defaultPreferenceRank: 2
+                ),
+                Placement(
+                    horizontalAlignment: .leading,
+                    verticalAlignment: .above,
+                    defaultPreferenceRank: 3
+                )
+            ]
+        case .fingerPreferred:
+            return [
+                Placement(
+                    horizontalAlignment: .centered,
+                    verticalAlignment: .above,
+                    defaultPreferenceRank: 0
+                ),
+                Placement(
+                    horizontalAlignment: .trailing,
+                    verticalAlignment: .above,
+                    defaultPreferenceRank: 1
+                ),
+                Placement(
+                    horizontalAlignment: .leading,
+                    verticalAlignment: .above,
+                    defaultPreferenceRank: 2
+                ),
+                Placement(
+                    horizontalAlignment: .centered,
+                    verticalAlignment: .below,
+                    defaultPreferenceRank: 3
+                ),
+                Placement(
+                    horizontalAlignment: .trailing,
+                    verticalAlignment: .below,
+                    defaultPreferenceRank: 4
+                ),
+                Placement(
+                    horizontalAlignment: .leading,
+                    verticalAlignment: .below,
+                    defaultPreferenceRank: 5
+                )
+            ]
+        case .fixedRightOfAnchor:
+            return [
+                Placement(
+                    horizontalAlignment: .trailing,
+                    verticalAlignment: .anchored,
+                    defaultPreferenceRank: 0
+                )
+            ]
+        }
+    }
+
+    private func candidatePlacements(
+        for placementStyle: CanvasContextMenuPlacementStyle,
+        around anchorPoint: CGPoint,
+        size: CGSize,
+        within layoutBounds: CGRect,
+        anchorSpacing: CGFloat,
+        configuration: CanvasContextMenuLayoutConfiguration
+    ) -> [Placement] {
+        let placements = preferredPlacements(for: placementStyle)
 
         return placements.sorted { lhs, rhs in
             let lhsScore = candidateScore(
                 for: lhs,
                 anchorPoint: anchorPoint,
-                menuSize: menuSize,
+                menuSize: size,
                 layoutBounds: layoutBounds,
-                anchorSpacing: anchorSpacing
+                anchorSpacing: anchorSpacing,
+                configuration: configuration
             )
             let rhsScore = candidateScore(
                 for: rhs,
                 anchorPoint: anchorPoint,
-                menuSize: menuSize,
+                menuSize: size,
                 layoutBounds: layoutBounds,
-                anchorSpacing: anchorSpacing
+                anchorSpacing: anchorSpacing,
+                configuration: configuration
             )
 
             if lhsScore.totalOverflow != rhsScore.totalOverflow {
@@ -184,42 +271,54 @@ struct CanvasContextMenuLayoutSolver {
         anchorPoint: CGPoint,
         menuSize: CGSize,
         layoutBounds: CGRect,
-        anchorSpacing: CGFloat
+        anchorSpacing: CGFloat,
+        configuration: CanvasContextMenuLayoutConfiguration
     ) -> CandidateScore {
-        let horizontalSpace = directionalSpace(
-            attachesPositiveDirection: placement.attachesTrailing,
-            coordinate: anchorPoint.x,
-            minBound: layoutBounds.minX,
-            maxBound: layoutBounds.maxX,
+        let rawFrame = frame(
+            around: anchorPoint,
+            size: menuSize,
+            placement: placement,
             anchorSpacing: anchorSpacing
         )
-        let verticalSpace = directionalSpace(
-            attachesPositiveDirection: placement.attachesBottom,
-            coordinate: anchorPoint.y,
-            minBound: layoutBounds.minY,
-            maxBound: layoutBounds.maxY,
-            anchorSpacing: anchorSpacing
-        )
+        let resolvedFrame: CGRect
+        if shouldClamp(
+            placement: placement,
+            configuration: configuration
+        ) {
+            resolvedFrame = clampedFrame(
+                rawFrame,
+                within: layoutBounds
+            )
+        } else {
+            resolvedFrame = rawFrame.standardized
+        }
 
-        let horizontalOverflow = max(menuSize.width - horizontalSpace, 0)
-        let verticalOverflow = max(menuSize.height - verticalSpace, 0)
+        let clampDisplacement =
+            abs(resolvedFrame.minX - rawFrame.minX) +
+            abs(resolvedFrame.minY - rawFrame.minY)
         return CandidateScore(
-            totalOverflow: horizontalOverflow + verticalOverflow,
-            availableArea: horizontalSpace * verticalSpace
+            totalOverflow: clampDisplacement,
+            availableArea: resolvedFrame.intersection(layoutBounds).standardized.area
         )
     }
 
-    private func directionalSpace(
-        attachesPositiveDirection: Bool,
-        coordinate: CGFloat,
-        minBound: CGFloat,
-        maxBound: CGFloat,
-        anchorSpacing: CGFloat
-    ) -> CGFloat {
-        let rawSpace = attachesPositiveDirection
-            ? maxBound - coordinate - anchorSpacing
-            : coordinate - minBound - anchorSpacing
-        return max(rawSpace, 0)
+    private func shouldClamp(
+        placement: Placement,
+        configuration: CanvasContextMenuLayoutConfiguration
+    ) -> Bool {
+        switch configuration.placementStyle {
+        case .cursorPreferred, .fingerPreferred:
+            return true
+        case .fixedRightOfAnchor:
+            break
+        }
+
+        switch (placement.horizontalAlignment, placement.verticalAlignment) {
+        case (.trailing, .anchored):
+            return false
+        default:
+            return true
+        }
     }
 
     private func frame(
@@ -228,12 +327,26 @@ struct CanvasContextMenuLayoutSolver {
         placement: Placement,
         anchorSpacing: CGFloat
     ) -> CGRect {
-        let originX = placement.attachesTrailing
-            ? anchorPoint.x + anchorSpacing
-            : anchorPoint.x - anchorSpacing - size.width
-        let originY = placement.attachesBottom
-            ? anchorPoint.y + anchorSpacing
-            : anchorPoint.y - anchorSpacing - size.height
+        let originX: CGFloat
+        switch placement.horizontalAlignment {
+        case .trailing:
+            originX = anchorPoint.x + anchorSpacing
+        case .leading:
+            originX = anchorPoint.x - anchorSpacing - size.width
+        case .centered:
+            originX = anchorPoint.x - (size.width / 2)
+        }
+
+        let originY: CGFloat
+        switch placement.verticalAlignment {
+        case .below:
+            originY = anchorPoint.y + anchorSpacing
+        case .above:
+            originY = anchorPoint.y - anchorSpacing - size.height
+        case .anchored:
+            originY = anchorPoint.y
+        }
+
         return CGRect(
             x: originX,
             y: originY,
@@ -268,14 +381,26 @@ struct CanvasContextMenuLayoutSolver {
     }
 
     private struct Placement {
-        let attachesTrailing: Bool
-        let attachesBottom: Bool
+        let horizontalAlignment: HorizontalAlignment
+        let verticalAlignment: VerticalAlignment
         let defaultPreferenceRank: Int
     }
 
     private struct CandidateScore {
         let totalOverflow: CGFloat
         let availableArea: CGFloat
+    }
+
+    private enum HorizontalAlignment {
+        case leading
+        case centered
+        case trailing
+    }
+
+    private enum VerticalAlignment {
+        case above
+        case below
+        case anchored
     }
 }
 
