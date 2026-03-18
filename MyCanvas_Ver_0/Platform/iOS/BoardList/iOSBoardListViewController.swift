@@ -18,6 +18,7 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
     private var availableBoards: [BoardCatalogItem] = []
     private var selectedBoardID: UUID?
     private var hasSelectedFolder = false
+    private var storageErrorMessage: String?
     private var displayMode: BoardListDisplayMode = .grid {
         didSet {
             guard oldValue != displayMode else {
@@ -88,13 +89,25 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
         return button
     }()
 
-    private let bookmarkStatusLabel: UILabel = {
+    private let bookmarkTitleLabel: UILabel = {
         let label = UILabel()
         label.translatesAutoresizingMaskIntoConstraints = false
-        label.font = .systemFont(ofSize: 14)
+        label.font = .systemFont(ofSize: 13, weight: .medium)
+        label.textColor = .label
+        label.textAlignment = .center
+        label.numberOfLines = 1
+        label.lineBreakMode = .byTruncatingMiddle
+        return label
+    }()
+
+    private let bookmarkDetailLabel: UILabel = {
+        let label = UILabel()
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.font = .systemFont(ofSize: 12)
         label.textColor = .secondaryLabel
         label.textAlignment = .center
-        label.numberOfLines = 0
+        label.numberOfLines = 1
+        label.lineBreakMode = .byTruncatingTail
         return label
     }()
 
@@ -106,6 +119,12 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
         stackView.distribution = .equalCentering
         stackView.spacing = 12
         return stackView
+    }()
+
+    private let contentContainerView: UIView = {
+        let view = UIView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        return view
     }()
 
     private let collectionViewLayout = UICollectionViewFlowLayout()
@@ -159,9 +178,12 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
         view.addSubview(titleLabel)
         view.addSubview(subtitleLabel)
         view.addSubview(actionStackView)
-        view.addSubview(bookmarkStatusLabel)
-        view.addSubview(collectionView)
-        view.addSubview(emptyStateLabel)
+        view.addSubview(bookmarkTitleLabel)
+        view.addSubview(bookmarkDetailLabel)
+        view.addSubview(contentContainerView)
+
+        contentContainerView.addSubview(collectionView)
+        contentContainerView.addSubview(emptyStateLabel)
     }
 
     private func setupConstraints() {
@@ -174,18 +196,24 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
             subtitleLabel.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -24),
             actionStackView.topAnchor.constraint(equalTo: subtitleLabel.bottomAnchor, constant: 20),
             actionStackView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            bookmarkStatusLabel.topAnchor.constraint(equalTo: actionStackView.bottomAnchor, constant: 12),
-            bookmarkStatusLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            bookmarkStatusLabel.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 24),
-            bookmarkStatusLabel.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -24),
-            collectionView.topAnchor.constraint(equalTo: bookmarkStatusLabel.bottomAnchor, constant: 16),
-            collectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            collectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            collectionView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            emptyStateLabel.topAnchor.constraint(equalTo: bookmarkStatusLabel.bottomAnchor, constant: 32),
-            emptyStateLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
-            emptyStateLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
-            emptyStateLabel.centerYAnchor.constraint(equalTo: collectionView.centerYAnchor)
+            bookmarkTitleLabel.topAnchor.constraint(equalTo: actionStackView.bottomAnchor, constant: 12),
+            bookmarkTitleLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
+            bookmarkTitleLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
+            bookmarkDetailLabel.topAnchor.constraint(equalTo: bookmarkTitleLabel.bottomAnchor, constant: 4),
+            bookmarkDetailLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
+            bookmarkDetailLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
+            contentContainerView.topAnchor.constraint(equalTo: bookmarkDetailLabel.bottomAnchor, constant: 16),
+            contentContainerView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            contentContainerView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            contentContainerView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            collectionView.topAnchor.constraint(equalTo: contentContainerView.topAnchor),
+            collectionView.leadingAnchor.constraint(equalTo: contentContainerView.leadingAnchor),
+            collectionView.trailingAnchor.constraint(equalTo: contentContainerView.trailingAnchor),
+            collectionView.bottomAnchor.constraint(equalTo: contentContainerView.bottomAnchor),
+            emptyStateLabel.leadingAnchor.constraint(equalTo: contentContainerView.leadingAnchor, constant: 24),
+            emptyStateLabel.trailingAnchor.constraint(equalTo: contentContainerView.trailingAnchor, constant: -24),
+            emptyStateLabel.centerXAnchor.constraint(equalTo: contentContainerView.centerXAnchor),
+            emptyStateLabel.centerYAnchor.constraint(equalTo: contentContainerView.centerYAnchor)
         ])
     }
 
@@ -195,26 +223,53 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
         openCanvasButton.addTarget(self, action: #selector(handleOpenCanvasButtonTap), for: .touchUpInside)
     }
 
+    private func applyHeaderState(_ headerState: BoardListHeaderState) {
+        bookmarkTitleLabel.text = headerState.title
+        bookmarkDetailLabel.text = headerState.detail
+        bookmarkTitleLabel.accessibilityHint = headerState.fullPath
+        bookmarkDetailLabel.accessibilityHint = headerState.fullPath
+        bookmarkDetailLabel.textColor = headerState.isError
+            ? .systemRed
+            : .secondaryLabel
+    }
+
     private func refreshBookmarkStatus() {
-        let bookmarkText = FolderBookmarkStore.statusText()
+        let bookmarkStatus = FolderBookmarkStore.bookmarkStatus()
         do {
             let boards = try catalogLoader.loadCatalog()
             availableBoards = boards
             hasSelectedFolder = true
+            storageErrorMessage = nil
             ensureValidSelection()
-            bookmarkStatusLabel.text = "\(bookmarkText)\n\nBoards available: \(boards.count)"
+            applyHeaderState(
+                BoardListHeaderStateBuilder.make(
+                    bookmarkStatus: bookmarkStatus,
+                    boardCount: boards.count
+                )
+            )
             reloadBoardList()
         } catch FolderBookmarkStoreError.missingBookmarkData {
             availableBoards = []
             selectedBoardID = nil
             hasSelectedFolder = false
-            bookmarkStatusLabel.text = bookmarkText
+            storageErrorMessage = nil
+            applyHeaderState(
+                BoardListHeaderStateBuilder.make(
+                    bookmarkStatus: bookmarkStatus
+                )
+            )
             reloadBoardList()
         } catch {
             availableBoards = []
             selectedBoardID = nil
-            hasSelectedFolder = false
-            bookmarkStatusLabel.text = "\(bookmarkText)\n\nStorage error: \(error.localizedDescription)"
+            hasSelectedFolder = bookmarkStatus.hasSelectedFolder
+            storageErrorMessage = error.localizedDescription
+            applyHeaderState(
+                BoardListHeaderStateBuilder.make(
+                    bookmarkStatus: bookmarkStatus,
+                    storageErrorDescription: error.localizedDescription
+                )
+            )
             reloadBoardList()
         }
     }
@@ -244,26 +299,41 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
 
     private func updateOpenCanvasButtonState() {
         var configuration = openCanvasButton.configuration ?? UIButton.Configuration.tinted()
-        if hasSelectedFolder {
+        if !hasSelectedFolder {
+            configuration.title = "Select Folder First"
+            openCanvasButton.isEnabled = false
+        } else if storageErrorMessage != nil {
+            configuration.title = "Storage Unavailable"
+            openCanvasButton.isEnabled = false
+        } else {
             configuration.title = availableBoards.isEmpty
                 ? "Create Board"
                 : "Open Board"
             openCanvasButton.isEnabled = true
-        } else {
-            configuration.title = "Select Folder First"
-            openCanvasButton.isEnabled = false
         }
         openCanvasButton.configuration = configuration
     }
 
     private func updateDisplayModeControlState() {
-        displayModeControl.isEnabled = hasSelectedFolder && !availableBoards.isEmpty
+        displayModeControl.isEnabled =
+            hasSelectedFolder &&
+            storageErrorMessage == nil &&
+            !availableBoards.isEmpty
     }
 
     private func updateCollectionVisibility() {
-        let shouldShowCollection = hasSelectedFolder && !availableBoards.isEmpty
+        let shouldShowCollection =
+            hasSelectedFolder &&
+            storageErrorMessage == nil &&
+            !availableBoards.isEmpty
         collectionView.isHidden = !shouldShowCollection
         emptyStateLabel.isHidden = shouldShowCollection
+
+        if let storageErrorMessage {
+            emptyStateLabel.text = "Storage unavailable: \(storageErrorMessage)"
+            return
+        }
+
         emptyStateLabel.text = hasSelectedFolder
             ? "No boards yet. Create one to get started."
             : "Select a storage folder to load boards."

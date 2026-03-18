@@ -17,6 +17,20 @@ enum FolderBookmarkStore {
         let isStale: Bool
     }
 
+    enum BookmarkStatus {
+        case missing
+        case resolved(ResolvedFolderBookmark)
+        case unresolved
+
+        var hasSelectedFolder: Bool {
+            if case .resolved = self {
+                return true
+            }
+
+            return false
+        }
+    }
+
     private static let bookmarkDefaultsKey = "SelectedFolderBookmarkData"
 
     static func save(_ bookmarkData: Data, userDefaults: UserDefaults = .standard) {
@@ -62,16 +76,15 @@ enum FolderBookmarkStore {
         }
     }
 
-    static func statusText(userDefaults: UserDefaults = .standard) -> String {
-        if let path = storedFolderPath(userDefaults: userDefaults) {
-            return "Saved folder path:\n\(path)"
+    static func bookmarkStatus(userDefaults: UserDefaults = .standard) -> BookmarkStatus {
+        do {
+            return .resolved(try resolveStoredFolderBookmark(userDefaults: userDefaults))
+        } catch FolderBookmarkStoreError.missingBookmarkData {
+            return .missing
+        } catch {
+            print("[FolderBookmark] Failed to resolve bookmark status: \(error)")
+            return .unresolved
         }
-
-        if hasStoredBookmarkData(userDefaults: userDefaults) {
-            return "Bookmark data exists in UserDefaults, but the path could not be resolved."
-        }
-
-        return "No bookmark data stored in UserDefaults."
     }
 
     static func logStoredBookmarkPresence(userDefaults: UserDefaults = .standard) {
