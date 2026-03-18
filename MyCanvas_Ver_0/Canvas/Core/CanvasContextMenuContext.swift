@@ -50,14 +50,21 @@ struct CanvasContextMenuContext {
     let isInlineCropModeActive: Bool
 
     var anchorPoint: CGPoint {
-        guard let anchorRect else {
+        switch targetKind {
+        case .rotateHandle, .cropHandle, .selectionHandle:
+            guard let anchorRect else {
+                return invocationViewportPoint
+            }
+
+            return CGPoint(
+                x: anchorRect.midX,
+                y: anchorRect.midY
+            )
+        case .cropOutline, .selectedItemBody, .unselectedItemBody, .blank:
+            // Body/outline menus should follow the actual invocation point instead
+            // of the item's geometric center so the menu feels attached to the click.
             return invocationViewportPoint
         }
-
-        return CGPoint(
-            x: anchorRect.midX,
-            y: anchorRect.midY
-        )
     }
 
     var debugSummary: String {

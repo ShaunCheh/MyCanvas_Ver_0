@@ -274,6 +274,7 @@ final class macOSViewController: NSViewController {
 
         contextMenuState = CanvasContextMenuState(
             resolvedContext: resolvedContext,
+            layoutAnchorPoint: contextMenuLayoutAnchorPoint(for: resolvedContext),
             commandStates: commandStates
         )
     }
@@ -285,14 +286,14 @@ final class macOSViewController: NSViewController {
     private func updateContextMenuPresentation() {
         contextMenuHostView.apply(
             state: contextMenuState,
-            safeBounds: chromeSafeBounds(),
+            safeBounds: contextMenuSafeBounds(),
             occupiedRects: contextMenuOccupiedRects()
         )
     }
 
     private func updateContextMenuLayout() {
         contextMenuHostView.updateLayout(
-            safeBounds: chromeSafeBounds(),
+            safeBounds: contextMenuSafeBounds(),
             occupiedRects: contextMenuOccupiedRects()
         )
     }
@@ -457,7 +458,46 @@ final class macOSViewController: NSViewController {
         if miniMapMountView.isHidden == false, miniMapFrame.isEmpty == false {
             rects.append(miniMapFrame)
         }
-        return rects
+
+        return rects.map { rect in
+            convertToContextMenuHost(rect, from: chromeOverlayView)
+        }
+    }
+
+    private func contextMenuSafeBounds() -> CGRect {
+        convertToContextMenuHost(
+            chromeSafeBounds(),
+            from: chromeOverlayView
+        )
+    }
+
+    private func contextMenuLayoutAnchorPoint(
+        for resolvedContext: CanvasContextMenuContext
+    ) -> CGPoint {
+        convertToContextMenuHost(
+            resolvedContext.anchorPoint,
+            from: canvasViewportView
+        )
+    }
+
+    private func convertToContextMenuHost(
+        _ point: CGPoint,
+        from sourceView: NSView
+    ) -> CGPoint {
+        contextMenuHostView.convert(
+            point,
+            from: sourceView
+        )
+    }
+
+    private func convertToContextMenuHost(
+        _ rect: CGRect,
+        from sourceView: NSView
+    ) -> CGRect {
+        contextMenuHostView.convert(
+            rect,
+            from: sourceView
+        ).standardized
     }
 
     private func setupImportButton() {
@@ -2059,6 +2099,9 @@ final class macOSViewController: NSViewController {
             .map(describe(rect:))
             .joined(separator: ", ")
         let commandIDsDescription = commandIDs.map(\.rawValue).joined(separator: ",")
+        let layoutAnchorPoint = contextMenuLayoutAnchorPoint(
+            for: resolvedContext
+        )
 
         print(
             "[Canvas macOS][ContextMenuPosition] " +
@@ -2069,7 +2112,8 @@ final class macOSViewController: NSViewController {
             "overlayFrame=\(describe(rect: chromeOverlayView.frame)) " +
             "hostBounds=\(describe(rect: contextMenuHostView.bounds)) " +
             "hostFrame=\(describe(rect: contextMenuHostView.frame)) " +
-            "safeBounds=\(describe(rect: chromeSafeBounds())) " +
+            "layoutAnchorPoint=\(describe(point: layoutAnchorPoint)) " +
+            "safeBounds=\(describe(rect: contextMenuSafeBounds())) " +
             "occupiedRects=[\(occupiedRectsDescription)] " +
             "commandIDs=[\(commandIDsDescription)]"
         )

@@ -8,6 +8,7 @@ struct CanvasContextMenuCommandState {
 
 struct CanvasContextMenuState {
     let resolvedContext: CanvasContextMenuContext
+    let layoutAnchorPoint: CGPoint
     let commandStates: [CanvasContextMenuCommandState]
 
     var isEmpty: Bool {
@@ -61,11 +62,11 @@ struct CanvasContextMenuLayoutSolver {
                 )
             }
 
-        let prefersTrailing = anchorPoint.x < layoutBounds.midX
-        let prefersBottom = anchorPoint.y < layoutBounds.midY
         let placements = candidatePlacements(
-            prefersTrailing: prefersTrailing,
-            prefersBottom: prefersBottom
+            around: anchorPoint,
+            menuSize: resolvedSize,
+            within: layoutBounds,
+            anchorSpacing: configuration.anchorSpacing
         )
 
         var bestFrame: CGRect?
@@ -118,27 +119,107 @@ struct CanvasContextMenuLayoutSolver {
     }
 
     private func candidatePlacements(
-        prefersTrailing: Bool,
-        prefersBottom: Bool
+        around anchorPoint: CGPoint,
+        menuSize: CGSize,
+        within layoutBounds: CGRect,
+        anchorSpacing: CGFloat
     ) -> [Placement] {
-        [
+        let placements = [
             Placement(
-                attachesTrailing: prefersTrailing,
-                attachesBottom: prefersBottom
+                attachesTrailing: true,
+                attachesBottom: true,
+                defaultPreferenceRank: 0
             ),
             Placement(
-                attachesTrailing: !prefersTrailing,
-                attachesBottom: prefersBottom
+                attachesTrailing: true,
+                attachesBottom: false,
+                defaultPreferenceRank: 1
             ),
             Placement(
-                attachesTrailing: prefersTrailing,
-                attachesBottom: !prefersBottom
+                attachesTrailing: false,
+                attachesBottom: true,
+                defaultPreferenceRank: 2
             ),
             Placement(
-                attachesTrailing: !prefersTrailing,
-                attachesBottom: !prefersBottom
+                attachesTrailing: false,
+                attachesBottom: false,
+                defaultPreferenceRank: 3
             )
         ]
+
+        return placements.sorted { lhs, rhs in
+            let lhsScore = candidateScore(
+                for: lhs,
+                anchorPoint: anchorPoint,
+                menuSize: menuSize,
+                layoutBounds: layoutBounds,
+                anchorSpacing: anchorSpacing
+            )
+            let rhsScore = candidateScore(
+                for: rhs,
+                anchorPoint: anchorPoint,
+                menuSize: menuSize,
+                layoutBounds: layoutBounds,
+                anchorSpacing: anchorSpacing
+            )
+
+            if lhsScore.totalOverflow != rhsScore.totalOverflow {
+                return lhsScore.totalOverflow < rhsScore.totalOverflow
+            }
+
+            if lhsScore.totalOverflow == 0, rhsScore.totalOverflow == 0 {
+                return lhs.defaultPreferenceRank < rhs.defaultPreferenceRank
+            }
+
+            if lhsScore.availableArea != rhsScore.availableArea {
+                return lhsScore.availableArea > rhsScore.availableArea
+            }
+
+            return lhs.defaultPreferenceRank < rhs.defaultPreferenceRank
+        }
+    }
+
+    private func candidateScore(
+        for placement: Placement,
+        anchorPoint: CGPoint,
+        menuSize: CGSize,
+        layoutBounds: CGRect,
+        anchorSpacing: CGFloat
+    ) -> CandidateScore {
+        let horizontalSpace = directionalSpace(
+            attachesPositiveDirection: placement.attachesTrailing,
+            coordinate: anchorPoint.x,
+            minBound: layoutBounds.minX,
+            maxBound: layoutBounds.maxX,
+            anchorSpacing: anchorSpacing
+        )
+        let verticalSpace = directionalSpace(
+            attachesPositiveDirection: placement.attachesBottom,
+            coordinate: anchorPoint.y,
+            minBound: layoutBounds.minY,
+            maxBound: layoutBounds.maxY,
+            anchorSpacing: anchorSpacing
+        )
+
+        let horizontalOverflow = max(menuSize.width - horizontalSpace, 0)
+        let verticalOverflow = max(menuSize.height - verticalSpace, 0)
+        return CandidateScore(
+            totalOverflow: horizontalOverflow + verticalOverflow,
+            availableArea: horizontalSpace * verticalSpace
+        )
+    }
+
+    private func directionalSpace(
+        attachesPositiveDirection: Bool,
+        coordinate: CGFloat,
+        minBound: CGFloat,
+        maxBound: CGFloat,
+        anchorSpacing: CGFloat
+    ) -> CGFloat {
+        let rawSpace = attachesPositiveDirection
+            ? maxBound - coordinate - anchorSpacing
+            : coordinate - minBound - anchorSpacing
+        return max(rawSpace, 0)
     }
 
     private func frame(
@@ -189,6 +270,12 @@ struct CanvasContextMenuLayoutSolver {
     private struct Placement {
         let attachesTrailing: Bool
         let attachesBottom: Bool
+        let defaultPreferenceRank: Int
+    }
+
+    private struct CandidateScore {
+        let totalOverflow: CGFloat
+        let availableArea: CGFloat
     }
 }
 

@@ -105,7 +105,7 @@ final class CanvasContextMenuHostView: UIView {
 
         let preferredSize = preferredMenuSize()
         guard let menuFrame = layoutSolver.resolveMenuFrame(
-            anchorPoint: currentState.resolvedContext.anchorPoint,
+            anchorPoint: currentState.layoutAnchorPoint,
             preferredSize: preferredSize,
             safeBounds: safeBounds,
             occupiedRects: occupiedRects,
@@ -263,6 +263,10 @@ final class CanvasContextMenuHostView: NSView {
         ])
     }
 
+    override var isFlipped: Bool {
+        true
+    }
+
     required init?(coder: NSCoder) {
         return nil
     }
@@ -331,7 +335,7 @@ final class CanvasContextMenuHostView: NSView {
 
         let preferredSize = preferredMenuSize()
         guard let menuFrame = layoutSolver.resolveMenuFrame(
-            anchorPoint: currentState.resolvedContext.anchorPoint,
+            anchorPoint: currentState.layoutAnchorPoint,
             preferredSize: preferredSize,
             safeBounds: safeBounds,
             occupiedRects: occupiedRects,
@@ -456,6 +460,7 @@ private func logContextMenuLayout(
     print(
         "[Canvas \(platform)][ContextMenuLayout] " +
         state.resolvedContext.debugSummary + " " +
+        "layoutAnchorPoint=\(contextMenuHostDescribe(state.layoutAnchorPoint)) " +
         "hostBounds=\(contextMenuHostDescribe(hostBounds)) " +
         "safeBounds=\(contextMenuHostDescribe(safeBounds)) " +
         "preferredSize=\(contextMenuHostDescribe(preferredSize)) " +
@@ -463,6 +468,10 @@ private func logContextMenuLayout(
         "occupiedRects=[\(occupiedRectsDescription)] " +
         "commandIDs=[\(commandIDsDescription)]"
     )
+}
+
+private func contextMenuHostDescribe(_ point: CGPoint) -> String {
+    "{\(contextMenuHostFormat(point.x)), \(contextMenuHostFormat(point.y))}"
 }
 
 private func contextMenuHostDescribe(_ size: CGSize) -> String {
