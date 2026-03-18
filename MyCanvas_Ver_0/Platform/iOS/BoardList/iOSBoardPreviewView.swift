@@ -55,8 +55,8 @@ final class iOSBoardPreviewView: UIView {
         layer.cornerRadius = Self.cornerRadius
         layer.masksToBounds = true
         layer.addSublayer(backgroundLayer)
-        layer.addSublayer(imageLayer)
         layer.addSublayer(boardLayer)
+        layer.addSublayer(imageLayer)
         layer.addSublayer(occupancyLayer)
 
         imageLayer.contentsGravity = .resizeAspectFill

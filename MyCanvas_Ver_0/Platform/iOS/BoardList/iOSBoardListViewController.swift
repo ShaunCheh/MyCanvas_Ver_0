@@ -463,7 +463,6 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
         cellForItemAt indexPath: IndexPath
     ) -> UICollectionViewCell {
         let catalogItem = availableBoards[indexPath.item]
-        let previewContent = previewProvider.immediatePreview(for: catalogItem)
         guard
             let cell = collectionView.dequeueReusableCell(
                 withReuseIdentifier: iOSBoardCollectionViewCell.reuseIdentifier,
@@ -473,16 +472,36 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
             return UICollectionViewCell()
         }
 
+        let targetPixelSize = cell.targetThumbnailPixelSize(for: displayMode)
+        let previewContent = previewProvider.immediatePreview(
+            for: catalogItem,
+            targetPixelSize: targetPixelSize
+        )
         cell.configure(
             with: catalogItem,
             previewContent: previewContent,
             displayMode: displayMode
         )
+        if previewContent.isThumbnail == false {
+            cell.requestThumbnail(
+                using: previewProvider,
+                for: catalogItem,
+                displayMode: displayMode
+            )
+        }
         return cell
     }
 
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
         selectedBoardID = availableBoards[indexPath.item].boardID
+    }
+
+    func collectionView(
+        _ collectionView: UICollectionView,
+        didEndDisplaying cell: UICollectionViewCell,
+        forItemAt indexPath: IndexPath
+    ) {
+        (cell as? iOSBoardCollectionViewCell)?.cancelThumbnailRequest()
     }
 }
 #endif

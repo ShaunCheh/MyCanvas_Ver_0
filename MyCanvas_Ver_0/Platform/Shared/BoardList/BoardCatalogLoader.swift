@@ -16,6 +16,7 @@ struct BoardCatalogLoader {
         try BoardStore.listBoardDocumentEntries(userDefaults: userDefaults).map { entry in
             BoardCatalogItem(
                 document: entry.document,
+                assetsDirectoryURL: entry.assetsDirectoryURL,
                 previewSeed: geometryPreviewBuilder.makeSeed(from: entry.document)
             )
         }

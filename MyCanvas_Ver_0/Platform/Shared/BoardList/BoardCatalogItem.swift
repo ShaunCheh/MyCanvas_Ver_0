@@ -2,6 +2,7 @@ import Foundation
 
 struct BoardCatalogItem {
     let document: BoardDocument
+    let assetsDirectoryURL: URL
     let previewSeed: BoardPreviewSeed
 
     var boardID: UUID {

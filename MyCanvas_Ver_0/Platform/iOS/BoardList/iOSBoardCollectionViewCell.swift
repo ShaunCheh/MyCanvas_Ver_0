@@ -17,6 +17,9 @@ final class iOSBoardCollectionViewCell: UICollectionViewCell {
 
     private var gridConstraints: [NSLayoutConstraint] = []
     private var listConstraints: [NSLayoutConstraint] = []
+    private var representedBoardID: UUID?
+    private var representedRevisionToken: String?
+    private var thumbnailRequestToken: BoardPreviewRequestToken?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -38,6 +41,9 @@ final class iOSBoardCollectionViewCell: UICollectionViewCell {
 
     override func prepareForReuse() {
         super.prepareForReuse()
+        cancelThumbnailRequest()
+        representedBoardID = nil
+        representedRevisionToken = nil
         titleLabel.text = nil
         previewView.apply(content: .empty)
     }
@@ -47,9 +53,55 @@ final class iOSBoardCollectionViewCell: UICollectionViewCell {
         previewContent: BoardPreviewContent,
         displayMode: BoardListDisplayMode
     ) {
+        cancelThumbnailRequest()
+        representedBoardID = item.boardID
+        representedRevisionToken = item.revisionToken
         titleLabel.text = item.title
         previewView.apply(content: previewContent)
         applyDisplayMode(displayMode)
+        contentView.layoutIfNeeded()
+    }
+
+    func cancelThumbnailRequest() {
+        thumbnailRequestToken?.cancel()
+        thumbnailRequestToken = nil
+    }
+
+    func targetThumbnailPixelSize(
+        for displayMode: BoardListDisplayMode
+    ) -> CGSize {
+        contentView.layoutIfNeeded()
+
+        let previewSize = resolvedPreviewViewSize(for: displayMode)
+        let contentsScale = window?.screen.scale ?? UIScreen.main.scale
+        return CGSize(
+            width: previewSize.width * contentsScale,
+            height: previewSize.height * contentsScale
+        )
+    }
+
+    func requestThumbnail(
+        using previewProvider: BoardPreviewProvider,
+        for item: BoardCatalogItem,
+        displayMode: BoardListDisplayMode
+    ) {
+        cancelThumbnailRequest()
+
+        thumbnailRequestToken = previewProvider.requestThumbnail(
+            for: item,
+            targetPixelSize: targetThumbnailPixelSize(for: displayMode)
+        ) { [weak self] previewContent in
+            guard
+                let self,
+                let previewContent,
+                self.representedBoardID == item.boardID,
+                self.representedRevisionToken == item.revisionToken
+            else {
+                return
+            }
+
+            self.previewView.apply(content: previewContent)
+        }
     }
 
     private func setupView() {
@@ -106,6 +158,20 @@ final class iOSBoardCollectionViewCell: UICollectionViewCell {
             ? UIColor.systemBlue
             : UIColor.separator.withAlphaComponent(0.55)).cgColor
         contentView.layer.borderWidth = isSelected ? 2 : 1
+    }
+
+    private func resolvedPreviewViewSize(
+        for displayMode: BoardListDisplayMode
+    ) -> CGSize {
+        switch displayMode {
+        case .grid:
+            return CGSize(
+                width: max(contentView.bounds.width - 24, 120),
+                height: 120
+            )
+        case .list:
+            return CGSize(width: 72, height: 72)
+        }
     }
 }
 #endif

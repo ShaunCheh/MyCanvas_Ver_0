@@ -56,11 +56,23 @@ enum BoardPreviewRenderer {
             occupancyLayer.path = path
             occupancyLayer.isHidden = false
 
-        case let .thumbnail(image):
+        case let .thumbnail(image, seed):
             imageLayer.contents = image
             imageLayer.isHidden = false
-            boardLayer.path = nil
-            boardLayer.isHidden = true
+
+            let layout = BoardGeometryPreviewLayout(
+                seed: seed,
+                viewBounds: roundedBounds,
+                contentInset: contentInset
+            )
+            if let boardRect = layout.boardRect {
+                boardLayer.path = CGPath(rect: boardRect, transform: nil)
+                boardLayer.isHidden = false
+            } else {
+                boardLayer.path = nil
+                boardLayer.isHidden = true
+            }
+
             occupancyLayer.path = nil
             occupancyLayer.isHidden = true
         }

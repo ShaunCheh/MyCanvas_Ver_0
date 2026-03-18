@@ -540,7 +540,6 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
         itemForRepresentedObjectAt indexPath: IndexPath
     ) -> NSCollectionViewItem {
         let catalogItem = availableBoards[indexPath.item]
-        let previewContent = previewProvider.immediatePreview(for: catalogItem)
         guard
             let item = collectionView.makeItem(
                 withIdentifier: macOSBoardCollectionItem.reuseIdentifier,
@@ -550,11 +549,23 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
             return NSCollectionViewItem()
         }
 
+        let targetPixelSize = item.targetThumbnailPixelSize(for: displayMode)
+        let previewContent = previewProvider.immediatePreview(
+            for: catalogItem,
+            targetPixelSize: targetPixelSize
+        )
         item.configure(
             with: catalogItem,
             previewContent: previewContent,
             displayMode: displayMode
         )
+        if previewContent.isThumbnail == false {
+            item.requestThumbnail(
+                using: previewProvider,
+                for: catalogItem,
+                displayMode: displayMode
+            )
+        }
         return item
     }
 

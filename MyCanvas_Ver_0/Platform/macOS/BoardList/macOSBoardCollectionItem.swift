@@ -17,6 +17,9 @@ final class macOSBoardCollectionItem: NSCollectionViewItem {
 
     private var gridConstraints: [NSLayoutConstraint] = []
     private var listConstraints: [NSLayoutConstraint] = []
+    private var representedBoardID: UUID?
+    private var representedRevisionToken: String?
+    private var thumbnailRequestToken: BoardPreviewRequestToken?
 
     override func loadView() {
         view = NSView()
@@ -38,6 +41,9 @@ final class macOSBoardCollectionItem: NSCollectionViewItem {
 
     override func prepareForReuse() {
         super.prepareForReuse()
+        cancelThumbnailRequest()
+        representedBoardID = nil
+        representedRevisionToken = nil
         titleLabel.stringValue = ""
         previewView.apply(content: .empty)
     }
@@ -47,9 +53,57 @@ final class macOSBoardCollectionItem: NSCollectionViewItem {
         previewContent: BoardPreviewContent,
         displayMode: BoardListDisplayMode
     ) {
+        cancelThumbnailRequest()
+        representedBoardID = item.boardID
+        representedRevisionToken = item.revisionToken
         titleLabel.stringValue = item.title
         previewView.apply(content: previewContent)
         applyDisplayMode(displayMode)
+        view.layoutSubtreeIfNeeded()
+    }
+
+    func cancelThumbnailRequest() {
+        thumbnailRequestToken?.cancel()
+        thumbnailRequestToken = nil
+    }
+
+    func targetThumbnailPixelSize(
+        for displayMode: BoardListDisplayMode
+    ) -> CGSize {
+        view.layoutSubtreeIfNeeded()
+
+        let previewSize = resolvedPreviewViewSize(for: displayMode)
+        let contentsScale = view.window?.backingScaleFactor
+            ?? NSScreen.main?.backingScaleFactor
+            ?? 2
+        return CGSize(
+            width: previewSize.width * contentsScale,
+            height: previewSize.height * contentsScale
+        )
+    }
+
+    func requestThumbnail(
+        using previewProvider: BoardPreviewProvider,
+        for item: BoardCatalogItem,
+        displayMode: BoardListDisplayMode
+    ) {
+        cancelThumbnailRequest()
+
+        thumbnailRequestToken = previewProvider.requestThumbnail(
+            for: item,
+            targetPixelSize: targetThumbnailPixelSize(for: displayMode)
+        ) { [weak self] previewContent in
+            guard
+                let self,
+                let previewContent,
+                self.representedBoardID == item.boardID,
+                self.representedRevisionToken == item.revisionToken
+            else {
+                return
+            }
+
+            self.previewView.apply(content: previewContent)
+        }
     }
 
     private func setupView() {
@@ -110,6 +164,20 @@ final class macOSBoardCollectionItem: NSCollectionViewItem {
         view.layer?.backgroundColor = backgroundColor.cgColor
         view.layer?.borderColor = borderColor.cgColor
         view.layer?.borderWidth = isSelected ? 2 : 1
+    }
+
+    private func resolvedPreviewViewSize(
+        for displayMode: BoardListDisplayMode
+    ) -> CGSize {
+        switch displayMode {
+        case .grid:
+            return CGSize(
+                width: max(view.bounds.width - 24, 120),
+                height: 120
+            )
+        case .list:
+            return CGSize(width: 72, height: 72)
+        }
     }
 }
 #endif
