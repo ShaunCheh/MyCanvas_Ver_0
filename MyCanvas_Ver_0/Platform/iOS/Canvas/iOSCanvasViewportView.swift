@@ -36,12 +36,19 @@ final class iOSCanvasViewportView: UIView {
     private static let rotationTextHorizontalPadding: CGFloat = 8
     private static let rotationTextVerticalPadding: CGFloat = 4
     private static let rotationTextCornerRadius: CGFloat = 8
+    private static let longPressMinimumDuration: TimeInterval = 0.5
+    private static let longPressAllowableMovement: CGFloat = 4
 
     private enum TouchInteractionState {
         case idle
-        case trackingPrimaryPointer(trackedTouch: UITouch, lastLocation: CGPoint)
+        case trackingPrimaryPointer(
+            trackedTouch: UITouch,
+            pressedLocation: CGPoint,
+            lastLocation: CGPoint
+        )
         case awaitingPinch
         case pinching
+        case presentingContextMenu(trackedTouch: UITouch)
     }
 
     private let backgroundLayer = CALayer()
@@ -70,12 +77,25 @@ final class iOSCanvasViewportView: UIView {
     var onPointerMove: ((CGPoint, CGPoint) -> Void)?
     var onPointerUp: ((CGPoint) -> Void)?
     var onPointerCancel: (() -> Void)?
+    var onLongPress: ((CGPoint) -> Void)?
     var onZoom: ((CGFloat, CGPoint) -> Void)?
     var onViewportSizeChange: ((CGSize) -> Void)?
 
     private lazy var pinchGestureRecognizer: UIPinchGestureRecognizer = {
         let gestureRecognizer = UIPinchGestureRecognizer(target: self, action: #selector(handlePinch(_:)))
         gestureRecognizer.cancelsTouchesInView = false
+        return gestureRecognizer
+    }()
+
+    private lazy var longPressGestureRecognizer: UILongPressGestureRecognizer = {
+        let gestureRecognizer = UILongPressGestureRecognizer(
+            target: self,
+            action: #selector(handleLongPress(_:))
+        )
+        gestureRecognizer.cancelsTouchesInView = false
+        gestureRecognizer.minimumPressDuration = Self.longPressMinimumDuration
+        gestureRecognizer.allowableMovement = Self.longPressAllowableMovement
+        gestureRecognizer.numberOfTouchesRequired = 1
         return gestureRecognizer
     }()
 
@@ -106,6 +126,10 @@ final class iOSCanvasViewportView: UIView {
         super.touchesMoved(touches, with: event)
         registerActiveTouches(touches)
 
+        if case .presentingContextMenu = interactionState {
+            return
+        }
+
         guard !isPinchGestureActive else {
             cancelPrimaryPointerIfNeeded()
             interactionState = .pinching
@@ -113,7 +137,7 @@ final class iOSCanvasViewportView: UIView {
         }
 
         switch interactionState {
-        case let .trackingPrimaryPointer(trackedTouch, lastLocation):
+        case let .trackingPrimaryPointer(trackedTouch, pressedLocation, lastLocation):
             guard activeTouchCount == 1 else {
                 cancelPrimaryPointerIfNeeded()
                 interactionState = .awaitingPinch
@@ -125,25 +149,41 @@ final class iOSCanvasViewportView: UIView {
             }
 
             let currentLocation = currentTouch.location(in: self)
-            interactionState = .trackingPrimaryPointer(
-                trackedTouch: trackedTouch,
-                lastLocation: currentLocation
-            )
-
             guard currentLocation != lastLocation else {
                 return
             }
 
+            // Keep long press eligible until movement clearly exceeds the same
+            // movement window that guards drag activation in the controller.
+            if longPressGestureRecognizer.state == .possible,
+               distance(from: pressedLocation, to: currentLocation) <= Self.longPressAllowableMovement
+            {
+                return
+            }
+
+            interactionState = .trackingPrimaryPointer(
+                trackedTouch: trackedTouch,
+                pressedLocation: pressedLocation,
+                lastLocation: currentLocation
+            )
             onPointerMove?(currentLocation, lastLocation)
-        case .idle, .awaitingPinch, .pinching:
+        case .idle, .awaitingPinch, .pinching, .presentingContextMenu:
             reconcileTouchInteractionState()
         }
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
         super.touchesEnded(touches, with: event)
+        let wasPresentingContextMenu = isContextMenuTouch(in: touches)
         let pointerUpLocation = trackedPointerLocation(in: touches)
         unregisterActiveTouches(touches)
+
+        if wasPresentingContextMenu {
+            if activeTouchCount == 0 {
+                interactionState = .idle
+            }
+            return
+        }
 
         guard !isPinchGestureActive else {
             interactionState = .pinching
@@ -212,6 +252,7 @@ final class iOSCanvasViewportView: UIView {
         interactionOverlayLayer.addSublayer(rotationTextBackgroundLayer)
         interactionOverlayLayer.addSublayer(rotationTextLayer)
         addGestureRecognizer(pinchGestureRecognizer)
+        addGestureRecognizer(longPressGestureRecognizer)
 
         configureBoardHighlightLayer()
         configureSelectionOutlineLayer()
@@ -839,6 +880,20 @@ final class iOSCanvasViewportView: UIView {
     }
 
     private func reconcileTouchInteractionState() {
+        if case let .presentingContextMenu(trackedTouch) = interactionState {
+            if activeTouchCount == 1,
+               let soleActiveTouch,
+               soleActiveTouch === trackedTouch
+            {
+                return
+            }
+
+            if activeTouchCount == 0 {
+                interactionState = .idle
+            }
+            return
+        }
+
         guard !isPinchGestureActive else {
             cancelPrimaryPointerIfNeeded()
             interactionState = .pinching
@@ -854,7 +909,9 @@ final class iOSCanvasViewportView: UIView {
                 return
             }
 
-            if case let .trackingPrimaryPointer(trackedTouch, _) = interactionState, trackedTouch === touch {
+            if case let .trackingPrimaryPointer(trackedTouch, _, _) = interactionState,
+               trackedTouch === touch
+            {
                 return
             }
 
@@ -869,6 +926,7 @@ final class iOSCanvasViewportView: UIView {
         let location = touch.location(in: self)
         interactionState = .trackingPrimaryPointer(
             trackedTouch: touch,
+            pressedLocation: location,
             lastLocation: location
         )
         onPointerDown?(location)
@@ -880,7 +938,7 @@ final class iOSCanvasViewportView: UIView {
 
     private func trackedPointerLocation(in touches: Set<UITouch>) -> CGPoint? {
         guard
-            case let .trackingPrimaryPointer(trackedTouch, _) = interactionState,
+            case let .trackingPrimaryPointer(trackedTouch, _, _) = interactionState,
             let touch = touchMatching(trackedTouch, in: touches)
         else {
             return nil
@@ -895,6 +953,14 @@ final class iOSCanvasViewportView: UIView {
         }
 
         onPointerCancel?()
+    }
+
+    private func isContextMenuTouch(in touches: Set<UITouch>) -> Bool {
+        guard case let .presentingContextMenu(trackedTouch) = interactionState else {
+            return false
+        }
+
+        return touchMatching(trackedTouch, in: touches) != nil
     }
 
     private var activeTouchCount: Int {
@@ -920,6 +986,10 @@ final class iOSCanvasViewportView: UIView {
 
     @objc
     private func handlePinch(_ gestureRecognizer: UIPinchGestureRecognizer) {
+        if case .presentingContextMenu = interactionState {
+            return
+        }
+
         switch gestureRecognizer.state {
         case .began, .changed:
             cancelPrimaryPointerIfNeeded()
@@ -937,6 +1007,39 @@ final class iOSCanvasViewportView: UIView {
         default:
             break
         }
+    }
+
+    @objc
+    private func handleLongPress(_ gestureRecognizer: UILongPressGestureRecognizer) {
+        guard gestureRecognizer.state == .began else {
+            return
+        }
+
+        guard
+            activeTouchCount == 1,
+            let trackedTouch = trackedTouchForContextMenuPresentation()
+        else {
+            return
+        }
+
+        cancelPrimaryPointerIfNeeded()
+        interactionState = .presentingContextMenu(trackedTouch: trackedTouch)
+        onLongPress?(gestureRecognizer.location(in: self))
+    }
+
+    private func trackedTouchForContextMenuPresentation() -> UITouch? {
+        switch interactionState {
+        case let .trackingPrimaryPointer(trackedTouch, _, _):
+            return trackedTouch
+        case let .presentingContextMenu(trackedTouch):
+            return trackedTouch
+        case .idle, .awaitingPinch, .pinching:
+            return soleActiveTouch
+        }
+    }
+
+    private func distance(from start: CGPoint, to end: CGPoint) -> CGFloat {
+        hypot(end.x - start.x, end.y - start.y)
     }
 }
 #endif

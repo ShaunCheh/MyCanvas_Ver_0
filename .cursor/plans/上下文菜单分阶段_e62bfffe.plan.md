@@ -19,7 +19,7 @@ todos:
     status: completed
   - id: phase6-ios-long-press
     content: 接入 iOS 长按菜单，处理与 primary pointer / pinch 的状态协作
-    status: pending
+    status: completed
   - id: phase7-regression-hardening
     content: 扩展 delete duplicate z-order 等命令并完成跨平台回归验证与重复逻辑清理
     status: pending

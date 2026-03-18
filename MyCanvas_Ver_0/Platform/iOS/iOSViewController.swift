@@ -495,6 +495,9 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         canvasViewportView.onPointerCancel = { [weak self] in
             self?.handlePrimaryPointerCancel()
         }
+        canvasViewportView.onLongPress = { [weak self] location in
+            self?.handleLongPress(at: location)
+        }
         canvasViewportView.onZoom = { [weak self] scaleDelta, anchor in
             self?.handleZoom(scaleDelta, around: anchor)
         }
@@ -552,12 +555,49 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
             return
         }
 
+        if contextMenuState != nil {
+            dismissContextMenu()
+            return
+        }
+
         let pressContext = resolveContext(at: location)
         pointerDragState = .pressed(
             pressedLocation: location,
             pressContext: pressContext
         )
         beginPointerHistoryTransactionIfNeeded(for: pressContext)
+    }
+
+    private func handleLongPress(at location: CGPoint) {
+        syncCameraViewportSizeFromCurrentBoundsIfPossible()
+        guard hasRenderableViewportSize else {
+            logIgnoredCanvasInput("long press \(describe(point: location))")
+            return
+        }
+
+        prepareForLongPressContextMenu()
+
+        let resolvedContext = resolveContext(at: location)
+        presentContextMenu(for: resolvedContext)
+    }
+
+    private func prepareForLongPressContextMenu() {
+        dismissContextMenu()
+
+        switch pointerDragState {
+        case .idle:
+            break
+        case .pressed,
+             .croppingSelectedItem,
+             .movingCropFrame,
+             .rotatingSelectedItem,
+             .draggingSelectedItem,
+             .resizingSelectedItem,
+             .draggingCanvas:
+            // Reuse primary cancel semantics so long press never leaves a
+            // half-committed drag/crop/rotate interaction behind.
+            handlePrimaryPointerCancel()
+        }
     }
 
     private func handlePrimaryPointerMove(to location: CGPoint, from previousLocation: CGPoint) {
@@ -790,6 +830,11 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
             logIgnoredCanvasInput(
                 "zoom scaleDelta=\(String(format: "%.4f", scaleDelta)) anchor=\(describe(point: anchor))"
             )
+            return
+        }
+
+        if contextMenuState != nil {
+            dismissContextMenu()
             return
         }
 
