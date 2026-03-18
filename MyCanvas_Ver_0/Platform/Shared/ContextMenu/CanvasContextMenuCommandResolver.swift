@@ -7,13 +7,24 @@ struct CanvasContextMenuCommandResolver {
         for context: CanvasContextMenuContext,
         session: CanvasEditorSession
     ) -> [CanvasCommandID] {
-        candidateCommandIDs(for: context).filter { commandID in
+        let candidateIDs = candidateCommandIDs(for: context)
+        let enabledIDs = candidateIDs.filter { commandID in
             commandCatalog.descriptor(
                 for: commandID,
                 session: session,
                 context: context
             ).isEnabled
         }
+        let enabledIDSet = Set(enabledIDs)
+        let disabledIDs = candidateIDs.filter { enabledIDSet.contains($0) == false }
+        print(
+            "[Canvas Shared][ContextMenuCommands] " +
+            context.debugSummary + " " +
+            "candidateIDs=[\(describeContextMenuCommandIDs(candidateIDs))] " +
+            "enabledIDs=[\(describeContextMenuCommandIDs(enabledIDs))] " +
+            "disabledIDs=[\(describeContextMenuCommandIDs(disabledIDs))]"
+        )
+        return enabledIDs
     }
 
     func command(
@@ -147,4 +158,8 @@ struct CanvasContextMenuCommandResolver {
         ])
         return commandIDs
     }
+}
+
+private func describeContextMenuCommandIDs(_ commandIDs: [CanvasCommandID]) -> String {
+    commandIDs.map(\.rawValue).joined(separator: ",")
 }

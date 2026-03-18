@@ -74,7 +74,7 @@ enum BoardStore {
                 isDirectory: true
             )
 
-            return try BoardDocumentMapper.makeRuntimeState(from: document) { imageRecord in
+            let runtimeState = try BoardDocumentMapper.makeRuntimeState(from: document) { imageRecord in
                 let assetURL = assetsDirectoryURL.appendingPathComponent(imageRecord.assetFilename)
                 let assetData = try CoordinatedFileIO.readData(at: assetURL)
                 guard
@@ -85,6 +85,17 @@ enum BoardStore {
                 }
                 return cgImage
             }
+            print(
+                "[BoardStore] " +
+                "action=loadBoard " +
+                "boardID=\(id.uuidString) " +
+                "items=\(runtimeState.items.count) " +
+                "cameraCenter=\(describeBoardStorePoint(runtimeState.camera.center)) " +
+                "cameraZoomScale=\(formatBoardStoreValue(runtimeState.camera.zoomScale)) " +
+                "cameraViewportSize=\(describeBoardStoreSize(runtimeState.camera.viewportSize)) " +
+                "selectedItemID=\(describeBoardStoreItemID(runtimeState.interactionState.selectedItemID))"
+            )
+            return runtimeState
         }
     }
 
@@ -147,11 +158,28 @@ enum BoardStore {
     ) throws -> BoardRuntimeState {
         let existingBoards = try listBoards(userDefaults: userDefaults)
         if let firstBoard = existingBoards.first {
-            return try loadBoard(id: firstBoard.boardID, userDefaults: userDefaults)
+            let runtimeState = try loadBoard(id: firstBoard.boardID, userDefaults: userDefaults)
+            print(
+                "[BoardStore] " +
+                "action=loadOrCreateInitialBoard " +
+                "source=existing " +
+                "boardID=\(firstBoard.boardID.uuidString) " +
+                "existingBoardCount=\(existingBoards.count) " +
+                "cameraViewportSize=\(describeBoardStoreSize(runtimeState.camera.viewportSize))"
+            )
+            return runtimeState
         }
 
         let runtimeState = BoardRuntimeState.makeEmpty()
         try saveBoard(runtimeState, userDefaults: userDefaults)
+        print(
+            "[BoardStore] " +
+            "action=loadOrCreateInitialBoard " +
+            "source=createdEmpty " +
+            "boardID=\(runtimeState.boardID.uuidString) " +
+            "existingBoardCount=0 " +
+            "cameraViewportSize=\(describeBoardStoreSize(runtimeState.camera.viewportSize))"
+        )
         return runtimeState
     }
 
@@ -227,4 +255,20 @@ enum BoardStore {
         let resourceValues = try url.resourceValues(forKeys: [.isDirectoryKey])
         return resourceValues.isDirectory == true
     }
+}
+
+private func describeBoardStorePoint(_ point: CGPoint) -> String {
+    "{\(formatBoardStoreValue(point.x)), \(formatBoardStoreValue(point.y))}"
+}
+
+private func describeBoardStoreSize(_ size: CGSize) -> String {
+    "{\(formatBoardStoreValue(size.width)), \(formatBoardStoreValue(size.height))}"
+}
+
+private func describeBoardStoreItemID(_ itemID: UUID?) -> String {
+    itemID?.uuidString ?? "nil"
+}
+
+private func formatBoardStoreValue(_ value: CGFloat) -> String {
+    String(format: "%.2f", Double(value))
 }

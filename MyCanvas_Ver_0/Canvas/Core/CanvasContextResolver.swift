@@ -20,19 +20,45 @@ struct CanvasContextResolver {
         interactionMetrics: CanvasContextResolverMetrics
     ) -> CanvasContextMenuContext {
         let invocationWorldPoint = camera.viewportToWorld(viewportPoint)
+        let editOverlayDescription = describeContextResolverOverlay(renderSnapshot.editOverlay)
 
-        if let resolvedTarget = resolveEditHandleTarget(
-            at: viewportPoint,
-            renderSnapshot: renderSnapshot,
-            interactionMetrics: interactionMetrics
-        ) {
-            return makeContext(
+        func finalize(
+            branch: String,
+            resolvedTarget: ResolvedTarget,
+            sceneHitItemID: CanvasImageItemID? = nil
+        ) -> CanvasContextMenuContext {
+            let context = makeContext(
                 viewportPoint: viewportPoint,
                 worldPoint: invocationWorldPoint,
                 resolvedTarget: resolvedTarget,
                 selectedItemID: selectedItemID,
                 isInlineEditModeActive: isInlineEditModeActive,
                 isInlineCropModeActive: isInlineCropModeActive
+            )
+            print(
+                "[Canvas Shared][ContextResolve] " +
+                "branch=\(branch) " +
+                "viewportPoint=\(describeContextResolverPoint(viewportPoint)) " +
+                "worldPoint=\(describeContextResolverPoint(invocationWorldPoint)) " +
+                "viewportBounds=\(describeContextResolverRect(renderSnapshot.viewportBounds)) " +
+                "visibleWorldRect=\(describeContextResolverRect(renderSnapshot.visibleWorldRect)) " +
+                "selectedItemID=\(describeContextResolverItemID(selectedItemID)) " +
+                "sceneHitItemID=\(describeContextResolverItemID(sceneHitItemID)) " +
+                "renderItems=\(renderSnapshot.items.count) " +
+                "editOverlay=\(editOverlayDescription) " +
+                context.debugSummary
+            )
+            return context
+        }
+
+        if let resolvedTarget = resolveEditHandleTarget(
+            at: viewportPoint,
+            renderSnapshot: renderSnapshot,
+            interactionMetrics: interactionMetrics
+        ) {
+            return finalize(
+                branch: "editHandle",
+                resolvedTarget: resolvedTarget
             )
         }
 
@@ -41,44 +67,31 @@ struct CanvasContextResolver {
             renderSnapshot: renderSnapshot,
             interactionMetrics: interactionMetrics
         ) {
-            return makeContext(
-                viewportPoint: viewportPoint,
-                worldPoint: invocationWorldPoint,
-                resolvedTarget: resolvedTarget,
-                selectedItemID: selectedItemID,
-                isInlineEditModeActive: isInlineEditModeActive,
-                isInlineCropModeActive: isInlineCropModeActive
+            return finalize(
+                branch: "cropOutline",
+                resolvedTarget: resolvedTarget
             )
         }
 
         if isInlineEditModeActive {
-            return makeContext(
-                viewportPoint: viewportPoint,
-                worldPoint: invocationWorldPoint,
-                resolvedTarget: ResolvedTarget(targetKind: .blank),
-                selectedItemID: selectedItemID,
-                isInlineEditModeActive: isInlineEditModeActive,
-                isInlineCropModeActive: isInlineCropModeActive
+            return finalize(
+                branch: "inlineEditBlank",
+                resolvedTarget: ResolvedTarget(targetKind: .blank)
             )
         }
 
         guard let itemID = scene.topmostItemID(containing: invocationWorldPoint) else {
-            return makeContext(
-                viewportPoint: viewportPoint,
-                worldPoint: invocationWorldPoint,
-                resolvedTarget: ResolvedTarget(targetKind: .blank),
-                selectedItemID: selectedItemID,
-                isInlineEditModeActive: isInlineEditModeActive,
-                isInlineCropModeActive: isInlineCropModeActive
+            return finalize(
+                branch: "blank",
+                resolvedTarget: ResolvedTarget(targetKind: .blank)
             )
         }
 
         let targetKind: CanvasContextMenuTargetKind =
             itemID == selectedItemID ? .selectedItemBody : .unselectedItemBody
 
-        return makeContext(
-            viewportPoint: viewportPoint,
-            worldPoint: invocationWorldPoint,
+        return finalize(
+            branch: "itemBody",
             resolvedTarget: ResolvedTarget(
                 targetKind: targetKind,
                 targetItemID: itemID,
@@ -87,9 +100,7 @@ struct CanvasContextResolver {
                     renderSnapshot: renderSnapshot
                 )
             ),
-            selectedItemID: selectedItemID,
-            isInlineEditModeActive: isInlineEditModeActive,
-            isInlineCropModeActive: isInlineCropModeActive
+            sceneHitItemID: itemID
         )
     }
 
@@ -275,4 +286,28 @@ struct CanvasContextResolver {
         var targetItemID: CanvasImageItemID? = nil
         var anchorRect: CGRect? = nil
     }
+}
+
+private func describeContextResolverPoint(_ point: CGPoint) -> String {
+    "{\(formatContextResolverValue(point.x)), \(formatContextResolverValue(point.y))}"
+}
+
+private func describeContextResolverRect(_ rect: CGRect) -> String {
+    "{{\(formatContextResolverValue(rect.origin.x)), \(formatContextResolverValue(rect.origin.y))}, {\(formatContextResolverValue(rect.size.width)), \(formatContextResolverValue(rect.size.height))}}"
+}
+
+private func describeContextResolverItemID(_ itemID: CanvasImageItemID?) -> String {
+    itemID?.uuidString ?? "nil"
+}
+
+private func describeContextResolverOverlay(_ overlay: CanvasEditRenderOverlay?) -> String {
+    guard let overlay else {
+        return "nil"
+    }
+
+    return "itemID=\(overlay.itemID.uuidString) kind=\(String(describing: overlay.kind)) activeScreenQuad=\(describeContextResolverRect(overlay.activeScreenQuad.boundingRect.standardized))"
+}
+
+private func formatContextResolverValue(_ value: CGFloat) -> String {
+    String(format: "%.2f", Double(value))
 }

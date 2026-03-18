@@ -129,6 +129,16 @@ final class CanvasEditorSession {
     func restorePersistedBoardIfPossible() {
         do {
             let runtimeState = try BoardStore.loadOrCreateInitialBoard()
+            print(
+                "[Canvas Shared][RuntimeRestore] " +
+                "action=restorePersistedBoardIfPossible " +
+                "boardID=\(runtimeState.boardID.uuidString) " +
+                "items=\(runtimeState.items.count) " +
+                "cameraCenter=\(describeRuntimeRestorePoint(runtimeState.camera.center)) " +
+                "cameraZoomScale=\(formatRuntimeRestoreValue(runtimeState.camera.zoomScale)) " +
+                "cameraViewportSize=\(describeRuntimeRestoreSize(runtimeState.camera.viewportSize)) " +
+                "selectedItemID=\(describeRuntimeRestoreItemID(runtimeState.interactionState.selectedItemID))"
+            )
             applyBoardRuntimeState(runtimeState)
             resetHistory()
         } catch FolderBookmarkStoreError.missingBookmarkData {
@@ -139,6 +149,17 @@ final class CanvasEditorSession {
     }
 
     func applyBoardRuntimeState(_ runtimeState: BoardRuntimeState) {
+        print(
+            "[Canvas Shared][RuntimeRestore] " +
+            "action=applyBoardRuntimeState " +
+            "boardID=\(runtimeState.boardID.uuidString) " +
+            "items=\(runtimeState.items.count) " +
+            "boardState=\(describeRuntimeRestoreBoardState(runtimeState.boardState)) " +
+            "cameraCenter=\(describeRuntimeRestorePoint(runtimeState.camera.center)) " +
+            "cameraZoomScale=\(formatRuntimeRestoreValue(runtimeState.camera.zoomScale)) " +
+            "cameraViewportSize=\(describeRuntimeRestoreSize(runtimeState.camera.viewportSize)) " +
+            "selectedItemID=\(describeRuntimeRestoreItemID(runtimeState.interactionState.selectedItemID))"
+        )
         activeBoardID = runtimeState.boardID
         activeBoardTitle = runtimeState.title
         activeBoardCreatedAt = runtimeState.createdAt
@@ -323,10 +344,20 @@ final class CanvasEditorSession {
         recordHistory: Bool = false
     ) -> Bool {
         guard canSelectItem(withID: itemID) else {
+            print(
+                "[Canvas Shared][SelectionMutation] " +
+                "action=select " +
+                "result=rejected " +
+                "requestedItemID=\(itemID.uuidString) " +
+                "recordHistory=\(recordHistory) " +
+                "previousSelectedItemID=\(describeSelectionMutationItemID(interactionState.selectedItemID))"
+            )
             return false
         }
 
         let beforeSnapshot = recordHistory ? currentBoardHistorySnapshot() : nil
+        let previousSelectedItemID = interactionState.selectedItemID
+        let inlineEditModeBefore = inlineEditState.map(\.mode)
         interactionState.selectedItemID = itemID
         syncInlineEditStateWithSelection()
 
@@ -337,16 +368,37 @@ final class CanvasEditorSession {
             )
         }
 
+        print(
+            "[Canvas Shared][SelectionMutation] " +
+            "action=select " +
+            "result=applied " +
+            "requestedItemID=\(itemID.uuidString) " +
+            "recordHistory=\(recordHistory) " +
+            "previousSelectedItemID=\(describeSelectionMutationItemID(previousSelectedItemID)) " +
+            "currentSelectedItemID=\(describeSelectionMutationItemID(interactionState.selectedItemID)) " +
+            "inlineEditModeBefore=\(describeSelectionMutationInlineEditMode(inlineEditModeBefore)) " +
+            "inlineEditModeAfter=\(describeSelectionMutationInlineEditMode(inlineEditState.map(\.mode)))"
+        )
+
         return true
     }
 
     @discardableResult
     func clearSelection(recordHistory: Bool = false) -> Bool {
         guard canClearSelection else {
+            print(
+                "[Canvas Shared][SelectionMutation] " +
+                "action=clear " +
+                "result=rejected " +
+                "recordHistory=\(recordHistory) " +
+                "previousSelectedItemID=\(describeSelectionMutationItemID(interactionState.selectedItemID))"
+            )
             return false
         }
 
         let beforeSnapshot = recordHistory ? currentBoardHistorySnapshot() : nil
+        let previousSelectedItemID = interactionState.selectedItemID
+        let inlineEditModeBefore = inlineEditState.map(\.mode)
         interactionState.selectedItemID = nil
         syncInlineEditStateWithSelection()
 
@@ -356,6 +408,17 @@ final class CanvasEditorSession {
                 reason: "clear selection"
             )
         }
+
+        print(
+            "[Canvas Shared][SelectionMutation] " +
+            "action=clear " +
+            "result=applied " +
+            "recordHistory=\(recordHistory) " +
+            "previousSelectedItemID=\(describeSelectionMutationItemID(previousSelectedItemID)) " +
+            "currentSelectedItemID=\(describeSelectionMutationItemID(interactionState.selectedItemID)) " +
+            "inlineEditModeBefore=\(describeSelectionMutationInlineEditMode(inlineEditModeBefore)) " +
+            "inlineEditModeAfter=\(describeSelectionMutationInlineEditMode(inlineEditState.map(\.mode)))"
+        )
 
         return true
     }
@@ -646,4 +709,42 @@ final class CanvasEditorSession {
         )
         return item
     }
+}
+
+private func describeSelectionMutationItemID(_ itemID: CanvasImageItemID?) -> String {
+    itemID?.uuidString ?? "nil"
+}
+
+private func describeSelectionMutationInlineEditMode(
+    _ mode: CanvasInlineEditMode?
+) -> String {
+    mode.map { String(describing: $0) } ?? "nil"
+}
+
+private func describeRuntimeRestorePoint(_ point: CGPoint) -> String {
+    "{\(formatRuntimeRestoreValue(point.x)), \(formatRuntimeRestoreValue(point.y))}"
+}
+
+private func describeRuntimeRestoreSize(_ size: CGSize) -> String {
+    "{\(formatRuntimeRestoreValue(size.width)), \(formatRuntimeRestoreValue(size.height))}"
+}
+
+private func describeRuntimeRestoreRect(_ rect: CGRect) -> String {
+    "{{\(formatRuntimeRestoreValue(rect.origin.x)), \(formatRuntimeRestoreValue(rect.origin.y))}, {\(formatRuntimeRestoreValue(rect.size.width)), \(formatRuntimeRestoreValue(rect.size.height))}}"
+}
+
+private func describeRuntimeRestoreItemID(_ itemID: CanvasImageItemID?) -> String {
+    itemID?.uuidString ?? "nil"
+}
+
+private func describeRuntimeRestoreBoardState(_ boardState: CanvasBoardState?) -> String {
+    guard let boardState else {
+        return "nil"
+    }
+
+    return "baseSize=\(describeRuntimeRestoreSize(boardState.baseSize)) worldRect=\(describeRuntimeRestoreRect(boardState.worldRect))"
+}
+
+private func formatRuntimeRestoreValue(_ value: CGFloat) -> String {
+    String(format: "%.2f", Double(value))
 }

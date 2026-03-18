@@ -34,7 +34,7 @@ enum BoardDocumentMapper {
             )
         }
 
-        return BoardRuntimeState(
+        let runtimeState = BoardRuntimeState(
             boardID: document.boardID,
             title: document.title,
             createdAt: document.createdAt,
@@ -53,6 +53,18 @@ enum BoardDocumentMapper {
                 selectedItemID: document.selectedItemID
             )
         )
+        print(
+            "[BoardStore][Mapper] " +
+            "action=makeRuntimeState " +
+            "boardID=\(document.boardID.uuidString) " +
+            "title=\(document.title) " +
+            "items=\(items.count) " +
+            "cameraCenter=\(describeBoardMapperPoint(runtimeState.camera.center)) " +
+            "cameraZoomScale=\(formatBoardMapperValue(runtimeState.camera.zoomScale)) " +
+            "cameraViewportSize=\(describeBoardMapperSize(runtimeState.camera.viewportSize)) " +
+            "selectedItemID=\(describeBoardMapperItemID(runtimeState.interactionState.selectedItemID))"
+        )
+        return runtimeState
     }
 
     private static func makeImageRecord(from item: CanvasImageItem) -> BoardImageItemRecord {
@@ -81,4 +93,20 @@ enum BoardDocumentMapper {
             worldRect: boardRect.cgRect
         )
     }
+}
+
+private func describeBoardMapperPoint(_ point: CGPoint) -> String {
+    "{\(formatBoardMapperValue(point.x)), \(formatBoardMapperValue(point.y))}"
+}
+
+private func describeBoardMapperSize(_ size: CGSize) -> String {
+    "{\(formatBoardMapperValue(size.width)), \(formatBoardMapperValue(size.height))}"
+}
+
+private func describeBoardMapperItemID(_ itemID: UUID?) -> String {
+    itemID?.uuidString ?? "nil"
+}
+
+private func formatBoardMapperValue(_ value: CGFloat) -> String {
+    String(format: "%.2f", Double(value))
 }

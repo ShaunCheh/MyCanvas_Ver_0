@@ -27,10 +27,24 @@ final class macOSAppRootViewController: NSViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        print(
+            "[Canvas macOS][AppRoot] " +
+            "action=viewDidLoad " +
+            "rootViewBounds=\(describeAppRootRect(view.bounds)) " +
+            "rootViewFrame=\(describeAppRootRect(view.frame))"
+        )
         display(launchCoordinator.initialDestination())
     }
 
     func display(_ destination: AppLaunchDestination) {
+        print(
+            "[Canvas macOS][AppRoot] " +
+            "action=display " +
+            "destination=\(describeAppRootDestination(destination)) " +
+            "rootViewBounds=\(describeAppRootRect(view.bounds)) " +
+            "rootViewFrame=\(describeAppRootRect(view.frame)) " +
+            "currentViewController=\(describeAppRootViewController(currentViewController))"
+        )
         let viewController = makeViewController(for: destination)
         setCurrentViewController(viewController)
     }
@@ -49,6 +63,14 @@ final class macOSAppRootViewController: NSViewController {
     }
 
     private func setCurrentViewController(_ viewController: NSViewController) {
+        print(
+            "[Canvas macOS][AppRoot] " +
+            "action=setCurrentViewController " +
+            "incoming=\(describeAppRootViewController(viewController)) " +
+            "previous=\(describeAppRootViewController(currentViewController)) " +
+            "rootViewBounds=\(describeAppRootRect(view.bounds)) " +
+            "rootViewFrame=\(describeAppRootRect(view.frame))"
+        )
         if let currentViewController {
             currentViewController.view.removeFromSuperview()
             currentViewController.removeFromParent()
@@ -66,6 +88,39 @@ final class macOSAppRootViewController: NSViewController {
         ])
 
         currentViewController = viewController
+
+        print(
+            "[Canvas macOS][AppRoot] " +
+            "action=setCurrentViewControllerCompleted " +
+            "current=\(describeAppRootViewController(currentViewController)) " +
+            "childViewBounds=\(describeAppRootRect(viewController.view.bounds)) " +
+            "childViewFrame=\(describeAppRootRect(viewController.view.frame))"
+        )
     }
+}
+
+private func describeAppRootRect(_ rect: CGRect) -> String {
+    "{{\(formatAppRootValue(rect.origin.x)), \(formatAppRootValue(rect.origin.y))}, {\(formatAppRootValue(rect.size.width)), \(formatAppRootValue(rect.size.height))}}"
+}
+
+private func describeAppRootDestination(_ destination: AppLaunchDestination) -> String {
+    switch destination {
+    case .boardList:
+        return "boardList"
+    case .canvas:
+        return "canvas"
+    }
+}
+
+private func describeAppRootViewController(_ viewController: NSViewController?) -> String {
+    guard let viewController else {
+        return "nil"
+    }
+
+    return String(describing: type(of: viewController))
+}
+
+private func formatAppRootValue(_ value: CGFloat) -> String {
+    String(format: "%.2f", Double(value))
 }
 #endif

@@ -247,8 +247,8 @@ final class macOSViewController: NSViewController {
 
         updateInlineEditButtonsAppearance()
 
-        if executionResult.refreshReason != nil {
-            refreshCanvas()
+        if let refreshReason = executionResult.refreshReason {
+            refreshCanvas(reason: refreshReason)
         }
     }
 
@@ -347,6 +347,14 @@ final class macOSViewController: NSViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        print(
+            "[Canvas macOS][ControllerLifecycle] " +
+            "action=viewDidLoad.begin " +
+            "viewBounds=\(describe(rect: view.bounds)) " +
+            "viewFrame=\(describe(rect: view.frame)) " +
+            "cameraViewportSize=\(describe(size: camera.viewportSize)) " +
+            "selectedItemID=\(describe(itemID: interactionState.selectedItemID))"
+        )
         setupViewHierarchy()
         setupConstraints()
         setupImportButton()
@@ -356,17 +364,85 @@ final class macOSViewController: NSViewController {
         setupContextMenuHostView()
         restorePersistedBoardIfPossible()
         setupCanvasViewport()
+        print(
+            "[Canvas macOS][ControllerLifecycle] " +
+            "action=viewDidLoad.end " +
+            "viewBounds=\(describe(rect: view.bounds)) " +
+            "viewFrame=\(describe(rect: view.frame)) " +
+            "canvasHostBounds=\(describe(rect: canvasHostView.bounds)) " +
+            "canvasHostFrame=\(describe(rect: canvasHostView.frame)) " +
+            "cameraViewportSize=\(describe(size: camera.viewportSize)) " +
+            "selectedItemID=\(describe(itemID: interactionState.selectedItemID))"
+        )
+    }
+
+    override func viewWillAppear() {
+        super.viewWillAppear()
+        print(
+            "[Canvas macOS][ControllerLifecycle] " +
+            "action=viewWillAppear " +
+            "viewBounds=\(describe(rect: view.bounds)) " +
+            "viewFrame=\(describe(rect: view.frame)) " +
+            "windowFrame=\(view.window.map { describe(rect: $0.frame) } ?? "nil") " +
+            "cameraViewportSize=\(describe(size: camera.viewportSize))"
+        )
+    }
+
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        print(
+            "[Canvas macOS][ControllerLifecycle] " +
+            "action=viewDidAppear " +
+            "viewBounds=\(describe(rect: view.bounds)) " +
+            "viewFrame=\(describe(rect: view.frame)) " +
+            "windowFrame=\(view.window.map { describe(rect: $0.frame) } ?? "nil") " +
+            "canvasHostBounds=\(describe(rect: canvasHostView.bounds)) " +
+            "canvasHostFrame=\(describe(rect: canvasHostView.frame)) " +
+            "canvasViewportBounds=\(describe(rect: canvasViewportView.bounds)) " +
+            "canvasViewportFrame=\(describe(rect: canvasViewportView.frame)) " +
+            "cameraViewportSize=\(describe(size: camera.viewportSize))"
+        )
     }
 
     override func viewDidLayout() {
         super.viewDidLayout()
-        updateCameraViewportSizeIfNeeded()
+        print(
+            "[Canvas macOS][ControllerLifecycle] " +
+            "action=viewDidLayout.begin " +
+            "viewBounds=\(describe(rect: view.bounds)) " +
+            "viewFrame=\(describe(rect: view.frame)) " +
+            "canvasHostBounds=\(describe(rect: canvasHostView.bounds)) " +
+            "canvasHostFrame=\(describe(rect: canvasHostView.frame)) " +
+            "canvasViewportBounds=\(describe(rect: canvasViewportView.bounds)) " +
+            "canvasViewportFrame=\(describe(rect: canvasViewportView.frame)) " +
+            "cameraViewportSize=\(describe(size: camera.viewportSize)) " +
+            "snapshotViewportBounds=\(describe(rect: lastRenderSnapshot.viewportBounds))"
+        )
+        updateCameraViewportSizeIfNeeded(trigger: "viewDidLayout")
         updateChromeOverlayLayout()
+        print(
+            "[Canvas macOS][ControllerLifecycle] " +
+            "action=viewDidLayout.end " +
+            "viewBounds=\(describe(rect: view.bounds)) " +
+            "canvasViewportBounds=\(describe(rect: canvasViewportView.bounds)) " +
+            "cameraViewportSize=\(describe(size: camera.viewportSize)) " +
+            "snapshotViewportBounds=\(describe(rect: lastRenderSnapshot.viewportBounds))"
+        )
     }
 
     // Future canvas viewport views should always be mounted through this host.
     func installCanvasContentView(_ contentView: NSView) {
         _ = view
+        print(
+            "[Canvas macOS][ViewportInstall] " +
+            "action=begin " +
+            "contentViewType=\(String(describing: type(of: contentView))) " +
+            "rootViewBounds=\(describe(rect: view.bounds)) " +
+            "canvasHostBounds=\(describe(rect: canvasHostView.bounds)) " +
+            "canvasHostFrame=\(describe(rect: canvasHostView.frame)) " +
+            "contentViewBounds=\(describe(rect: contentView.bounds)) " +
+            "contentViewFrame=\(describe(rect: contentView.frame))"
+        )
         canvasContentView?.removeFromSuperview()
 
         contentView.translatesAutoresizingMaskIntoConstraints = false
@@ -379,6 +455,16 @@ final class macOSViewController: NSViewController {
         ])
 
         canvasContentView = contentView
+        print(
+            "[Canvas macOS][ViewportInstall] " +
+            "action=end " +
+            "contentViewType=\(String(describing: type(of: contentView))) " +
+            "rootViewBounds=\(describe(rect: view.bounds)) " +
+            "canvasHostBounds=\(describe(rect: canvasHostView.bounds)) " +
+            "canvasHostFrame=\(describe(rect: canvasHostView.frame)) " +
+            "contentViewBounds=\(describe(rect: contentView.bounds)) " +
+            "contentViewFrame=\(describe(rect: contentView.frame))"
+        )
     }
 
     private func setupViewHierarchy() {
@@ -558,12 +644,45 @@ final class macOSViewController: NSViewController {
         }
 
         installCanvasContentView(canvasViewportView)
-        refreshCanvas()
+        print(
+            "[Canvas macOS][ViewportInstall] " +
+            "action=afterSetupCanvasViewport " +
+            "canvasViewportBounds=\(describe(rect: canvasViewportView.bounds)) " +
+            "canvasViewportFrame=\(describe(rect: canvasViewportView.frame)) " +
+            "cameraViewportSize=\(describe(size: camera.viewportSize)) " +
+            "snapshotViewportBounds=\(describe(rect: lastRenderSnapshot.viewportBounds))"
+        )
+        refreshCanvas(reason: "initial setup")
     }
 
-    private func updateCameraViewportSizeIfNeeded() {
+    private func updateCameraViewportSizeIfNeeded(
+        trigger: String = "unspecified"
+    ) {
+        let cameraBeforeSync = camera
+        let snapshotBeforeSync = lastRenderSnapshot
         let viewportSize = canvasViewportView.bounds.size
+        print(
+            "[Canvas macOS][ViewportSync] " +
+            "trigger=\(trigger) " +
+            "phase=begin " +
+            "viewBoundsSize=\(describe(size: view.bounds.size)) " +
+            "canvasHostBounds=\(describe(rect: canvasHostView.bounds)) " +
+            "canvasViewportBounds=\(describe(rect: canvasViewportView.bounds)) " +
+            "canvasViewportFrame=\(describe(rect: canvasViewportView.frame)) " +
+            "cameraViewportSizeBefore=\(describe(size: cameraBeforeSync.viewportSize)) " +
+            "snapshotViewportBoundsBefore=\(describe(rect: snapshotBeforeSync.viewportBounds))"
+        )
         guard viewportSize.width > 0, viewportSize.height > 0 else {
+            print(
+                "[Canvas macOS][ViewportSync] " +
+                "trigger=\(trigger) " +
+                "phase=skipEmptyViewport " +
+                "viewBoundsSize=\(describe(size: view.bounds.size)) " +
+                "canvasViewportBounds=\(describe(rect: canvasViewportView.bounds)) " +
+                "canvasViewportFrame=\(describe(rect: canvasViewportView.frame)) " +
+                "cameraViewportSize=\(describe(size: camera.viewportSize)) " +
+                "snapshotViewportBounds=\(describe(rect: lastRenderSnapshot.viewportBounds))"
+            )
             return
         }
 
@@ -574,10 +693,52 @@ final class macOSViewController: NSViewController {
 
         let didConfigureBoardState = configureBoardStateIfNeeded(for: viewportSize)
         guard sizeChanged || didConfigureBoardState else {
+            print(
+                "[Canvas macOS][ViewportSync] " +
+                "trigger=\(trigger) " +
+                "phase=noChange " +
+                "viewBoundsSize=\(describe(size: viewportSize)) " +
+                "cameraViewportSizeBefore=\(describe(size: cameraBeforeSync.viewportSize)) " +
+                "cameraViewportSizeAfter=\(describe(size: camera.viewportSize)) " +
+                "sizeChanged=\(sizeChanged) " +
+                "didConfigureBoardState=\(didConfigureBoardState) " +
+                "cameraCenterBefore=\(describe(point: cameraBeforeSync.center)) " +
+                "cameraCenterAfter=\(describe(point: camera.center)) " +
+                "zoomBefore=\(String(format: "%.4f", Double(cameraBeforeSync.zoomScale))) " +
+                "zoomAfter=\(String(format: "%.4f", Double(camera.zoomScale))) " +
+                "visibleWorldRectBefore=\(describe(rect: cameraBeforeSync.visibleWorldRect)) " +
+                "visibleWorldRectAfter=\(describe(rect: camera.visibleWorldRect)) " +
+                "snapshotViewportBoundsBefore=\(describe(rect: snapshotBeforeSync.viewportBounds)) " +
+                "snapshotViewportBoundsAfter=\(describe(rect: lastRenderSnapshot.viewportBounds)) " +
+                "snapshotEditOverlayBefore=\(describe(editOverlay: snapshotBeforeSync.editOverlay)) " +
+                "snapshotEditOverlayAfter=\(describe(editOverlay: lastRenderSnapshot.editOverlay))"
+            )
             return
         }
 
-        refreshCanvas()
+        refreshCanvas(
+            reason: "viewport sync trigger=\(trigger) sizeChanged=\(sizeChanged) didConfigureBoardState=\(didConfigureBoardState)"
+        )
+
+        print(
+            "[Canvas macOS][ViewportSync] " +
+            "trigger=\(trigger) " +
+            "viewBoundsSize=\(describe(size: viewportSize)) " +
+            "cameraViewportSizeBefore=\(describe(size: cameraBeforeSync.viewportSize)) " +
+            "cameraViewportSizeAfter=\(describe(size: camera.viewportSize)) " +
+            "sizeChanged=\(sizeChanged) " +
+            "didConfigureBoardState=\(didConfigureBoardState) " +
+            "cameraCenterBefore=\(describe(point: cameraBeforeSync.center)) " +
+            "cameraCenterAfter=\(describe(point: camera.center)) " +
+            "zoomBefore=\(String(format: "%.4f", Double(cameraBeforeSync.zoomScale))) " +
+            "zoomAfter=\(String(format: "%.4f", Double(camera.zoomScale))) " +
+            "visibleWorldRectBefore=\(describe(rect: cameraBeforeSync.visibleWorldRect)) " +
+            "visibleWorldRectAfter=\(describe(rect: camera.visibleWorldRect)) " +
+            "snapshotViewportBoundsBefore=\(describe(rect: snapshotBeforeSync.viewportBounds)) " +
+            "snapshotViewportBoundsAfter=\(describe(rect: lastRenderSnapshot.viewportBounds)) " +
+            "snapshotEditOverlayBefore=\(describe(editOverlay: snapshotBeforeSync.editOverlay)) " +
+            "snapshotEditOverlayAfter=\(describe(editOverlay: lastRenderSnapshot.editOverlay))"
+        )
 
         if didConfigureBoardState {
             scheduleAutosave(reason: "configure board state")
@@ -585,6 +746,19 @@ final class macOSViewController: NSViewController {
     }
 
     private func handlePrimaryPointerDown(at location: CGPoint) {
+        print(
+            "[Canvas macOS][PrimaryPointerInput] " +
+            "phase=down " +
+            "location=\(describe(point: location)) " +
+            "worldPoint=\(describe(point: camera.viewportToWorld(location))) " +
+            "selectedItemID=\(describe(itemID: interactionState.selectedItemID)) " +
+            "cameraCenter=\(describe(point: camera.center)) " +
+            "zoom=\(String(format: "%.4f", Double(camera.zoomScale))) " +
+            "cameraViewportSize=\(describe(size: camera.viewportSize)) " +
+            "canvasViewportBounds=\(describe(rect: canvasViewportView.bounds)) " +
+            "snapshotViewportBounds=\(describe(rect: lastRenderSnapshot.viewportBounds)) " +
+            "snapshotEditOverlay=\(describe(editOverlay: lastRenderSnapshot.editOverlay))"
+        )
         if contextMenuState != nil {
             dismissContextMenu()
             return
@@ -599,14 +773,32 @@ final class macOSViewController: NSViewController {
     }
 
     private func handleSecondaryClick(at location: CGPoint) {
-        updateCameraViewportSizeIfNeeded()
+        let cameraBeforeSync = camera
+        let snapshotBeforeSync = lastRenderSnapshot
+        let worldPointBeforeSync = cameraBeforeSync.viewportToWorld(location)
+        updateCameraViewportSizeIfNeeded(trigger: "secondary click")
+        let worldPointAfterSync = camera.viewportToWorld(location)
         print(
             "[Canvas macOS][ContextMenuInput] " +
             "secondaryClickLocation=\(describe(point: location)) " +
+            "worldPointBeforeSync=\(describe(point: worldPointBeforeSync)) " +
+            "worldPointAfterSync=\(describe(point: worldPointAfterSync)) " +
+            "pointerDragState=\(describe(pointerDragState: pointerDragState)) " +
+            "selectedItemID=\(describe(itemID: interactionState.selectedItemID)) " +
             "viewportBounds=\(describe(rect: canvasViewportView.bounds)) " +
             "viewportFrame=\(describe(rect: canvasViewportView.frame)) " +
             "overlayBounds=\(describe(rect: chromeOverlayView.bounds)) " +
-            "overlayFrame=\(describe(rect: chromeOverlayView.frame))"
+            "overlayFrame=\(describe(rect: chromeOverlayView.frame)) " +
+            "cameraCenterBefore=\(describe(point: cameraBeforeSync.center)) " +
+            "cameraCenterAfter=\(describe(point: camera.center)) " +
+            "zoomBefore=\(String(format: "%.4f", Double(cameraBeforeSync.zoomScale))) " +
+            "zoomAfter=\(String(format: "%.4f", Double(camera.zoomScale))) " +
+            "cameraViewportSizeBefore=\(describe(size: cameraBeforeSync.viewportSize)) " +
+            "cameraViewportSizeAfter=\(describe(size: camera.viewportSize)) " +
+            "snapshotViewportBoundsBefore=\(describe(rect: snapshotBeforeSync.viewportBounds)) " +
+            "snapshotViewportBoundsAfter=\(describe(rect: lastRenderSnapshot.viewportBounds)) " +
+            "snapshotEditOverlayBefore=\(describe(editOverlay: snapshotBeforeSync.editOverlay)) " +
+            "snapshotEditOverlayAfter=\(describe(editOverlay: lastRenderSnapshot.editOverlay))"
         )
         prepareForSecondaryClickContextMenu()
 
@@ -615,6 +807,8 @@ final class macOSViewController: NSViewController {
     }
 
     private func prepareForSecondaryClickContextMenu() {
+        let pointerDragStateBefore = describe(pointerDragState: pointerDragState)
+        let selectedItemIDBefore = interactionState.selectedItemID
         dismissContextMenu()
 
         switch pointerDragState {
@@ -631,6 +825,14 @@ final class macOSViewController: NSViewController {
             // half-committed drag/crop/rotate interaction behind.
             handlePrimaryPointerCancel()
         }
+
+        print(
+            "[Canvas macOS][ContextMenuPreparation] " +
+            "pointerDragStateBefore=\(pointerDragStateBefore) " +
+            "pointerDragStateAfter=\(describe(pointerDragState: pointerDragState)) " +
+            "selectedItemIDBefore=\(describe(itemID: selectedItemIDBefore)) " +
+            "selectedItemIDAfter=\(describe(itemID: interactionState.selectedItemID))"
+        )
     }
 
     private func handlePrimaryPointerMove(to location: CGPoint, from previousLocation: CGPoint) {
@@ -873,8 +1075,9 @@ final class macOSViewController: NSViewController {
         scheduleAutosave(reason: "zoom canvas")
     }
 
-    private func refreshCanvas() {
+    private func refreshCanvas(reason: String = "unspecified") {
         let snapshot = editorSession.makeCanvasSnapshot()
+        logCanvasState(reason: reason, snapshot: snapshot)
         canvasViewportView.apply(snapshot)
         refreshMiniMap()
     }
@@ -1906,14 +2109,45 @@ final class macOSViewController: NSViewController {
     }
 
     private func restorePersistedBoardIfPossible() {
+        print(
+            "[Canvas macOS][RuntimeRestore] " +
+            "action=controllerRestore.begin " +
+            "viewBounds=\(describe(rect: view.bounds)) " +
+            "cameraViewportSize=\(describe(size: camera.viewportSize)) " +
+            "selectedItemID=\(describe(itemID: interactionState.selectedItemID))"
+        )
         editorSession.restorePersistedBoardIfPossible()
         updateInlineEditButtonsAppearance()
+        print(
+            "[Canvas macOS][RuntimeRestore] " +
+            "action=controllerRestore.end " +
+            "viewBounds=\(describe(rect: view.bounds)) " +
+            "cameraCenter=\(describe(point: camera.center)) " +
+            "zoom=\(String(format: "%.4f", Double(camera.zoomScale))) " +
+            "cameraViewportSize=\(describe(size: camera.viewportSize)) " +
+            "selectedItemID=\(describe(itemID: interactionState.selectedItemID))"
+        )
     }
 
     private func applyBoardRuntimeState(_ runtimeState: BoardRuntimeState) {
         cancelRotationInteractionIfNeeded(resetPointerDragState: true)
+        print(
+            "[Canvas macOS][RuntimeRestore] " +
+            "action=controllerApplyRuntimeState.begin " +
+            "runtimeBoardID=\(runtimeState.boardID.uuidString) " +
+            "runtimeCameraViewportSize=\(describe(size: runtimeState.camera.viewportSize)) " +
+            "runtimeSelectedItemID=\(describe(itemID: runtimeState.interactionState.selectedItemID))"
+        )
         editorSession.applyBoardRuntimeState(runtimeState)
         updateInlineEditButtonsAppearance()
+        print(
+            "[Canvas macOS][RuntimeRestore] " +
+            "action=controllerApplyRuntimeState.end " +
+            "cameraCenter=\(describe(point: camera.center)) " +
+            "zoom=\(String(format: "%.4f", Double(camera.zoomScale))) " +
+            "cameraViewportSize=\(describe(size: camera.viewportSize)) " +
+            "selectedItemID=\(describe(itemID: interactionState.selectedItemID))"
+        )
     }
 
     private func currentBoardHistorySnapshot() -> BoardHistorySnapshot {
@@ -2083,12 +2317,68 @@ final class macOSViewController: NSViewController {
         "{\(formatCoordinate(point.x)), \(formatCoordinate(point.y))}"
     }
 
+    private func describe(size: CGSize) -> String {
+        "{\(formatCoordinate(size.width)), \(formatCoordinate(size.height))}"
+    }
+
     private func describe(rect: CGRect) -> String {
         "{{\(formatCoordinate(rect.origin.x)), \(formatCoordinate(rect.origin.y))}, {\(formatCoordinate(rect.size.width)), \(formatCoordinate(rect.size.height))}}"
     }
 
     private func describe(itemID: CanvasImageItemID?) -> String {
         itemID?.uuidString ?? "nil"
+    }
+
+    private func describe(editOverlay: CanvasEditRenderOverlay?) -> String {
+        guard let editOverlay else {
+            return "nil"
+        }
+
+        return "itemID=\(editOverlay.itemID.uuidString) kind=\(String(describing: editOverlay.kind)) activeScreenQuad=\(describe(rect: editOverlay.activeScreenQuad.boundingRect.standardized))"
+    }
+
+    private func describe(pointerDragState: PointerDragState) -> String {
+        switch pointerDragState {
+        case .idle:
+            return "idle"
+        case .pressed:
+            return "pressed"
+        case .croppingSelectedItem:
+            return "croppingSelectedItem"
+        case .movingCropFrame:
+            return "movingCropFrame"
+        case .rotatingSelectedItem:
+            return "rotatingSelectedItem"
+        case .draggingSelectedItem:
+            return "draggingSelectedItem"
+        case .resizingSelectedItem:
+            return "resizingSelectedItem"
+        case .draggingCanvas:
+            return "draggingCanvas"
+        }
+    }
+
+    private func logCanvasState(reason: String, snapshot: CanvasRenderSnapshot) {
+        let orderedItems = scene.orderedItems()
+        let firstWorldFrame = orderedItems.first.map { describe(rect: $0.worldFrame) } ?? "nil"
+        let firstScreenFrame = snapshot.items.first.map { describe(rect: $0.screenFrame) } ?? "nil"
+
+        print(
+            "[Canvas macOS][CanvasRefresh] " +
+            "reason=\(reason) " +
+            "cameraCenter=\(describe(point: camera.center)) " +
+            "zoom=\(String(format: "%.4f", Double(camera.zoomScale))) " +
+            "viewportSize=\(describe(size: camera.viewportSize)) " +
+            "visibleWorldRect=\(describe(rect: camera.visibleWorldRect)) " +
+            "selectedItemID=\(describe(itemID: interactionState.selectedItemID)) " +
+            "sceneItems=\(orderedItems.count) " +
+            "visibleItems=\(snapshot.items.count) " +
+            "snapshotViewportBounds=\(describe(rect: snapshot.viewportBounds)) " +
+            "snapshotVisibleWorldRect=\(describe(rect: snapshot.visibleWorldRect)) " +
+            "editOverlay=\(describe(editOverlay: snapshot.editOverlay)) " +
+            "firstWorldFrame=\(firstWorldFrame) " +
+            "firstScreenFrame=\(firstScreenFrame)"
+        )
     }
 
     private func logContextMenuPresentation(

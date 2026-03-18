@@ -84,6 +84,13 @@ final class macOSCanvasViewportView: NSView {
 
     override func layout() {
         super.layout()
+        print(
+            "[Canvas macOS][ViewportLifecycle] " +
+            "action=layout " +
+            "viewBounds=\(macOSViewportDescribe(bounds)) " +
+            "viewFrame=\(macOSViewportDescribe(frame)) " +
+            "windowFrame=\(window.map { macOSViewportDescribe($0.frame) } ?? "nil")"
+        )
         performWithoutLayerActions {
             updateLayerFrames()
         }
@@ -91,6 +98,13 @@ final class macOSCanvasViewportView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        print(
+            "[Canvas macOS][ViewportLifecycle] " +
+            "action=viewDidMoveToWindow " +
+            "viewBounds=\(macOSViewportDescribe(bounds)) " +
+            "viewFrame=\(macOSViewportDescribe(frame)) " +
+            "windowFrame=\(window.map { macOSViewportDescribe($0.frame) } ?? "nil")"
+        )
         updateBackgroundAppearance()
         performWithoutLayerActions {
             refreshImageLayers()
@@ -102,6 +116,15 @@ final class macOSCanvasViewportView: NSView {
 
     func apply(_ snapshot: CanvasRenderSnapshot) {
         self.snapshot = snapshot
+        print(
+            "[Canvas macOS][ViewportApply] " +
+            "viewBounds=\(macOSViewportDescribe(bounds)) " +
+            "viewFrame=\(macOSViewportDescribe(frame)) " +
+            "snapshotViewportBounds=\(macOSViewportDescribe(snapshot.viewportBounds)) " +
+            "snapshotVisibleWorldRect=\(macOSViewportDescribe(snapshot.visibleWorldRect)) " +
+            "snapshotItems=\(snapshot.items.count) " +
+            "editOverlay=\(macOSViewportDescribe(snapshot.editOverlay))"
+        )
         performWithoutLayerActions {
             updateLayerFrames()
             refreshImageLayers()
@@ -762,6 +785,13 @@ final class macOSCanvasViewportView: NSView {
     override func rightMouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
         let location = convert(event.locationInWindow, from: nil)
+        print(
+            "[Canvas macOS][SecondaryClickEvent] " +
+            "windowLocation=\(macOSViewportDescribe(event.locationInWindow)) " +
+            "viewportLocation=\(macOSViewportDescribe(location)) " +
+            "viewBounds=\(macOSViewportDescribe(bounds)) " +
+            "viewFrame=\(macOSViewportDescribe(frame))"
+        )
         onSecondaryClick?(location)
     }
 
@@ -780,5 +810,25 @@ final class macOSCanvasViewportView: NSView {
         let anchor = convert(event.locationInWindow, from: nil)
         onZoom?(scaleDelta, anchor)
     }
+}
+
+private func macOSViewportDescribe(_ point: CGPoint) -> String {
+    "{\(macOSViewportFormat(point.x)), \(macOSViewportFormat(point.y))}"
+}
+
+private func macOSViewportDescribe(_ rect: CGRect) -> String {
+    "{{\(macOSViewportFormat(rect.origin.x)), \(macOSViewportFormat(rect.origin.y))}, {\(macOSViewportFormat(rect.size.width)), \(macOSViewportFormat(rect.size.height))}}"
+}
+
+private func macOSViewportDescribe(_ overlay: CanvasEditRenderOverlay?) -> String {
+    guard let overlay else {
+        return "nil"
+    }
+
+    return "itemID=\(overlay.itemID.uuidString) kind=\(String(describing: overlay.kind)) activeScreenQuad=\(macOSViewportDescribe(overlay.activeScreenQuad.boundingRect.standardized))"
+}
+
+private func macOSViewportFormat(_ value: CGFloat) -> String {
+    String(format: "%.2f", Double(value))
 }
 #endif
