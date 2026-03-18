@@ -25,7 +25,6 @@ final class CanvasContextMenuHostView: UIView {
     private var menuHeightConstraint: NSLayoutConstraint!
     private var commandIDs: [CanvasCommandID] = []
     private(set) var currentState: CanvasContextMenuState?
-    private var lastRuntimeLogSignature: String?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -153,10 +152,6 @@ final class CanvasContextMenuHostView: UIView {
         )
         updateMenuContainerConstraints(menuFrame.integral)
         layoutIfNeeded()
-        logRuntimeState(reason: "updateLayout")
-        DispatchQueue.main.async { [weak self] in
-            self?.logRuntimeState(reason: "asyncAfterUpdateLayout")
-        }
     }
 
     func dismiss() {
@@ -245,113 +240,6 @@ final class CanvasContextMenuHostView: UIView {
         return CGSize(
             width: stackSize.width + 20,
             height: stackSize.height + 20
-        )
-    }
-
-    private func logRuntimeState(reason: String) {
-        guard currentState != nil, isHidden == false else {
-            return
-        }
-
-        let contentView = menuContainerView.contentView
-        let menuFrame = menuContainerView.frame.standardized
-        let menuBounds = menuContainerView.bounds.standardized
-        let menuWindowFrame = menuContainerView.convert(
-            menuContainerView.bounds,
-            to: window
-        ).standardized
-        let hostWindowFrame = convert(bounds, to: window).standardized
-        let contentViewFrame = contentView.frame.standardized
-        let contentViewBounds = contentView.bounds.standardized
-        let contentViewWindowFrame = contentView.convert(
-            contentView.bounds,
-            to: window
-        ).standardized
-        let commandStackFrameInMenu = commandStackView.frame.standardized
-        let commandStackBounds = commandStackView.bounds.standardized
-        let commandStackWindowFrame = commandStackView.convert(
-            commandStackView.bounds,
-            to: window
-        ).standardized
-        let commandStackFittingSize = commandStackView.systemLayoutSizeFitting(
-            UIView.layoutFittingCompressedSize
-        )
-        let arrangedSubviewStates = commandStackView.arrangedSubviews
-            .enumerated()
-            .map { index, view -> String in
-                let title: String
-                if let button = view as? UIButton {
-                    title = button.configuration?.title ?? button.currentTitle ?? "nil"
-                } else {
-                    title = "nil"
-                }
-
-                let intrinsicContentSize = view.intrinsicContentSize
-                let windowFrame = view.convert(
-                    view.bounds,
-                    to: window
-                ).standardized
-                return [
-                    "index=\(index)",
-                    "type=\(String(describing: type(of: view)))",
-                    "title=\(title)",
-                    "frame=\(contextMenuHostDescribe(view.frame.standardized))",
-                    "bounds=\(contextMenuHostDescribe(view.bounds.standardized))",
-                    "windowFrame=\(contextMenuHostDescribe(windowFrame))",
-                    "intrinsic=\(contextMenuHostDescribe(intrinsicContentSize))",
-                    "hidden=\(view.isHidden)",
-                    "alpha=\(contextMenuHostFormat(view.alpha))",
-                    "ambiguous=\(view.hasAmbiguousLayout)"
-                ].joined(separator: " ")
-            }
-            .joined(separator: " || ")
-        let hostIndexInSuperview = superview?.subviews.firstIndex(of: self) ?? -1
-        let superviewOrder = superview?.subviews.enumerated().map { index, view in
-            "\(index):\(String(describing: type(of: view)))"
-        }.joined(separator: ",") ?? "nil"
-
-        let signature = [
-            reason,
-            contextMenuHostDescribe(menuFrame),
-            contextMenuHostDescribe(menuWindowFrame),
-            contextMenuHostDescribe(contentViewFrame),
-            contextMenuHostDescribe(commandStackFrameInMenu),
-            String(hostIndexInSuperview),
-            superviewOrder
-        ].joined(separator: "|")
-        guard signature != lastRuntimeLogSignature else {
-            return
-        }
-        lastRuntimeLogSignature = signature
-
-        print(
-            "[Canvas iOS][ContextMenuRuntime] " +
-            "reason=\(reason) " +
-            "hostFrame=\(contextMenuHostDescribe(frame)) " +
-            "hostBounds=\(contextMenuHostDescribe(bounds)) " +
-            "hostWindowFrame=\(contextMenuHostDescribe(hostWindowFrame)) " +
-            "menuFrame=\(contextMenuHostDescribe(menuFrame)) " +
-            "menuBounds=\(contextMenuHostDescribe(menuBounds)) " +
-            "menuWindowFrame=\(contextMenuHostDescribe(menuWindowFrame)) " +
-            "contentViewFrame=\(contextMenuHostDescribe(contentViewFrame)) " +
-            "contentViewBounds=\(contextMenuHostDescribe(contentViewBounds)) " +
-            "contentViewWindowFrame=\(contextMenuHostDescribe(contentViewWindowFrame)) " +
-            "commandStackFrameInMenu=\(contextMenuHostDescribe(commandStackFrameInMenu)) " +
-            "commandStackBounds=\(contextMenuHostDescribe(commandStackBounds)) " +
-            "commandStackWindowFrame=\(contextMenuHostDescribe(commandStackWindowFrame)) " +
-            "commandStackFittingSize=\(contextMenuHostDescribe(commandStackFittingSize)) " +
-            "contentViewAmbiguous=\(contentView.hasAmbiguousLayout) " +
-            "commandStackAmbiguous=\(commandStackView.hasAmbiguousLayout) " +
-            "arrangedSubviewCount=\(commandStackView.arrangedSubviews.count) " +
-            "hostHidden=\(isHidden) " +
-            "menuHidden=\(menuContainerView.isHidden) " +
-            "hostAlpha=\(contextMenuHostFormat(alpha)) " +
-            "menuAlpha=\(contextMenuHostFormat(menuContainerView.alpha)) " +
-            "hostClips=\(clipsToBounds) " +
-            "superClips=\(superview?.clipsToBounds ?? false) " +
-            "hostIndexInSuperview=\(hostIndexInSuperview) " +
-            "superviewOrder=[\(superviewOrder)] " +
-            "arrangedSubviews=[\(arrangedSubviewStates)]"
         )
     }
 }
