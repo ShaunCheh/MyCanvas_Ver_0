@@ -89,9 +89,17 @@ struct CanvasContextMenuLayoutSolver {
         case .allowChromeOverlap:
             // Keep safeBounds as the hard boundary, but allow menus to cover
             // floating buttons and the minimap. Placement style still controls
-            // whether the menu prefers finger-above or cursor-near behavior.
+            // the dynamic candidate ordering, but occupied chrome no longer
+            // participates in overlap scoring for this branch.
             blockerRects = []
-            placements = preferredPlacements(for: configuration.placementStyle)
+            placements = candidatePlacements(
+                for: configuration.placementStyle,
+                around: anchorPoint,
+                size: resolvedSize,
+                within: layoutBounds,
+                anchorSpacing: configuration.anchorSpacing,
+                configuration: configuration
+            )
         }
 
         var bestFrame: CGRect?

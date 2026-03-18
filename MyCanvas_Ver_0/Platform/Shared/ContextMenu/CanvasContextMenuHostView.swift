@@ -12,7 +12,7 @@ final class CanvasContextMenuHostView: UIView {
     private let layoutConfiguration: CanvasContextMenuLayoutConfiguration = {
         var configuration = CanvasContextMenuLayoutConfiguration()
         configuration.occlusionPolicy = .allowChromeOverlap
-        configuration.placementStyle = .fixedRightOfAnchor
+        configuration.placementStyle = .cursorPreferred
         return configuration
     }()
     private let menuContainerView = UIVisualEffectView(
