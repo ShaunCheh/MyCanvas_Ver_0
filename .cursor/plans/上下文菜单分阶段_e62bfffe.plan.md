@@ -4,10 +4,10 @@ overview: 为 `macOS` 右键 / `iOS` 长按的动态上下文菜单设计一套�
 todos:
   - id: phase1-editor-session
     content: 抽出 CanvasEditorSession，迁移共享编辑运行时与渲染/历史/保存服务
-    status: pending
+    status: completed
   - id: phase2-command-layer
     content: 建立 CanvasCommandCatalog 与 CanvasCommandExecutor，先收敛 crop undo redo selection 等现有命令
-    status: pending
+    status: completed
   - id: phase3-context-resolver
     content: 建立 CanvasContextMenuContext 与 CanvasContextResolver，统一位置语义与 hit test 优先级
     status: pending

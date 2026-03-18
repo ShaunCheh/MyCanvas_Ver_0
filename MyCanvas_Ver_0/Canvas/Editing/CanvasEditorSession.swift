@@ -40,6 +40,18 @@ final class CanvasEditorSession {
         inlineEditState == nil && historyController.canRedo
     }
 
+    var canBeginCropMode: Bool {
+        guard let selectedItemID = interactionState.selectedItemID else {
+            return false
+        }
+
+        return scene.item(withID: selectedItemID) != nil
+    }
+
+    var canClearSelection: Bool {
+        interactionState.selectedItemID != nil
+    }
+
     var isInlineCropModeActive: Bool {
         inlineEditState?.mode == .crop
     }
@@ -217,6 +229,7 @@ final class CanvasEditorSession {
     @discardableResult
     func beginCropModeIfPossible() -> Bool {
         guard
+            canBeginCropMode,
             let selectedItemID = interactionState.selectedItemID,
             let item = scene.item(withID: selectedItemID)
         else {
@@ -253,6 +266,53 @@ final class CanvasEditorSession {
                 mode: inlineEditState.mode
             )
         }
+    }
+
+    func canSelectItem(withID itemID: CanvasImageItemID) -> Bool {
+        interactionState.selectedItemID != itemID
+    }
+
+    @discardableResult
+    func selectItem(
+        withID itemID: CanvasImageItemID,
+        recordHistory: Bool = false
+    ) -> Bool {
+        guard canSelectItem(withID: itemID) else {
+            return false
+        }
+
+        let beforeSnapshot = recordHistory ? currentBoardHistorySnapshot() : nil
+        interactionState.selectedItemID = itemID
+        syncInlineEditStateWithSelection()
+
+        if let beforeSnapshot {
+            _ = recordImmediateHistoryChange(
+                from: beforeSnapshot,
+                reason: "select item"
+            )
+        }
+
+        return true
+    }
+
+    @discardableResult
+    func clearSelection(recordHistory: Bool = false) -> Bool {
+        guard canClearSelection else {
+            return false
+        }
+
+        let beforeSnapshot = recordHistory ? currentBoardHistorySnapshot() : nil
+        interactionState.selectedItemID = nil
+        syncInlineEditStateWithSelection()
+
+        if let beforeSnapshot {
+            _ = recordImmediateHistoryChange(
+                from: beforeSnapshot,
+                reason: "clear selection"
+            )
+        }
+
+        return true
     }
 
     func scheduleAutosave(reason: String) {

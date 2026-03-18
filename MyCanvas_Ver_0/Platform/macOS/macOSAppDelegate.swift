@@ -44,20 +44,20 @@ final class macOSAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidat
 
     @objc
     private func handleUndoMenuItem(_ sender: Any?) {
-        rootViewController?.currentCanvasViewController?.performUndoCommand()
+        rootViewController?.currentCanvasViewController?.performCommand(withID: .undo)
     }
 
     @objc
     private func handleRedoMenuItem(_ sender: Any?) {
-        rootViewController?.currentCanvasViewController?.performRedoCommand()
+        rootViewController?.currentCanvasViewController?.performCommand(withID: .redo)
     }
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         switch menuItem.action {
         case #selector(handleUndoMenuItem(_:)):
-            return rootViewController?.currentCanvasViewController?.canUndoCommand ?? false
+            return rootViewController?.currentCanvasViewController?.canPerformCommand(.undo) ?? false
         case #selector(handleRedoMenuItem(_:)):
-            return rootViewController?.currentCanvasViewController?.canRedoCommand ?? false
+            return rootViewController?.currentCanvasViewController?.canPerformCommand(.redo) ?? false
         default:
             return true
         }

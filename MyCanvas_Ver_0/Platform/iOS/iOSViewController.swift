@@ -113,6 +113,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         saveQueueLabel: "MyCanvas.BoardSave.iOS",
         logPrefix: "[BoardStore][iOS]"
     )
+    private let commandCatalog = CanvasCommandCatalog()
     private let canvasHostView: UIView = {
         let view = UIView()
         view.translatesAutoresizingMaskIntoConstraints = false
@@ -188,6 +189,9 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
     private var pendingRefreshReason: String?
     private var pointerDragState: PointerDragState = .idle
     private var saveButtonResetWorkItem: DispatchWorkItem?
+    private lazy var commandExecutor = CanvasCommandExecutor(
+        session: editorSession
+    )
 
     private var scene: CanvasScene {
         editorSession.scene
@@ -225,6 +229,37 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
 
     private var lastRenderSnapshot: CanvasRenderSnapshot {
         editorSession.lastRenderSnapshot
+    }
+
+    private func commandDescriptor(
+        for commandID: CanvasCommandID
+    ) -> CanvasCommandDescriptor {
+        commandCatalog.descriptor(
+            for: commandID,
+            session: editorSession
+        )
+    }
+
+    private func performCommand(_ command: CanvasCommand) {
+        guard commandExecutor.canExecute(command) else {
+            return
+        }
+
+        if command.shouldCancelActiveRotation {
+            cancelRotationInteractionIfNeeded(
+                resetPointerDragState: command.shouldResetPointerDragStateWhenCancellingRotation
+            )
+        }
+
+        guard let executionResult = commandExecutor.execute(command) else {
+            return
+        }
+
+        updateInlineEditButtonsAppearance()
+
+        if let refreshReason = executionResult.refreshReason {
+            requestCanvasRefresh(reason: refreshReason)
+        }
     }
 
     override func viewDidLoad() {
@@ -767,21 +802,17 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
 
     @objc
     private func handleCropButtonTap() {
-        if isInlineCropModeActive {
-            endInlineEditMode(reason: "exit crop mode")
-        } else {
-            beginCropModeIfPossible()
-        }
+        performCommand(.crop)
     }
 
     @objc
     private func handleUndoButtonTap() {
-        performUndoCommand()
+        performCommand(.undo)
     }
 
     @objc
     private func handleRedoButtonTap() {
-        performRedoCommand()
+        performCommand(.redo)
     }
 
     func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
@@ -828,39 +859,16 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         withID itemID: CanvasImageItemID,
         recordHistory: Bool = false
     ) {
-        guard interactionState.selectedItemID != itemID else {
-            return
-        }
-
-        let beforeSnapshot = recordHistory ? currentBoardHistorySnapshot() : nil
-        interactionState.selectedItemID = itemID
-        syncInlineEditStateWithSelection()
-        requestCanvasRefresh(reason: "select item \(itemID.uuidString)")
-
-        if let beforeSnapshot {
-            recordImmediateHistoryChange(
-                from: beforeSnapshot,
-                reason: "select item"
+        performCommand(
+            .selectItem(
+                itemID: itemID,
+                recordHistory: recordHistory
             )
-        }
+        )
     }
 
     private func clearSelectionIfNeeded(recordHistory: Bool = false) {
-        guard interactionState.selectedItemID != nil else {
-            return
-        }
-
-        let beforeSnapshot = recordHistory ? currentBoardHistorySnapshot() : nil
-        interactionState.selectedItemID = nil
-        syncInlineEditStateWithSelection()
-        requestCanvasRefresh(reason: "clear selection")
-
-        if let beforeSnapshot {
-            recordImmediateHistoryChange(
-                from: beforeSnapshot,
-                reason: "clear selection"
-            )
-        }
+        performCommand(.clearSelection(recordHistory: recordHistory))
     }
 
     private func logClickResult(
@@ -1956,51 +1964,6 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         editorSession.currentBoardHistorySnapshot()
     }
 
-    private func applyBoardHistorySnapshot(_ snapshot: BoardHistorySnapshot) {
-        cancelRotationInteractionIfNeeded(resetPointerDragState: true)
-        editorSession.applyBoardHistorySnapshot(snapshot)
-        updateInlineEditButtonsAppearance()
-        requestCanvasRefresh(reason: "apply history snapshot")
-    }
-
-    private var isHistoryCommandAvailable: Bool {
-        editorSession.isInlineEditModeActive == false
-    }
-
-    private var canUndoCommand: Bool {
-        isHistoryCommandAvailable && editorSession.canUndoCommand
-    }
-
-    private var canRedoCommand: Bool {
-        isHistoryCommandAvailable && editorSession.canRedoCommand
-    }
-
-    private func performUndoCommand() {
-        guard
-            canUndoCommand,
-            let snapshot = editorSession.undoHistorySnapshot()
-        else {
-            return
-        }
-
-        applyBoardHistorySnapshot(snapshot)
-        scheduleAutosave(reason: "undo change")
-        updateHistoryButtonsAppearance()
-    }
-
-    private func performRedoCommand() {
-        guard
-            canRedoCommand,
-            let snapshot = editorSession.redoHistorySnapshot()
-        else {
-            return
-        }
-
-        applyBoardHistorySnapshot(snapshot)
-        scheduleAutosave(reason: "redo change")
-        updateHistoryButtonsAppearance()
-    }
-
     private func beginPointerHistoryTransactionIfNeeded(
         for pressTarget: PointerPressTarget
     ) {
@@ -2047,46 +2010,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         updateHistoryButtonsAppearance()
     }
 
-    private var isInlineCropModeActive: Bool {
-        editorSession.isInlineCropModeActive
-    }
-
     private var isInlineEditModeActive: Bool {
         editorSession.isInlineEditModeActive
-    }
-
-    private func beginCropModeIfPossible() {
-        cancelRotationInteractionIfNeeded(resetPointerDragState: true)
-        guard editorSession.beginCropModeIfPossible() else {
-            return
-        }
-        updateInlineEditButtonsAppearance()
-        requestCanvasRefresh(reason: "enter crop mode")
-    }
-
-    private func endInlineEditMode(reason: String) {
-        guard editorSession.endInlineEditMode() else {
-            return
-        }
-        updateInlineEditButtonsAppearance()
-        requestCanvasRefresh(reason: reason)
-    }
-
-    private func syncInlineEditStateWithSelection() {
-        let shouldCancelRotationInteraction =
-            rotationPreviewState.map { interactionState.selectedItemID != $0.itemID } ?? false ||
-            rotationInteractionState.map { interactionState.selectedItemID != $0.itemID } ?? false
-        if shouldCancelRotationInteraction {
-            cancelRotationInteractionIfNeeded(resetPointerDragState: true)
-        }
-
-        guard inlineEditState != nil else {
-            updateInlineEditButtonsAppearance()
-            return
-        }
-
-        editorSession.syncInlineEditStateWithSelection()
-        updateInlineEditButtonsAppearance()
     }
 
     private func scheduleAutosave(reason: String) {
@@ -2150,13 +2075,12 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
     }
 
     private func updateCropButtonAppearance() {
-        let isActive = isInlineCropModeActive
-        let isEnabled = isActive || interactionState.selectedItemID != nil
+        let descriptor = commandDescriptor(for: .crop)
         applyCropButtonAppearance(
-            title: isActive ? "Done" : "Crop",
-            systemImageName: isActive ? "checkmark" : "crop",
-            backgroundColor: isActive ? .systemOrange : .systemIndigo,
-            isEnabled: isEnabled
+            title: descriptor.title,
+            systemImageName: descriptor.systemImageName,
+            backgroundColor: descriptor.isActive ? .systemOrange : .systemIndigo,
+            isEnabled: descriptor.isEnabled
         )
     }
 
@@ -2166,20 +2090,22 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
     }
 
     private func updateUndoButtonAppearance() {
+        let descriptor = commandDescriptor(for: .undo)
         applyUndoButtonAppearance(
-            title: "Undo",
-            systemImageName: "arrow.uturn.backward",
+            title: descriptor.title,
+            systemImageName: descriptor.systemImageName,
             backgroundColor: .systemBlue,
-            isEnabled: canUndoCommand
+            isEnabled: descriptor.isEnabled
         )
     }
 
     private func updateRedoButtonAppearance() {
+        let descriptor = commandDescriptor(for: .redo)
         applyRedoButtonAppearance(
-            title: "Redo",
-            systemImageName: "arrow.uturn.forward",
+            title: descriptor.title,
+            systemImageName: descriptor.systemImageName,
             backgroundColor: .systemIndigo,
-            isEnabled: canRedoCommand
+            isEnabled: descriptor.isEnabled
         )
     }
 

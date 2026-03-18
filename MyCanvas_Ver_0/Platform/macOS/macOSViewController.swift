@@ -114,6 +114,7 @@ final class macOSViewController: NSViewController {
         saveQueueLabel: "MyCanvas.BoardSave.macOS",
         logPrefix: "[BoardStore][macOS]"
     )
+    private let commandCatalog = CanvasCommandCatalog()
     private let canvasHostView: NSView = {
         let view = NSView()
         view.translatesAutoresizingMaskIntoConstraints = false
@@ -177,6 +178,9 @@ final class macOSViewController: NSViewController {
     private var canvasContentView: NSView?
     private var pointerDragState: PointerDragState = .idle
     private var saveButtonResetWorkItem: DispatchWorkItem?
+    private lazy var commandExecutor = CanvasCommandExecutor(
+        session: editorSession
+    )
 
     private var scene: CanvasScene {
         editorSession.scene
@@ -214,6 +218,54 @@ final class macOSViewController: NSViewController {
 
     private var lastRenderSnapshot: CanvasRenderSnapshot {
         editorSession.lastRenderSnapshot
+    }
+
+    private func commandDescriptor(
+        for commandID: CanvasCommandID
+    ) -> CanvasCommandDescriptor {
+        commandCatalog.descriptor(
+            for: commandID,
+            session: editorSession
+        )
+    }
+
+    private func performCommand(_ command: CanvasCommand) {
+        guard commandExecutor.canExecute(command) else {
+            return
+        }
+
+        if command.shouldCancelActiveRotation {
+            cancelRotationInteractionIfNeeded(
+                resetPointerDragState: command.shouldResetPointerDragStateWhenCancellingRotation
+            )
+        }
+
+        guard let executionResult = commandExecutor.execute(command) else {
+            return
+        }
+
+        updateInlineEditButtonsAppearance()
+
+        if executionResult.refreshReason != nil {
+            refreshCanvas()
+        }
+    }
+
+    func canPerformCommand(_ commandID: CanvasCommandID) -> Bool {
+        commandDescriptor(for: commandID).isEnabled
+    }
+
+    func performCommand(withID commandID: CanvasCommandID) {
+        switch commandID {
+        case .crop:
+            performCommand(CanvasCommand.crop)
+        case .undo:
+            performCommand(CanvasCommand.undo)
+        case .redo:
+            performCommand(CanvasCommand.redo)
+        case .selectItem, .clearSelection:
+            break
+        }
     }
 
     override func loadView() {
@@ -697,11 +749,7 @@ final class macOSViewController: NSViewController {
 
     @objc
     private func handleCropButtonClick() {
-        if isInlineCropModeActive {
-            endInlineEditMode(reason: "exit crop mode")
-        } else {
-            beginCropModeIfPossible()
-        }
+        performCommand(CanvasCommand.crop)
     }
 
     private func appendImportedImage(_ cgImage: CGImage) {
@@ -713,39 +761,16 @@ final class macOSViewController: NSViewController {
         withID itemID: CanvasImageItemID,
         recordHistory: Bool = false
     ) {
-        guard interactionState.selectedItemID != itemID else {
-            return
-        }
-
-        let beforeSnapshot = recordHistory ? currentBoardHistorySnapshot() : nil
-        interactionState.selectedItemID = itemID
-        syncInlineEditStateWithSelection()
-        refreshCanvas()
-
-        if let beforeSnapshot {
-            recordImmediateHistoryChange(
-                from: beforeSnapshot,
-                reason: "select item"
+        performCommand(
+            .selectItem(
+                itemID: itemID,
+                recordHistory: recordHistory
             )
-        }
+        )
     }
 
     private func clearSelectionIfNeeded(recordHistory: Bool = false) {
-        guard interactionState.selectedItemID != nil else {
-            return
-        }
-
-        let beforeSnapshot = recordHistory ? currentBoardHistorySnapshot() : nil
-        interactionState.selectedItemID = nil
-        syncInlineEditStateWithSelection()
-        refreshCanvas()
-
-        if let beforeSnapshot {
-            recordImmediateHistoryChange(
-                from: beforeSnapshot,
-                reason: "clear selection"
-            )
-        }
+        performCommand(.clearSelection(recordHistory: recordHistory))
     }
 
     private func logClickResult(
@@ -1835,45 +1860,6 @@ final class macOSViewController: NSViewController {
         editorSession.currentBoardHistorySnapshot()
     }
 
-    private func applyBoardHistorySnapshot(_ snapshot: BoardHistorySnapshot) {
-        cancelRotationInteractionIfNeeded(resetPointerDragState: true)
-        editorSession.applyBoardHistorySnapshot(snapshot)
-        updateInlineEditButtonsAppearance()
-        refreshCanvas()
-    }
-
-    var canUndoCommand: Bool {
-        editorSession.canUndoCommand
-    }
-
-    var canRedoCommand: Bool {
-        editorSession.canRedoCommand
-    }
-
-    func performUndoCommand() {
-        guard
-            canUndoCommand,
-            let snapshot = editorSession.undoHistorySnapshot()
-        else {
-            return
-        }
-
-        applyBoardHistorySnapshot(snapshot)
-        scheduleAutosave(reason: "undo change")
-    }
-
-    func performRedoCommand() {
-        guard
-            canRedoCommand,
-            let snapshot = editorSession.redoHistorySnapshot()
-        else {
-            return
-        }
-
-        applyBoardHistorySnapshot(snapshot)
-        scheduleAutosave(reason: "redo change")
-    }
-
     private func beginPointerHistoryTransactionIfNeeded(
         for pressTarget: PointerPressTarget
     ) {
@@ -1918,46 +1904,8 @@ final class macOSViewController: NSViewController {
         }
     }
 
-    private var isInlineCropModeActive: Bool {
-        editorSession.isInlineCropModeActive
-    }
-
     private var isInlineEditModeActive: Bool {
         editorSession.isInlineEditModeActive
-    }
-
-    private func beginCropModeIfPossible() {
-        cancelRotationInteractionIfNeeded(resetPointerDragState: true)
-        guard editorSession.beginCropModeIfPossible() else {
-            return
-        }
-        updateInlineEditButtonsAppearance()
-        refreshCanvas()
-    }
-
-    private func endInlineEditMode(reason _: String) {
-        guard editorSession.endInlineEditMode() else {
-            return
-        }
-        updateInlineEditButtonsAppearance()
-        refreshCanvas()
-    }
-
-    private func syncInlineEditStateWithSelection() {
-        let shouldCancelRotationInteraction =
-            rotationPreviewState.map { interactionState.selectedItemID != $0.itemID } ?? false ||
-            rotationInteractionState.map { interactionState.selectedItemID != $0.itemID } ?? false
-        if shouldCancelRotationInteraction {
-            cancelRotationInteractionIfNeeded(resetPointerDragState: true)
-        }
-
-        guard inlineEditState != nil else {
-            updateInlineEditButtonsAppearance()
-            return
-        }
-
-        editorSession.syncInlineEditStateWithSelection()
-        updateInlineEditButtonsAppearance()
     }
 
     private func scheduleAutosave(reason: String) {
@@ -2020,13 +1968,12 @@ final class macOSViewController: NSViewController {
     }
 
     private func updateCropButtonAppearance() {
-        let isActive = isInlineCropModeActive
-        let isEnabled = isActive || interactionState.selectedItemID != nil
+        let descriptor = commandDescriptor(for: .crop)
         applyCropButtonAppearance(
-            title: isActive ? "Done" : "Crop",
-            systemImageName: isActive ? "checkmark" : "crop",
-            tintColor: isActive ? .systemOrange : .controlAccentColor,
-            isEnabled: isEnabled
+            title: descriptor.title,
+            systemImageName: descriptor.systemImageName,
+            tintColor: descriptor.isActive ? .systemOrange : .controlAccentColor,
+            isEnabled: descriptor.isEnabled
         )
     }
 
