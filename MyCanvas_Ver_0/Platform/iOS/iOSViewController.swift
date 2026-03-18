@@ -71,6 +71,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         logPrefix: "[BoardStore][iOS]"
     )
     private let commandCatalog = CanvasCommandCatalog()
+    private let contextMenuCommandResolver = CanvasContextMenuCommandResolver()
     private let canvasHostView: UIView = {
         let view = UIView()
         view.translatesAutoresizingMaskIntoConstraints = false
@@ -237,6 +238,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
             return
         }
 
+        dismissContextMenu()
+
         if command.shouldCancelActiveRotation {
             cancelRotationInteractionIfNeeded(
                 resetPointerDragState: command.shouldResetPointerDragStateWhenCancellingRotation
@@ -255,9 +258,12 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
     }
 
     private func presentContextMenu(
-        for resolvedContext: CanvasContextMenuContext,
-        commandIDs: [CanvasCommandID]
+        for resolvedContext: CanvasContextMenuContext
     ) {
+        let commandIDs = contextMenuCommandResolver.commandIDs(
+            for: resolvedContext,
+            session: editorSession
+        )
         let commandStates = frozenContextMenuCommandStates(
             for: commandIDs
         )
@@ -294,9 +300,9 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
     private func performContextMenuCommand(_ commandID: CanvasCommandID) {
         guard
             let contextMenuState,
-            let command = contextMenuCommand(
+            let command = contextMenuCommandResolver.command(
                 for: commandID,
-                in: contextMenuState
+                context: contextMenuState.resolvedContext
             )
         else {
             dismissContextMenu()
@@ -305,30 +311,6 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
 
         dismissContextMenu()
         performCommand(command)
-    }
-
-    private func contextMenuCommand(
-        for commandID: CanvasCommandID,
-        in state: CanvasContextMenuState
-    ) -> CanvasCommand? {
-        switch commandID {
-        case .crop:
-            return .crop
-        case .undo:
-            return .undo
-        case .redo:
-            return .redo
-        case .selectItem:
-            guard let itemID = state.resolvedContext.targetItemID else {
-                return nil
-            }
-            return .selectItem(
-                itemID: itemID,
-                recordHistory: true
-            )
-        case .clearSelection:
-            return .clearSelection(recordHistory: true)
-        }
     }
 
     override func viewDidLoad() {

@@ -270,6 +270,18 @@ final class CanvasContextMenuHostView: NSView {
         }
     }
 
+    override func rightMouseDown(with event: NSEvent) {
+        guard currentState != nil else {
+            super.rightMouseDown(with: event)
+            return
+        }
+
+        let location = convert(event.locationInWindow, from: nil)
+        if menuContainerView.frame.contains(location) == false {
+            onDismissRequested?()
+        }
+    }
+
     func apply(
         state: CanvasContextMenuState?,
         safeBounds: CGRect,

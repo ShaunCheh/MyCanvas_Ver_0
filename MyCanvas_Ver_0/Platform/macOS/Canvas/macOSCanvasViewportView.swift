@@ -61,6 +61,7 @@ final class macOSCanvasViewportView: NSView {
     var onPointerMove: ((CGPoint, CGPoint) -> Void)?
     var onPointerUp: ((CGPoint) -> Void)?
     var onPointerCancel: (() -> Void)?
+    var onSecondaryClick: ((CGPoint) -> Void)?
     var onPan: ((CGPoint) -> Void)?
     var onZoom: ((CGFloat, CGPoint) -> Void)?
 
@@ -756,6 +757,12 @@ final class macOSCanvasViewportView: NSView {
         let location = convert(event.locationInWindow, from: nil)
         lastPrimaryPointerLocation = nil
         onPointerUp?(location)
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        window?.makeFirstResponder(self)
+        let location = convert(event.locationInWindow, from: nil)
+        onSecondaryClick?(location)
     }
 
     override func scrollWheel(with event: NSEvent) {

@@ -72,6 +72,7 @@ final class macOSViewController: NSViewController {
         logPrefix: "[BoardStore][macOS]"
     )
     private let commandCatalog = CanvasCommandCatalog()
+    private let contextMenuCommandResolver = CanvasContextMenuCommandResolver()
     private let canvasHostView: NSView = {
         let view = NSView()
         view.translatesAutoresizingMaskIntoConstraints = false
@@ -226,6 +227,8 @@ final class macOSViewController: NSViewController {
             return
         }
 
+        dismissContextMenu()
+
         if command.shouldCancelActiveRotation {
             cancelRotationInteractionIfNeeded(
                 resetPointerDragState: command.shouldResetPointerDragStateWhenCancellingRotation
@@ -244,9 +247,12 @@ final class macOSViewController: NSViewController {
     }
 
     private func presentContextMenu(
-        for resolvedContext: CanvasContextMenuContext,
-        commandIDs: [CanvasCommandID]
+        for resolvedContext: CanvasContextMenuContext
     ) {
+        let commandIDs = contextMenuCommandResolver.commandIDs(
+            for: resolvedContext,
+            session: editorSession
+        )
         let commandStates = frozenContextMenuCommandStates(
             for: commandIDs
         )
@@ -283,9 +289,9 @@ final class macOSViewController: NSViewController {
     private func performContextMenuCommand(_ commandID: CanvasCommandID) {
         guard
             let contextMenuState,
-            let command = contextMenuCommand(
+            let command = contextMenuCommandResolver.command(
                 for: commandID,
-                in: contextMenuState
+                context: contextMenuState.resolvedContext
             )
         else {
             dismissContextMenu()
@@ -294,30 +300,6 @@ final class macOSViewController: NSViewController {
 
         dismissContextMenu()
         performCommand(command)
-    }
-
-    private func contextMenuCommand(
-        for commandID: CanvasCommandID,
-        in state: CanvasContextMenuState
-    ) -> CanvasCommand? {
-        switch commandID {
-        case .crop:
-            return .crop
-        case .undo:
-            return .undo
-        case .redo:
-            return .redo
-        case .selectItem:
-            guard let itemID = state.resolvedContext.targetItemID else {
-                return nil
-            }
-            return .selectItem(
-                itemID: itemID,
-                recordHistory: true
-            )
-        case .clearSelection:
-            return .clearSelection(recordHistory: true)
-        }
     }
 
     func canPerformCommand(_ commandID: CanvasCommandID) -> Bool {
@@ -507,6 +489,9 @@ final class macOSViewController: NSViewController {
         canvasViewportView.onPointerCancel = { [weak self] in
             self?.handlePrimaryPointerCancel()
         }
+        canvasViewportView.onSecondaryClick = { [weak self] location in
+            self?.handleSecondaryClick(at: location)
+        }
         canvasViewportView.onPan = { [weak self] translation in
             self?.handleIndirectPan(translation)
         }
@@ -542,12 +527,44 @@ final class macOSViewController: NSViewController {
     }
 
     private func handlePrimaryPointerDown(at location: CGPoint) {
+        if contextMenuState != nil {
+            dismissContextMenu()
+            return
+        }
+
         let pressContext = resolveContext(at: location)
         pointerDragState = .pressed(
             pressedLocation: location,
             pressContext: pressContext
         )
         beginPointerHistoryTransactionIfNeeded(for: pressContext)
+    }
+
+    private func handleSecondaryClick(at location: CGPoint) {
+        updateCameraViewportSizeIfNeeded()
+        prepareForSecondaryClickContextMenu()
+
+        let resolvedContext = resolveContext(at: location)
+        presentContextMenu(for: resolvedContext)
+    }
+
+    private func prepareForSecondaryClickContextMenu() {
+        dismissContextMenu()
+
+        switch pointerDragState {
+        case .idle:
+            break
+        case .pressed,
+             .croppingSelectedItem,
+             .movingCropFrame,
+             .rotatingSelectedItem,
+             .draggingSelectedItem,
+             .resizingSelectedItem,
+             .draggingCanvas:
+            // Reuse primary-cancel semantics so secondary click never leaves a
+            // half-committed drag/crop/rotate interaction behind.
+            handlePrimaryPointerCancel()
+        }
     }
 
     private func handlePrimaryPointerMove(to location: CGPoint, from previousLocation: CGPoint) {
@@ -769,12 +786,22 @@ final class macOSViewController: NSViewController {
     }
 
     private func handleIndirectPan(_ translation: CGPoint) {
+        if contextMenuState != nil {
+            dismissContextMenu()
+            return
+        }
+
         camera.pan(by: translation)
         refreshCanvas()
         scheduleAutosave(reason: "pan canvas")
     }
 
     private func handleZoom(_ scaleDelta: CGFloat, around anchor: CGPoint) {
+        if contextMenuState != nil {
+            dismissContextMenu()
+            return
+        }
+
         camera.zoom(by: scaleDelta, around: anchor)
         refreshCanvas()
         scheduleAutosave(reason: "zoom canvas")
