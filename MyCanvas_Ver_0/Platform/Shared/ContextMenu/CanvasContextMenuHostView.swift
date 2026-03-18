@@ -111,10 +111,28 @@ final class CanvasContextMenuHostView: UIView {
             occupiedRects: occupiedRects,
             configuration: layoutConfiguration
         ) else {
+            logContextMenuLayout(
+                platform: "iOS",
+                state: currentState,
+                hostBounds: bounds,
+                safeBounds: safeBounds,
+                occupiedRects: occupiedRects,
+                preferredSize: preferredSize,
+                resolvedMenuFrame: nil
+            )
             menuContainerView.frame = .zero
             return
         }
 
+        logContextMenuLayout(
+            platform: "iOS",
+            state: currentState,
+            hostBounds: bounds,
+            safeBounds: safeBounds,
+            occupiedRects: occupiedRects,
+            preferredSize: preferredSize,
+            resolvedMenuFrame: menuFrame
+        )
         menuContainerView.frame = menuFrame.integral
     }
 
@@ -319,10 +337,28 @@ final class CanvasContextMenuHostView: NSView {
             occupiedRects: occupiedRects,
             configuration: layoutConfiguration
         ) else {
+            logContextMenuLayout(
+                platform: "macOS",
+                state: currentState,
+                hostBounds: bounds,
+                safeBounds: safeBounds,
+                occupiedRects: occupiedRects,
+                preferredSize: preferredSize,
+                resolvedMenuFrame: nil
+            )
             menuContainerView.frame = .zero
             return
         }
 
+        logContextMenuLayout(
+            platform: "macOS",
+            state: currentState,
+            hostBounds: bounds,
+            safeBounds: safeBounds,
+            occupiedRects: occupiedRects,
+            preferredSize: preferredSize,
+            resolvedMenuFrame: menuFrame
+        )
         menuContainerView.frame = menuFrame.integral
     }
 
@@ -400,3 +436,43 @@ final class CanvasContextMenuHostView: NSView {
     }
 }
 #endif
+
+private func logContextMenuLayout(
+    platform: String,
+    state: CanvasContextMenuState,
+    hostBounds: CGRect,
+    safeBounds: CGRect,
+    occupiedRects: [CGRect],
+    preferredSize: CGSize,
+    resolvedMenuFrame: CGRect?
+) {
+    let occupiedRectsDescription = occupiedRects.isEmpty
+        ? "[]"
+        : occupiedRects.map(contextMenuHostDescribe).joined(separator: ", ")
+    let commandIDsDescription = state.commandStates
+        .map(\.commandID.rawValue)
+        .joined(separator: ",")
+
+    print(
+        "[Canvas \(platform)][ContextMenuLayout] " +
+        state.resolvedContext.debugSummary + " " +
+        "hostBounds=\(contextMenuHostDescribe(hostBounds)) " +
+        "safeBounds=\(contextMenuHostDescribe(safeBounds)) " +
+        "preferredSize=\(contextMenuHostDescribe(preferredSize)) " +
+        "resolvedMenuFrame=\(resolvedMenuFrame.map(contextMenuHostDescribe) ?? "nil") " +
+        "occupiedRects=[\(occupiedRectsDescription)] " +
+        "commandIDs=[\(commandIDsDescription)]"
+    )
+}
+
+private func contextMenuHostDescribe(_ size: CGSize) -> String {
+    "{\(contextMenuHostFormat(size.width)), \(contextMenuHostFormat(size.height))}"
+}
+
+private func contextMenuHostDescribe(_ rect: CGRect) -> String {
+    "{{\(contextMenuHostFormat(rect.origin.x)), \(contextMenuHostFormat(rect.origin.y))}, {\(contextMenuHostFormat(rect.size.width)), \(contextMenuHostFormat(rect.size.height))}}"
+}
+
+private func contextMenuHostFormat(_ value: CGFloat) -> String {
+    String(format: "%.2f", Double(value))
+}

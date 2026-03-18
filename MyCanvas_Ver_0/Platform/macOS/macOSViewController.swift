@@ -259,6 +259,10 @@ final class macOSViewController: NSViewController {
             for: resolvedContext,
             session: editorSession
         )
+        logContextMenuPresentation(
+            resolvedContext: resolvedContext,
+            commandIDs: commandIDs
+        )
         let commandStates = frozenContextMenuCommandStates(
             for: commandIDs,
             context: resolvedContext
@@ -556,6 +560,14 @@ final class macOSViewController: NSViewController {
 
     private func handleSecondaryClick(at location: CGPoint) {
         updateCameraViewportSizeIfNeeded()
+        print(
+            "[Canvas macOS][ContextMenuInput] " +
+            "secondaryClickLocation=\(describe(point: location)) " +
+            "viewportBounds=\(describe(rect: canvasViewportView.bounds)) " +
+            "viewportFrame=\(describe(rect: canvasViewportView.frame)) " +
+            "overlayBounds=\(describe(rect: chromeOverlayView.bounds)) " +
+            "overlayFrame=\(describe(rect: chromeOverlayView.frame))"
+        )
         prepareForSecondaryClickContextMenu()
 
         let resolvedContext = resolveContext(at: location)
@@ -2027,8 +2039,44 @@ final class macOSViewController: NSViewController {
         }
     }
 
+    private func describe(point: CGPoint) -> String {
+        "{\(formatCoordinate(point.x)), \(formatCoordinate(point.y))}"
+    }
+
+    private func describe(rect: CGRect) -> String {
+        "{{\(formatCoordinate(rect.origin.x)), \(formatCoordinate(rect.origin.y))}, {\(formatCoordinate(rect.size.width)), \(formatCoordinate(rect.size.height))}}"
+    }
+
     private func describe(itemID: CanvasImageItemID?) -> String {
         itemID?.uuidString ?? "nil"
+    }
+
+    private func logContextMenuPresentation(
+        resolvedContext: CanvasContextMenuContext,
+        commandIDs: [CanvasCommandID]
+    ) {
+        let occupiedRectsDescription = contextMenuOccupiedRects()
+            .map(describe(rect:))
+            .joined(separator: ", ")
+        let commandIDsDescription = commandIDs.map(\.rawValue).joined(separator: ",")
+
+        print(
+            "[Canvas macOS][ContextMenuPosition] " +
+            resolvedContext.debugSummary + " " +
+            "viewportBounds=\(describe(rect: canvasViewportView.bounds)) " +
+            "viewportFrame=\(describe(rect: canvasViewportView.frame)) " +
+            "overlayBounds=\(describe(rect: chromeOverlayView.bounds)) " +
+            "overlayFrame=\(describe(rect: chromeOverlayView.frame)) " +
+            "hostBounds=\(describe(rect: contextMenuHostView.bounds)) " +
+            "hostFrame=\(describe(rect: contextMenuHostView.frame)) " +
+            "safeBounds=\(describe(rect: chromeSafeBounds())) " +
+            "occupiedRects=[\(occupiedRectsDescription)] " +
+            "commandIDs=[\(commandIDsDescription)]"
+        )
+    }
+
+    private func formatCoordinate(_ value: CGFloat) -> String {
+        String(format: "%.2f", Double(value))
     }
 }
 #endif

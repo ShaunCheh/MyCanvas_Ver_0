@@ -270,6 +270,10 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
             for: resolvedContext,
             session: editorSession
         )
+        logContextMenuPresentation(
+            resolvedContext: resolvedContext,
+            commandIDs: commandIDs
+        )
         let commandStates = frozenContextMenuCommandStates(
             for: commandIDs,
             context: resolvedContext
@@ -582,6 +586,14 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
             return
         }
 
+        print(
+            "[Canvas iOS][ContextMenuInput] " +
+            "longPressLocation=\(describe(point: location)) " +
+            "viewportBounds=\(describe(rect: canvasViewportView.bounds)) " +
+            "viewportFrame=\(describe(rect: canvasViewportView.frame)) " +
+            "overlayBounds=\(describe(rect: chromeOverlayView.bounds)) " +
+            "overlayFrame=\(describe(rect: chromeOverlayView.frame))"
+        )
         prepareForLongPressContextMenu()
 
         let resolvedContext = resolveContext(at: location)
@@ -2291,6 +2303,30 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
 
     private func describe(itemID: CanvasImageItemID?) -> String {
         itemID?.uuidString ?? "nil"
+    }
+
+    private func logContextMenuPresentation(
+        resolvedContext: CanvasContextMenuContext,
+        commandIDs: [CanvasCommandID]
+    ) {
+        let occupiedRectsDescription = contextMenuOccupiedRects()
+            .map(describe(rect:))
+            .joined(separator: ", ")
+        let commandIDsDescription = commandIDs.map(\.rawValue).joined(separator: ",")
+
+        print(
+            "[Canvas iOS][ContextMenuPosition] " +
+            resolvedContext.debugSummary + " " +
+            "viewportBounds=\(describe(rect: canvasViewportView.bounds)) " +
+            "viewportFrame=\(describe(rect: canvasViewportView.frame)) " +
+            "overlayBounds=\(describe(rect: chromeOverlayView.bounds)) " +
+            "overlayFrame=\(describe(rect: chromeOverlayView.frame)) " +
+            "hostBounds=\(describe(rect: contextMenuHostView.bounds)) " +
+            "hostFrame=\(describe(rect: contextMenuHostView.frame)) " +
+            "safeBounds=\(describe(rect: chromeSafeBounds())) " +
+            "occupiedRects=[\(occupiedRectsDescription)] " +
+            "commandIDs=[\(commandIDsDescription)]"
+        )
     }
 }
 #endif
