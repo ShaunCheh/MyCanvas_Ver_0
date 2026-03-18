@@ -39,15 +39,16 @@ final class iOSBoardCollectionViewCell: UICollectionViewCell {
     override func prepareForReuse() {
         super.prepareForReuse()
         titleLabel.text = nil
-        previewView.apply(seed: .empty)
+        previewView.apply(content: .empty)
     }
 
     func configure(
         with item: BoardCatalogItem,
+        previewContent: BoardPreviewContent,
         displayMode: BoardListDisplayMode
     ) {
         titleLabel.text = item.title
-        previewView.apply(seed: item.previewSeed)
+        previewView.apply(content: previewContent)
         applyDisplayMode(displayMode)
     }
 

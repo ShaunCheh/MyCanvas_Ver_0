@@ -15,6 +15,7 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
     var onCreateBoard: (() -> Void)?
 
     private let catalogLoader = BoardCatalogLoader()
+    private let previewProvider = BoardPreviewProvider()
     private var availableBoards: [BoardCatalogItem] = []
     private var selectedBoardID: UUID?
     private var hasSelectedFolder = false
@@ -461,6 +462,8 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
         _ collectionView: UICollectionView,
         cellForItemAt indexPath: IndexPath
     ) -> UICollectionViewCell {
+        let catalogItem = availableBoards[indexPath.item]
+        let previewContent = previewProvider.immediatePreview(for: catalogItem)
         guard
             let cell = collectionView.dequeueReusableCell(
                 withReuseIdentifier: iOSBoardCollectionViewCell.reuseIdentifier,
@@ -470,7 +473,11 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
             return UICollectionViewCell()
         }
 
-        cell.configure(with: availableBoards[indexPath.item], displayMode: displayMode)
+        cell.configure(
+            with: catalogItem,
+            previewContent: previewContent,
+            displayMode: displayMode
+        )
         return cell
     }
 

@@ -16,6 +16,7 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
     var onCreateBoard: (() -> Void)?
 
     private let catalogLoader = BoardCatalogLoader()
+    private let previewProvider = BoardPreviewProvider()
     private var availableBoards: [BoardCatalogItem] = []
     private var selectedBoardID: UUID?
     private var hasSelectedFolder = false
@@ -538,6 +539,8 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
         _ collectionView: NSCollectionView,
         itemForRepresentedObjectAt indexPath: IndexPath
     ) -> NSCollectionViewItem {
+        let catalogItem = availableBoards[indexPath.item]
+        let previewContent = previewProvider.immediatePreview(for: catalogItem)
         guard
             let item = collectionView.makeItem(
                 withIdentifier: macOSBoardCollectionItem.reuseIdentifier,
@@ -547,7 +550,11 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
             return NSCollectionViewItem()
         }
 
-        item.configure(with: availableBoards[indexPath.item], displayMode: displayMode)
+        item.configure(
+            with: catalogItem,
+            previewContent: previewContent,
+            displayMode: displayMode
+        )
         return item
     }
 

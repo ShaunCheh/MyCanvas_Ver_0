@@ -8,9 +8,10 @@ final class macOSBoardPreviewView: NSView {
     private static let boardLineWidth: CGFloat = 1.5
 
     private let backgroundLayer = CALayer()
+    private let imageLayer = CALayer()
     private let boardLayer = CAShapeLayer()
     private let occupancyLayer = CAShapeLayer()
-    private var seed: BoardPreviewSeed = .empty
+    private var content: BoardPreviewContent = .empty
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -42,8 +43,8 @@ final class macOSBoardPreviewView: NSView {
         updateAppearance()
     }
 
-    func apply(seed: BoardPreviewSeed) {
-        self.seed = seed
+    func apply(content: BoardPreviewContent) {
+        self.content = content
         performWithoutLayerActions {
             refreshPreview()
         }
@@ -54,8 +55,11 @@ final class macOSBoardPreviewView: NSView {
         layer?.cornerRadius = Self.cornerRadius
         layer?.masksToBounds = true
         layer?.addSublayer(backgroundLayer)
+        layer?.addSublayer(imageLayer)
         layer?.addSublayer(boardLayer)
         layer?.addSublayer(occupancyLayer)
+
+        imageLayer.contentsGravity = .resizeAspectFill
 
         boardLayer.fillColor = NSColor.controlBackgroundColor.withAlphaComponent(0.55).cgColor
         boardLayer.strokeColor = NSColor.systemOrange.withAlphaComponent(0.75).cgColor
@@ -71,8 +75,6 @@ final class macOSBoardPreviewView: NSView {
     private func updateLayerFrames() {
         let roundedBounds = bounds.integral
         backgroundLayer.frame = roundedBounds
-        boardLayer.frame = roundedBounds
-        occupancyLayer.frame = roundedBounds
     }
 
     private func updateAppearance() {
@@ -82,32 +84,14 @@ final class macOSBoardPreviewView: NSView {
     }
 
     private func refreshPreview() {
-        let layout = BoardGeometryPreviewLayout(
-            seed: seed,
+        BoardPreviewRenderer.render(
+            content: content,
             viewBounds: bounds,
-            contentInset: Self.contentInset
+            contentInset: Self.contentInset,
+            imageLayer: imageLayer,
+            boardLayer: boardLayer,
+            occupancyLayer: occupancyLayer
         )
-
-        if let boardRect = layout.boardRect {
-            boardLayer.path = CGPath(rect: boardRect, transform: nil)
-            boardLayer.isHidden = false
-        } else {
-            boardLayer.path = nil
-            boardLayer.isHidden = true
-        }
-
-        if layout.nodePaths.isEmpty {
-            occupancyLayer.path = nil
-            occupancyLayer.isHidden = true
-            return
-        }
-
-        let path = CGMutablePath()
-        for nodePath in layout.nodePaths {
-            path.addPath(nodePath)
-        }
-        occupancyLayer.path = path
-        occupancyLayer.isHidden = false
     }
 
     private func performWithoutLayerActions(_ updates: () -> Void) {

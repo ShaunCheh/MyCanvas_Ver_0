@@ -36,12 +36,19 @@ final class macOSBoardCollectionItem: NSCollectionViewItem {
         }
     }
 
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        titleLabel.stringValue = ""
+        previewView.apply(content: .empty)
+    }
+
     func configure(
         with item: BoardCatalogItem,
+        previewContent: BoardPreviewContent,
         displayMode: BoardListDisplayMode
     ) {
         titleLabel.stringValue = item.title
-        previewView.apply(seed: item.previewSeed)
+        previewView.apply(content: previewContent)
         applyDisplayMode(displayMode)
     }
 
