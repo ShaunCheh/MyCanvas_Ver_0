@@ -98,6 +98,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         view.isHidden = true
         return view
     }()
+    private let contextMenuHostView = CanvasContextMenuHostView()
     private let miniMapView = iOSCanvasMiniMapView()
     private let importButton: UIButton = {
         let button = UIButton(type: .system)
@@ -149,6 +150,11 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
     private lazy var commandExecutor = CanvasCommandExecutor(
         session: editorSession
     )
+    private var contextMenuState: CanvasContextMenuState? {
+        didSet {
+            updateContextMenuPresentation()
+        }
+    }
 
     private var scene: CanvasScene {
         editorSession.scene
@@ -206,6 +212,17 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         )
     }
 
+    private func frozenContextMenuCommandStates(
+        for commandIDs: [CanvasCommandID]
+    ) -> [CanvasContextMenuCommandState] {
+        commandIDs.map { commandID in
+            CanvasContextMenuCommandState(
+                commandID: commandID,
+                descriptor: commandDescriptor(for: commandID)
+            )
+        }
+    }
+
     private func commandDescriptor(
         for commandID: CanvasCommandID
     ) -> CanvasCommandDescriptor {
@@ -237,6 +254,83 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         }
     }
 
+    private func presentContextMenu(
+        for resolvedContext: CanvasContextMenuContext,
+        commandIDs: [CanvasCommandID]
+    ) {
+        let commandStates = frozenContextMenuCommandStates(
+            for: commandIDs
+        )
+        guard commandStates.isEmpty == false else {
+            dismissContextMenu()
+            return
+        }
+
+        contextMenuState = CanvasContextMenuState(
+            resolvedContext: resolvedContext,
+            commandStates: commandStates
+        )
+    }
+
+    private func dismissContextMenu() {
+        contextMenuState = nil
+    }
+
+    private func updateContextMenuPresentation() {
+        contextMenuHostView.apply(
+            state: contextMenuState,
+            safeBounds: chromeSafeBounds(),
+            occupiedRects: contextMenuOccupiedRects()
+        )
+    }
+
+    private func updateContextMenuLayout() {
+        contextMenuHostView.updateLayout(
+            safeBounds: chromeSafeBounds(),
+            occupiedRects: contextMenuOccupiedRects()
+        )
+    }
+
+    private func performContextMenuCommand(_ commandID: CanvasCommandID) {
+        guard
+            let contextMenuState,
+            let command = contextMenuCommand(
+                for: commandID,
+                in: contextMenuState
+            )
+        else {
+            dismissContextMenu()
+            return
+        }
+
+        dismissContextMenu()
+        performCommand(command)
+    }
+
+    private func contextMenuCommand(
+        for commandID: CanvasCommandID,
+        in state: CanvasContextMenuState
+    ) -> CanvasCommand? {
+        switch commandID {
+        case .crop:
+            return .crop
+        case .undo:
+            return .undo
+        case .redo:
+            return .redo
+        case .selectItem:
+            guard let itemID = state.resolvedContext.targetItemID else {
+                return nil
+            }
+            return .selectItem(
+                itemID: itemID,
+                recordHistory: true
+            )
+        case .clearSelection:
+            return .clearSelection(recordHistory: true)
+        }
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
         setupViewHierarchy()
@@ -247,6 +341,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         setupUndoButton()
         setupRedoButton()
         setupMiniMapView()
+        setupContextMenuHostView()
         restorePersistedBoardIfPossible()
         setupCanvasViewport()
     }
@@ -283,6 +378,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         view.addSubview(chromeOverlayView)
         chromeOverlayView.addSubview(miniMapMountView)
         chromeOverlayView.addSubview(controlsStackView)
+        chromeOverlayView.addSubview(contextMenuHostView)
         controlsStackView.addArrangedSubview(cropButton)
         controlsStackView.addArrangedSubview(undoButton)
         controlsStackView.addArrangedSubview(redoButton)
@@ -301,6 +397,10 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
             chromeOverlayView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             chromeOverlayView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             chromeOverlayView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            contextMenuHostView.topAnchor.constraint(equalTo: chromeOverlayView.topAnchor),
+            contextMenuHostView.leadingAnchor.constraint(equalTo: chromeOverlayView.leadingAnchor),
+            contextMenuHostView.trailingAnchor.constraint(equalTo: chromeOverlayView.trailingAnchor),
+            contextMenuHostView.bottomAnchor.constraint(equalTo: chromeOverlayView.bottomAnchor),
             controlsStackView.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -20),
             controlsStackView.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -20),
             cropButton.heightAnchor.constraint(equalToConstant: 40),
@@ -326,6 +426,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         if miniMapView.frame != miniMapMountView.bounds {
             miniMapView.frame = miniMapMountView.bounds
         }
+        updateContextMenuLayout()
     }
 
     private func chromeSafeBounds() -> CGRect {
@@ -347,6 +448,15 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         }
 
         return [controlsStackView.frame.standardized]
+    }
+
+    private func contextMenuOccupiedRects() -> [CGRect] {
+        var rects = chromeOccupiedRects()
+        let miniMapFrame = miniMapMountView.frame.standardized
+        if miniMapMountView.isHidden == false, miniMapFrame.isEmpty == false {
+            rects.append(miniMapFrame)
+        }
+        return rects
     }
 
     private func setupImportButton() {
@@ -379,6 +489,15 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
             self?.handleMiniMapNavigate(to: point)
         }
         miniMapMountView.addSubview(miniMapView)
+    }
+
+    private func setupContextMenuHostView() {
+        contextMenuHostView.onDismissRequested = { [weak self] in
+            self?.dismissContextMenu()
+        }
+        contextMenuHostView.onCommandSelected = { [weak self] commandID in
+            self?.performContextMenuCommand(commandID)
+        }
     }
 
     private func setupCanvasViewport() {

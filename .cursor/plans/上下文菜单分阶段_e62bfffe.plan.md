@@ -13,7 +13,7 @@ todos:
     status: completed
   - id: phase4-menu-state-host
     content: 建立 CanvasContextMenuState 与 CanvasContextMenuHostView，补齐菜单展示态与宿主能力
-    status: pending
+    status: completed
   - id: phase5-macos-context-menu
     content: 优先接入 macOS secondary click，打通动态菜单主链路并确定 selection 策略
     status: pending
