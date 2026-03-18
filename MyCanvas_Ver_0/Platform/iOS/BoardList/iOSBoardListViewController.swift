@@ -1,12 +1,42 @@
 #if os(iOS)
 import UIKit
 
-final class iOSBoardListViewController: UIViewController {
+final class iOSBoardListViewController: UIViewController, UICollectionViewDataSource, UICollectionViewDelegateFlowLayout {
+    private enum Layout {
+        static let listItemHeight: CGFloat = 96
+        static let gridItemHeight: CGFloat = 184
+        static let minimumGridItemWidth: CGFloat = 176
+        static let sectionInset = UIEdgeInsets(top: 0, left: 24, bottom: 24, right: 24)
+        static let itemSpacing: CGFloat = 16
+    }
+
     private let folderPicker = FolderPicker()
     var onOpenBoard: ((UUID) -> Void)?
     var onCreateBoard: (() -> Void)?
+
     private let catalogLoader = BoardCatalogLoader()
     private var availableBoards: [BoardCatalogItem] = []
+    private var selectedBoardID: UUID?
+    private var hasSelectedFolder = false
+    private var displayMode: BoardListDisplayMode = .grid {
+        didSet {
+            guard oldValue != displayMode else {
+                return
+            }
+
+            updateCollectionLayout()
+            collectionView.reloadData()
+            syncCollectionSelection()
+        }
+    }
+
+    private var selectedBoard: BoardCatalogItem? {
+        if let selectedBoardID {
+            return availableBoards.first { $0.boardID == selectedBoardID }
+        }
+
+        return availableBoards.first
+    }
 
     private let titleLabel: UILabel = {
         let label = UILabel()
@@ -39,6 +69,14 @@ final class iOSBoardListViewController: UIViewController {
         return button
     }()
 
+    private lazy var displayModeControl: UISegmentedControl = {
+        let control = UISegmentedControl(items: BoardListDisplayMode.allCases.map(\.title))
+        control.translatesAutoresizingMaskIntoConstraints = false
+        control.selectedSegmentIndex = displayMode.segmentIndex
+        control.isEnabled = false
+        return control
+    }()
+
     private let openCanvasButton: UIButton = {
         let button = UIButton(type: .system)
         button.translatesAutoresizingMaskIntoConstraints = false
@@ -60,6 +98,44 @@ final class iOSBoardListViewController: UIViewController {
         return label
     }()
 
+    private let actionStackView: UIStackView = {
+        let stackView = UIStackView()
+        stackView.translatesAutoresizingMaskIntoConstraints = false
+        stackView.axis = .horizontal
+        stackView.alignment = .center
+        stackView.distribution = .equalCentering
+        stackView.spacing = 12
+        return stackView
+    }()
+
+    private let collectionViewLayout = UICollectionViewFlowLayout()
+
+    private lazy var collectionView: UICollectionView = {
+        let collectionView = UICollectionView(frame: .zero, collectionViewLayout: collectionViewLayout)
+        collectionView.translatesAutoresizingMaskIntoConstraints = false
+        collectionView.backgroundColor = .clear
+        collectionView.alwaysBounceVertical = true
+        collectionView.dataSource = self
+        collectionView.delegate = self
+        collectionView.allowsSelection = true
+        collectionView.register(
+            iOSBoardCollectionViewCell.self,
+            forCellWithReuseIdentifier: iOSBoardCollectionViewCell.reuseIdentifier
+        )
+        return collectionView
+    }()
+
+    private let emptyStateLabel: UILabel = {
+        let label = UILabel()
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.font = .systemFont(ofSize: 15, weight: .medium)
+        label.textColor = .secondaryLabel
+        label.textAlignment = .center
+        label.numberOfLines = 0
+        label.isHidden = true
+        return label
+    }()
+
     override func viewDidLoad() {
         super.viewDidLoad()
         setupViewHierarchy()
@@ -68,36 +144,54 @@ final class iOSBoardListViewController: UIViewController {
         refreshBookmarkStatus()
     }
 
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        updateCollectionLayout()
+    }
+
     private func setupViewHierarchy() {
         view.backgroundColor = .systemBackground
+
+        actionStackView.addArrangedSubview(selectFolderButton)
+        actionStackView.addArrangedSubview(displayModeControl)
+        actionStackView.addArrangedSubview(openCanvasButton)
+
         view.addSubview(titleLabel)
         view.addSubview(subtitleLabel)
-        view.addSubview(selectFolderButton)
-        view.addSubview(openCanvasButton)
+        view.addSubview(actionStackView)
         view.addSubview(bookmarkStatusLabel)
+        view.addSubview(collectionView)
+        view.addSubview(emptyStateLabel)
     }
 
     private func setupConstraints() {
         NSLayoutConstraint.activate([
             titleLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            titleLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: -16),
+            titleLabel.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 24),
             subtitleLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 12),
             subtitleLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             subtitleLabel.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 24),
             subtitleLabel.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -24),
-            selectFolderButton.topAnchor.constraint(equalTo: subtitleLabel.bottomAnchor, constant: 24),
-            selectFolderButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            openCanvasButton.topAnchor.constraint(equalTo: selectFolderButton.bottomAnchor, constant: 12),
-            openCanvasButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            bookmarkStatusLabel.topAnchor.constraint(equalTo: openCanvasButton.bottomAnchor, constant: 12),
+            actionStackView.topAnchor.constraint(equalTo: subtitleLabel.bottomAnchor, constant: 20),
+            actionStackView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            bookmarkStatusLabel.topAnchor.constraint(equalTo: actionStackView.bottomAnchor, constant: 12),
             bookmarkStatusLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             bookmarkStatusLabel.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 24),
-            bookmarkStatusLabel.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -24)
+            bookmarkStatusLabel.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -24),
+            collectionView.topAnchor.constraint(equalTo: bookmarkStatusLabel.bottomAnchor, constant: 16),
+            collectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            collectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            collectionView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            emptyStateLabel.topAnchor.constraint(equalTo: bookmarkStatusLabel.bottomAnchor, constant: 32),
+            emptyStateLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
+            emptyStateLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24),
+            emptyStateLabel.centerYAnchor.constraint(equalTo: collectionView.centerYAnchor)
         ])
     }
 
     private func setupActions() {
         selectFolderButton.addTarget(self, action: #selector(handleSelectFolderButtonTap), for: .touchUpInside)
+        displayModeControl.addTarget(self, action: #selector(handleDisplayModeChange), for: .valueChanged)
         openCanvasButton.addTarget(self, action: #selector(handleOpenCanvasButtonTap), for: .touchUpInside)
     }
 
@@ -106,31 +200,141 @@ final class iOSBoardListViewController: UIViewController {
         do {
             let boards = try catalogLoader.loadCatalog()
             availableBoards = boards
+            hasSelectedFolder = true
+            ensureValidSelection()
             bookmarkStatusLabel.text = "\(bookmarkText)\n\nBoards available: \(boards.count)"
-            updateOpenCanvasButtonState(hasSelectedFolder: true)
+            reloadBoardList()
         } catch FolderBookmarkStoreError.missingBookmarkData {
             availableBoards = []
+            selectedBoardID = nil
+            hasSelectedFolder = false
             bookmarkStatusLabel.text = bookmarkText
-            updateOpenCanvasButtonState(hasSelectedFolder: false)
+            reloadBoardList()
         } catch {
             availableBoards = []
+            selectedBoardID = nil
+            hasSelectedFolder = false
             bookmarkStatusLabel.text = "\(bookmarkText)\n\nStorage error: \(error.localizedDescription)"
-            updateOpenCanvasButtonState(hasSelectedFolder: false)
+            reloadBoardList()
         }
     }
 
-    private func updateOpenCanvasButtonState(hasSelectedFolder: Bool) {
+    private func ensureValidSelection() {
+        guard !availableBoards.isEmpty else {
+            selectedBoardID = nil
+            return
+        }
+
+        if let selectedBoardID,
+           availableBoards.contains(where: { $0.boardID == selectedBoardID }) {
+            return
+        }
+
+        selectedBoardID = availableBoards.first?.boardID
+    }
+
+    private func reloadBoardList() {
+        collectionView.reloadData()
+        updateCollectionVisibility()
+        updateDisplayModeControlState()
+        updateOpenCanvasButtonState()
+        updateCollectionLayout()
+        syncCollectionSelection()
+    }
+
+    private func updateOpenCanvasButtonState() {
         var configuration = openCanvasButton.configuration ?? UIButton.Configuration.tinted()
         if hasSelectedFolder {
             configuration.title = availableBoards.isEmpty
                 ? "Create Board"
-                : "Open Latest Board"
+                : "Open Board"
             openCanvasButton.isEnabled = true
         } else {
             configuration.title = "Select Folder First"
             openCanvasButton.isEnabled = false
         }
         openCanvasButton.configuration = configuration
+    }
+
+    private func updateDisplayModeControlState() {
+        displayModeControl.isEnabled = hasSelectedFolder && !availableBoards.isEmpty
+    }
+
+    private func updateCollectionVisibility() {
+        let shouldShowCollection = hasSelectedFolder && !availableBoards.isEmpty
+        collectionView.isHidden = !shouldShowCollection
+        emptyStateLabel.isHidden = shouldShowCollection
+        emptyStateLabel.text = hasSelectedFolder
+            ? "No boards yet. Create one to get started."
+            : "Select a storage folder to load boards."
+    }
+
+    private func updateCollectionLayout() {
+        collectionViewLayout.sectionInset = Layout.sectionInset
+        collectionViewLayout.minimumLineSpacing = Layout.itemSpacing
+        collectionViewLayout.minimumInteritemSpacing = Layout.itemSpacing
+
+        let contentWidth = max(collectionView.bounds.width, 320)
+        let availableWidth = max(
+            contentWidth - Layout.sectionInset.left - Layout.sectionInset.right,
+            Layout.minimumGridItemWidth
+        )
+
+        switch displayMode {
+        case .list:
+            collectionViewLayout.itemSize = CGSize(
+                width: availableWidth,
+                height: Layout.listItemHeight
+            )
+        case .grid:
+            let estimatedColumns = Int(
+                floor((availableWidth + Layout.itemSpacing) / (Layout.minimumGridItemWidth + Layout.itemSpacing))
+            )
+            let columns = max(estimatedColumns, 1)
+            let totalSpacing = Layout.itemSpacing * CGFloat(columns - 1)
+            let itemWidth = floor((availableWidth - totalSpacing) / CGFloat(columns))
+            collectionViewLayout.itemSize = CGSize(
+                width: itemWidth,
+                height: Layout.gridItemHeight
+            )
+        }
+
+        collectionViewLayout.invalidateLayout()
+    }
+
+    private func syncCollectionSelection() {
+        guard
+            let selectedBoardID,
+            let index = availableBoards.firstIndex(where: { $0.boardID == selectedBoardID })
+        else {
+            clearCollectionSelection()
+            return
+        }
+
+        collectionView.selectItem(
+            at: IndexPath(item: index, section: 0),
+            animated: false,
+            scrollPosition: []
+        )
+    }
+
+    private func clearCollectionSelection() {
+        collectionView.indexPathsForSelectedItems?.forEach { indexPath in
+            collectionView.deselectItem(at: indexPath, animated: false)
+        }
+    }
+
+    private func openSelectedBoardIfNeeded() {
+        guard hasSelectedFolder else {
+            return
+        }
+
+        guard let selectedBoard else {
+            onCreateBoard?()
+            return
+        }
+
+        onOpenBoard?(selectedBoard.boardID)
     }
 
     @objc
@@ -149,15 +353,20 @@ final class iOSBoardListViewController: UIViewController {
     }
 
     @objc
+    private func handleDisplayModeChange() {
+        displayMode = BoardListDisplayMode(segmentIndex: displayModeControl.selectedSegmentIndex)
+    }
+
+    @objc
     private func handleOpenCanvasButtonTap() {
         guard FolderBookmarkStore.hasStoredBookmarkData() else {
             return
         }
 
-        if let latestBoard = availableBoards.first {
-            onOpenBoard?(latestBoard.boardID)
-        } else {
+        if availableBoards.isEmpty {
             onCreateBoard?()
+        } else {
+            openSelectedBoardIfNeeded()
         }
     }
 
@@ -169,6 +378,34 @@ final class iOSBoardListViewController: UIViewController {
         )
         alertController.addAction(UIAlertAction(title: "OK", style: .default))
         present(alertController, animated: true)
+    }
+
+    func collectionView(
+        _ collectionView: UICollectionView,
+        numberOfItemsInSection section: Int
+    ) -> Int {
+        availableBoards.count
+    }
+
+    func collectionView(
+        _ collectionView: UICollectionView,
+        cellForItemAt indexPath: IndexPath
+    ) -> UICollectionViewCell {
+        guard
+            let cell = collectionView.dequeueReusableCell(
+                withReuseIdentifier: iOSBoardCollectionViewCell.reuseIdentifier,
+                for: indexPath
+            ) as? iOSBoardCollectionViewCell
+        else {
+            return UICollectionViewCell()
+        }
+
+        cell.configure(with: availableBoards[indexPath.item], displayMode: displayMode)
+        return cell
+    }
+
+    func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
+        selectedBoardID = availableBoards[indexPath.item].boardID
     }
 }
 #endif
