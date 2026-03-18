@@ -128,8 +128,13 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
             macOSBoardCollectionItem.self,
             forItemWithIdentifier: macOSBoardCollectionItem.reuseIdentifier
         )
-        collectionView.target = self
-        collectionView.doubleAction = #selector(handleCollectionViewDoubleClick)
+
+        let doubleClickGestureRecognizer = NSClickGestureRecognizer(
+            target: self,
+            action: #selector(handleCollectionViewDoubleClick(_:))
+        )
+        doubleClickGestureRecognizer.numberOfClicksRequired = 2
+        collectionView.addGestureRecognizer(doubleClickGestureRecognizer)
         return collectionView
     }()
 
@@ -414,11 +419,24 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
     }
 
     @objc
-    private func handleCollectionViewDoubleClick() {
-        guard !availableBoards.isEmpty else {
+    private func handleCollectionViewDoubleClick(_ gestureRecognizer: NSClickGestureRecognizer) {
+        guard
+            gestureRecognizer.state == .ended,
+            !availableBoards.isEmpty
+        else {
             return
         }
 
+        let location = gestureRecognizer.location(in: collectionView)
+        guard let indexPath = collectionView.indexPathForItem(at: location) else {
+            return
+        }
+
+        selectedBoardID = availableBoards[indexPath.item].boardID
+        collectionView.selectItems(
+            at: Set([indexPath]),
+            scrollPosition: []
+        )
         openSelectedBoardIfNeeded()
     }
 
