@@ -110,10 +110,10 @@ final class macOSViewController: NSViewController {
 
     private let miniMapLayoutSolver = CanvasOverlayLayoutSolver()
     var miniMapConfiguration = CanvasMiniMapConfiguration()
-    private let scene = CanvasScene()
-    private var camera = CanvasCamera()
-    private let renderer = CanvasRenderer()
-    private let miniMapRenderer = CanvasMiniMapRenderer()
+    private let editorSession = CanvasEditorSession(
+        saveQueueLabel: "MyCanvas.BoardSave.macOS",
+        logPrefix: "[BoardStore][macOS]"
+    )
     private let canvasHostView: NSView = {
         let view = NSView()
         view.translatesAutoresizingMaskIntoConstraints = false
@@ -175,22 +175,46 @@ final class macOSViewController: NSViewController {
     }()
     private let canvasViewportView = macOSCanvasViewportView()
     private var canvasContentView: NSView?
-    private var boardState: CanvasBoardState?
-    private var interactionState = CanvasInteractionState()
-    private var inlineEditState: CanvasInlineEditState?
-    private var rotationPreviewState: CanvasRotationPreviewState?
-    private var rotationInteractionState: CanvasRotationInteractionState?
-    private var lastRenderSnapshot: CanvasRenderSnapshot = .empty
     private var pointerDragState: PointerDragState = .idle
-    private var activeBoardID: UUID?
-    private var activeBoardTitle = BoardDocument.defaultTitle
-    private var activeBoardCreatedAt: Date?
-    private let saveCoordinator = BoardSaveCoordinator(
-        queueLabel: "MyCanvas.BoardSave.macOS",
-        logPrefix: "[BoardStore][macOS]"
-    )
-    private let historyController = BoardHistoryController()
     private var saveButtonResetWorkItem: DispatchWorkItem?
+
+    private var scene: CanvasScene {
+        editorSession.scene
+    }
+
+    private var camera: CanvasCamera {
+        get { editorSession.camera }
+        set { editorSession.camera = newValue }
+    }
+
+    private var boardState: CanvasBoardState? {
+        get { editorSession.boardState }
+        set { editorSession.boardState = newValue }
+    }
+
+    private var interactionState: CanvasInteractionState {
+        get { editorSession.interactionState }
+        set { editorSession.interactionState = newValue }
+    }
+
+    private var inlineEditState: CanvasInlineEditState? {
+        get { editorSession.inlineEditState }
+        set { editorSession.inlineEditState = newValue }
+    }
+
+    private var rotationPreviewState: CanvasRotationPreviewState? {
+        get { editorSession.rotationPreviewState }
+        set { editorSession.rotationPreviewState = newValue }
+    }
+
+    private var rotationInteractionState: CanvasRotationInteractionState? {
+        get { editorSession.rotationInteractionState }
+        set { editorSession.rotationInteractionState = newValue }
+    }
+
+    private var lastRenderSnapshot: CanvasRenderSnapshot {
+        editorSession.lastRenderSnapshot
+    }
 
     override func loadView() {
         let rootView = NSView()
@@ -393,7 +417,7 @@ final class macOSViewController: NSViewController {
                     itemID: itemID,
                     initialViewportLocation: pressedLocation
                 ) else {
-                    historyController.cancelPendingTransaction()
+                    editorSession.cancelPendingHistoryTransaction()
                     pointerDragState = .idle
                     return
                 }
@@ -403,7 +427,7 @@ final class macOSViewController: NSViewController {
                 updateRotationDraft(using: rotateState, to: location)
             case let .cropHandle(handleRole, itemID):
                 guard let cropState = makePointerCropState(itemID: itemID, handleRole: handleRole) else {
-                    historyController.cancelPendingTransaction()
+                    editorSession.cancelPendingHistoryTransaction()
                     pointerDragState = .idle
                     return
                 }
@@ -415,7 +439,7 @@ final class macOSViewController: NSViewController {
                     itemID: itemID,
                     initialViewportLocation: pressedLocation
                 ) else {
-                    historyController.cancelPendingTransaction()
+                    editorSession.cancelPendingHistoryTransaction()
                     pointerDragState = .idle
                     return
                 }
@@ -462,7 +486,7 @@ final class macOSViewController: NSViewController {
         switch pointerDragState {
         case let .pressed(_, pressTarget):
             if isInlineEditModeActive {
-                historyController.cancelPendingTransaction()
+                editorSession.cancelPendingHistoryTransaction()
                 return
             }
 
@@ -524,7 +548,7 @@ final class macOSViewController: NSViewController {
                 currentSelectedItemID: interactionState.selectedItemID,
                 affectedItemID: affectedItemID
             )
-            historyController.cancelPendingTransaction()
+            editorSession.cancelPendingHistoryTransaction()
         case .rotatingSelectedItem:
             commitRotationDraftIfNeeded()
         case .croppingSelectedItem, .movingCropFrame:
@@ -551,7 +575,7 @@ final class macOSViewController: NSViewController {
         case .resizingSelectedItem:
             commitPendingPointerHistoryTransaction(autosaveReason: "resize item")
         case .pressed, .draggingCanvas, .idle:
-            historyController.cancelPendingTransaction()
+            editorSession.cancelPendingHistoryTransaction()
         }
 
         pointerDragState = .idle
@@ -581,30 +605,13 @@ final class macOSViewController: NSViewController {
     }
 
     private func refreshCanvas() {
-        let snapshot = renderer.makeSnapshot(
-            scene: scene,
-            boardState: boardState,
-            camera: camera,
-            interactionState: interactionState,
-            inlineEditState: inlineEditState,
-            rotationPreviewState: rotationPreviewState,
-            rotationInteractionState: rotationInteractionState
-        )
-        lastRenderSnapshot = snapshot
+        let snapshot = editorSession.makeCanvasSnapshot()
         canvasViewportView.apply(snapshot)
         refreshMiniMap()
     }
 
     private func refreshMiniMap() {
-        let snapshot = miniMapRenderer.makeSnapshot(
-            context: CanvasMiniMapRenderContext(
-                scene: scene,
-                boardState: boardState,
-                camera: camera,
-                imageInlineEditState: inlineEditState,
-                imageRotationPreviewState: rotationPreviewState
-            )
-        )
+        let snapshot = editorSession.makeMiniMapSnapshot()
         miniMapView.apply(snapshot)
     }
 
@@ -698,41 +705,8 @@ final class macOSViewController: NSViewController {
     }
 
     private func appendImportedImage(_ cgImage: CGImage) {
-        let beforeSnapshot = currentBoardHistorySnapshot()
-        let item = CanvasImageItem(
-            cgImage: cgImage,
-            center: camera.center,
-            size: normalizedDisplaySize(for: cgImage),
-            zIndex: nextImageZIndex()
-        )
-
-        scene.append(item)
-        expandBoardIfNeeded(toInclude: item.worldFrame)
+        _ = editorSession.appendImportedImage(cgImage)
         refreshCanvas()
-        recordImmediateHistoryChange(
-            from: beforeSnapshot,
-            reason: "append image",
-            autosaveReason: "append image"
-        )
-    }
-
-    private func normalizedDisplaySize(for cgImage: CGImage) -> CGSize {
-        let pixelSize = CGSize(width: cgImage.width, height: cgImage.height)
-        let longestSide = max(pixelSize.width, pixelSize.height)
-        guard longestSide > 0 else {
-            return CGSize(width: 240, height: 240)
-        }
-
-        let targetLongestSide: CGFloat = 320
-        let scale = targetLongestSide / longestSide
-        return CGSize(
-            width: pixelSize.width * scale,
-            height: pixelSize.height * scale
-        )
-    }
-
-    private func nextImageZIndex() -> CGFloat {
-        (scene.orderedItems().last?.zIndex ?? -1) + 1
     }
 
     private func selectItem(
@@ -1044,12 +1018,12 @@ final class macOSViewController: NSViewController {
             inlineEditState.mode == .crop,
             let item = scene.item(withID: inlineEditState.itemID)
         else {
-            historyController.cancelPendingTransaction()
+            editorSession.cancelPendingHistoryTransaction()
             return
         }
 
         guard item.cropRectNormalized != inlineEditState.draftCropRectNormalized else {
-            historyController.cancelPendingTransaction()
+            editorSession.cancelPendingHistoryTransaction()
             return
         }
 
@@ -1057,7 +1031,7 @@ final class macOSViewController: NSViewController {
             withID: inlineEditState.itemID,
             toNormalizedCropRect: inlineEditState.draftCropRectNormalized
         ) else {
-            historyController.cancelPendingTransaction()
+            editorSession.cancelPendingHistoryTransaction()
             return
         }
 
@@ -1187,7 +1161,7 @@ final class macOSViewController: NSViewController {
         }
 
         clearRotationTransientState()
-        historyController.cancelPendingTransaction()
+        editorSession.cancelPendingHistoryTransaction()
 
         if resetPointerDragState, wasRotating {
             pointerDragState = .idle
@@ -1839,87 +1813,47 @@ final class macOSViewController: NSViewController {
     }
 
     private func expandBoardIfNeeded(toInclude worldFrame: CGRect) {
-        guard var boardState else {
-            return
-        }
-
-        if boardState.expandIfNeeded(toInclude: worldFrame) {
-            self.boardState = boardState
-        }
+        editorSession.expandBoardIfNeeded(toInclude: worldFrame)
     }
 
     private func configureBoardStateIfNeeded(for viewportSize: CGSize) -> Bool {
-        guard boardState == nil else {
-            return false
-        }
-
-        boardState = CanvasBoardState(
-            baseSize: viewportSize,
-            centeredAt: camera.center
-        )
-        return true
+        editorSession.configureBoardStateIfNeeded(for: viewportSize)
     }
 
     private func restorePersistedBoardIfPossible() {
-        do {
-            let runtimeState = try BoardStore.loadOrCreateInitialBoard()
-            applyBoardRuntimeState(runtimeState)
-            historyController.reset()
-        } catch FolderBookmarkStoreError.missingBookmarkData {
-            return
-        } catch {
-            print("[BoardStore][macOS] Failed to restore board: \(error)")
-        }
+        editorSession.restorePersistedBoardIfPossible()
+        updateInlineEditButtonsAppearance()
     }
 
     private func applyBoardRuntimeState(_ runtimeState: BoardRuntimeState) {
         cancelRotationInteractionIfNeeded(resetPointerDragState: true)
-        activeBoardID = runtimeState.boardID
-        activeBoardTitle = runtimeState.title
-        activeBoardCreatedAt = runtimeState.createdAt
-        scene.setItems(runtimeState.items)
-        boardState = runtimeState.boardState
-        camera = runtimeState.camera
-        interactionState = runtimeState.interactionState
-        inlineEditState = nil
+        editorSession.applyBoardRuntimeState(runtimeState)
         updateInlineEditButtonsAppearance()
     }
 
     private func currentBoardHistorySnapshot() -> BoardHistorySnapshot {
-        BoardHistorySnapshot(
-            items: scene.orderedItems(),
-            boardState: boardState,
-            interactionState: interactionState
-        )
+        editorSession.currentBoardHistorySnapshot()
     }
 
     private func applyBoardHistorySnapshot(_ snapshot: BoardHistorySnapshot) {
-        if let runtimeState = currentBoardRuntimeState() {
-            applyBoardRuntimeState(
-                runtimeState.replacingDocumentState(with: snapshot)
-            )
-        } else {
-            cancelRotationInteractionIfNeeded(resetPointerDragState: true)
-            scene.setItems(snapshot.items)
-            boardState = snapshot.boardState
-            interactionState = snapshot.interactionState
-        }
-
+        cancelRotationInteractionIfNeeded(resetPointerDragState: true)
+        editorSession.applyBoardHistorySnapshot(snapshot)
+        updateInlineEditButtonsAppearance()
         refreshCanvas()
     }
 
     var canUndoCommand: Bool {
-        inlineEditState == nil && historyController.canUndo
+        editorSession.canUndoCommand
     }
 
     var canRedoCommand: Bool {
-        inlineEditState == nil && historyController.canRedo
+        editorSession.canRedoCommand
     }
 
     func performUndoCommand() {
         guard
             canUndoCommand,
-            let snapshot = historyController.undo()
+            let snapshot = editorSession.undoHistorySnapshot()
         else {
             return
         }
@@ -1931,7 +1865,7 @@ final class macOSViewController: NSViewController {
     func performRedoCommand() {
         guard
             canRedoCommand,
-            let snapshot = historyController.redo()
+            let snapshot = editorSession.redoHistorySnapshot()
         else {
             return
         }
@@ -1957,20 +1891,17 @@ final class macOSViewController: NSViewController {
             return
         }
 
-        historyController.beginTransaction(
-            from: currentBoardHistorySnapshot(),
-            reason: reason
-        )
+        editorSession.beginHistoryTransaction(reason: reason)
     }
 
     private func commitPendingPointerHistoryTransaction(
         autosaveReason: String
     ) {
-        guard historyController.commitPendingTransaction(to: currentBoardHistorySnapshot()) else {
+        guard editorSession.commitPendingHistoryTransaction(
+            autosaveReason: autosaveReason
+        ) else {
             return
         }
-
-        scheduleAutosave(reason: autosaveReason)
     }
 
     private func recordImmediateHistoryChange(
@@ -1978,47 +1909,36 @@ final class macOSViewController: NSViewController {
         reason: String,
         autosaveReason: String? = nil
     ) {
-        guard historyController.recordChange(
+        guard editorSession.recordImmediateHistoryChange(
             from: beforeSnapshot,
-            to: currentBoardHistorySnapshot(),
-            reason: reason
+            reason: reason,
+            autosaveReason: autosaveReason
         ) else {
             return
-        }
-
-        if let autosaveReason {
-            scheduleAutosave(reason: autosaveReason)
         }
     }
 
     private var isInlineCropModeActive: Bool {
-        inlineEditState?.mode == .crop
+        editorSession.isInlineCropModeActive
     }
 
     private var isInlineEditModeActive: Bool {
-        inlineEditState != nil
+        editorSession.isInlineEditModeActive
     }
 
     private func beginCropModeIfPossible() {
-        guard
-            let selectedItemID = interactionState.selectedItemID,
-            let item = scene.item(withID: selectedItemID)
-        else {
+        cancelRotationInteractionIfNeeded(resetPointerDragState: true)
+        guard editorSession.beginCropModeIfPossible() else {
             return
         }
-
-        cancelRotationInteractionIfNeeded(resetPointerDragState: true)
-        inlineEditState = CanvasInlineEditState(item: item, mode: .crop)
         updateInlineEditButtonsAppearance()
         refreshCanvas()
     }
 
     private func endInlineEditMode(reason _: String) {
-        guard inlineEditState != nil else {
+        guard editorSession.endInlineEditMode() else {
             return
         }
-
-        inlineEditState = nil
         updateInlineEditButtonsAppearance()
         refreshCanvas()
     }
@@ -2031,32 +1951,17 @@ final class macOSViewController: NSViewController {
             cancelRotationInteractionIfNeeded(resetPointerDragState: true)
         }
 
-        guard let inlineEditState else {
+        guard inlineEditState != nil else {
             updateInlineEditButtonsAppearance()
             return
         }
 
-        guard interactionState.selectedItemID == inlineEditState.itemID else {
-            self.inlineEditState = nil
-            updateInlineEditButtonsAppearance()
-            return
-        }
-
-        if let item = scene.item(withID: inlineEditState.itemID) {
-            self.inlineEditState = CanvasInlineEditState(item: item, mode: inlineEditState.mode)
-        }
+        editorSession.syncInlineEditStateWithSelection()
         updateInlineEditButtonsAppearance()
     }
 
     private func scheduleAutosave(reason: String) {
-        guard let snapshot = currentBoardRuntimeState() else {
-            return
-        }
-
-        saveCoordinator.scheduleAutosave(
-            snapshot: snapshot,
-            reason: reason
-        )
+        editorSession.scheduleAutosave(reason: reason)
     }
 
     private func saveBoardNow(
@@ -2064,60 +1969,11 @@ final class macOSViewController: NSViewController {
         createBoardIfNeeded: Bool = false,
         completion: @escaping (Result<Void, Error>) -> Void
     ) {
-        guard let snapshot = currentBoardRuntimeState(createBoardIfNeeded: createBoardIfNeeded) else {
-            completion(.failure(FolderBookmarkStoreError.missingBookmarkData))
-            return
-        }
-
-        saveCoordinator.saveImmediately(
-            snapshot: snapshot,
+        editorSession.saveBoardNow(
             reason: reason,
+            createBoardIfNeeded: createBoardIfNeeded,
             completion: completion
         )
-    }
-
-    private func currentBoardRuntimeState(
-        createBoardIfNeeded: Bool = false
-    ) -> BoardRuntimeState? {
-        if createBoardIfNeeded, ensureActiveBoardIdentityIfNeeded() == false {
-            return nil
-        }
-
-        guard
-            let activeBoardID,
-            let activeBoardCreatedAt
-        else {
-            return nil
-        }
-
-        return BoardRuntimeState(
-            boardID: activeBoardID,
-            title: activeBoardTitle,
-            createdAt: activeBoardCreatedAt,
-            updatedAt: Date(),
-            items: scene.orderedItems(),
-            boardState: boardState,
-            camera: camera,
-            interactionState: interactionState
-        )
-    }
-
-    private func ensureActiveBoardIdentityIfNeeded() -> Bool {
-        guard activeBoardID == nil || activeBoardCreatedAt == nil else {
-            return true
-        }
-
-        guard FolderBookmarkStore.hasStoredBookmarkData() else {
-            return false
-        }
-
-        let now = Date()
-        activeBoardID = activeBoardID ?? UUID()
-        activeBoardCreatedAt = activeBoardCreatedAt ?? now
-        if activeBoardTitle.isEmpty {
-            activeBoardTitle = BoardDocument.defaultTitle
-        }
-        return true
     }
 
     private func beginSaveButtonSaveState() {
