@@ -88,6 +88,30 @@ final class macOSViewController: NSViewController {
         view.translatesAutoresizingMaskIntoConstraints = false
         return view
     }()
+    private let backButton: NSButton = {
+        let button = NSButton()
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.isBordered = false
+        button.title = ""
+        button.toolTip = "Back to board list"
+        button.wantsLayer = true
+        button.layer?.cornerRadius = 22
+        button.layer?.masksToBounds = true
+        button.layer?.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.92).cgColor
+        button.layer?.borderWidth = 1
+        button.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.35).cgColor
+        button.contentTintColor = .labelColor
+        if let image = NSImage(
+            systemSymbolName: "chevron.left",
+            accessibilityDescription: "Back to board list"
+        ) {
+            button.image = image
+            button.imagePosition = .imageOnly
+        } else {
+            button.title = "<"
+        }
+        return button
+    }()
     private let controlsStackView: macOSCanvasChromeStackView = {
         let stackView = macOSCanvasChromeStackView()
         stackView.translatesAutoresizingMaskIntoConstraints = false
@@ -363,6 +387,7 @@ final class macOSViewController: NSViewController {
         setupImportButton()
         setupSaveButton()
         setupCropButton()
+        setupBackButton()
         setupMiniMapView()
         setupContextMenuHostView()
         restoreInitialBoardState()
@@ -477,6 +502,7 @@ final class macOSViewController: NSViewController {
         chromeOverlayView.addSubview(miniMapMountView)
         chromeOverlayView.addSubview(controlsStackView)
         chromeOverlayView.addSubview(contextMenuHostView)
+        chromeOverlayView.addSubview(backButton)
         controlsStackView.addArrangedSubview(cropButton)
         controlsStackView.addArrangedSubview(saveButton)
         controlsStackView.addArrangedSubview(importButton)
@@ -497,6 +523,10 @@ final class macOSViewController: NSViewController {
             contextMenuHostView.leadingAnchor.constraint(equalTo: chromeOverlayView.leadingAnchor),
             contextMenuHostView.trailingAnchor.constraint(equalTo: chromeOverlayView.trailingAnchor),
             contextMenuHostView.bottomAnchor.constraint(equalTo: chromeOverlayView.bottomAnchor),
+            backButton.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor, constant: 20),
+            backButton.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor, constant: 20),
+            backButton.widthAnchor.constraint(equalToConstant: 44),
+            backButton.heightAnchor.constraint(equalToConstant: 44),
             controlsStackView.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -20),
             controlsStackView.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -20),
             importButton.heightAnchor.constraint(equalToConstant: 44)
@@ -604,6 +634,11 @@ final class macOSViewController: NSViewController {
         cropButton.target = self
         cropButton.action = #selector(handleCropButtonClick)
         updateInlineEditButtonsAppearance()
+    }
+
+    private func setupBackButton() {
+        backButton.target = self
+        backButton.action = #selector(handleBackButtonClick)
     }
 
     private func setupMiniMapView() {
@@ -1226,6 +1261,11 @@ final class macOSViewController: NSViewController {
     @objc
     private func handleCropButtonClick() {
         performCommand(CanvasCommand.crop)
+    }
+
+    @objc
+    private func handleBackButtonClick() {
+        onBackToBoardList?()
     }
 
     private func appendImportedImage(_ cgImage: CGImage) {

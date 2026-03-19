@@ -13,7 +13,7 @@ todos:
     status: completed
   - id: phase4-floating-back-button
     content: 在双端 Canvas 的 chromeOverlayView 上实现左上角圆形悬浮返回按钮
-    status: pending
+    status: completed
   - id: phase5-overlay-and-regression
     content: 处理 backButton 与 minimap/context menu 的避让和命中层级，并完成双端回归验证
     status: pending

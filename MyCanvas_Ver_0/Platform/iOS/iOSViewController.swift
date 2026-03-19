@@ -86,6 +86,23 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         view.translatesAutoresizingMaskIntoConstraints = false
         return view
     }()
+    private let backButton: UIButton = {
+        let button = UIButton(type: .system)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        var configuration = UIButton.Configuration.filled()
+        configuration.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
+            pointSize: 17,
+            weight: .semibold
+        )
+        configuration.image = UIImage(systemName: "chevron.left")
+        configuration.baseBackgroundColor = .secondarySystemBackground
+        configuration.baseForegroundColor = .label
+        configuration.cornerStyle = .capsule
+        configuration.contentInsets = .zero
+        button.configuration = configuration
+        button.accessibilityLabel = "Back to board list"
+        return button
+    }()
     private let controlsStackView: iOSCanvasChromeStackView = {
         let stackView = iOSCanvasChromeStackView()
         stackView.translatesAutoresizingMaskIntoConstraints = false
@@ -336,6 +353,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         setupCropButton()
         setupUndoButton()
         setupRedoButton()
+        setupBackButton()
         setupMiniMapView()
         setupContextMenuHostView()
         restoreInitialBoardState()
@@ -375,6 +393,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         chromeOverlayView.addSubview(miniMapMountView)
         chromeOverlayView.addSubview(controlsStackView)
         chromeOverlayView.addSubview(contextMenuHostView)
+        chromeOverlayView.addSubview(backButton)
         controlsStackView.addArrangedSubview(cropButton)
         controlsStackView.addArrangedSubview(undoButton)
         controlsStackView.addArrangedSubview(redoButton)
@@ -397,6 +416,10 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
             contextMenuHostView.leadingAnchor.constraint(equalTo: chromeOverlayView.leadingAnchor),
             contextMenuHostView.trailingAnchor.constraint(equalTo: chromeOverlayView.trailingAnchor),
             contextMenuHostView.bottomAnchor.constraint(equalTo: chromeOverlayView.bottomAnchor),
+            backButton.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor, constant: 20),
+            backButton.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor, constant: 20),
+            backButton.widthAnchor.constraint(equalToConstant: 44),
+            backButton.heightAnchor.constraint(equalToConstant: 44),
             controlsStackView.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -20),
             controlsStackView.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -20),
             cropButton.heightAnchor.constraint(equalToConstant: 40),
@@ -515,6 +538,10 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
     private func setupRedoButton() {
         redoButton.addTarget(self, action: #selector(handleRedoButtonTap), for: .touchUpInside)
         updateHistoryButtonsAppearance()
+    }
+
+    private func setupBackButton() {
+        backButton.addTarget(self, action: #selector(handleBackButtonTap), for: .touchUpInside)
     }
 
     private func setupMiniMapView() {
@@ -1025,6 +1052,11 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
     @objc
     private func handleRedoButtonTap() {
         performCommand(.redo)
+    }
+
+    @objc
+    private func handleBackButtonTap() {
+        onBackToBoardList?()
     }
 
     func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
