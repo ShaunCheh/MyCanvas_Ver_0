@@ -93,8 +93,7 @@ final class CanvasContextMenuHostView: UIView {
 
     func apply(
         state: CanvasContextMenuState?,
-        safeBounds: CGRect,
-        occupiedRects: [CGRect]
+        layoutContext: CanvasChromeLayoutContext
     ) {
         currentState = state
 
@@ -106,16 +105,10 @@ final class CanvasContextMenuHostView: UIView {
         rebuildCommandButtons(for: state)
         isHidden = false
         menuContainerView.isHidden = false
-        updateLayout(
-            safeBounds: safeBounds,
-            occupiedRects: occupiedRects
-        )
+        updateLayout(layoutContext: layoutContext)
     }
 
-    func updateLayout(
-        safeBounds: CGRect,
-        occupiedRects: [CGRect]
-    ) {
+    func updateLayout(layoutContext: CanvasChromeLayoutContext) {
         guard let currentState else {
             return
         }
@@ -124,16 +117,16 @@ final class CanvasContextMenuHostView: UIView {
         guard let menuFrame = layoutSolver.resolveMenuFrame(
             anchorPoint: currentState.layoutAnchorPoint,
             preferredSize: preferredSize,
-            safeBounds: safeBounds,
-            occupiedRects: occupiedRects,
+            safeBounds: layoutContext.safeBounds,
+            occupiedRects: layoutContext.occupiedRects,
             configuration: layoutConfiguration
         ) else {
             logContextMenuLayout(
                 platform: "iOS",
                 state: currentState,
                 hostBounds: bounds,
-                safeBounds: safeBounds,
-                occupiedRects: occupiedRects,
+                safeBounds: layoutContext.safeBounds,
+                occupiedRects: layoutContext.occupiedRects,
                 preferredSize: preferredSize,
                 resolvedMenuFrame: nil
             )
@@ -145,8 +138,8 @@ final class CanvasContextMenuHostView: UIView {
             platform: "iOS",
             state: currentState,
             hostBounds: bounds,
-            safeBounds: safeBounds,
-            occupiedRects: occupiedRects,
+            safeBounds: layoutContext.safeBounds,
+            occupiedRects: layoutContext.occupiedRects,
             preferredSize: preferredSize,
             resolvedMenuFrame: menuFrame
         )
@@ -337,8 +330,7 @@ final class CanvasContextMenuHostView: NSView {
 
     func apply(
         state: CanvasContextMenuState?,
-        safeBounds: CGRect,
-        occupiedRects: [CGRect]
+        layoutContext: CanvasChromeLayoutContext
     ) {
         currentState = state
 
@@ -350,16 +342,10 @@ final class CanvasContextMenuHostView: NSView {
         rebuildCommandButtons(for: state)
         isHidden = false
         menuContainerView.isHidden = false
-        updateLayout(
-            safeBounds: safeBounds,
-            occupiedRects: occupiedRects
-        )
+        updateLayout(layoutContext: layoutContext)
     }
 
-    func updateLayout(
-        safeBounds: CGRect,
-        occupiedRects: [CGRect]
-    ) {
+    func updateLayout(layoutContext: CanvasChromeLayoutContext) {
         guard let currentState else {
             return
         }
@@ -368,16 +354,16 @@ final class CanvasContextMenuHostView: NSView {
         guard let menuFrame = layoutSolver.resolveMenuFrame(
             anchorPoint: currentState.layoutAnchorPoint,
             preferredSize: preferredSize,
-            safeBounds: safeBounds,
-            occupiedRects: occupiedRects,
+            safeBounds: layoutContext.safeBounds,
+            occupiedRects: layoutContext.occupiedRects,
             configuration: layoutConfiguration
         ) else {
             logContextMenuLayout(
                 platform: "macOS",
                 state: currentState,
                 hostBounds: bounds,
-                safeBounds: safeBounds,
-                occupiedRects: occupiedRects,
+                safeBounds: layoutContext.safeBounds,
+                occupiedRects: layoutContext.occupiedRects,
                 preferredSize: preferredSize,
                 resolvedMenuFrame: nil
             )
@@ -389,8 +375,8 @@ final class CanvasContextMenuHostView: NSView {
             platform: "macOS",
             state: currentState,
             hostBounds: bounds,
-            safeBounds: safeBounds,
-            occupiedRects: occupiedRects,
+            safeBounds: layoutContext.safeBounds,
+            occupiedRects: layoutContext.occupiedRects,
             preferredSize: preferredSize,
             resolvedMenuFrame: menuFrame
         )

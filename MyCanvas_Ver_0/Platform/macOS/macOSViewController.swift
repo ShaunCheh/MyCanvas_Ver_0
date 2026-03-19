@@ -295,10 +295,6 @@ final class macOSViewController: NSViewController {
             for: resolvedContext,
             session: editorSession
         )
-        logContextMenuPresentation(
-            resolvedContext: resolvedContext,
-            commandIDs: commandIDs
-        )
         let commandStates = frozenContextMenuCommandStates(
             for: commandIDs,
             context: resolvedContext
@@ -320,20 +316,27 @@ final class macOSViewController: NSViewController {
     }
 
     private func updateContextMenuPresentation() {
-        let layoutContext = makeContextMenuLayoutContext()
+        guard isViewLoaded else {
+            return
+        }
+
+        let layoutContext = performOverlayLayoutPass()
+        if let contextMenuState {
+            logContextMenuPresentation(
+                state: contextMenuState,
+                layoutContext: layoutContext
+            )
+        }
         contextMenuHostView.apply(
             state: contextMenuState,
-            safeBounds: layoutContext.safeBounds,
-            occupiedRects: layoutContext.occupiedRects
+            layoutContext: layoutContext
         )
     }
 
-    private func updateContextMenuLayout() {
-        let layoutContext = makeContextMenuLayoutContext()
-        contextMenuHostView.updateLayout(
-            safeBounds: layoutContext.safeBounds,
-            occupiedRects: layoutContext.occupiedRects
-        )
+    private func updateContextMenuLayout(
+        using layoutContext: CanvasChromeLayoutContext
+    ) {
+        contextMenuHostView.updateLayout(layoutContext: layoutContext)
     }
 
     private func performContextMenuCommand(_ commandID: CanvasCommandID) {
@@ -554,21 +557,8 @@ final class macOSViewController: NSViewController {
     }
 
     private func updateChromeOverlayLayout() {
-        applyToolbarPlacement()
-        let layoutContext = makeChromeLayoutContext()
-        let miniMapFrame = miniMapLayoutSolver.resolveMiniMapFrame(
-            safeBounds: layoutContext.safeBounds,
-            occupiedRects: layoutContext.occupiedRects,
-            configuration: miniMapConfiguration
-        )?.integral ?? .zero
-        if miniMapMountView.frame != miniMapFrame {
-            miniMapMountView.frame = miniMapFrame
-        }
-        miniMapMountView.isHidden = miniMapFrame.isEmpty
-        if miniMapView.frame != miniMapMountView.bounds {
-            miniMapView.frame = miniMapMountView.bounds
-        }
-        updateContextMenuLayout()
+        let contextMenuLayoutContext = performOverlayLayoutPass()
+        updateContextMenuLayout(using: contextMenuLayoutContext)
     }
 
     private func toolbarPreferredPlacement() -> CanvasToolbarPlacement {
@@ -578,8 +568,29 @@ final class macOSViewController: NSViewController {
         )
     }
 
-    private func applyToolbarPlacement() {
-        let layoutContext = makeChromeLayoutContext()
+    private func performOverlayLayoutPass() -> CanvasChromeLayoutContext {
+        let toolbarPlacementContext = makeChromeLayoutContext(
+            toolbarFrame: nil
+        )
+        let toolbarFrame = applyToolbarPlacement(
+            using: toolbarPlacementContext
+        )
+        let chromeLayoutContext = makeChromeLayoutContext(
+            toolbarFrame: toolbarFrame
+        )
+        let miniMapFrame = resolveMiniMapFrame(
+            in: chromeLayoutContext
+        )
+        applyMiniMapFrame(miniMapFrame)
+        return makeContextMenuLayoutContext(
+            chromeLayoutContext: chromeLayoutContext,
+            miniMapFrame: miniMapFrame
+        )
+    }
+
+    private func applyToolbarPlacement(
+        using layoutContext: CanvasChromeLayoutContext
+    ) -> CGRect {
         let resolvedFrame = toolbarPlacementSolver.resolveFrame(
             in: layoutContext
         )?.integral ?? .zero
@@ -587,20 +598,46 @@ final class macOSViewController: NSViewController {
         if toolbarHostView.frame != resolvedFrame {
             toolbarHostView.frame = resolvedFrame
         }
+
+        return resolvedFrame
     }
 
-    private func makeChromeLayoutContext() -> CanvasChromeLayoutContext {
+    private func resolveMiniMapFrame(
+        in layoutContext: CanvasChromeLayoutContext
+    ) -> CGRect {
+        miniMapLayoutSolver.resolveMiniMapFrame(
+            safeBounds: layoutContext.safeBounds,
+            occupiedRects: layoutContext.occupiedRects,
+            configuration: miniMapConfiguration
+        )?.integral ?? .zero
+    }
+
+    private func applyMiniMapFrame(_ miniMapFrame: CGRect) {
+        if miniMapMountView.frame != miniMapFrame {
+            miniMapMountView.frame = miniMapFrame
+        }
+        miniMapMountView.isHidden = miniMapFrame.isEmpty
+        if miniMapView.frame != miniMapMountView.bounds {
+            miniMapView.frame = miniMapMountView.bounds
+        }
+    }
+
+    private func makeChromeLayoutContext(
+        toolbarFrame: CGRect?
+    ) -> CanvasChromeLayoutContext {
         var chromeBlockers: [CanvasChromeBlocker] = []
         appendChromeBlocker(
             kind: .backButton,
             for: backButton,
             to: &chromeBlockers
         )
-        appendChromeBlocker(
-            kind: .toolbar,
-            for: toolbarHostView,
-            to: &chromeBlockers
-        )
+        if let toolbarFrame {
+            appendChromeBlocker(
+                kind: .toolbar,
+                rect: toolbarFrame,
+                to: &chromeBlockers
+            )
+        }
 
         return CanvasChromeLayoutContext(
             safeBounds: CGRect(
@@ -621,8 +658,10 @@ final class macOSViewController: NSViewController {
         )
     }
 
-    private func makeContextMenuLayoutContext() -> CanvasChromeLayoutContext {
-        let chromeLayoutContext = makeChromeLayoutContext()
+    private func makeContextMenuLayoutContext(
+        chromeLayoutContext: CanvasChromeLayoutContext,
+        miniMapFrame: CGRect
+    ) -> CanvasChromeLayoutContext {
         var chromeBlockers = chromeLayoutContext.chromeBlockers.map { blocker in
             CanvasChromeBlocker(
                 kind: blocker.kind,
@@ -633,12 +672,9 @@ final class macOSViewController: NSViewController {
             )
         }
 
-        if
-            miniMapMountView.isHidden == false,
-            let miniMapRect = CanvasChromeLayoutGeometry.sanitizedRect(
-                miniMapMountView.frame
-            )
-        {
+        if let miniMapRect = CanvasChromeLayoutGeometry.sanitizedRect(
+            miniMapFrame
+        ) {
             chromeBlockers.append(
                 CanvasChromeBlocker(
                     kind: .miniMap,
@@ -670,8 +706,20 @@ final class macOSViewController: NSViewController {
             return
         }
 
+        appendChromeBlocker(
+            kind: kind,
+            rect: view.frame,
+            to: &chromeBlockers
+        )
+    }
+
+    private func appendChromeBlocker(
+        kind: CanvasChromeBlockerKind,
+        rect: CGRect,
+        to chromeBlockers: inout [CanvasChromeBlocker]
+    ) {
         guard let standardizedRect = CanvasChromeLayoutGeometry.sanitizedRect(
-            view.frame
+            rect
         ) else {
             return
         }
@@ -2612,21 +2660,22 @@ final class macOSViewController: NSViewController {
     }
 
     private func logContextMenuPresentation(
-        resolvedContext: CanvasContextMenuContext,
-        commandIDs: [CanvasCommandID]
+        state: CanvasContextMenuState,
+        layoutContext: CanvasChromeLayoutContext
     ) {
-        let layoutContext = makeContextMenuLayoutContext()
         let occupiedRectsDescription = layoutContext.occupiedRects
             .map(describe(rect:))
             .joined(separator: ", ")
-        let commandIDsDescription = commandIDs.map(\.rawValue).joined(separator: ",")
+        let commandIDsDescription = state.commandStates
+            .map(\.commandID.rawValue)
+            .joined(separator: ",")
         let layoutAnchorPoint = contextMenuLayoutAnchorPoint(
-            for: resolvedContext
+            for: state.resolvedContext
         )
 
         print(
             "[Canvas macOS][ContextMenuPosition] " +
-            resolvedContext.debugSummary + " " +
+            state.resolvedContext.debugSummary + " " +
             "viewportBounds=\(describe(rect: canvasViewportView.bounds)) " +
             "viewportFrame=\(describe(rect: canvasViewportView.frame)) " +
             "overlayBounds=\(describe(rect: chromeOverlayView.bounds)) " +
