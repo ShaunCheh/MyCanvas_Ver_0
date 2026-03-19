@@ -21,4 +21,15 @@ struct CanvasToolbarStateBuilder {
             visualRole: descriptor.isActive ? .warning : .accent
         )
     }
+
+    func saveItemState(saveState: CanvasSaveState) -> CanvasToolbarItemState {
+        CanvasToolbarItemState(
+            id: .save,
+            systemImageName: saveState.systemImageName,
+            isEnabled: saveState.isEnabled,
+            accessibilityLabel: "Save board",
+            accessibilityValue: saveState.accessibilityValue,
+            visualRole: saveState.visualRole
+        )
+    }
 }

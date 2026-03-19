@@ -185,6 +185,11 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
     private var pendingRefreshReason: String?
     private var pointerDragState: PointerDragState = .idle
     private var saveButtonResetWorkItem: DispatchWorkItem?
+    private var saveButtonState: CanvasSaveState = .idle {
+        didSet {
+            updateSaveButtonAppearance()
+        }
+    }
     private lazy var commandExecutor = CanvasCommandExecutor(
         session: editorSession
     )
@@ -1091,27 +1096,15 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
 
             switch result {
             case .success:
-                self.showSaveButtonFeedback(
-                    title: "Saved",
-                    systemImageName: "checkmark",
-                    backgroundColor: .systemGreen
-                )
+                self.showSaveButtonFeedback(.success)
             case let .failure(error):
                 if case FolderBookmarkStoreError.missingBookmarkData = error {
-                    self.showSaveButtonFeedback(
-                        title: "No Folder",
-                        systemImageName: "exclamationmark.triangle",
-                        backgroundColor: .systemOrange
-                    )
+                    self.showSaveButtonFeedback(.missingFolder)
                     self.presentSaveError(
                         message: "Select a folder from the board list before saving."
                     )
                 } else {
-                    self.showSaveButtonFeedback(
-                        title: "Failed",
-                        systemImageName: "xmark",
-                        backgroundColor: .systemRed
-                    )
+                    self.showSaveButtonFeedback(.failure)
                     self.presentSaveError(message: error.localizedDescription)
                 }
             }
@@ -2229,26 +2222,11 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
 
     private func beginSaveButtonSaveState() {
         saveButtonResetWorkItem?.cancel()
-        saveButton.isEnabled = false
-        applySaveButtonAppearance(
-            title: "Saving",
-            systemImageName: "square.and.arrow.down",
-            backgroundColor: .systemBlue
-        )
+        saveButtonState = .saving
     }
 
-    private func showSaveButtonFeedback(
-        title: String,
-        systemImageName: String,
-        backgroundColor: UIColor
-    ) {
-        saveButton.isEnabled = true
-        applySaveButtonAppearance(
-            title: title,
-            systemImageName: systemImageName,
-            backgroundColor: backgroundColor
-        )
-
+    private func showSaveButtonFeedback(_ state: CanvasSaveState) {
+        saveButtonState = state
         saveButtonResetWorkItem?.cancel()
         let workItem = DispatchWorkItem { [weak self] in
             self?.applyDefaultSaveButtonAppearance()
@@ -2258,17 +2236,21 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
     }
 
     private func applyDefaultSaveButtonAppearance() {
-        saveButton.isEnabled = true
-        applySaveButtonAppearance(
-            title: "Save",
-            systemImageName: "square.and.arrow.down",
-            backgroundColor: .systemGreen
-        )
+        saveButtonState = .idle
     }
 
     private func updateInlineEditButtonsAppearance() {
         updateCropButtonAppearance()
         updateHistoryButtonsAppearance()
+    }
+
+    private func updateSaveButtonAppearance() {
+        let itemState = toolbarStateBuilder.saveItemState(
+            saveState: saveButtonState
+        )
+        applySaveButtonAppearance(
+            itemState: itemState
+        )
     }
 
     private func updateCropButtonAppearance() {
@@ -2362,17 +2344,15 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
     }
 
     private func applySaveButtonAppearance(
-        title: String,
-        systemImageName: String,
-        backgroundColor: UIColor
+        itemState: CanvasToolbarItemState
     ) {
         applyToolbarIconButtonAppearance(
             to: saveButton,
-            systemImageName: systemImageName,
-            backgroundColor: backgroundColor,
-            accessibilityLabel: "Save board",
-            accessibilityValue: title == "Save" ? nil : title,
-            isEnabled: saveButton.isEnabled
+            systemImageName: itemState.systemImageName,
+            backgroundColor: toolbarBackgroundColor(for: itemState.visualRole),
+            accessibilityLabel: itemState.accessibilityLabel,
+            accessibilityValue: itemState.accessibilityValue,
+            isEnabled: itemState.isEnabled
         )
     }
 

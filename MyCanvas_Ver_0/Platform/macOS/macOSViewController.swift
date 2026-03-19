@@ -170,6 +170,11 @@ final class macOSViewController: NSViewController {
     private var pendingRefreshReason: String?
     private var pointerDragState: PointerDragState = .idle
     private var saveButtonResetWorkItem: DispatchWorkItem?
+    private var saveButtonState: CanvasSaveState = .idle {
+        didSet {
+            updateSaveButtonAppearance()
+        }
+    }
     private lazy var commandExecutor = CanvasCommandExecutor(
         session: editorSession
     )
@@ -1291,27 +1296,15 @@ final class macOSViewController: NSViewController {
 
             switch result {
             case .success:
-                self.showSaveButtonFeedback(
-                    title: "Saved",
-                    systemImageName: "checkmark",
-                    tintColor: .systemGreen
-                )
+                self.showSaveButtonFeedback(.success)
             case let .failure(error):
                 if case FolderBookmarkStoreError.missingBookmarkData = error {
-                    self.showSaveButtonFeedback(
-                        title: "No Folder",
-                        systemImageName: "exclamationmark.triangle",
-                        tintColor: .systemOrange
-                    )
+                    self.showSaveButtonFeedback(.missingFolder)
                     self.presentSaveError(
                         message: "Select a folder from the board list before saving."
                     )
                 } else {
-                    self.showSaveButtonFeedback(
-                        title: "Failed",
-                        systemImageName: "xmark",
-                        tintColor: .systemRed
-                    )
+                    self.showSaveButtonFeedback(.failure)
                     self.presentSaveError(message: error.localizedDescription)
                 }
             }
@@ -2439,26 +2432,11 @@ final class macOSViewController: NSViewController {
 
     private func beginSaveButtonSaveState() {
         saveButtonResetWorkItem?.cancel()
-        saveButton.isEnabled = false
-        applySaveButtonAppearance(
-            title: "Saving",
-            systemImageName: "square.and.arrow.down",
-            tintColor: .controlAccentColor
-        )
+        saveButtonState = .saving
     }
 
-    private func showSaveButtonFeedback(
-        title: String,
-        systemImageName: String,
-        tintColor: NSColor
-    ) {
-        saveButton.isEnabled = true
-        applySaveButtonAppearance(
-            title: title,
-            systemImageName: systemImageName,
-            tintColor: tintColor
-        )
-
+    private func showSaveButtonFeedback(_ state: CanvasSaveState) {
+        saveButtonState = state
         saveButtonResetWorkItem?.cancel()
         let workItem = DispatchWorkItem { [weak self] in
             self?.applyDefaultSaveButtonAppearance()
@@ -2468,16 +2446,20 @@ final class macOSViewController: NSViewController {
     }
 
     private func applyDefaultSaveButtonAppearance() {
-        saveButton.isEnabled = true
-        applySaveButtonAppearance(
-            title: "Save",
-            systemImageName: "square.and.arrow.down",
-            tintColor: .controlAccentColor
-        )
+        saveButtonState = .idle
     }
 
     private func updateInlineEditButtonsAppearance() {
         updateCropButtonAppearance()
+    }
+
+    private func updateSaveButtonAppearance() {
+        let itemState = toolbarStateBuilder.saveItemState(
+            saveState: saveButtonState
+        )
+        applySaveButtonAppearance(
+            itemState: itemState
+        )
     }
 
     private func updateCropButtonAppearance() {
@@ -2495,7 +2477,7 @@ final class macOSViewController: NSViewController {
             systemImageName: "plus",
             backgroundColor: .systemBlue,
             foregroundColor: .white,
-            accessibilityDescription: "Import image",
+            accessibilityLabel: "Import image",
             isEnabled: true
         )
     }
@@ -2522,7 +2504,8 @@ final class macOSViewController: NSViewController {
         systemImageName: String,
         backgroundColor: NSColor,
         foregroundColor: NSColor,
-        accessibilityDescription: String,
+        accessibilityLabel: String,
+        accessibilityValue: String? = nil,
         isEnabled: Bool
     ) {
         button.title = ""
@@ -2534,6 +2517,12 @@ final class macOSViewController: NSViewController {
         button.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.24).cgColor
         button.layer?.backgroundColor = backgroundColor.cgColor
         button.contentTintColor = foregroundColor
+        let accessibilityDescription: String
+        if let accessibilityValue {
+            accessibilityDescription = "\(accessibilityLabel) (\(accessibilityValue))"
+        } else {
+            accessibilityDescription = accessibilityLabel
+        }
         button.toolTip = accessibilityDescription
         button.image = NSImage(
             systemSymbolName: systemImageName,
@@ -2543,20 +2532,16 @@ final class macOSViewController: NSViewController {
     }
 
     private func applySaveButtonAppearance(
-        title: String,
-        systemImageName: String,
-        tintColor: NSColor
+        itemState: CanvasToolbarItemState
     ) {
-        let accessibilityDescription = title == "Save"
-            ? "Save board"
-            : "Save board (\(title))"
         applyToolbarIconButtonAppearance(
             to: saveButton,
-            systemImageName: systemImageName,
-            backgroundColor: tintColor,
+            systemImageName: itemState.systemImageName,
+            backgroundColor: toolbarBackgroundColor(for: itemState.visualRole),
             foregroundColor: .white,
-            accessibilityDescription: accessibilityDescription,
-            isEnabled: saveButton.isEnabled
+            accessibilityLabel: itemState.accessibilityLabel,
+            accessibilityValue: itemState.accessibilityValue,
+            isEnabled: itemState.isEnabled
         )
     }
 
@@ -2570,7 +2555,7 @@ final class macOSViewController: NSViewController {
                 ? toolbarBackgroundColor(for: itemState.visualRole)
                 : .quaternaryLabelColor.withAlphaComponent(0.35),
             foregroundColor: itemState.isEnabled ? .white : .secondaryLabelColor,
-            accessibilityDescription: itemState.accessibilityLabel,
+            accessibilityLabel: itemState.accessibilityLabel,
             isEnabled: itemState.isEnabled
         )
     }
