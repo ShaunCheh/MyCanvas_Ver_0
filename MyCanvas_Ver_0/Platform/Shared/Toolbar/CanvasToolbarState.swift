@@ -41,6 +41,7 @@ struct CanvasToolbarItemState: Hashable, Sendable {
     var accessibilityLabel: String
     var accessibilityValue: String?
     var visualRole: CanvasToolbarItemVisualRole
+    var preservesVisualRoleWhenDisabled: Bool
 
     init(
         id: CanvasToolbarItemID,
@@ -49,7 +50,8 @@ struct CanvasToolbarItemState: Hashable, Sendable {
         isActive: Bool = false,
         accessibilityLabel: String,
         accessibilityValue: String? = nil,
-        visualRole: CanvasToolbarItemVisualRole = .neutral
+        visualRole: CanvasToolbarItemVisualRole = .neutral,
+        preservesVisualRoleWhenDisabled: Bool = false
     ) {
         self.id = id
         self.systemImageName = systemImageName
@@ -58,6 +60,7 @@ struct CanvasToolbarItemState: Hashable, Sendable {
         self.accessibilityLabel = accessibilityLabel
         self.accessibilityValue = accessibilityValue
         self.visualRole = visualRole
+        self.preservesVisualRoleWhenDisabled = preservesVisualRoleWhenDisabled
     }
 }
 

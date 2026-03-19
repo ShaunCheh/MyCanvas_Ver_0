@@ -38,6 +38,9 @@ final class iOSCanvasToolbarHostView: UIView {
         return stackView
     }()
 
+    private var registeredButtons: [CanvasToolbarItemID: UIButton] = [:]
+    private var preferredAxisOverride: CanvasToolbarAxis?
+
     var dockEdge: CanvasToolbarDockEdge = .trailing {
         didSet {
             updateDockEdgeLayout()
@@ -67,16 +70,19 @@ final class iOSCanvasToolbarHostView: UIView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func installButtons(_ buttons: [UIButton]) {
-        buttons.forEach { button in
-            guard button.superview !== buttonsStackView else {
-                return
-            }
-
-            button.removeFromSuperview()
-            buttonsStackView.addArrangedSubview(button)
+    func registerButtons(_ buttons: [CanvasToolbarItemID: UIButton]) {
+        registeredButtons = buttons
+        buttons.values.forEach { button in
             ensureSquareSize(for: button)
         }
+    }
+
+    func render(_ state: CanvasToolbarState) {
+        preferredAxisOverride = state.preferredAxis
+        dockEdge = state.placement.dockEdge
+        backgroundView.isHidden = state.showsBackground == false
+        isHidden = state.items.isEmpty
+        syncButtons(with: state.items)
     }
 
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
@@ -84,13 +90,90 @@ final class iOSCanvasToolbarHostView: UIView {
         return hitView === self ? nil : hitView
     }
 
+    private func syncButtons(with itemStates: [CanvasToolbarItemState]) {
+        let orderedButtons: [UIButton] = itemStates.compactMap { itemState in
+            guard let button = registeredButtons[itemState.id] else {
+                return nil
+            }
+            applyAppearance(itemState, to: button)
+            return button
+        }
+
+        buttonsStackView.arrangedSubviews.forEach { arrangedSubview in
+            buttonsStackView.removeArrangedSubview(arrangedSubview)
+            arrangedSubview.removeFromSuperview()
+        }
+
+        orderedButtons.forEach { button in
+            buttonsStackView.addArrangedSubview(button)
+        }
+    }
+
     private func updateDockEdgeLayout() {
-        buttonsStackView.axis = dockEdge.prefersHorizontalButtonLayout
+        let preferredAxis = preferredAxisOverride ?? dockEdge.preferredAxis
+        buttonsStackView.axis = preferredAxis == .horizontal
             ? .horizontal
             : .vertical
-        buttonsStackView.alignment = dockEdge.prefersHorizontalButtonLayout
+        buttonsStackView.alignment = preferredAxis == .horizontal
             ? .center
             : .trailing
+    }
+
+    private func applyAppearance(
+        _ itemState: CanvasToolbarItemState,
+        to button: UIButton
+    ) {
+        let preservesVisualRole = itemState.isEnabled || itemState.preservesVisualRoleWhenDisabled
+        button.isEnabled = itemState.isEnabled
+
+        var configuration = button.configuration ?? UIButton.Configuration.filled()
+        configuration.preferredSymbolConfigurationForImage = symbolConfiguration(
+            for: itemState.id
+        )
+        configuration.image = UIImage(systemName: itemState.systemImageName)
+        configuration.title = nil
+        configuration.imagePadding = 0
+        configuration.baseBackgroundColor = preservesVisualRole
+            ? backgroundColor(for: itemState.visualRole)
+            : .systemGray3
+        configuration.baseForegroundColor = preservesVisualRole
+            ? .white
+            : .secondaryLabel
+        configuration.cornerStyle = .capsule
+        configuration.contentInsets = .zero
+        button.configuration = configuration
+        button.accessibilityLabel = itemState.accessibilityLabel
+        button.accessibilityValue = itemState.accessibilityValue
+    }
+
+    private func backgroundColor(
+        for visualRole: CanvasToolbarItemVisualRole
+    ) -> UIColor {
+        switch visualRole {
+        case .neutral:
+            return .secondarySystemBackground
+        case .accent:
+            return .systemBlue
+        case .success:
+            return .systemGreen
+        case .warning:
+            return .systemOrange
+        case .danger:
+            return .systemRed
+        }
+    }
+
+    private func symbolConfiguration(
+        for itemID: CanvasToolbarItemID
+    ) -> UIImage.SymbolConfiguration {
+        switch itemID {
+        case .save, .undo, .redo:
+            return UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
+        case .importImage:
+            return UIImage.SymbolConfiguration(pointSize: 20, weight: .bold)
+        case .crop:
+            return UIImage.SymbolConfiguration(pointSize: 17, weight: .semibold)
+        }
     }
 
     private func ensureSquareSize(for button: UIButton) {

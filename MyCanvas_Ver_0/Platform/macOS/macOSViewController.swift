@@ -135,35 +135,24 @@ final class macOSViewController: NSViewController {
     private let importButton: NSButton = {
         let button = NSButton()
         button.translatesAutoresizingMaskIntoConstraints = false
-        button.bezelStyle = .texturedRounded
-        button.isBordered = true
-        if let image = NSImage(systemSymbolName: "plus", accessibilityDescription: "Import image") {
-            button.image = image
-            button.imagePosition = .imageOnly
-        } else {
-            button.title = "+"
-        }
         return button
     }()
     private let saveButton: NSButton = {
-        let button = NSButton(title: "Save", target: nil, action: nil)
+        let button = NSButton()
         button.translatesAutoresizingMaskIntoConstraints = false
-        button.bezelStyle = .rounded
-        button.imagePosition = .imageLeading
-        if let image = NSImage(systemSymbolName: "square.and.arrow.down", accessibilityDescription: "Save board") {
-            button.image = image
-        }
         return button
     }()
     private let cropButton: NSButton = {
-        let button = NSButton(title: "Crop", target: nil, action: nil)
+        let button = NSButton()
         button.translatesAutoresizingMaskIntoConstraints = false
-        button.bezelStyle = .rounded
-        button.imagePosition = .imageLeading
         return button
     }()
-    private var toolbarButtons: [NSButton] {
-        [cropButton, saveButton, importButton]
+    private var toolbarButtonsByID: [CanvasToolbarItemID: NSButton] {
+        [
+            .crop: cropButton,
+            .save: saveButton,
+            .importImage: importButton
+        ]
     }
     private let canvasViewportView = macOSCanvasViewportView()
     private var canvasContentView: NSView?
@@ -172,7 +161,7 @@ final class macOSViewController: NSViewController {
     private var saveButtonResetWorkItem: DispatchWorkItem?
     private var saveButtonState: CanvasSaveState = .idle {
         didSet {
-            updateSaveButtonAppearance()
+            renderToolbar()
         }
     }
     private lazy var commandExecutor = CanvasCommandExecutor(
@@ -515,7 +504,7 @@ final class macOSViewController: NSViewController {
         chromeOverlayView.addSubview(toolbarHostView)
         chromeOverlayView.addSubview(contextMenuHostView)
         chromeOverlayView.addSubview(backButton)
-        installToolbarButtons()
+        registerToolbarButtons()
     }
 
     private func setupConstraints() {
@@ -540,12 +529,12 @@ final class macOSViewController: NSViewController {
         ])
     }
 
-    private func installToolbarButtons() {
-        toolbarHostView.installButtons(toolbarButtons)
+    private func registerToolbarButtons() {
+        toolbarHostView.registerButtons(toolbarButtonsByID)
     }
 
     private func updatePreparedToolbarDockEdge() {
-        toolbarHostView.dockEdge = toolbarDockEdge
+        renderToolbar()
         NSLayoutConstraint.deactivate(toolbarDockConstraints)
         toolbarDockConstraints = makeToolbarDockConstraints(
             in: chromeOverlayView.safeAreaLayoutGuide
@@ -686,13 +675,13 @@ final class macOSViewController: NSViewController {
     private func setupImportButton() {
         importButton.target = self
         importButton.action = #selector(handleImportButtonClick)
-        applyImportButtonAppearance()
+        renderToolbar()
     }
 
     private func setupSaveButton() {
         saveButton.target = self
         saveButton.action = #selector(handleSaveButtonClick)
-        applyDefaultSaveButtonAppearance()
+        renderToolbar()
     }
 
     private func setupCropButton() {
@@ -2449,115 +2438,24 @@ final class macOSViewController: NSViewController {
         saveButtonState = .idle
     }
 
+    private func makeToolbarState() -> CanvasToolbarState {
+        toolbarStateBuilder.mainToolbarState(
+            session: editorSession,
+            saveState: saveButtonState,
+            placement: CanvasToolbarPlacement(dockEdge: toolbarDockEdge)
+        )
+    }
+
+    private func renderToolbar() {
+        guard isViewLoaded else {
+            return
+        }
+
+        toolbarHostView.render(makeToolbarState())
+    }
+
     private func updateInlineEditButtonsAppearance() {
-        updateCropButtonAppearance()
-    }
-
-    private func updateSaveButtonAppearance() {
-        let itemState = toolbarStateBuilder.saveItemState(
-            saveState: saveButtonState
-        )
-        applySaveButtonAppearance(
-            itemState: itemState
-        )
-    }
-
-    private func updateCropButtonAppearance() {
-        let itemState = toolbarStateBuilder.cropItemState(
-            session: editorSession
-        )
-        applyCropButtonAppearance(
-            itemState: itemState
-        )
-    }
-
-    private func applyImportButtonAppearance() {
-        applyToolbarIconButtonAppearance(
-            to: importButton,
-            systemImageName: "plus",
-            backgroundColor: .systemBlue,
-            foregroundColor: .white,
-            accessibilityLabel: "Import image",
-            isEnabled: true
-        )
-    }
-
-    private func toolbarBackgroundColor(
-        for visualRole: CanvasToolbarItemVisualRole
-    ) -> NSColor {
-        switch visualRole {
-        case .neutral:
-            return .controlBackgroundColor
-        case .accent:
-            return .controlAccentColor
-        case .success:
-            return .systemGreen
-        case .warning:
-            return .systemOrange
-        case .danger:
-            return .systemRed
-        }
-    }
-
-    private func applyToolbarIconButtonAppearance(
-        to button: NSButton,
-        systemImageName: String,
-        backgroundColor: NSColor,
-        foregroundColor: NSColor,
-        accessibilityLabel: String,
-        accessibilityValue: String? = nil,
-        isEnabled: Bool
-    ) {
-        button.title = ""
-        button.isBordered = false
-        button.imagePosition = .imageOnly
-        button.wantsLayer = true
-        button.layer?.cornerRadius = 12
-        button.layer?.borderWidth = 1
-        button.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.24).cgColor
-        button.layer?.backgroundColor = backgroundColor.cgColor
-        button.contentTintColor = foregroundColor
-        let accessibilityDescription: String
-        if let accessibilityValue {
-            accessibilityDescription = "\(accessibilityLabel) (\(accessibilityValue))"
-        } else {
-            accessibilityDescription = accessibilityLabel
-        }
-        button.toolTip = accessibilityDescription
-        button.image = NSImage(
-            systemSymbolName: systemImageName,
-            accessibilityDescription: accessibilityDescription
-        )
-        button.isEnabled = isEnabled
-    }
-
-    private func applySaveButtonAppearance(
-        itemState: CanvasToolbarItemState
-    ) {
-        applyToolbarIconButtonAppearance(
-            to: saveButton,
-            systemImageName: itemState.systemImageName,
-            backgroundColor: toolbarBackgroundColor(for: itemState.visualRole),
-            foregroundColor: .white,
-            accessibilityLabel: itemState.accessibilityLabel,
-            accessibilityValue: itemState.accessibilityValue,
-            isEnabled: itemState.isEnabled
-        )
-    }
-
-    private func applyCropButtonAppearance(
-        itemState: CanvasToolbarItemState
-    ) {
-        applyToolbarIconButtonAppearance(
-            to: cropButton,
-            systemImageName: itemState.systemImageName,
-            backgroundColor: itemState.isEnabled
-                ? toolbarBackgroundColor(for: itemState.visualRole)
-                : .quaternaryLabelColor.withAlphaComponent(0.35),
-            foregroundColor: itemState.isEnabled ? .white : .secondaryLabelColor,
-            accessibilityLabel: itemState.accessibilityLabel,
-            isEnabled: itemState.isEnabled
-        )
+        renderToolbar()
     }
 
     private func presentSaveError(message: String) {

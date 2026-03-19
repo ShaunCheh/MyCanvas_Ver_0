@@ -38,6 +38,9 @@ final class macOSCanvasToolbarHostView: NSView {
         return stackView
     }()
 
+    private var registeredButtons: [CanvasToolbarItemID: NSButton] = [:]
+    private var preferredAxisOverride: CanvasToolbarAxis?
+
     var dockEdge: CanvasToolbarDockEdge = .trailing {
         didSet {
             updateDockEdgeLayout()
@@ -66,16 +69,19 @@ final class macOSCanvasToolbarHostView: NSView {
         return nil
     }
 
-    func installButtons(_ buttons: [NSButton]) {
-        buttons.forEach { button in
-            guard button.superview !== buttonsStackView else {
-                return
-            }
-
-            button.removeFromSuperview()
-            buttonsStackView.addArrangedSubview(button)
+    func registerButtons(_ buttons: [CanvasToolbarItemID: NSButton]) {
+        registeredButtons = buttons
+        buttons.values.forEach { button in
             ensureSquareSize(for: button)
         }
+    }
+
+    func render(_ state: CanvasToolbarState) {
+        preferredAxisOverride = state.preferredAxis
+        dockEdge = state.placement.dockEdge
+        backgroundView.isHidden = state.showsBackground == false
+        isHidden = state.items.isEmpty
+        syncButtons(with: state.items)
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -83,13 +89,83 @@ final class macOSCanvasToolbarHostView: NSView {
         return hitView === self ? nil : hitView
     }
 
+    private func syncButtons(with itemStates: [CanvasToolbarItemState]) {
+        let orderedButtons: [NSButton] = itemStates.compactMap { itemState in
+            guard let button = registeredButtons[itemState.id] else {
+                return nil
+            }
+            applyAppearance(itemState, to: button)
+            return button
+        }
+
+        buttonsStackView.arrangedSubviews.forEach { arrangedSubview in
+            buttonsStackView.removeArrangedSubview(arrangedSubview)
+            arrangedSubview.removeFromSuperview()
+        }
+
+        orderedButtons.forEach { button in
+            buttonsStackView.addArrangedSubview(button)
+        }
+    }
+
     private func updateDockEdgeLayout() {
-        buttonsStackView.orientation = dockEdge.prefersHorizontalButtonLayout
+        let preferredAxis = preferredAxisOverride ?? dockEdge.preferredAxis
+        buttonsStackView.orientation = preferredAxis == .horizontal
             ? .horizontal
             : .vertical
-        buttonsStackView.alignment = dockEdge.prefersHorizontalButtonLayout
+        buttonsStackView.alignment = preferredAxis == .horizontal
             ? .centerY
             : .trailing
+    }
+
+    private func applyAppearance(
+        _ itemState: CanvasToolbarItemState,
+        to button: NSButton
+    ) {
+        let preservesVisualRole = itemState.isEnabled || itemState.preservesVisualRoleWhenDisabled
+        let foregroundColor: NSColor = preservesVisualRole ? .white : .secondaryLabelColor
+        let accessibilityDescription: String
+        if let accessibilityValue = itemState.accessibilityValue {
+            accessibilityDescription = "\(itemState.accessibilityLabel) (\(accessibilityValue))"
+        } else {
+            accessibilityDescription = itemState.accessibilityLabel
+        }
+
+        button.title = ""
+        button.isBordered = false
+        button.imagePosition = .imageOnly
+        button.wantsLayer = true
+        button.layer?.cornerRadius = 12
+        button.layer?.borderWidth = 1
+        button.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.24).cgColor
+        button.layer?.backgroundColor = (preservesVisualRole
+            ? backgroundColor(for: itemState.visualRole)
+            : NSColor.quaternaryLabelColor.withAlphaComponent(0.35)
+        ).cgColor
+        button.contentTintColor = foregroundColor
+        button.toolTip = accessibilityDescription
+        button.image = NSImage(
+            systemSymbolName: itemState.systemImageName,
+            accessibilityDescription: accessibilityDescription
+        )
+        button.isEnabled = itemState.isEnabled
+    }
+
+    private func backgroundColor(
+        for visualRole: CanvasToolbarItemVisualRole
+    ) -> NSColor {
+        switch visualRole {
+        case .neutral:
+            return .controlBackgroundColor
+        case .accent:
+            return .controlAccentColor
+        case .success:
+            return .systemGreen
+        case .warning:
+            return .systemOrange
+        case .danger:
+            return .systemRed
+        }
     }
 
     private func ensureSquareSize(for button: NSButton) {

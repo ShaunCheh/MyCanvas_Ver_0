@@ -3,6 +3,24 @@ import Foundation
 struct CanvasToolbarStateBuilder {
     private let commandCatalog = CanvasCommandCatalog()
 
+    func mainToolbarState(
+        session: CanvasEditorSession,
+        saveState: CanvasSaveState,
+        placement: CanvasToolbarPlacement,
+        isImportEnabled: Bool = true,
+        showsBackground: Bool = true
+    ) -> CanvasToolbarState {
+        CanvasToolbarState(
+            placement: placement,
+            items: [
+                cropItemState(session: session),
+                saveItemState(saveState: saveState),
+                importItemState(isEnabled: isImportEnabled)
+            ],
+            showsBackground: showsBackground
+        )
+    }
+
     func cropItemState(session: CanvasEditorSession) -> CanvasToolbarItemState {
         let descriptor = commandCatalog.descriptor(
             for: .crop,
@@ -29,7 +47,18 @@ struct CanvasToolbarStateBuilder {
             isEnabled: saveState.isEnabled,
             accessibilityLabel: "Save board",
             accessibilityValue: saveState.accessibilityValue,
-            visualRole: saveState.visualRole
+            visualRole: saveState.visualRole,
+            preservesVisualRoleWhenDisabled: saveState == .saving
+        )
+    }
+
+    func importItemState(isEnabled: Bool = true) -> CanvasToolbarItemState {
+        CanvasToolbarItemState(
+            id: .importImage,
+            systemImageName: "plus",
+            isEnabled: isEnabled,
+            accessibilityLabel: "Import image",
+            visualRole: .accent
         )
     }
 }

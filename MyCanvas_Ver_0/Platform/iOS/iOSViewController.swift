@@ -135,28 +135,11 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
     private let importButton: UIButton = {
         let button = UIButton(type: .system)
         button.translatesAutoresizingMaskIntoConstraints = false
-        var configuration = UIButton.Configuration.filled()
-        configuration.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 20, weight: .bold)
-        configuration.image = UIImage(systemName: "plus")
-        configuration.baseBackgroundColor = .systemBlue
-        configuration.baseForegroundColor = .white
-        configuration.cornerStyle = .capsule
-        button.configuration = configuration
         return button
     }()
     private let saveButton: UIButton = {
         let button = UIButton(type: .system)
         button.translatesAutoresizingMaskIntoConstraints = false
-        var configuration = UIButton.Configuration.filled()
-        configuration.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
-        configuration.image = UIImage(systemName: "square.and.arrow.down")
-        configuration.imagePlacement = .leading
-        configuration.imagePadding = 6
-        configuration.title = "Save"
-        configuration.baseBackgroundColor = .systemGreen
-        configuration.baseForegroundColor = .white
-        configuration.cornerStyle = .capsule
-        button.configuration = configuration
         return button
     }()
     private let cropButton: UIButton = {
@@ -174,8 +157,12 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         button.translatesAutoresizingMaskIntoConstraints = false
         return button
     }()
-    private var toolbarButtons: [UIButton] {
-        [cropButton, saveButton, importButton]
+    private var toolbarButtonsByID: [CanvasToolbarItemID: UIButton] {
+        [
+            .crop: cropButton,
+            .save: saveButton,
+            .importImage: importButton
+        ]
     }
     private var historyButtons: [UIButton] {
         [undoButton, redoButton]
@@ -187,7 +174,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
     private var saveButtonResetWorkItem: DispatchWorkItem?
     private var saveButtonState: CanvasSaveState = .idle {
         didSet {
-            updateSaveButtonAppearance()
+            renderToolbar()
         }
     }
     private lazy var commandExecutor = CanvasCommandExecutor(
@@ -420,7 +407,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         chromeOverlayView.addSubview(contextMenuHostView)
         chromeOverlayView.addSubview(backButton)
         installHistoryButtons()
-        installToolbarButtons()
+        registerToolbarButtons()
     }
 
     private func setupConstraints() {
@@ -449,8 +436,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         ])
     }
 
-    private func installToolbarButtons() {
-        toolbarHostView.installButtons(toolbarButtons)
+    private func registerToolbarButtons() {
+        toolbarHostView.registerButtons(toolbarButtonsByID)
     }
 
     private func installHistoryButtons() {
@@ -460,7 +447,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
     }
 
     private func updatePreparedToolbarDockEdge() {
-        toolbarHostView.dockEdge = toolbarDockEdge
+        renderToolbar()
         NSLayoutConstraint.deactivate(toolbarDockConstraints)
         toolbarDockConstraints = makeToolbarDockConstraints(
             in: chromeOverlayView.safeAreaLayoutGuide
@@ -601,12 +588,12 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
 
     private func setupImportButton() {
         importButton.addTarget(self, action: #selector(handleImportButtonTap), for: .touchUpInside)
-        applyImportButtonAppearance()
+        renderToolbar()
     }
 
     private func setupSaveButton() {
         saveButton.addTarget(self, action: #selector(handleSaveButtonTap), for: .touchUpInside)
-        applyDefaultSaveButtonAppearance()
+        renderToolbar()
     }
 
     private func setupCropButton() {
@@ -2239,27 +2226,25 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         saveButtonState = .idle
     }
 
+    private func makeToolbarState() -> CanvasToolbarState {
+        toolbarStateBuilder.mainToolbarState(
+            session: editorSession,
+            saveState: saveButtonState,
+            placement: CanvasToolbarPlacement(dockEdge: toolbarDockEdge)
+        )
+    }
+
+    private func renderToolbar() {
+        guard isViewLoaded else {
+            return
+        }
+
+        toolbarHostView.render(makeToolbarState())
+    }
+
     private func updateInlineEditButtonsAppearance() {
-        updateCropButtonAppearance()
+        renderToolbar()
         updateHistoryButtonsAppearance()
-    }
-
-    private func updateSaveButtonAppearance() {
-        let itemState = toolbarStateBuilder.saveItemState(
-            saveState: saveButtonState
-        )
-        applySaveButtonAppearance(
-            itemState: itemState
-        )
-    }
-
-    private func updateCropButtonAppearance() {
-        let itemState = toolbarStateBuilder.cropItemState(
-            session: editorSession
-        )
-        applyCropButtonAppearance(
-            itemState: itemState
-        )
     }
 
     private func updateHistoryButtonsAppearance() {
@@ -2284,90 +2269,6 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
             systemImageName: descriptor.systemImageName,
             backgroundColor: .systemIndigo,
             isEnabled: descriptor.isEnabled
-        )
-    }
-
-    private func applyImportButtonAppearance() {
-        applyToolbarIconButtonAppearance(
-            to: importButton,
-            systemImageName: "plus",
-            backgroundColor: .systemBlue,
-            accessibilityLabel: "Import image",
-            symbolPointSize: 20,
-            symbolWeight: .bold
-        )
-    }
-
-    private func toolbarBackgroundColor(
-        for visualRole: CanvasToolbarItemVisualRole
-    ) -> UIColor {
-        switch visualRole {
-        case .neutral:
-            return .secondarySystemBackground
-        case .accent:
-            return .systemIndigo
-        case .success:
-            return .systemGreen
-        case .warning:
-            return .systemOrange
-        case .danger:
-            return .systemRed
-        }
-    }
-
-    private func applyToolbarIconButtonAppearance(
-        to button: UIButton,
-        systemImageName: String,
-        backgroundColor: UIColor,
-        accessibilityLabel: String,
-        accessibilityValue: String? = nil,
-        symbolPointSize: CGFloat = 17,
-        symbolWeight: UIImage.SymbolWeight = .semibold,
-        isEnabled: Bool = true
-    ) {
-        button.isEnabled = isEnabled
-        var configuration = button.configuration ?? UIButton.Configuration.filled()
-        configuration.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
-            pointSize: symbolPointSize,
-            weight: symbolWeight
-        )
-        configuration.image = UIImage(systemName: systemImageName)
-        configuration.title = nil
-        configuration.imagePadding = 0
-        configuration.baseBackgroundColor = backgroundColor
-        configuration.baseForegroundColor = .white
-        configuration.cornerStyle = .capsule
-        configuration.contentInsets = .zero
-        button.configuration = configuration
-        button.accessibilityLabel = accessibilityLabel
-        button.accessibilityValue = accessibilityValue
-    }
-
-    private func applySaveButtonAppearance(
-        itemState: CanvasToolbarItemState
-    ) {
-        applyToolbarIconButtonAppearance(
-            to: saveButton,
-            systemImageName: itemState.systemImageName,
-            backgroundColor: toolbarBackgroundColor(for: itemState.visualRole),
-            accessibilityLabel: itemState.accessibilityLabel,
-            accessibilityValue: itemState.accessibilityValue,
-            isEnabled: itemState.isEnabled
-        )
-    }
-
-    private func applyCropButtonAppearance(
-        itemState: CanvasToolbarItemState
-    ) {
-        applyToolbarIconButtonAppearance(
-            to: cropButton,
-            systemImageName: itemState.systemImageName,
-            backgroundColor: itemState.isEnabled
-                ? toolbarBackgroundColor(for: itemState.visualRole)
-                : .systemGray3,
-            accessibilityLabel: itemState.accessibilityLabel,
-            accessibilityValue: itemState.accessibilityValue,
-            isEnabled: itemState.isEnabled
         )
     }
 
