@@ -422,6 +422,11 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
         isSyncingSelection = false
     }
 
+    private func clearPlaceholderSelectionAfterAction() {
+        selectedEntryID = entries.first(where: { $0.isPlaceholder == false })?.id
+        syncCollectionSelection()
+    }
+
     private func entry(at indexPath: IndexPath) -> BoardListEntry? {
         guard entries.indices.contains(indexPath.item) else {
             return nil
@@ -527,7 +532,8 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
         }
 
         let previewContent: BoardPreviewContent
-        if let catalogItem = entry.catalogItem {
+        if entry.canRequestPreview,
+           let catalogItem = entry.catalogItem {
             let targetPixelSize = item.targetThumbnailPixelSize(for: displayMode)
             previewContent = previewProvider.immediatePreview(
                 for: catalogItem,
@@ -543,7 +549,8 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
             displayMode: displayMode
         )
 
-        if let catalogItem = entry.catalogItem,
+        if entry.canRequestPreview,
+           let catalogItem = entry.catalogItem,
            previewContent.isThumbnail == false {
             item.requestThumbnail(
                 using: previewProvider,
@@ -569,6 +576,7 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
         selectedEntryID = entry.id
         if entry.isPlaceholder {
             performPrimaryAction(for: entry)
+            clearPlaceholderSelectionAfterAction()
         }
     }
 }
