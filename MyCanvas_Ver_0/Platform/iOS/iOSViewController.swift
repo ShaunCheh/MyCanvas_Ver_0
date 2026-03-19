@@ -67,6 +67,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
     private let miniMapLayoutSolver = CanvasOverlayLayoutSolver()
     var miniMapConfiguration = CanvasMiniMapConfiguration()
     var launchContext: CanvasLaunchContext?
+    var onBackToBoardList: (() -> Void)?
     private let editorSession = CanvasEditorSession(
         saveQueueLabel: "MyCanvas.BoardSave.iOS",
         logPrefix: "[BoardStore][iOS]"

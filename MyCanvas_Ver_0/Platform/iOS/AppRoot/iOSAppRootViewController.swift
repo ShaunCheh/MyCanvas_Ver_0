@@ -38,6 +38,9 @@ final class iOSAppRootViewController: UIViewController {
         case let .canvas(launchContext):
             let viewController = iOSViewController()
             viewController.launchContext = launchContext
+            viewController.onBackToBoardList = { [weak self] in
+                self?.display(.boardList)
+            }
             return viewController
         }
     }

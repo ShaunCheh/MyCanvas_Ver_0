@@ -10,7 +10,7 @@ todos:
     status: completed
   - id: phase3-canvas-back-routing
     content: 给双端 Canvas controller 增加 onBackToBoardList 回调，并在 AppRoot 中接回 display(.boardList)
-    status: pending
+    status: completed
   - id: phase4-floating-back-button
     content: 在双端 Canvas 的 chromeOverlayView 上实现左上角圆形悬浮返回按钮
     status: pending

@@ -62,6 +62,9 @@ final class macOSAppRootViewController: NSViewController {
         case let .canvas(launchContext):
             let viewController = macOSViewController()
             viewController.launchContext = launchContext
+            viewController.onBackToBoardList = { [weak self] in
+                self?.display(.boardList)
+            }
             return viewController
         }
     }

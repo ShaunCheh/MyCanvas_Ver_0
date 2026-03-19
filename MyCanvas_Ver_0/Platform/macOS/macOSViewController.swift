@@ -68,6 +68,7 @@ final class macOSViewController: NSViewController {
     private let miniMapLayoutSolver = CanvasOverlayLayoutSolver()
     var miniMapConfiguration = CanvasMiniMapConfiguration()
     var launchContext: CanvasLaunchContext?
+    var onBackToBoardList: (() -> Void)?
     private let editorSession = CanvasEditorSession(
         saveQueueLabel: "MyCanvas.BoardSave.macOS",
         logPrefix: "[BoardStore][macOS]"
