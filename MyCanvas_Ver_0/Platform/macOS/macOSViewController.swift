@@ -562,14 +562,10 @@ final class macOSViewController: NSViewController {
     }
 
     private func chromeOccupiedRects() -> [CGRect] {
-        guard
-            controlsStackView.bounds.width > 0,
-            controlsStackView.bounds.height > 0
-        else {
-            return []
-        }
-
-        return [controlsStackView.frame.standardized]
+        var rects: [CGRect] = []
+        appendChromeOccupiedRect(for: backButton, to: &rects)
+        appendChromeOccupiedRect(for: controlsStackView, to: &rects)
+        return rects
     }
 
     private func contextMenuOccupiedRects() -> [CGRect] {
@@ -589,6 +585,22 @@ final class macOSViewController: NSViewController {
             chromeSafeBounds(),
             from: chromeOverlayView
         )
+    }
+
+    private func appendChromeOccupiedRect(
+        for view: NSView,
+        to rects: inout [CGRect]
+    ) {
+        guard view.isHidden == false else {
+            return
+        }
+
+        let standardizedRect = view.frame.standardized
+        guard standardizedRect.isEmpty == false else {
+            return
+        }
+
+        rects.append(standardizedRect)
     }
 
     private func contextMenuLayoutAnchorPoint(
@@ -1265,6 +1277,7 @@ final class macOSViewController: NSViewController {
 
     @objc
     private func handleBackButtonClick() {
+        dismissContextMenu()
         onBackToBoardList?()
     }
 

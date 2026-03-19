@@ -16,7 +16,7 @@ todos:
     status: completed
   - id: phase5-overlay-and-regression
     content: 处理 backButton 与 minimap/context menu 的避让和命中层级，并完成双端回归验证
-    status: pending
+    status: completed
 isProject: false
 ---
 
