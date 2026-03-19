@@ -49,14 +49,14 @@ final class iOSBoardCollectionViewCell: UICollectionViewCell {
     }
 
     func configure(
-        with item: BoardCatalogItem,
+        with entry: BoardListEntry,
         previewContent: BoardPreviewContent,
         displayMode: BoardListDisplayMode
     ) {
         cancelThumbnailRequest()
-        representedBoardID = item.boardID
-        representedRevisionToken = item.revisionToken
-        titleLabel.text = item.title
+        representedBoardID = entry.boardID
+        representedRevisionToken = entry.revisionToken
+        titleLabel.text = entry.title
         previewView.apply(content: previewContent)
         applyDisplayMode(displayMode)
         contentView.layoutIfNeeded()

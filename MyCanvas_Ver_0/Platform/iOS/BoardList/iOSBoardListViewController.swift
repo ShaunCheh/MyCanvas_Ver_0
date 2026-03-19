@@ -17,9 +17,10 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
     private let catalogLoader = BoardCatalogLoader()
     private let previewProvider = BoardPreviewProvider()
     private var availableBoards: [BoardCatalogItem] = []
-    private var selectedBoardID: UUID?
+    private var selectedEntryID: BoardListEntryID?
     private var hasSelectedFolder = false
     private var storageErrorMessage: String?
+    private var isSyncingSelection = false
     private var displayMode: BoardListDisplayMode = .grid {
         didSet {
             guard oldValue != displayMode else {
@@ -32,12 +33,12 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
         }
     }
 
-    private var selectedBoard: BoardCatalogItem? {
-        if let selectedBoardID {
-            return availableBoards.first { $0.boardID == selectedBoardID }
+    private var entries: [BoardListEntry] {
+        guard hasSelectedFolder, storageErrorMessage == nil else {
+            return []
         }
 
-        return availableBoards.first
+        return [.newBoardPlaceholder] + availableBoards.map { .board($0) }
     }
 
     private let titleLabel: UILabel = {
@@ -77,17 +78,6 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
         control.selectedSegmentIndex = displayMode.segmentIndex
         control.isEnabled = false
         return control
-    }()
-
-    private let openCanvasButton: UIButton = {
-        let button = UIButton(type: .system)
-        button.translatesAutoresizingMaskIntoConstraints = false
-        var configuration = UIButton.Configuration.tinted()
-        configuration.title = "Select Folder First"
-        configuration.cornerStyle = .medium
-        button.configuration = configuration
-        button.isEnabled = false
-        return button
     }()
 
     private let bookmarkTitleLabel: UILabel = {
@@ -174,7 +164,6 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
 
         actionStackView.addArrangedSubview(selectFolderButton)
         actionStackView.addArrangedSubview(displayModeControl)
-        actionStackView.addArrangedSubview(openCanvasButton)
 
         view.addSubview(titleLabel)
         view.addSubview(subtitleLabel)
@@ -221,7 +210,6 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
     private func setupActions() {
         selectFolderButton.addTarget(self, action: #selector(handleSelectFolderButtonTap), for: .touchUpInside)
         displayModeControl.addTarget(self, action: #selector(handleDisplayModeChange), for: .valueChanged)
-        openCanvasButton.addTarget(self, action: #selector(handleOpenCanvasButtonTap), for: .touchUpInside)
     }
 
     private func applyHeaderState(_ headerState: BoardListHeaderState) {
@@ -251,7 +239,7 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
             reloadBoardList()
         } catch FolderBookmarkStoreError.missingBookmarkData {
             availableBoards = []
-            selectedBoardID = nil
+            selectedEntryID = nil
             hasSelectedFolder = false
             storageErrorMessage = nil
             applyHeaderState(
@@ -262,7 +250,7 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
             reloadBoardList()
         } catch {
             availableBoards = []
-            selectedBoardID = nil
+            selectedEntryID = nil
             hasSelectedFolder = bookmarkStatus.hasSelectedFolder
             storageErrorMessage = error.localizedDescription
             applyHeaderState(
@@ -276,57 +264,44 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
     }
 
     private func ensureValidSelection() {
-        guard !availableBoards.isEmpty else {
-            selectedBoardID = nil
+        guard !entries.isEmpty else {
+            selectedEntryID = nil
             return
         }
 
-        if let selectedBoardID,
-           availableBoards.contains(where: { $0.boardID == selectedBoardID }) {
-            return
+        if let selectedEntryID,
+           entries.contains(where: { $0.id == selectedEntryID }) {
+            switch selectedEntryID {
+            case .newBoard:
+                if availableBoards.isEmpty {
+                    return
+                }
+            case .board:
+                return
+            }
         }
 
-        selectedBoardID = availableBoards.first?.boardID
+        selectedEntryID = entries.first(where: { $0.isPlaceholder == false })?.id
     }
 
     private func reloadBoardList() {
         collectionView.reloadData()
         updateCollectionVisibility()
         updateDisplayModeControlState()
-        updateOpenCanvasButtonState()
         updateCollectionLayout()
         syncCollectionSelection()
-    }
-
-    private func updateOpenCanvasButtonState() {
-        var configuration = openCanvasButton.configuration ?? UIButton.Configuration.tinted()
-        if !hasSelectedFolder {
-            configuration.title = "Select Folder First"
-            openCanvasButton.isEnabled = false
-        } else if storageErrorMessage != nil {
-            configuration.title = "Storage Unavailable"
-            openCanvasButton.isEnabled = false
-        } else {
-            configuration.title = availableBoards.isEmpty
-                ? "Create Board"
-                : "Open Board"
-            openCanvasButton.isEnabled = true
-        }
-        openCanvasButton.configuration = configuration
     }
 
     private func updateDisplayModeControlState() {
         displayModeControl.isEnabled =
             hasSelectedFolder &&
-            storageErrorMessage == nil &&
-            !availableBoards.isEmpty
+            storageErrorMessage == nil
     }
 
     private func updateCollectionVisibility() {
         let shouldShowCollection =
             hasSelectedFolder &&
-            storageErrorMessage == nil &&
-            !availableBoards.isEmpty
+            storageErrorMessage == nil
         collectionView.isHidden = !shouldShowCollection
         emptyStateLabel.isHidden = shouldShowCollection
 
@@ -335,9 +310,7 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
             return
         }
 
-        emptyStateLabel.text = hasSelectedFolder
-            ? "No boards yet. Create one to get started."
-            : "Select a storage folder to load boards."
+        emptyStateLabel.text = "Select a storage folder to load boards."
     }
 
     private func updateCollectionLayout() {
@@ -375,37 +348,49 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
 
     private func syncCollectionSelection() {
         guard
-            let selectedBoardID,
-            let index = availableBoards.firstIndex(where: { $0.boardID == selectedBoardID })
+            let selectedEntryID,
+            let index = entries.firstIndex(where: { $0.id == selectedEntryID })
         else {
             clearCollectionSelection()
             return
         }
 
+        isSyncingSelection = true
         collectionView.selectItem(
             at: IndexPath(item: index, section: 0),
             animated: false,
             scrollPosition: []
         )
+        isSyncingSelection = false
     }
 
     private func clearCollectionSelection() {
+        isSyncingSelection = true
         collectionView.indexPathsForSelectedItems?.forEach { indexPath in
             collectionView.deselectItem(at: indexPath, animated: false)
         }
+        isSyncingSelection = false
     }
 
-    private func openSelectedBoardIfNeeded() {
-        guard hasSelectedFolder else {
+    private func entry(at indexPath: IndexPath) -> BoardListEntry? {
+        guard entries.indices.contains(indexPath.item) else {
+            return nil
+        }
+
+        return entries[indexPath.item]
+    }
+
+    private func performPrimaryAction(for entry: BoardListEntry) {
+        guard hasSelectedFolder, storageErrorMessage == nil else {
             return
         }
 
-        guard let selectedBoard else {
+        switch entry {
+        case .newBoardPlaceholder:
             onCreateBoard?()
-            return
+        case let .board(item):
+            onOpenBoard?(item.boardID)
         }
-
-        onOpenBoard?(selectedBoard.boardID)
     }
 
     @objc
@@ -428,19 +413,6 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
         displayMode = BoardListDisplayMode(segmentIndex: displayModeControl.selectedSegmentIndex)
     }
 
-    @objc
-    private func handleOpenCanvasButtonTap() {
-        guard FolderBookmarkStore.hasStoredBookmarkData() else {
-            return
-        }
-
-        if availableBoards.isEmpty {
-            onCreateBoard?()
-        } else {
-            openSelectedBoardIfNeeded()
-        }
-    }
-
     private func presentSelectionError(_ error: Error) {
         let alertController = UIAlertController(
             title: "Unable to Save Folder Bookmark",
@@ -455,34 +427,42 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
         _ collectionView: UICollectionView,
         numberOfItemsInSection section: Int
     ) -> Int {
-        availableBoards.count
+        entries.count
     }
 
     func collectionView(
         _ collectionView: UICollectionView,
         cellForItemAt indexPath: IndexPath
     ) -> UICollectionViewCell {
-        let catalogItem = availableBoards[indexPath.item]
         guard
             let cell = collectionView.dequeueReusableCell(
                 withReuseIdentifier: iOSBoardCollectionViewCell.reuseIdentifier,
                 for: indexPath
-            ) as? iOSBoardCollectionViewCell
+            ) as? iOSBoardCollectionViewCell,
+            let entry = entry(at: indexPath)
         else {
             return UICollectionViewCell()
         }
 
-        let targetPixelSize = cell.targetThumbnailPixelSize(for: displayMode)
-        let previewContent = previewProvider.immediatePreview(
-            for: catalogItem,
-            targetPixelSize: targetPixelSize
-        )
+        let previewContent: BoardPreviewContent
+        if let catalogItem = entry.catalogItem {
+            let targetPixelSize = cell.targetThumbnailPixelSize(for: displayMode)
+            previewContent = previewProvider.immediatePreview(
+                for: catalogItem,
+                targetPixelSize: targetPixelSize
+            )
+        } else {
+            previewContent = .empty
+        }
+
         cell.configure(
-            with: catalogItem,
+            with: entry,
             previewContent: previewContent,
             displayMode: displayMode
         )
-        if previewContent.isThumbnail == false {
+
+        if let catalogItem = entry.catalogItem,
+           previewContent.isThumbnail == false {
             cell.requestThumbnail(
                 using: previewProvider,
                 for: catalogItem,
@@ -493,7 +473,15 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
     }
 
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
-        selectedBoardID = availableBoards[indexPath.item].boardID
+        guard
+            isSyncingSelection == false,
+            let entry = entry(at: indexPath)
+        else {
+            return
+        }
+
+        selectedEntryID = entry.id
+        performPrimaryAction(for: entry)
     }
 
     func collectionView(

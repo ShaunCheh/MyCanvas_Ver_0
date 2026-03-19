@@ -49,14 +49,14 @@ final class macOSBoardCollectionItem: NSCollectionViewItem {
     }
 
     func configure(
-        with item: BoardCatalogItem,
+        with entry: BoardListEntry,
         previewContent: BoardPreviewContent,
         displayMode: BoardListDisplayMode
     ) {
         cancelThumbnailRequest()
-        representedBoardID = item.boardID
-        representedRevisionToken = item.revisionToken
-        titleLabel.stringValue = item.title
+        representedBoardID = entry.boardID
+        representedRevisionToken = entry.revisionToken
+        titleLabel.stringValue = entry.title
         previewView.apply(content: previewContent)
         applyDisplayMode(displayMode)
         view.layoutSubtreeIfNeeded()
