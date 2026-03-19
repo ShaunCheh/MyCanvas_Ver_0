@@ -1,6 +1,10 @@
 #if os(macOS)
 import AppKit
 
+private func boardListSelectionTraceTimestamp() -> String {
+    String(format: "%.3f", ProcessInfo.processInfo.systemUptime)
+}
+
 final class macOSBoardCollectionItem: NSCollectionViewItem {
     static let reuseIdentifier = NSUserInterfaceItemIdentifier("macOSBoardCollectionItem")
 
@@ -39,7 +43,10 @@ final class macOSBoardCollectionItem: NSCollectionViewItem {
     private var listConstraints: [NSLayoutConstraint] = []
     private var placeholderGridConstraints: [NSLayoutConstraint] = []
     private var placeholderListConstraints: [NSLayoutConstraint] = []
+    private var representedEntryID: BoardListEntryID?
     private var representedBoardID: UUID?
+    private var representedTitle: String?
+    private var representedDisplayMode: BoardListDisplayMode?
     private var representedRevisionToken: String?
     private var thumbnailRequestToken: BoardPreviewRequestToken?
 
@@ -57,14 +64,32 @@ final class macOSBoardCollectionItem: NSCollectionViewItem {
 
     override var isSelected: Bool {
         didSet {
+            logSelectionTrace(
+                "itemIsSelectedChanged",
+                extra: "oldValue=\(oldValue) newValue=\(isSelected)"
+            )
             updateSelectionAppearance()
+        }
+    }
+
+    override var highlightState: NSCollectionViewItem.HighlightState {
+        didSet {
+            logSelectionTrace(
+                "itemHighlightStateChanged",
+                extra:
+                    "oldValue=\(describeSelectionTraceHighlightState(oldValue)) " +
+                    "newValue=\(describeSelectionTraceHighlightState(highlightState))"
+            )
         }
     }
 
     override func prepareForReuse() {
         super.prepareForReuse()
         cancelThumbnailRequest()
+        representedEntryID = nil
         representedBoardID = nil
+        representedTitle = nil
+        representedDisplayMode = nil
         representedRevisionToken = nil
         titleLabel.stringValue = ""
         previewView.isHidden = false
@@ -78,7 +103,10 @@ final class macOSBoardCollectionItem: NSCollectionViewItem {
         displayMode: BoardListDisplayMode
     ) {
         cancelThumbnailRequest()
+        representedEntryID = entry.id
         representedBoardID = entry.boardID
+        representedTitle = entry.title
+        representedDisplayMode = displayMode
         representedRevisionToken = entry.revisionToken
         titleLabel.stringValue = entry.title
         previewView.apply(content: previewContent)
@@ -260,6 +288,52 @@ final class macOSBoardCollectionItem: NSCollectionViewItem {
         view.layer?.backgroundColor = backgroundColor.cgColor
         view.layer?.borderColor = borderColor.cgColor
         view.layer?.borderWidth = isSelected ? 2 : 1
+    }
+
+    private func logSelectionTrace(_ phase: String, extra: String = "") {
+        let extraSuffix = extra.isEmpty ? "" : " \(extra)"
+        print(
+            "[BoardList][macOS][SelectionTrace] " +
+                "t=\(boardListSelectionTraceTimestamp()) " +
+                "phase=\(phase) " +
+                "entryID=\(describeSelectionTraceEntryID(representedEntryID)) " +
+                "boardID=\(representedBoardID?.uuidString ?? "nil") " +
+                "title=\"\(representedTitle ?? "")\" " +
+                "displayMode=\(representedDisplayMode?.title ?? "nil") " +
+                "isSelected=\(isSelected) " +
+                "highlightState=\(describeSelectionTraceHighlightState(highlightState))" +
+                extraSuffix
+        )
+    }
+
+    private func describeSelectionTraceEntryID(_ entryID: BoardListEntryID?) -> String {
+        guard let entryID else {
+            return "nil"
+        }
+
+        switch entryID {
+        case .newBoard:
+            return "newBoard"
+        case let .board(boardID):
+            return "board(\(boardID.uuidString))"
+        }
+    }
+
+    private func describeSelectionTraceHighlightState(
+        _ highlightState: NSCollectionViewItem.HighlightState
+    ) -> String {
+        switch highlightState {
+        case .none:
+            return "none"
+        case .forSelection:
+            return "forSelection"
+        case .forDeselection:
+            return "forDeselection"
+        case .asDropTarget:
+            return "asDropTarget"
+        @unknown default:
+            return "unknown"
+        }
     }
 
     private func resolvedPreviewViewSize(

@@ -22,6 +22,7 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
     private var hasSelectedFolder = false
     private var storageErrorMessage: String?
     private var isSyncingSelection = false
+    private var leftMouseEventMonitor: Any?
     private var displayMode: BoardListDisplayMode = .grid {
         didSet {
             guard oldValue != displayMode else {
@@ -155,6 +156,8 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
             action: #selector(handleCollectionViewDoubleClick(_:))
         )
         doubleClickGestureRecognizer.numberOfClicksRequired = 2
+        // Keep single-click selection responsive while still recognizing double-click open.
+        doubleClickGestureRecognizer.delaysPrimaryMouseButtonEvents = false
         collectionView.addGestureRecognizer(doubleClickGestureRecognizer)
         return collectionView
     }()
@@ -185,11 +188,18 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
         view = NSView()
     }
 
+    deinit {
+        if let leftMouseEventMonitor {
+            NSEvent.removeMonitor(leftMouseEventMonitor)
+        }
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
         setupViewHierarchy()
         setupConstraints()
         setupActions()
+        setupMouseEventLogging()
         refreshBookmarkStatus()
     }
 
@@ -204,6 +214,157 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
         }
 
         refreshBookmarkStatus()
+    }
+
+    private func logSelectionTrace(_ phase: String, extra: String = "") {
+        let extraSuffix = extra.isEmpty ? "" : " \(extra)"
+        print(
+            "[BoardList][macOS][SelectionTrace] " +
+                "t=\(selectionTraceTimestamp()) " +
+                "phase=\(phase) " +
+                "displayMode=\(displayMode.title) " +
+                "selectedEntryID=\(describeSelectionTraceEntryID(selectedEntryID)) " +
+                "collectionSelection=\(describeSelectionTraceIndexPaths(collectionView.selectionIndexPaths))" +
+                extraSuffix
+        )
+    }
+
+    private func selectionTraceTimestamp() -> String {
+        String(format: "%.3f", ProcessInfo.processInfo.systemUptime)
+    }
+
+    private func describeSelectionTraceEntryID(_ entryID: BoardListEntryID?) -> String {
+        guard let entryID else {
+            return "nil"
+        }
+
+        switch entryID {
+        case .newBoard:
+            return "newBoard"
+        case let .board(boardID):
+            return "board(\(boardID.uuidString))"
+        }
+    }
+
+    private func describeSelectionTraceEntry(_ entry: BoardListEntry?) -> String {
+        guard let entry else {
+            return "nil"
+        }
+
+        return "id=\(describeSelectionTraceEntryID(entry.id)) title=\"\(entry.title)\" placeholder=\(entry.isPlaceholder)"
+    }
+
+    private func describeSelectionTraceIndexPath(_ indexPath: IndexPath) -> String {
+        "[section=\(indexPath.section),item=\(indexPath.item)]"
+    }
+
+    private func describeSelectionTracePoint(_ point: CGPoint) -> String {
+        String(format: "(x=%.1f,y=%.1f)", point.x, point.y)
+    }
+
+    private func describeSelectionTraceIndexPaths(_ indexPaths: Set<IndexPath>) -> String {
+        guard indexPaths.isEmpty == false else {
+            return "[]"
+        }
+
+        return "[" + indexPaths
+            .sorted {
+                if $0.section == $1.section {
+                    return $0.item < $1.item
+                }
+
+                return $0.section < $1.section
+            }
+            .map(describeSelectionTraceIndexPath)
+            .joined(separator: ",") + "]"
+    }
+
+    private func describeSelectionTraceItems(at indexPaths: Set<IndexPath>) -> String {
+        guard indexPaths.isEmpty == false else {
+            return "items=[]"
+        }
+
+        return "items=[" + indexPaths
+            .sorted {
+                if $0.section == $1.section {
+                    return $0.item < $1.item
+                }
+
+                return $0.section < $1.section
+            }
+            .map { indexPath in
+                "{indexPath=\(describeSelectionTraceIndexPath(indexPath)) entry=\(describeSelectionTraceEntry(entry(at: indexPath)))}"
+            }
+            .joined(separator: ", ") + "]"
+    }
+
+    private func describeSelectionTraceHighlightState(
+        _ highlightState: NSCollectionViewItem.HighlightState
+    ) -> String {
+        switch highlightState {
+        case .none:
+            return "none"
+        case .forSelection:
+            return "forSelection"
+        case .forDeselection:
+            return "forDeselection"
+        case .asDropTarget:
+            return "asDropTarget"
+        @unknown default:
+            return "unknown"
+        }
+    }
+
+    private func setupMouseEventLogging() {
+        guard leftMouseEventMonitor == nil else {
+            return
+        }
+
+        leftMouseEventMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown, .leftMouseUp]
+        ) { [weak self] event in
+            self?.logLeftMouseEventTrace(event)
+            return event
+        }
+    }
+
+    private func logLeftMouseEventTrace(_ event: NSEvent) {
+        guard
+            event.window === view.window,
+            view.isHiddenOrHasHiddenAncestor == false,
+            collectionView.window != nil
+        else {
+            return
+        }
+
+        let locationInCollectionView = collectionView.convert(
+            event.locationInWindow,
+            from: nil
+        )
+        guard collectionView.bounds.contains(locationInCollectionView) else {
+            return
+        }
+
+        let indexPath = collectionView.indexPathForItem(at: locationInCollectionView)
+        let entry = indexPath.flatMap(entry(at:))
+        let phase: String
+        switch event.type {
+        case .leftMouseDown:
+            phase = "leftMouseDown"
+        case .leftMouseUp:
+            phase = "leftMouseUp"
+        default:
+            phase = "leftMouseEvent"
+        }
+
+        logSelectionTrace(
+            phase,
+            extra:
+                "clickCount=\(event.clickCount) " +
+                "location=\(describeSelectionTracePoint(locationInCollectionView)) " +
+                "hitIndexPath=\(indexPath.map(describeSelectionTraceIndexPath) ?? "nil") " +
+                "hitEntry=\(describeSelectionTraceEntry(entry))"
+        )
     }
 
     private func setupViewHierarchy() {
@@ -335,11 +496,19 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
     }
 
     private func reloadBoardList() {
+        logSelectionTrace(
+            "reloadBoardListBegin",
+            extra: "entries=\(entries.count)"
+        )
         collectionView.reloadData()
         updateCollectionVisibility()
         updateDisplayModeControlState()
         updateCollectionLayout()
         syncCollectionSelection()
+        logSelectionTrace(
+            "reloadBoardListEnd",
+            extra: "entries=\(entries.count)"
+        )
     }
 
     private func updateDisplayModeControlState() {
@@ -424,18 +593,32 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
             let selectedEntryID,
             let index = entries.firstIndex(where: { $0.id == selectedEntryID })
         else {
+            logSelectionTrace(
+                "syncCollectionSelectionClear",
+                extra: "reason=no_selected_entry"
+            )
             isSyncingSelection = true
             collectionView.deselectAll(nil)
             isSyncingSelection = false
+            logSelectionTrace("syncCollectionSelectionCleared")
             return
         }
 
+        let indexPath = IndexPath(item: index, section: 0)
+        logSelectionTrace(
+            "syncCollectionSelectionApply",
+            extra: "targetIndexPath=\(describeSelectionTraceIndexPath(indexPath))"
+        )
         isSyncingSelection = true
         collectionView.selectItems(
-            at: Set([IndexPath(item: index, section: 0)]),
+            at: Set([indexPath]),
             scrollPosition: []
         )
         isSyncingSelection = false
+        logSelectionTrace(
+            "syncCollectionSelectionApplied",
+            extra: "targetIndexPath=\(describeSelectionTraceIndexPath(indexPath))"
+        )
     }
 
     private func clearPlaceholderSelectionAfterAction() {
@@ -482,7 +665,14 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
 
     @objc
     private func handleDisplayModeChange() {
-        displayMode = BoardListDisplayMode(segmentIndex: displayModeControl.selectedSegment)
+        let requestedDisplayMode = BoardListDisplayMode(
+            segmentIndex: displayModeControl.selectedSegment
+        )
+        logSelectionTrace(
+            "displayModeChangeRequested",
+            extra: "requestedDisplayMode=\(requestedDisplayMode.title)"
+        )
+        displayMode = requestedDisplayMode
     }
 
     @objc
@@ -502,6 +692,12 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
             return
         }
 
+        logSelectionTrace(
+            "doubleClickRecognized",
+            extra:
+                "indexPath=\(describeSelectionTraceIndexPath(indexPath)) " +
+                "entry=\(describeSelectionTraceEntry(entry))"
+        )
         selectedEntryID = entry.id
         isSyncingSelection = true
         collectionView.selectItems(
@@ -579,6 +775,30 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
 
     func collectionView(
         _ collectionView: NSCollectionView,
+        shouldSelectItemsAt indexPaths: Set<IndexPath>
+    ) -> Set<IndexPath> {
+        logSelectionTrace(
+            "shouldSelectItems",
+            extra: describeSelectionTraceItems(at: indexPaths)
+        )
+        return indexPaths
+    }
+
+    func collectionView(
+        _ collectionView: NSCollectionView,
+        didChangeItemsAt indexPaths: Set<IndexPath>,
+        to highlightState: NSCollectionViewItem.HighlightState
+    ) {
+        logSelectionTrace(
+            "didChangeHighlightState",
+            extra:
+                "highlightState=\(describeSelectionTraceHighlightState(highlightState)) " +
+                describeSelectionTraceItems(at: indexPaths)
+        )
+    }
+
+    func collectionView(
+        _ collectionView: NSCollectionView,
         didSelectItemsAt indexPaths: Set<IndexPath>
     ) {
         guard
@@ -589,11 +809,36 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
             return
         }
 
+        logSelectionTrace(
+            "didSelectItems",
+            extra:
+                "syncing=\(isSyncingSelection) " +
+                describeSelectionTraceItems(at: indexPaths)
+        )
         selectedEntryID = entry.id
         if entry.isPlaceholder {
             performPrimaryAction(for: entry)
             clearPlaceholderSelectionAfterAction()
         }
+    }
+
+    func collectionView(
+        _ collectionView: NSCollectionView,
+        didDeselectItemsAt indexPaths: Set<IndexPath>
+    ) {
+        let shouldClearSelectedEntryID =
+            isSyncingSelection == false &&
+            collectionView.selectionIndexPaths.isEmpty
+        if shouldClearSelectedEntryID {
+            selectedEntryID = nil
+        }
+        logSelectionTrace(
+            "didDeselectItems",
+            extra:
+                "syncing=\(isSyncingSelection) " +
+                "clearedSelectedEntryID=\(shouldClearSelectedEntryID) " +
+                describeSelectionTraceItems(at: indexPaths)
+        )
     }
 }
 #endif
