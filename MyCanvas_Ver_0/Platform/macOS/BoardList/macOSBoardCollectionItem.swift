@@ -37,7 +37,7 @@ final class macOSBoardCollectionItem: NSCollectionViewItem {
 
     private var gridConstraints: [NSLayoutConstraint] = []
     private var listConstraints: [NSLayoutConstraint] = []
-    private var placeholderGridIconConstraints: [NSLayoutConstraint] = []
+    private var placeholderGridConstraints: [NSLayoutConstraint] = []
     private var placeholderListConstraints: [NSLayoutConstraint] = []
     private var representedBoardID: UUID?
     private var representedRevisionToken: String?
@@ -168,11 +168,15 @@ final class macOSBoardCollectionItem: NSCollectionViewItem {
             titleLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor)
         ]
 
-        placeholderGridIconConstraints = [
-            placeholderIconView.centerXAnchor.constraint(equalTo: previewView.centerXAnchor),
-            placeholderIconView.centerYAnchor.constraint(equalTo: previewView.centerYAnchor),
+        placeholderGridConstraints = [
+            placeholderIconView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            placeholderIconView.centerYAnchor.constraint(equalTo: view.centerYAnchor),
             placeholderIconView.widthAnchor.constraint(equalToConstant: 22),
-            placeholderIconView.heightAnchor.constraint(equalToConstant: 22)
+            placeholderIconView.heightAnchor.constraint(equalToConstant: 22),
+            titleLabel.topAnchor.constraint(greaterThanOrEqualTo: placeholderIconView.bottomAnchor, constant: 10),
+            titleLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
+            titleLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
+            titleLabel.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -12)
         ]
 
         placeholderListConstraints = [
@@ -218,7 +222,7 @@ final class macOSBoardCollectionItem: NSCollectionViewItem {
         NSLayoutConstraint.deactivate(
             gridConstraints +
                 listConstraints +
-                placeholderGridIconConstraints +
+                placeholderGridConstraints +
                 placeholderListConstraints
         )
 
@@ -234,8 +238,9 @@ final class macOSBoardCollectionItem: NSCollectionViewItem {
             NSLayoutConstraint.activate(listConstraints)
         case .placeholderGrid:
             titleLabel.alignment = .center
+            previewView.isHidden = true
             placeholderIconView.isHidden = false
-            NSLayoutConstraint.activate(gridConstraints + placeholderGridIconConstraints)
+            NSLayoutConstraint.activate(placeholderGridConstraints)
         case .placeholderList:
             titleLabel.alignment = .left
             previewView.isHidden = true
