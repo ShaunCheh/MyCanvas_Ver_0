@@ -122,6 +122,7 @@ final class macOSViewController: NSViewController {
         }
     }
     private let toolbarHostView = macOSCanvasToolbarHostView()
+    private var toolbarDockConstraints: [NSLayoutConstraint] = []
     private let miniMapMountView: macOSCanvasChromeOverlayView = {
         let view = macOSCanvasChromeOverlayView()
         view.translatesAutoresizingMaskIntoConstraints = true
@@ -529,9 +530,7 @@ final class macOSViewController: NSViewController {
             backButton.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor, constant: 20),
             backButton.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor, constant: 20),
             backButton.widthAnchor.constraint(equalToConstant: 44),
-            backButton.heightAnchor.constraint(equalToConstant: 44),
-            toolbarHostView.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -20),
-            toolbarHostView.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -20)
+            backButton.heightAnchor.constraint(equalToConstant: 44)
         ])
     }
 
@@ -541,6 +540,42 @@ final class macOSViewController: NSViewController {
 
     private func updatePreparedToolbarDockEdge() {
         toolbarHostView.dockEdge = toolbarDockEdge
+        NSLayoutConstraint.deactivate(toolbarDockConstraints)
+        toolbarDockConstraints = makeToolbarDockConstraints(
+            in: chromeOverlayView.safeAreaLayoutGuide
+        )
+        NSLayoutConstraint.activate(toolbarDockConstraints)
+        if view.bounds.isEmpty == false {
+            view.layoutSubtreeIfNeeded()
+            updateChromeOverlayLayout()
+        }
+    }
+
+    private func makeToolbarDockConstraints(
+        in safeAreaLayoutGuide: NSLayoutGuide
+    ) -> [NSLayoutConstraint] {
+        switch toolbarDockEdge {
+        case .top:
+            [
+                toolbarHostView.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor, constant: 20),
+                toolbarHostView.centerXAnchor.constraint(equalTo: safeAreaLayoutGuide.centerXAnchor)
+            ]
+        case .bottom:
+            [
+                toolbarHostView.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -20),
+                toolbarHostView.centerXAnchor.constraint(equalTo: safeAreaLayoutGuide.centerXAnchor)
+            ]
+        case .leading:
+            [
+                toolbarHostView.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor, constant: 20),
+                toolbarHostView.centerYAnchor.constraint(equalTo: safeAreaLayoutGuide.centerYAnchor)
+            ]
+        case .trailing:
+            [
+                toolbarHostView.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -20),
+                toolbarHostView.centerYAnchor.constraint(equalTo: safeAreaLayoutGuide.centerYAnchor)
+            ]
+        }
     }
 
     private func updateChromeOverlayLayout() {
