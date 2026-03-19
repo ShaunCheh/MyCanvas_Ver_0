@@ -1,17 +1,26 @@
 import Foundation
 
-enum CanvasToolbarDockEdge: CaseIterable {
+enum CanvasToolbarAxis: String, Sendable {
+    case horizontal
+    case vertical
+}
+
+enum CanvasToolbarDockEdge: String, CaseIterable, Sendable {
     case top
     case bottom
     case leading
     case trailing
 
-    var prefersHorizontalButtonLayout: Bool {
+    var preferredAxis: CanvasToolbarAxis {
         switch self {
         case .top, .bottom:
-            return true
+            return .horizontal
         case .leading, .trailing:
-            return false
+            return .vertical
         }
+    }
+
+    var prefersHorizontalButtonLayout: Bool {
+        preferredAxis == .horizontal
     }
 }
