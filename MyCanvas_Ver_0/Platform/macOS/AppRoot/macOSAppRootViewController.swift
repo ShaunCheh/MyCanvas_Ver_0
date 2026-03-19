@@ -57,6 +57,7 @@ final class macOSAppRootViewController: NSViewController {
     private func makeViewController(for destination: AppLaunchDestination) -> NSViewController {
         switch destination {
         case .boardList:
+            boardListViewController.prepareForDisplay()
             return boardListViewController
         case let .canvas(launchContext):
             let viewController = macOSViewController()

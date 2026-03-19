@@ -198,6 +198,14 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
         updateCollectionLayout()
     }
 
+    func prepareForDisplay() {
+        guard isViewLoaded else {
+            return
+        }
+
+        refreshBookmarkStatus()
+    }
+
     private func setupViewHierarchy() {
         view.wantsLayer = true
         view.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor

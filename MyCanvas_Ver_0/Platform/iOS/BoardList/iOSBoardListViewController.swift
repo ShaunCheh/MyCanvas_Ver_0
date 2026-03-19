@@ -167,6 +167,14 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
         updateCollectionLayout()
     }
 
+    func prepareForDisplay() {
+        guard isViewLoaded else {
+            return
+        }
+
+        refreshBookmarkStatus()
+    }
+
     private func setupViewHierarchy() {
         view.backgroundColor = .systemBackground
 

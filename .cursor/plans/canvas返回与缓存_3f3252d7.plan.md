@@ -7,7 +7,7 @@ todos:
     status: completed
   - id: phase2-boardlist-prepare-for-display
     content: 给双端 BoardList 增加 prepareForDisplay()，复用 refreshBookmarkStatus() 刷新数据但保留实例态
-    status: pending
+    status: completed
   - id: phase3-canvas-back-routing
     content: 给双端 Canvas controller 增加 onBackToBoardList 回调，并在 AppRoot 中接回 display(.boardList)
     status: pending

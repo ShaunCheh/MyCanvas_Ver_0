@@ -33,6 +33,7 @@ final class iOSAppRootViewController: UIViewController {
     private func makeViewController(for destination: AppLaunchDestination) -> UIViewController {
         switch destination {
         case .boardList:
+            boardListViewController.prepareForDisplay()
             return boardListViewController
         case let .canvas(launchContext):
             let viewController = iOSViewController()
