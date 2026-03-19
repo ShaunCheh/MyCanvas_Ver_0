@@ -2,6 +2,7 @@ import Foundation
 
 struct BoardCatalogItem {
     let document: BoardDocument
+    let persistedThumbnailURL: URL
     let assetsDirectoryURL: URL
     let previewSeed: BoardPreviewSeed
 

@@ -27,13 +27,35 @@ final class BoardPreviewProvider {
         for item: BoardCatalogItem,
         targetPixelSize: CGSize? = nil
     ) -> BoardPreviewContent {
-        if let targetPixelSize,
-           let cacheKey = BoardThumbnailCacheKey(
-               item: item,
-               targetPixelSize: targetPixelSize
-           ),
-           let cachedImage = thumbnailCache.image(for: cacheKey) {
+        guard
+            let targetPixelSize,
+            let cacheKey = BoardThumbnailCacheKey(
+                item: item,
+                targetPixelSize: targetPixelSize
+            )
+        else {
+            return .geometry(item.previewSeed)
+        }
+
+        if let cachedImage = thumbnailCache.image(for: cacheKey) {
             return .thumbnail(cachedImage, item.previewSeed)
+        }
+
+        do {
+            if let persistedThumbnail = try loadPersistedThumbnailPreview(
+                for: item,
+                cacheKey: cacheKey
+            ) {
+                thumbnailCache.insert(persistedThumbnail, for: cacheKey)
+                return .thumbnail(persistedThumbnail, item.previewSeed)
+            }
+        } catch {
+            print(
+                "[BoardPreviewProvider] Failed to load persisted thumbnail " +
+                "boardID=\(item.boardID.uuidString) " +
+                "revision=\(item.revisionToken) " +
+                "error=\(error)"
+            )
         }
 
         return .geometry(item.previewSeed)
@@ -81,17 +103,17 @@ final class BoardPreviewProvider {
             }
 
             do {
-                guard
-                    let renderedImage = try self.thumbnailRenderer.renderThumbnail(
-                        for: item,
-                        targetPixelSize: cacheKey.pixelSize,
-                        cancellationCheck: {
-                            if operation.isCancelled || requestToken.isCancelled {
-                                throw BoardThumbnailRendererError.cancelled
-                            }
-                        }
-                    )
-                else {
+                let cancellationCheck: () throws -> Void = {
+                    if operation.isCancelled || requestToken.isCancelled {
+                        throw BoardThumbnailRendererError.cancelled
+                    }
+                }
+
+                guard let renderedImage = try self.loadBestAvailableThumbnail(
+                    for: item,
+                    cacheKey: cacheKey,
+                    cancellationCheck: cancellationCheck
+                ) else {
                     return
                 }
 
@@ -121,5 +143,65 @@ final class BoardPreviewProvider {
 
         renderQueue.addOperation(operation)
         return requestToken
+    }
+
+    private func loadBestAvailableThumbnail(
+        for item: BoardCatalogItem,
+        cacheKey: BoardThumbnailCacheKey,
+        cancellationCheck: () throws -> Void
+    ) throws -> CGImage? {
+        do {
+            if let persistedThumbnail = try loadPersistedThumbnailPreview(
+                for: item,
+                cacheKey: cacheKey,
+                cancellationCheck: cancellationCheck
+            ) {
+                return persistedThumbnail
+            }
+        } catch BoardThumbnailRendererError.cancelled {
+            throw BoardThumbnailRendererError.cancelled
+        } catch {
+            print(
+                "[BoardPreviewProvider] Failed to load persisted thumbnail " +
+                "boardID=\(item.boardID.uuidString) " +
+                "revision=\(item.revisionToken) " +
+                "error=\(error)"
+            )
+        }
+
+        try cancellationCheck()
+        return try thumbnailRenderer.renderThumbnail(
+            for: item,
+            targetPixelSize: cacheKey.pixelSize,
+            cancellationCheck: cancellationCheck
+        )
+    }
+
+    private func loadPersistedThumbnailPreview(
+        for item: BoardCatalogItem,
+        cacheKey: BoardThumbnailCacheKey,
+        cancellationCheck: () throws -> Void = {}
+    ) throws -> CGImage? {
+        let decodeMaxPixelSize = max(
+            cacheKey.pixelWidth,
+            cacheKey.pixelHeight
+        )
+        guard
+            let persistedThumbnail = try BoardPersistedThumbnailStore.loadThumbnailIfFresh(
+                at: item.persistedThumbnailURL,
+                updatedAt: item.updatedAt,
+                maxPixelSize: decodeMaxPixelSize
+            )
+        else {
+            return nil
+        }
+
+        try cancellationCheck()
+        return try thumbnailRenderer.renderThumbnail(
+            fromPersistedThumbnail: persistedThumbnail,
+            previewSeed: item.previewSeed,
+            targetPixelSize: cacheKey.pixelSize,
+            cancellationCheck: cancellationCheck
+        )
     }
 }

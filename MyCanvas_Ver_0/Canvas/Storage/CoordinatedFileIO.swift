@@ -46,6 +46,21 @@ enum CoordinatedFileIO {
         }
     }
 
+    static func modificationDate(
+        at url: URL,
+        fileManager: FileManager = .default
+    ) throws -> Date? {
+        guard fileManager.fileExists(atPath: url.path) else {
+            return nil
+        }
+
+        return try coordinateReading(at: url) { coordinatedURL in
+            try coordinatedURL
+                .resourceValues(forKeys: [.contentModificationDateKey])
+                .contentModificationDate
+        }
+    }
+
     static func writeData(
         _ data: Data,
         to url: URL,

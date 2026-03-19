@@ -34,6 +34,7 @@ enum BoardStoreError: LocalizedError {
 enum BoardStore {
     private static let boardDocumentFilename = "board.json"
     private static let assetsDirectoryName = "assets"
+    private static let thumbnailRenderer = BoardThumbnailRenderer()
 
     static func listBoards(
         userDefaults: UserDefaults = .standard
@@ -120,6 +121,10 @@ enum BoardStore {
             let boardDocumentURL = boardDirectoryURL.appendingPathComponent(boardDocumentFilename)
             let encodedDocument = try makeDocumentData(for: document)
             try CoordinatedFileIO.writeData(encodedDocument, to: boardDocumentURL)
+            persistBoardThumbnailIfPossible(
+                from: persistedState,
+                boardDirectoryURL: boardDirectoryURL
+            )
         }
     }
 
@@ -273,6 +278,32 @@ enum BoardStore {
             }
 
             try CoordinatedFileIO.removeItemIfExists(at: assetURL)
+        }
+    }
+
+    private static func persistBoardThumbnailIfPossible(
+        from runtimeState: BoardRuntimeState,
+        boardDirectoryURL: URL
+    ) {
+        do {
+            if let thumbnailImage = try thumbnailRenderer.renderPersistedThumbnail(
+                for: runtimeState
+            ) {
+                try BoardPersistedThumbnailStore.writeThumbnail(
+                    thumbnailImage,
+                    to: boardDirectoryURL
+                )
+            } else {
+                try BoardPersistedThumbnailStore.removeThumbnail(
+                    at: boardDirectoryURL
+                )
+            }
+        } catch {
+            print(
+                "[BoardStore] Failed to persist thumbnail " +
+                "boardID=\(runtimeState.boardID.uuidString) " +
+                "error=\(error)"
+            )
         }
     }
 
