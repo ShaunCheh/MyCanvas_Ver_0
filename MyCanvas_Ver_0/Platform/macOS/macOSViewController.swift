@@ -122,8 +122,17 @@ final class macOSViewController: NSViewController {
             updatePreparedToolbarDockEdge()
         }
     }
+    private var toolbarOffsetAlongEdge: CGFloat = 0 {
+        didSet {
+            guard isViewLoaded else {
+                return
+            }
+
+            updatePreparedToolbarDockEdge()
+        }
+    }
+    private let toolbarPlacementSolver = CanvasToolbarPlacementSolver()
     private let toolbarHostView = macOSCanvasToolbarHostView()
-    private var toolbarDockConstraints: [NSLayoutConstraint] = []
     private let miniMapMountView: macOSCanvasChromeOverlayView = {
         let view = macOSCanvasChromeOverlayView()
         view.translatesAutoresizingMaskIntoConstraints = true
@@ -503,6 +512,7 @@ final class macOSViewController: NSViewController {
         view.addSubview(canvasHostView)
         view.addSubview(chromeOverlayView)
         chromeOverlayView.addSubview(miniMapMountView)
+        toolbarHostView.translatesAutoresizingMaskIntoConstraints = true
         chromeOverlayView.addSubview(toolbarHostView)
         chromeOverlayView.addSubview(contextMenuHostView)
         chromeOverlayView.addSubview(backButton)
@@ -537,45 +547,14 @@ final class macOSViewController: NSViewController {
 
     private func updatePreparedToolbarDockEdge() {
         renderToolbar()
-        NSLayoutConstraint.deactivate(toolbarDockConstraints)
-        toolbarDockConstraints = makeToolbarDockConstraints(
-            in: chromeOverlayView.safeAreaLayoutGuide
-        )
-        NSLayoutConstraint.activate(toolbarDockConstraints)
         if view.bounds.isEmpty == false {
             view.layoutSubtreeIfNeeded()
             updateChromeOverlayLayout()
         }
     }
 
-    private func makeToolbarDockConstraints(
-        in safeAreaLayoutGuide: NSLayoutGuide
-    ) -> [NSLayoutConstraint] {
-        switch toolbarDockEdge {
-        case .top:
-            [
-                toolbarHostView.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor, constant: 20),
-                toolbarHostView.centerXAnchor.constraint(equalTo: safeAreaLayoutGuide.centerXAnchor)
-            ]
-        case .bottom:
-            [
-                toolbarHostView.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -20),
-                toolbarHostView.centerXAnchor.constraint(equalTo: safeAreaLayoutGuide.centerXAnchor)
-            ]
-        case .leading:
-            [
-                toolbarHostView.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor, constant: 20),
-                toolbarHostView.centerYAnchor.constraint(equalTo: safeAreaLayoutGuide.centerYAnchor)
-            ]
-        case .trailing:
-            [
-                toolbarHostView.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -20),
-                toolbarHostView.centerYAnchor.constraint(equalTo: safeAreaLayoutGuide.centerYAnchor)
-            ]
-        }
-    }
-
     private func updateChromeOverlayLayout() {
+        applyToolbarPlacement()
         let layoutContext = makeChromeLayoutContext()
         let miniMapFrame = miniMapLayoutSolver.resolveMiniMapFrame(
             safeBounds: layoutContext.safeBounds,
@@ -593,7 +572,21 @@ final class macOSViewController: NSViewController {
     }
 
     private func toolbarPreferredPlacement() -> CanvasToolbarPlacement {
-        CanvasToolbarPlacement(dockEdge: toolbarDockEdge)
+        CanvasToolbarPlacement(
+            dockEdge: toolbarDockEdge,
+            offsetAlongEdge: toolbarOffsetAlongEdge
+        )
+    }
+
+    private func applyToolbarPlacement() {
+        let layoutContext = makeChromeLayoutContext()
+        let resolvedFrame = toolbarPlacementSolver.resolveFrame(
+            in: layoutContext
+        )?.integral ?? .zero
+
+        if toolbarHostView.frame != resolvedFrame {
+            toolbarHostView.frame = resolvedFrame
+        }
     }
 
     private func makeChromeLayoutContext() -> CanvasChromeLayoutContext {

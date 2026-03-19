@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 enum CanvasToolbarDockAlignment: String, Sendable {
@@ -23,13 +24,16 @@ enum CanvasToolbarItemVisualRole: String, Sendable {
 struct CanvasToolbarPlacement: Hashable, Sendable {
     var dockEdge: CanvasToolbarDockEdge
     var dockAlignment: CanvasToolbarDockAlignment
+    var offsetAlongEdge: CGFloat
 
     init(
         dockEdge: CanvasToolbarDockEdge,
-        dockAlignment: CanvasToolbarDockAlignment = .centered
+        dockAlignment: CanvasToolbarDockAlignment = .centered,
+        offsetAlongEdge: CGFloat = 0
     ) {
         self.dockEdge = dockEdge
         self.dockAlignment = dockAlignment
+        self.offsetAlongEdge = offsetAlongEdge
     }
 }
 
