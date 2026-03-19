@@ -4,6 +4,11 @@ import AppKit
 final class macOSAppRootViewController: NSViewController {
     private let launchCoordinator: AppLaunchCoordinator
     private var currentViewController: NSViewController?
+    private lazy var boardListViewController: macOSBoardListViewController = {
+        let viewController = macOSBoardListViewController()
+        configureBoardListViewController(viewController)
+        return viewController
+    }()
 
     var currentCanvasViewController: macOSViewController? {
         currentViewController as? macOSViewController
@@ -52,18 +57,22 @@ final class macOSAppRootViewController: NSViewController {
     private func makeViewController(for destination: AppLaunchDestination) -> NSViewController {
         switch destination {
         case .boardList:
-            let viewController = macOSBoardListViewController()
-            viewController.onOpenBoard = { [weak self] boardID in
-                self?.display(.canvas(.existing(boardID: boardID)))
-            }
-            viewController.onCreateBoard = { [weak self] in
-                self?.display(.canvas(.newBoard))
-            }
-            return viewController
+            return boardListViewController
         case let .canvas(launchContext):
             let viewController = macOSViewController()
             viewController.launchContext = launchContext
             return viewController
+        }
+    }
+
+    private func configureBoardListViewController(
+        _ viewController: macOSBoardListViewController
+    ) {
+        viewController.onOpenBoard = { [weak self] boardID in
+            self?.display(.canvas(.existing(boardID: boardID)))
+        }
+        viewController.onCreateBoard = { [weak self] in
+            self?.display(.canvas(.newBoard))
         }
     }
 

@@ -4,7 +4,7 @@ overview: 为 Canvas 增加左上角悬浮返回按钮，并在 AppRoot 层缓�
 todos:
   - id: phase1-cache-boardlist-controller
     content: 在双端 AppRoot 中缓存并复用 BoardList controller，统一 BoardList 创建与回调注入
-    status: pending
+    status: completed
   - id: phase2-boardlist-prepare-for-display
     content: 给双端 BoardList 增加 prepareForDisplay()，复用 refreshBookmarkStatus() 刷新数据但保留实例态
     status: pending
