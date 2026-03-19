@@ -98,8 +98,8 @@ final class iOSBoardCollectionViewCell: UICollectionViewCell {
     func targetThumbnailPixelSize(
         for displayMode: BoardListDisplayMode
     ) -> CGSize {
-        contentView.layoutIfNeeded()
-
+        // Keep this purely calculative so display-mode transitions do not force
+        // Auto Layout to solve against the previous presentation style.
         let previewSize = resolvedPreviewViewSize(for: displayMode)
         let contentsScale = window?.screen.scale ?? UIScreen.main.scale
         return CGSize(

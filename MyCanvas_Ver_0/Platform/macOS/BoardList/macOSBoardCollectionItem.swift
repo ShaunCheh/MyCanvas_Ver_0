@@ -97,8 +97,8 @@ final class macOSBoardCollectionItem: NSCollectionViewItem {
     func targetThumbnailPixelSize(
         for displayMode: BoardListDisplayMode
     ) -> CGSize {
-        view.layoutSubtreeIfNeeded()
-
+        // Do not force layout here: collection view may ask for thumbnail size
+        // before this item finishes switching away from the previous mode.
         let previewSize = resolvedPreviewViewSize(for: displayMode)
         let contentsScale = view.window?.backingScaleFactor
             ?? NSScreen.main?.backingScaleFactor
