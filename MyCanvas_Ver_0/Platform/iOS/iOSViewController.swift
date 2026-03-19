@@ -103,7 +103,25 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         button.accessibilityLabel = "Back to board list"
         return button
     }()
-    private let controlsStackView: iOSCanvasChromeStackView = {
+    private var toolbarDockEdge: CanvasToolbarDockEdge = .trailing {
+        didSet {
+            guard isViewLoaded else {
+                return
+            }
+
+            updatePreparedToolbarDockEdge()
+        }
+    }
+    private let toolbarButtonsStackView: iOSCanvasChromeStackView = {
+        let stackView = iOSCanvasChromeStackView()
+        stackView.translatesAutoresizingMaskIntoConstraints = false
+        stackView.axis = .vertical
+        stackView.alignment = .trailing
+        stackView.distribution = .fill
+        stackView.spacing = 12
+        return stackView
+    }()
+    private let historyButtonsStackView: iOSCanvasChromeStackView = {
         let stackView = iOSCanvasChromeStackView()
         stackView.translatesAutoresizingMaskIntoConstraints = false
         stackView.axis = .vertical
@@ -162,6 +180,12 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         button.translatesAutoresizingMaskIntoConstraints = false
         return button
     }()
+    private var toolbarButtons: [UIButton] {
+        [cropButton, saveButton, importButton]
+    }
+    private var historyButtons: [UIButton] {
+        [undoButton, redoButton]
+    }
     private let canvasViewportView = iOSCanvasViewportView()
     private var canvasContentView: UIView?
     private var pendingRefreshReason: String?
@@ -348,6 +372,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         super.viewDidLoad()
         setupViewHierarchy()
         setupConstraints()
+        updatePreparedToolbarDockEdge()
         setupImportButton()
         setupSaveButton()
         setupCropButton()
@@ -391,14 +416,12 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         view.addSubview(canvasHostView)
         view.addSubview(chromeOverlayView)
         chromeOverlayView.addSubview(miniMapMountView)
-        chromeOverlayView.addSubview(controlsStackView)
+        chromeOverlayView.addSubview(historyButtonsStackView)
+        chromeOverlayView.addSubview(toolbarButtonsStackView)
         chromeOverlayView.addSubview(contextMenuHostView)
         chromeOverlayView.addSubview(backButton)
-        controlsStackView.addArrangedSubview(cropButton)
-        controlsStackView.addArrangedSubview(undoButton)
-        controlsStackView.addArrangedSubview(redoButton)
-        controlsStackView.addArrangedSubview(saveButton)
-        controlsStackView.addArrangedSubview(importButton)
+        installHistoryButtons()
+        installToolbarButtons()
     }
 
     private func setupConstraints() {
@@ -420,14 +443,34 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
             backButton.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor, constant: 20),
             backButton.widthAnchor.constraint(equalToConstant: 44),
             backButton.heightAnchor.constraint(equalToConstant: 44),
-            controlsStackView.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -20),
-            controlsStackView.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -20),
+            toolbarButtonsStackView.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -20),
+            toolbarButtonsStackView.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -20),
+            historyButtonsStackView.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -20),
+            historyButtonsStackView.bottomAnchor.constraint(equalTo: toolbarButtonsStackView.topAnchor, constant: -12),
             cropButton.heightAnchor.constraint(equalToConstant: 40),
             undoButton.heightAnchor.constraint(equalToConstant: 40),
             redoButton.heightAnchor.constraint(equalToConstant: 40),
             saveButton.heightAnchor.constraint(equalToConstant: 40),
             importButton.heightAnchor.constraint(equalToConstant: 56)
         ])
+    }
+
+    private func installToolbarButtons() {
+        toolbarButtons.forEach { button in
+            toolbarButtonsStackView.addArrangedSubview(button)
+        }
+    }
+
+    private func installHistoryButtons() {
+        historyButtons.forEach { button in
+            historyButtonsStackView.addArrangedSubview(button)
+        }
+    }
+
+    private func updatePreparedToolbarDockEdge() {
+        toolbarButtonsStackView.axis = toolbarDockEdge.prefersHorizontalButtonLayout
+            ? .horizontal
+            : .vertical
     }
 
     private func updateChromeOverlayLayout() {
@@ -461,7 +504,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
     private func chromeOccupiedRects() -> [CGRect] {
         var rects: [CGRect] = []
         appendChromeOccupiedRect(for: backButton, to: &rects)
-        appendChromeOccupiedRect(for: controlsStackView, to: &rects)
+        appendChromeOccupiedRect(for: historyButtonsStackView, to: &rects)
+        appendChromeOccupiedRect(for: toolbarButtonsStackView, to: &rects)
         return rects
     }
 
