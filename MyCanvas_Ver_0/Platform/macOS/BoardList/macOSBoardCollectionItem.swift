@@ -4,7 +4,27 @@ import AppKit
 final class macOSBoardCollectionItem: NSCollectionViewItem {
     static let reuseIdentifier = NSUserInterfaceItemIdentifier("macOSBoardCollectionItem")
 
+    private enum PresentationStyle {
+        case boardGrid
+        case boardList
+        case placeholderGrid
+        case placeholderList
+    }
+
     private let previewView = macOSBoardPreviewView()
+    private let placeholderIconView: NSImageView = {
+        let configuration = NSImage.SymbolConfiguration(pointSize: 22, weight: .medium)
+        let image = NSImage(
+            systemSymbolName: "plus",
+            accessibilityDescription: BoardListEntry.newBoardTitle
+        )?.withSymbolConfiguration(configuration)
+        let imageView = NSImageView(image: image ?? NSImage())
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        imageView.imageScaling = .scaleProportionallyUpOrDown
+        imageView.contentTintColor = .controlAccentColor
+        imageView.isHidden = true
+        return imageView
+    }()
     private let titleLabel: NSTextField = {
         let label = NSTextField(wrappingLabelWithString: "")
         label.translatesAutoresizingMaskIntoConstraints = false
@@ -17,6 +37,8 @@ final class macOSBoardCollectionItem: NSCollectionViewItem {
 
     private var gridConstraints: [NSLayoutConstraint] = []
     private var listConstraints: [NSLayoutConstraint] = []
+    private var placeholderGridIconConstraints: [NSLayoutConstraint] = []
+    private var placeholderListConstraints: [NSLayoutConstraint] = []
     private var representedBoardID: UUID?
     private var representedRevisionToken: String?
     private var thumbnailRequestToken: BoardPreviewRequestToken?
@@ -29,7 +51,7 @@ final class macOSBoardCollectionItem: NSCollectionViewItem {
         super.viewDidLoad()
         setupView()
         setupConstraints()
-        applyDisplayMode(.grid)
+        applyPresentationStyle(.boardGrid)
         updateSelectionAppearance()
     }
 
@@ -45,6 +67,8 @@ final class macOSBoardCollectionItem: NSCollectionViewItem {
         representedBoardID = nil
         representedRevisionToken = nil
         titleLabel.stringValue = ""
+        previewView.isHidden = false
+        placeholderIconView.isHidden = true
         previewView.apply(content: .empty)
     }
 
@@ -58,7 +82,10 @@ final class macOSBoardCollectionItem: NSCollectionViewItem {
         representedRevisionToken = entry.revisionToken
         titleLabel.stringValue = entry.title
         previewView.apply(content: previewContent)
-        applyDisplayMode(displayMode)
+        applyPresentation(
+            for: entry,
+            displayMode: displayMode
+        )
         view.layoutSubtreeIfNeeded()
     }
 
@@ -112,8 +139,10 @@ final class macOSBoardCollectionItem: NSCollectionViewItem {
         view.layer?.masksToBounds = true
 
         previewView.translatesAutoresizingMaskIntoConstraints = false
+        placeholderIconView.translatesAutoresizingMaskIntoConstraints = false
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(previewView)
+        view.addSubview(placeholderIconView)
         view.addSubview(titleLabel)
     }
 
@@ -138,18 +167,80 @@ final class macOSBoardCollectionItem: NSCollectionViewItem {
             titleLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
             titleLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor)
         ]
+
+        placeholderGridIconConstraints = [
+            placeholderIconView.centerXAnchor.constraint(equalTo: previewView.centerXAnchor),
+            placeholderIconView.centerYAnchor.constraint(equalTo: previewView.centerYAnchor),
+            placeholderIconView.widthAnchor.constraint(equalToConstant: 22),
+            placeholderIconView.heightAnchor.constraint(equalToConstant: 22)
+        ]
+
+        placeholderListConstraints = [
+            placeholderIconView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24),
+            placeholderIconView.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            placeholderIconView.widthAnchor.constraint(equalToConstant: 22),
+            placeholderIconView.heightAnchor.constraint(equalToConstant: 22),
+            titleLabel.leadingAnchor.constraint(equalTo: placeholderIconView.trailingAnchor, constant: 12),
+            titleLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
+            titleLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor)
+        ]
     }
 
-    private func applyDisplayMode(_ displayMode: BoardListDisplayMode) {
-        NSLayoutConstraint.deactivate(gridConstraints + listConstraints)
+    private func applyPresentation(
+        for entry: BoardListEntry,
+        displayMode: BoardListDisplayMode
+    ) {
+        applyPresentationStyle(
+            resolvePresentationStyle(
+                for: entry,
+                displayMode: displayMode
+            )
+        )
+    }
 
-        switch displayMode {
-        case .grid:
+    private func resolvePresentationStyle(
+        for entry: BoardListEntry,
+        displayMode: BoardListDisplayMode
+    ) -> PresentationStyle {
+        switch (entry.isPlaceholder, displayMode) {
+        case (false, .grid):
+            return .boardGrid
+        case (false, .list):
+            return .boardList
+        case (true, .grid):
+            return .placeholderGrid
+        case (true, .list):
+            return .placeholderList
+        }
+    }
+
+    private func applyPresentationStyle(_ presentationStyle: PresentationStyle) {
+        NSLayoutConstraint.deactivate(
+            gridConstraints +
+                listConstraints +
+                placeholderGridIconConstraints +
+                placeholderListConstraints
+        )
+
+        previewView.isHidden = false
+        placeholderIconView.isHidden = true
+
+        switch presentationStyle {
+        case .boardGrid:
             titleLabel.alignment = .center
             NSLayoutConstraint.activate(gridConstraints)
-        case .list:
+        case .boardList:
             titleLabel.alignment = .left
             NSLayoutConstraint.activate(listConstraints)
+        case .placeholderGrid:
+            titleLabel.alignment = .center
+            placeholderIconView.isHidden = false
+            NSLayoutConstraint.activate(gridConstraints + placeholderGridIconConstraints)
+        case .placeholderList:
+            titleLabel.alignment = .left
+            previewView.isHidden = true
+            placeholderIconView.isHidden = false
+            NSLayoutConstraint.activate(placeholderListConstraints)
         }
     }
 
