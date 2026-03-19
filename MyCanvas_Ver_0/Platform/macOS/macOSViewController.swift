@@ -311,17 +311,19 @@ final class macOSViewController: NSViewController {
     }
 
     private func updateContextMenuPresentation() {
+        let layoutContext = makeContextMenuLayoutContext()
         contextMenuHostView.apply(
             state: contextMenuState,
-            safeBounds: contextMenuSafeBounds(),
-            occupiedRects: contextMenuOccupiedRects()
+            safeBounds: layoutContext.safeBounds,
+            occupiedRects: layoutContext.occupiedRects
         )
     }
 
     private func updateContextMenuLayout() {
+        let layoutContext = makeContextMenuLayoutContext()
         contextMenuHostView.updateLayout(
-            safeBounds: contextMenuSafeBounds(),
-            occupiedRects: contextMenuOccupiedRects()
+            safeBounds: layoutContext.safeBounds,
+            occupiedRects: layoutContext.occupiedRects
         )
     }
 
@@ -574,11 +576,10 @@ final class macOSViewController: NSViewController {
     }
 
     private func updateChromeOverlayLayout() {
-        let safeBounds = chromeSafeBounds()
-        let occupiedRects = chromeOccupiedRects()
+        let layoutContext = makeChromeLayoutContext()
         let miniMapFrame = miniMapLayoutSolver.resolveMiniMapFrame(
-            safeBounds: safeBounds,
-            occupiedRects: occupiedRects,
+            safeBounds: layoutContext.safeBounds,
+            occupiedRects: layoutContext.occupiedRects,
             configuration: miniMapConfiguration
         )?.integral ?? .zero
         if miniMapMountView.frame != miniMapFrame {
@@ -591,56 +592,112 @@ final class macOSViewController: NSViewController {
         updateContextMenuLayout()
     }
 
-    private func chromeSafeBounds() -> CGRect {
-        let safeAreaInsets = view.safeAreaInsets
-        return CGRect(
-            x: view.bounds.minX + safeAreaInsets.left,
-            y: view.bounds.minY + safeAreaInsets.top,
-            width: max(view.bounds.width - safeAreaInsets.left - safeAreaInsets.right, 0),
-            height: max(view.bounds.height - safeAreaInsets.top - safeAreaInsets.bottom, 0)
-        ).standardized
+    private func toolbarPreferredPlacement() -> CanvasToolbarPlacement {
+        CanvasToolbarPlacement(dockEdge: toolbarDockEdge)
     }
 
-    private func chromeOccupiedRects() -> [CGRect] {
-        var rects: [CGRect] = []
-        appendChromeOccupiedRect(for: backButton, to: &rects)
-        appendChromeOccupiedRect(for: toolbarHostView, to: &rects)
-        return rects
-    }
+    private func makeChromeLayoutContext() -> CanvasChromeLayoutContext {
+        var chromeBlockers: [CanvasChromeBlocker] = []
+        appendChromeBlocker(
+            kind: .backButton,
+            for: backButton,
+            to: &chromeBlockers
+        )
+        appendChromeBlocker(
+            kind: .toolbar,
+            for: toolbarHostView,
+            to: &chromeBlockers
+        )
 
-    private func contextMenuOccupiedRects() -> [CGRect] {
-        var rects = chromeOccupiedRects()
-        let miniMapFrame = miniMapMountView.frame.standardized
-        if miniMapMountView.isHidden == false, miniMapFrame.isEmpty == false {
-            rects.append(miniMapFrame)
-        }
-
-        return rects.map { rect in
-            convertToContextMenuHost(rect, from: chromeOverlayView)
-        }
-    }
-
-    private func contextMenuSafeBounds() -> CGRect {
-        convertToContextMenuHost(
-            chromeSafeBounds(),
-            from: chromeOverlayView
+        return CanvasChromeLayoutContext(
+            safeBounds: CGRect(
+                x: view.bounds.minX + view.safeAreaInsets.left,
+                y: view.bounds.minY + view.safeAreaInsets.top,
+                width: max(
+                    view.bounds.width - view.safeAreaInsets.left - view.safeAreaInsets.right,
+                    0
+                ),
+                height: max(
+                    view.bounds.height - view.safeAreaInsets.top - view.safeAreaInsets.bottom,
+                    0
+                )
+            ).standardized,
+            toolbarPreferredPlacement: toolbarPreferredPlacement(),
+            toolbarMeasuredSize: measuredToolbarHostSize(),
+            chromeBlockers: chromeBlockers
         )
     }
 
-    private func appendChromeOccupiedRect(
+    private func makeContextMenuLayoutContext() -> CanvasChromeLayoutContext {
+        let chromeLayoutContext = makeChromeLayoutContext()
+        var chromeBlockers = chromeLayoutContext.chromeBlockers.map { blocker in
+            CanvasChromeBlocker(
+                kind: blocker.kind,
+                rect: convertToContextMenuHost(
+                    blocker.rect,
+                    from: chromeOverlayView
+                )
+            )
+        }
+
+        if
+            miniMapMountView.isHidden == false,
+            let miniMapRect = CanvasChromeLayoutGeometry.sanitizedRect(
+                miniMapMountView.frame
+            )
+        {
+            chromeBlockers.append(
+                CanvasChromeBlocker(
+                    kind: .miniMap,
+                    rect: convertToContextMenuHost(
+                        miniMapRect,
+                        from: chromeOverlayView
+                    )
+                )
+            )
+        }
+
+        return CanvasChromeLayoutContext(
+            safeBounds: convertToContextMenuHost(
+                chromeLayoutContext.safeBounds,
+                from: chromeOverlayView
+            ),
+            toolbarPreferredPlacement: chromeLayoutContext.toolbarPreferredPlacement,
+            toolbarMeasuredSize: chromeLayoutContext.toolbarMeasuredSize,
+            chromeBlockers: chromeBlockers
+        )
+    }
+
+    private func appendChromeBlocker(
+        kind: CanvasChromeBlockerKind,
         for view: NSView,
-        to rects: inout [CGRect]
+        to chromeBlockers: inout [CanvasChromeBlocker]
     ) {
         guard view.isHidden == false else {
             return
         }
 
-        let standardizedRect = view.frame.standardized
-        guard standardizedRect.isEmpty == false else {
+        guard let standardizedRect = CanvasChromeLayoutGeometry.sanitizedRect(
+            view.frame
+        ) else {
             return
         }
 
-        rects.append(standardizedRect)
+        chromeBlockers.append(
+            CanvasChromeBlocker(
+                kind: kind,
+                rect: standardizedRect
+            )
+        )
+    }
+
+    private func measuredToolbarHostSize() -> CGSize {
+        let measuredSize = toolbarHostView.fittingSize
+        let fallbackSize = toolbarHostView.bounds.size
+        let candidateSize = measuredSize == .zero
+            ? fallbackSize
+            : measuredSize
+        return CanvasChromeLayoutGeometry.sanitizedSize(candidateSize)
     }
 
     private func contextMenuLayoutAnchorPoint(
@@ -2442,7 +2499,7 @@ final class macOSViewController: NSViewController {
         toolbarStateBuilder.mainToolbarState(
             session: editorSession,
             saveState: saveButtonState,
-            placement: CanvasToolbarPlacement(dockEdge: toolbarDockEdge)
+            placement: toolbarPreferredPlacement()
         )
     }
 
@@ -2565,7 +2622,8 @@ final class macOSViewController: NSViewController {
         resolvedContext: CanvasContextMenuContext,
         commandIDs: [CanvasCommandID]
     ) {
-        let occupiedRectsDescription = contextMenuOccupiedRects()
+        let layoutContext = makeContextMenuLayoutContext()
+        let occupiedRectsDescription = layoutContext.occupiedRects
             .map(describe(rect:))
             .joined(separator: ", ")
         let commandIDsDescription = commandIDs.map(\.rawValue).joined(separator: ",")
@@ -2583,7 +2641,7 @@ final class macOSViewController: NSViewController {
             "hostBounds=\(describe(rect: contextMenuHostView.bounds)) " +
             "hostFrame=\(describe(rect: contextMenuHostView.frame)) " +
             "layoutAnchorPoint=\(describe(point: layoutAnchorPoint)) " +
-            "safeBounds=\(describe(rect: contextMenuSafeBounds())) " +
+            "safeBounds=\(describe(rect: layoutContext.safeBounds)) " +
             "occupiedRects=[\(occupiedRectsDescription)] " +
             "commandIDs=[\(commandIDsDescription)]"
         )
