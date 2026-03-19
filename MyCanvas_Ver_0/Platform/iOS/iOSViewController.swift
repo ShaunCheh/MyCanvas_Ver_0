@@ -73,6 +73,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         logPrefix: "[BoardStore][iOS]"
     )
     private let commandCatalog = CanvasCommandCatalog()
+    private let toolbarStateBuilder = CanvasToolbarStateBuilder()
     private let contextMenuCommandResolver = CanvasContextMenuCommandResolver()
     private let canvasHostView: UIView = {
         let view = UIView()
@@ -2271,12 +2272,11 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
     }
 
     private func updateCropButtonAppearance() {
-        let descriptor = commandDescriptor(for: .crop)
+        let itemState = toolbarStateBuilder.cropItemState(
+            session: editorSession
+        )
         applyCropButtonAppearance(
-            title: descriptor.title,
-            systemImageName: descriptor.systemImageName,
-            backgroundColor: descriptor.isActive ? .systemOrange : .systemIndigo,
-            isEnabled: descriptor.isEnabled
+            itemState: itemState
         )
     }
 
@@ -2314,6 +2314,23 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
             symbolPointSize: 20,
             symbolWeight: .bold
         )
+    }
+
+    private func toolbarBackgroundColor(
+        for visualRole: CanvasToolbarItemVisualRole
+    ) -> UIColor {
+        switch visualRole {
+        case .neutral:
+            return .secondarySystemBackground
+        case .accent:
+            return .systemIndigo
+        case .success:
+            return .systemGreen
+        case .warning:
+            return .systemOrange
+        case .danger:
+            return .systemRed
+        }
     }
 
     private func applyToolbarIconButtonAppearance(
@@ -2360,17 +2377,17 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
     }
 
     private func applyCropButtonAppearance(
-        title: String,
-        systemImageName: String,
-        backgroundColor: UIColor,
-        isEnabled: Bool
+        itemState: CanvasToolbarItemState
     ) {
         applyToolbarIconButtonAppearance(
             to: cropButton,
-            systemImageName: systemImageName,
-            backgroundColor: isEnabled ? backgroundColor : .systemGray3,
-            accessibilityLabel: title == "Done" ? "Done cropping" : "Crop",
-            isEnabled: isEnabled
+            systemImageName: itemState.systemImageName,
+            backgroundColor: itemState.isEnabled
+                ? toolbarBackgroundColor(for: itemState.visualRole)
+                : .systemGray3,
+            accessibilityLabel: itemState.accessibilityLabel,
+            accessibilityValue: itemState.accessibilityValue,
+            isEnabled: itemState.isEnabled
         )
     }
 

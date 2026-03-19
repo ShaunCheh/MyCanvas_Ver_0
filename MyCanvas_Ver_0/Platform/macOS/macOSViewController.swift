@@ -74,6 +74,7 @@ final class macOSViewController: NSViewController {
         logPrefix: "[BoardStore][macOS]"
     )
     private let commandCatalog = CanvasCommandCatalog()
+    private let toolbarStateBuilder = CanvasToolbarStateBuilder()
     private let contextMenuCommandResolver = CanvasContextMenuCommandResolver()
     private let canvasHostView: NSView = {
         let view = NSView()
@@ -2480,12 +2481,11 @@ final class macOSViewController: NSViewController {
     }
 
     private func updateCropButtonAppearance() {
-        let descriptor = commandDescriptor(for: .crop)
+        let itemState = toolbarStateBuilder.cropItemState(
+            session: editorSession
+        )
         applyCropButtonAppearance(
-            title: descriptor.title,
-            systemImageName: descriptor.systemImageName,
-            tintColor: descriptor.isActive ? .systemOrange : .controlAccentColor,
-            isEnabled: descriptor.isEnabled
+            itemState: itemState
         )
     }
 
@@ -2498,6 +2498,23 @@ final class macOSViewController: NSViewController {
             accessibilityDescription: "Import image",
             isEnabled: true
         )
+    }
+
+    private func toolbarBackgroundColor(
+        for visualRole: CanvasToolbarItemVisualRole
+    ) -> NSColor {
+        switch visualRole {
+        case .neutral:
+            return .controlBackgroundColor
+        case .accent:
+            return .controlAccentColor
+        case .success:
+            return .systemGreen
+        case .warning:
+            return .systemOrange
+        case .danger:
+            return .systemRed
+        }
     }
 
     private func applyToolbarIconButtonAppearance(
@@ -2544,18 +2561,17 @@ final class macOSViewController: NSViewController {
     }
 
     private func applyCropButtonAppearance(
-        title: String,
-        systemImageName: String,
-        tintColor: NSColor,
-        isEnabled: Bool
+        itemState: CanvasToolbarItemState
     ) {
         applyToolbarIconButtonAppearance(
             to: cropButton,
-            systemImageName: systemImageName,
-            backgroundColor: isEnabled ? tintColor : .quaternaryLabelColor.withAlphaComponent(0.35),
-            foregroundColor: isEnabled ? .white : .secondaryLabelColor,
-            accessibilityDescription: title == "Done" ? "Done cropping" : "Crop",
-            isEnabled: isEnabled
+            systemImageName: itemState.systemImageName,
+            backgroundColor: itemState.isEnabled
+                ? toolbarBackgroundColor(for: itemState.visualRole)
+                : .quaternaryLabelColor.withAlphaComponent(0.35),
+            foregroundColor: itemState.isEnabled ? .white : .secondaryLabelColor,
+            accessibilityDescription: itemState.accessibilityLabel,
+            isEnabled: itemState.isEnabled
         )
     }
 
