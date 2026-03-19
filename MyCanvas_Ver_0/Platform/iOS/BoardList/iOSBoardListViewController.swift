@@ -41,6 +41,14 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
         return [.newBoardPlaceholder] + availableBoards.map { .board($0) }
     }
 
+    private var hasRealBoards: Bool {
+        availableBoards.isEmpty == false
+    }
+
+    private var firstRealBoardEntryID: BoardListEntryID? {
+        entries.first(where: { $0.isPlaceholder == false })?.id
+    }
+
     private let titleLabel: UILabel = {
         let label = UILabel()
         label.translatesAutoresizingMaskIntoConstraints = false
@@ -54,7 +62,7 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
     private let subtitleLabel: UILabel = {
         let label = UILabel()
         label.translatesAutoresizingMaskIntoConstraints = false
-        label.text = "Select a storage folder, then open the canvas."
+        label.text = BoardListCopy.subtitle
         label.font = .systemFont(ofSize: 16)
         label.textColor = .secondaryLabel
         label.textAlignment = .center
@@ -273,7 +281,7 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
            entries.contains(where: { $0.id == selectedEntryID }) {
             switch selectedEntryID {
             case .newBoard:
-                if availableBoards.isEmpty {
+                if hasRealBoards == false {
                     return
                 }
             case .board:
@@ -281,7 +289,7 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
             }
         }
 
-        selectedEntryID = entries.first(where: { $0.isPlaceholder == false })?.id
+        selectedEntryID = firstRealBoardEntryID
     }
 
     private func reloadBoardList() {
@@ -306,11 +314,11 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
         emptyStateLabel.isHidden = shouldShowCollection
 
         if let storageErrorMessage {
-            emptyStateLabel.text = "Storage unavailable: \(storageErrorMessage)"
+            emptyStateLabel.text = BoardListCopy.storageUnavailableMessage(storageErrorMessage)
             return
         }
 
-        emptyStateLabel.text = "Select a storage folder to load boards."
+        emptyStateLabel.text = BoardListCopy.selectFolderMessage
     }
 
     private func updateCollectionLayout() {
@@ -373,7 +381,7 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
     }
 
     private func clearPlaceholderSelectionAfterAction() {
-        selectedEntryID = entries.first(where: { $0.isPlaceholder == false })?.id
+        selectedEntryID = firstRealBoardEntryID
         syncCollectionSelection()
     }
 

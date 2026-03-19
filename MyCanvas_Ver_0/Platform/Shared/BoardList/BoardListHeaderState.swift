@@ -17,7 +17,7 @@ enum BoardListHeaderStateBuilder {
         case .missing:
             return BoardListHeaderState(
                 title: "No Folder Selected",
-                detail: "Select a storage folder to load boards.",
+                detail: BoardListCopy.selectFolderMessage,
                 fullPath: nil,
                 isError: false
             )
