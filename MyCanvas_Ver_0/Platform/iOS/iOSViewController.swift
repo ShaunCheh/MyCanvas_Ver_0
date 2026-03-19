@@ -439,11 +439,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
             toolbarHostView.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -20),
             historyButtonsStackView.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -20),
             historyButtonsStackView.bottomAnchor.constraint(equalTo: toolbarHostView.topAnchor, constant: -12),
-            cropButton.heightAnchor.constraint(equalToConstant: 40),
             undoButton.heightAnchor.constraint(equalToConstant: 40),
-            redoButton.heightAnchor.constraint(equalToConstant: 40),
-            saveButton.heightAnchor.constraint(equalToConstant: 40),
-            importButton.heightAnchor.constraint(equalToConstant: 56)
+            redoButton.heightAnchor.constraint(equalToConstant: 40)
         ])
     }
 
@@ -563,10 +560,12 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
 
     private func setupImportButton() {
         importButton.addTarget(self, action: #selector(handleImportButtonTap), for: .touchUpInside)
+        applyImportButtonAppearance()
     }
 
     private func setupSaveButton() {
         saveButton.addTarget(self, action: #selector(handleSaveButtonTap), for: .touchUpInside)
+        applyDefaultSaveButtonAppearance()
     }
 
     private func setupCropButton() {
@@ -2271,16 +2270,58 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         )
     }
 
+    private func applyImportButtonAppearance() {
+        applyToolbarIconButtonAppearance(
+            to: importButton,
+            systemImageName: "plus",
+            backgroundColor: .systemBlue,
+            accessibilityLabel: "Import image",
+            symbolPointSize: 20,
+            symbolWeight: .bold
+        )
+    }
+
+    private func applyToolbarIconButtonAppearance(
+        to button: UIButton,
+        systemImageName: String,
+        backgroundColor: UIColor,
+        accessibilityLabel: String,
+        accessibilityValue: String? = nil,
+        symbolPointSize: CGFloat = 17,
+        symbolWeight: UIImage.SymbolWeight = .semibold,
+        isEnabled: Bool = true
+    ) {
+        button.isEnabled = isEnabled
+        var configuration = button.configuration ?? UIButton.Configuration.filled()
+        configuration.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
+            pointSize: symbolPointSize,
+            weight: symbolWeight
+        )
+        configuration.image = UIImage(systemName: systemImageName)
+        configuration.title = nil
+        configuration.imagePadding = 0
+        configuration.baseBackgroundColor = backgroundColor
+        configuration.baseForegroundColor = .white
+        configuration.cornerStyle = .capsule
+        configuration.contentInsets = .zero
+        button.configuration = configuration
+        button.accessibilityLabel = accessibilityLabel
+        button.accessibilityValue = accessibilityValue
+    }
+
     private func applySaveButtonAppearance(
         title: String,
         systemImageName: String,
         backgroundColor: UIColor
     ) {
-        var configuration = saveButton.configuration ?? UIButton.Configuration.filled()
-        configuration.title = title
-        configuration.image = UIImage(systemName: systemImageName)
-        configuration.baseBackgroundColor = backgroundColor
-        saveButton.configuration = configuration
+        applyToolbarIconButtonAppearance(
+            to: saveButton,
+            systemImageName: systemImageName,
+            backgroundColor: backgroundColor,
+            accessibilityLabel: "Save board",
+            accessibilityValue: title == "Save" ? nil : title,
+            isEnabled: saveButton.isEnabled
+        )
     }
 
     private func applyCropButtonAppearance(
@@ -2289,17 +2330,13 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         backgroundColor: UIColor,
         isEnabled: Bool
     ) {
-        cropButton.isEnabled = isEnabled
-        var configuration = cropButton.configuration ?? UIButton.Configuration.filled()
-        configuration.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
-        configuration.imagePlacement = .leading
-        configuration.imagePadding = 6
-        configuration.cornerStyle = .capsule
-        configuration.baseForegroundColor = .white
-        configuration.title = title
-        configuration.image = UIImage(systemName: systemImageName)
-        configuration.baseBackgroundColor = isEnabled ? backgroundColor : .systemGray3
-        cropButton.configuration = configuration
+        applyToolbarIconButtonAppearance(
+            to: cropButton,
+            systemImageName: systemImageName,
+            backgroundColor: isEnabled ? backgroundColor : .systemGray3,
+            accessibilityLabel: title == "Done" ? "Done cropping" : "Crop",
+            isEnabled: isEnabled
+        )
     }
 
     private func applyUndoButtonAppearance(

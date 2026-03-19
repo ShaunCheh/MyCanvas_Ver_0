@@ -6,6 +6,7 @@ final class macOSCanvasToolbarHostView: NSView {
         static let spacing: CGFloat = 12
         static let horizontalInset: CGFloat = 12
         static let verticalInset: CGFloat = 12
+        static let buttonEdge: CGFloat = 44
         static let cornerRadius: CGFloat = 18
         static let shadowOpacity: Float = 0.12
         static let shadowRadius: CGFloat = 10
@@ -73,6 +74,7 @@ final class macOSCanvasToolbarHostView: NSView {
 
             button.removeFromSuperview()
             buttonsStackView.addArrangedSubview(button)
+            ensureSquareSize(for: button)
         }
     }
 
@@ -88,6 +90,20 @@ final class macOSCanvasToolbarHostView: NSView {
         buttonsStackView.alignment = dockEdge.prefersHorizontalButtonLayout
             ? .centerY
             : .trailing
+    }
+
+    private func ensureSquareSize(for button: NSButton) {
+        if button.constraints.contains(where: { $0.identifier == "canvasToolbarHost.buttonWidth" }) == false {
+            let widthConstraint = button.widthAnchor.constraint(equalToConstant: Layout.buttonEdge)
+            widthConstraint.identifier = "canvasToolbarHost.buttonWidth"
+            widthConstraint.isActive = true
+        }
+
+        if button.constraints.contains(where: { $0.identifier == "canvasToolbarHost.buttonHeight" }) == false {
+            let heightConstraint = button.heightAnchor.constraint(equalToConstant: Layout.buttonEdge)
+            heightConstraint.identifier = "canvasToolbarHost.buttonHeight"
+            heightConstraint.isActive = true
+        }
     }
 }
 #endif

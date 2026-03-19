@@ -531,8 +531,7 @@ final class macOSViewController: NSViewController {
             backButton.widthAnchor.constraint(equalToConstant: 44),
             backButton.heightAnchor.constraint(equalToConstant: 44),
             toolbarHostView.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -20),
-            toolbarHostView.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -20),
-            importButton.heightAnchor.constraint(equalToConstant: 44)
+            toolbarHostView.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -20)
         ])
     }
 
@@ -646,11 +645,13 @@ final class macOSViewController: NSViewController {
     private func setupImportButton() {
         importButton.target = self
         importButton.action = #selector(handleImportButtonClick)
+        applyImportButtonAppearance()
     }
 
     private func setupSaveButton() {
         saveButton.target = self
         saveButton.action = #selector(handleSaveButtonClick)
+        applyDefaultSaveButtonAppearance()
     }
 
     private func setupCropButton() {
@@ -2453,17 +2454,58 @@ final class macOSViewController: NSViewController {
         )
     }
 
+    private func applyImportButtonAppearance() {
+        applyToolbarIconButtonAppearance(
+            to: importButton,
+            systemImageName: "plus",
+            backgroundColor: .systemBlue,
+            foregroundColor: .white,
+            accessibilityDescription: "Import image",
+            isEnabled: true
+        )
+    }
+
+    private func applyToolbarIconButtonAppearance(
+        to button: NSButton,
+        systemImageName: String,
+        backgroundColor: NSColor,
+        foregroundColor: NSColor,
+        accessibilityDescription: String,
+        isEnabled: Bool
+    ) {
+        button.title = ""
+        button.isBordered = false
+        button.imagePosition = .imageOnly
+        button.wantsLayer = true
+        button.layer?.cornerRadius = 12
+        button.layer?.borderWidth = 1
+        button.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.24).cgColor
+        button.layer?.backgroundColor = backgroundColor.cgColor
+        button.contentTintColor = foregroundColor
+        button.toolTip = accessibilityDescription
+        button.image = NSImage(
+            systemSymbolName: systemImageName,
+            accessibilityDescription: accessibilityDescription
+        )
+        button.isEnabled = isEnabled
+    }
+
     private func applySaveButtonAppearance(
         title: String,
         systemImageName: String,
         tintColor: NSColor
     ) {
-        saveButton.title = title
-        saveButton.image = NSImage(
-            systemSymbolName: systemImageName,
-            accessibilityDescription: title
+        let accessibilityDescription = title == "Save"
+            ? "Save board"
+            : "Save board (\(title))"
+        applyToolbarIconButtonAppearance(
+            to: saveButton,
+            systemImageName: systemImageName,
+            backgroundColor: tintColor,
+            foregroundColor: .white,
+            accessibilityDescription: accessibilityDescription,
+            isEnabled: saveButton.isEnabled
         )
-        saveButton.contentTintColor = tintColor
     }
 
     private func applyCropButtonAppearance(
@@ -2472,13 +2514,14 @@ final class macOSViewController: NSViewController {
         tintColor: NSColor,
         isEnabled: Bool
     ) {
-        cropButton.title = title
-        cropButton.image = NSImage(
-            systemSymbolName: systemImageName,
-            accessibilityDescription: title
+        applyToolbarIconButtonAppearance(
+            to: cropButton,
+            systemImageName: systemImageName,
+            backgroundColor: isEnabled ? tintColor : .quaternaryLabelColor.withAlphaComponent(0.35),
+            foregroundColor: isEnabled ? .white : .secondaryLabelColor,
+            accessibilityDescription: title == "Done" ? "Done cropping" : "Crop",
+            isEnabled: isEnabled
         )
-        cropButton.contentTintColor = isEnabled ? tintColor : .secondaryLabelColor
-        cropButton.isEnabled = isEnabled
     }
 
     private func presentSaveError(message: String) {
