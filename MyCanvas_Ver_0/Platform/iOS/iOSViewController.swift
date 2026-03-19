@@ -112,15 +112,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
             updatePreparedToolbarDockEdge()
         }
     }
-    private let toolbarButtonsStackView: iOSCanvasChromeStackView = {
-        let stackView = iOSCanvasChromeStackView()
-        stackView.translatesAutoresizingMaskIntoConstraints = false
-        stackView.axis = .vertical
-        stackView.alignment = .trailing
-        stackView.distribution = .fill
-        stackView.spacing = 12
-        return stackView
-    }()
+    private let toolbarHostView = iOSCanvasToolbarHostView()
     private let historyButtonsStackView: iOSCanvasChromeStackView = {
         let stackView = iOSCanvasChromeStackView()
         stackView.translatesAutoresizingMaskIntoConstraints = false
@@ -417,7 +409,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         view.addSubview(chromeOverlayView)
         chromeOverlayView.addSubview(miniMapMountView)
         chromeOverlayView.addSubview(historyButtonsStackView)
-        chromeOverlayView.addSubview(toolbarButtonsStackView)
+        chromeOverlayView.addSubview(toolbarHostView)
         chromeOverlayView.addSubview(contextMenuHostView)
         chromeOverlayView.addSubview(backButton)
         installHistoryButtons()
@@ -443,10 +435,10 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
             backButton.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor, constant: 20),
             backButton.widthAnchor.constraint(equalToConstant: 44),
             backButton.heightAnchor.constraint(equalToConstant: 44),
-            toolbarButtonsStackView.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -20),
-            toolbarButtonsStackView.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -20),
+            toolbarHostView.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -20),
+            toolbarHostView.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -20),
             historyButtonsStackView.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -20),
-            historyButtonsStackView.bottomAnchor.constraint(equalTo: toolbarButtonsStackView.topAnchor, constant: -12),
+            historyButtonsStackView.bottomAnchor.constraint(equalTo: toolbarHostView.topAnchor, constant: -12),
             cropButton.heightAnchor.constraint(equalToConstant: 40),
             undoButton.heightAnchor.constraint(equalToConstant: 40),
             redoButton.heightAnchor.constraint(equalToConstant: 40),
@@ -456,9 +448,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
     }
 
     private func installToolbarButtons() {
-        toolbarButtons.forEach { button in
-            toolbarButtonsStackView.addArrangedSubview(button)
-        }
+        toolbarHostView.installButtons(toolbarButtons)
     }
 
     private func installHistoryButtons() {
@@ -468,9 +458,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
     }
 
     private func updatePreparedToolbarDockEdge() {
-        toolbarButtonsStackView.axis = toolbarDockEdge.prefersHorizontalButtonLayout
-            ? .horizontal
-            : .vertical
+        toolbarHostView.dockEdge = toolbarDockEdge
     }
 
     private func updateChromeOverlayLayout() {
@@ -505,7 +493,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         var rects: [CGRect] = []
         appendChromeOccupiedRect(for: backButton, to: &rects)
         appendChromeOccupiedRect(for: historyButtonsStackView, to: &rects)
-        appendChromeOccupiedRect(for: toolbarButtonsStackView, to: &rects)
+        appendChromeOccupiedRect(for: toolbarHostView, to: &rects)
         return rects
     }
 

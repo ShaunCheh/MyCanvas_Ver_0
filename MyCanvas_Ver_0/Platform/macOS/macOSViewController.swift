@@ -121,15 +121,7 @@ final class macOSViewController: NSViewController {
             updatePreparedToolbarDockEdge()
         }
     }
-    private let toolbarButtonsStackView: macOSCanvasChromeStackView = {
-        let stackView = macOSCanvasChromeStackView()
-        stackView.translatesAutoresizingMaskIntoConstraints = false
-        stackView.orientation = .vertical
-        stackView.alignment = .trailing
-        stackView.distribution = .fill
-        stackView.spacing = 12
-        return stackView
-    }()
+    private let toolbarHostView = macOSCanvasToolbarHostView()
     private let miniMapMountView: macOSCanvasChromeOverlayView = {
         let view = macOSCanvasChromeOverlayView()
         view.translatesAutoresizingMaskIntoConstraints = true
@@ -513,7 +505,7 @@ final class macOSViewController: NSViewController {
         view.addSubview(canvasHostView)
         view.addSubview(chromeOverlayView)
         chromeOverlayView.addSubview(miniMapMountView)
-        chromeOverlayView.addSubview(toolbarButtonsStackView)
+        chromeOverlayView.addSubview(toolbarHostView)
         chromeOverlayView.addSubview(contextMenuHostView)
         chromeOverlayView.addSubview(backButton)
         installToolbarButtons()
@@ -538,22 +530,18 @@ final class macOSViewController: NSViewController {
             backButton.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor, constant: 20),
             backButton.widthAnchor.constraint(equalToConstant: 44),
             backButton.heightAnchor.constraint(equalToConstant: 44),
-            toolbarButtonsStackView.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -20),
-            toolbarButtonsStackView.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -20),
+            toolbarHostView.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -20),
+            toolbarHostView.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -20),
             importButton.heightAnchor.constraint(equalToConstant: 44)
         ])
     }
 
     private func installToolbarButtons() {
-        toolbarButtons.forEach { button in
-            toolbarButtonsStackView.addArrangedSubview(button)
-        }
+        toolbarHostView.installButtons(toolbarButtons)
     }
 
     private func updatePreparedToolbarDockEdge() {
-        toolbarButtonsStackView.orientation = toolbarDockEdge.prefersHorizontalButtonLayout
-            ? .horizontal
-            : .vertical
+        toolbarHostView.dockEdge = toolbarDockEdge
     }
 
     private func updateChromeOverlayLayout() {
@@ -587,7 +575,7 @@ final class macOSViewController: NSViewController {
     private func chromeOccupiedRects() -> [CGRect] {
         var rects: [CGRect] = []
         appendChromeOccupiedRect(for: backButton, to: &rects)
-        appendChromeOccupiedRect(for: toolbarButtonsStackView, to: &rects)
+        appendChromeOccupiedRect(for: toolbarHostView, to: &rects)
         return rects
     }
 
