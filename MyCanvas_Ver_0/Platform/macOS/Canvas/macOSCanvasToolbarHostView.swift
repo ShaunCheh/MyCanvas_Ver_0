@@ -78,7 +78,7 @@ final class macOSCanvasToolbarHostView: NSView {
 
     func render(_ state: CanvasToolbarState) {
         preferredAxisOverride = state.preferredAxis
-        dockEdge = state.placement.dockEdge
+        dockEdge = state.placement.preferredEdge
         backgroundView.isHidden = state.showsBackground == false
         isHidden = state.items.isEmpty
         syncButtons(with: state.items)

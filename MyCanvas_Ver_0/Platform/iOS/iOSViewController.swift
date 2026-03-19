@@ -104,22 +104,17 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         button.accessibilityLabel = "Back to board list"
         return button
     }()
-    private var toolbarDockEdge: CanvasToolbarDockEdge = .trailing {
+    // Keep placement transient until persistence is designed; future UIPanGestureRecognizer
+    // bridge code should write drag results back into this value.
+    private var transientToolbarPlacement = CanvasToolbarPlacement(
+        preferredEdge: .trailing
+    ) {
         didSet {
             guard isViewLoaded else {
                 return
             }
 
-            updatePreparedToolbarDockEdge()
-        }
-    }
-    private var toolbarOffsetAlongEdge: CGFloat = 0 {
-        didSet {
-            guard isViewLoaded else {
-                return
-            }
-
-            updatePreparedToolbarDockEdge()
+            updatePreparedToolbarPlacement()
         }
     }
     private let toolbarPlacementSolver = CanvasToolbarPlacementSolver()
@@ -372,7 +367,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         super.viewDidLoad()
         setupViewHierarchy()
         setupConstraints()
-        updatePreparedToolbarDockEdge()
+        updatePreparedToolbarPlacement()
         setupImportButton()
         setupSaveButton()
         setupCropButton()
@@ -461,7 +456,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         }
     }
 
-    private func updatePreparedToolbarDockEdge() {
+    private func updatePreparedToolbarPlacement() {
         renderToolbar()
         if view.bounds.isEmpty == false {
             view.layoutIfNeeded()
@@ -475,10 +470,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
     }
 
     private func toolbarPreferredPlacement() -> CanvasToolbarPlacement {
-        CanvasToolbarPlacement(
-            dockEdge: toolbarDockEdge,
-            offsetAlongEdge: toolbarOffsetAlongEdge
-        )
+        transientToolbarPlacement
     }
 
     private func performOverlayLayoutPass() -> CanvasChromeLayoutContext {

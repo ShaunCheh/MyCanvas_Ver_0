@@ -33,7 +33,7 @@ struct CanvasContextMenuLayoutConfiguration {
     var edgeInset: CGFloat = 16
     var anchorSpacing: CGFloat = 10
     var chromeClearance: CGFloat = 12
-    var occlusionPolicy: CanvasContextMenuOcclusionPolicy = .allowChromeOverlap
+    var occlusionPolicy: CanvasContextMenuOcclusionPolicy = .avoidOverlayChrome
     var placementStyle: CanvasContextMenuPlacementStyle = .cursorPreferred
 }
 

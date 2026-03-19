@@ -11,7 +11,6 @@ final class CanvasContextMenuHostView: UIView {
     private let layoutSolver = CanvasContextMenuLayoutSolver()
     private let layoutConfiguration: CanvasContextMenuLayoutConfiguration = {
         var configuration = CanvasContextMenuLayoutConfiguration()
-        configuration.occlusionPolicy = .allowChromeOverlap
         configuration.placementStyle = .cursorPreferred
         return configuration
     }()
@@ -246,7 +245,6 @@ final class CanvasContextMenuHostView: NSView {
     private let layoutSolver = CanvasContextMenuLayoutSolver()
     private let layoutConfiguration: CanvasContextMenuLayoutConfiguration = {
         var configuration = CanvasContextMenuLayoutConfiguration()
-        configuration.occlusionPolicy = .allowChromeOverlap
         configuration.placementStyle = .cursorPreferred
         return configuration
     }()

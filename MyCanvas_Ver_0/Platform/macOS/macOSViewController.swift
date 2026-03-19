@@ -113,22 +113,17 @@ final class macOSViewController: NSViewController {
         }
         return button
     }()
-    private var toolbarDockEdge: CanvasToolbarDockEdge = .trailing {
+    // Keep placement transient until persistence is designed; future NSPanGestureRecognizer
+    // bridge code should write drag results back into this value.
+    private var transientToolbarPlacement = CanvasToolbarPlacement(
+        preferredEdge: .trailing
+    ) {
         didSet {
             guard isViewLoaded else {
                 return
             }
 
-            updatePreparedToolbarDockEdge()
-        }
-    }
-    private var toolbarOffsetAlongEdge: CGFloat = 0 {
-        didSet {
-            guard isViewLoaded else {
-                return
-            }
-
-            updatePreparedToolbarDockEdge()
+            updatePreparedToolbarPlacement()
         }
     }
     private let toolbarPlacementSolver = CanvasToolbarPlacementSolver()
@@ -398,7 +393,7 @@ final class macOSViewController: NSViewController {
         )
         setupViewHierarchy()
         setupConstraints()
-        updatePreparedToolbarDockEdge()
+        updatePreparedToolbarPlacement()
         setupImportButton()
         setupSaveButton()
         setupCropButton()
@@ -548,7 +543,7 @@ final class macOSViewController: NSViewController {
         toolbarHostView.registerButtons(toolbarButtonsByID)
     }
 
-    private func updatePreparedToolbarDockEdge() {
+    private func updatePreparedToolbarPlacement() {
         renderToolbar()
         if view.bounds.isEmpty == false {
             view.layoutSubtreeIfNeeded()
@@ -562,10 +557,7 @@ final class macOSViewController: NSViewController {
     }
 
     private func toolbarPreferredPlacement() -> CanvasToolbarPlacement {
-        CanvasToolbarPlacement(
-            dockEdge: toolbarDockEdge,
-            offsetAlongEdge: toolbarOffsetAlongEdge
-        )
+        transientToolbarPlacement
     }
 
     private func performOverlayLayoutPass() -> CanvasChromeLayoutContext {

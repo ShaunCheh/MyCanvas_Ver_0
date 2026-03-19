@@ -22,18 +22,44 @@ enum CanvasToolbarItemVisualRole: String, Sendable {
 }
 
 struct CanvasToolbarPlacement: Hashable, Sendable {
-    var dockEdge: CanvasToolbarDockEdge
+    var preferredEdge: CanvasToolbarDockEdge
     var dockAlignment: CanvasToolbarDockAlignment
     var offsetAlongEdge: CGFloat
+    var isUserPinned: Bool
+
+    var dockEdge: CanvasToolbarDockEdge {
+        get {
+            preferredEdge
+        }
+        set {
+            preferredEdge = newValue
+        }
+    }
+
+    init(
+        preferredEdge: CanvasToolbarDockEdge,
+        dockAlignment: CanvasToolbarDockAlignment = .centered,
+        offsetAlongEdge: CGFloat = 0,
+        isUserPinned: Bool = false
+    ) {
+        self.preferredEdge = preferredEdge
+        self.dockAlignment = dockAlignment
+        self.offsetAlongEdge = offsetAlongEdge
+        self.isUserPinned = isUserPinned
+    }
 
     init(
         dockEdge: CanvasToolbarDockEdge,
         dockAlignment: CanvasToolbarDockAlignment = .centered,
-        offsetAlongEdge: CGFloat = 0
+        offsetAlongEdge: CGFloat = 0,
+        isUserPinned: Bool = false
     ) {
-        self.dockEdge = dockEdge
-        self.dockAlignment = dockAlignment
-        self.offsetAlongEdge = offsetAlongEdge
+        self.init(
+            preferredEdge: dockEdge,
+            dockAlignment: dockAlignment,
+            offsetAlongEdge: offsetAlongEdge,
+            isUserPinned: isUserPinned
+        )
     }
 }
 
@@ -83,6 +109,6 @@ struct CanvasToolbarState: Hashable, Sendable {
         self.placement = placement
         self.items = items
         self.showsBackground = showsBackground
-        self.preferredAxis = preferredAxis ?? placement.dockEdge.preferredAxis
+            self.preferredAxis = preferredAxis ?? placement.preferredEdge.preferredAxis
     }
 }

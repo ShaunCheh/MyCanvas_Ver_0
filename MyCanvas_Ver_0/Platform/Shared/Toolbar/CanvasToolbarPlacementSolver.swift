@@ -113,13 +113,13 @@ struct CanvasToolbarPlacementSolver {
         in bounds: CGRect
     ) -> CGFloat {
         let range = leadingCoordinateRange(
-            for: placement.dockEdge,
+            for: placement.preferredEdge,
             size: size,
             in: bounds
         )
         let centeredLeadingCoordinate: CGFloat
 
-        switch placement.dockEdge {
+        switch placement.preferredEdge {
         case .top, .bottom:
             centeredLeadingCoordinate = bounds.midX - (size.width / 2)
         case .leading, .trailing:
@@ -141,7 +141,7 @@ struct CanvasToolbarPlacementSolver {
         blockerRects: [CGRect]
     ) -> [CGFloat] {
         let range = leadingCoordinateRange(
-            for: placement.dockEdge,
+            for: placement.preferredEdge,
             size: size,
             in: bounds
         )
@@ -214,12 +214,12 @@ struct CanvasToolbarPlacementSolver {
             in: bounds
         )
         let range = leadingCoordinateRange(
-            for: placement.dockEdge,
+            for: placement.preferredEdge,
             size: size,
             in: bounds
         )
 
-        switch placement.dockEdge {
+        switch placement.preferredEdge {
         case .top, .bottom:
             guard
                 blockerRect.maxY > anchoredFrame.minY,
@@ -270,7 +270,7 @@ struct CanvasToolbarPlacementSolver {
         leadingCoordinate: CGFloat,
         in bounds: CGRect
     ) -> CGRect {
-        switch placement.dockEdge {
+        switch placement.preferredEdge {
         case .top:
             return CGRect(
                 x: leadingCoordinate,
@@ -308,12 +308,22 @@ struct CanvasToolbarPlacementSolver {
         in bounds: CGRect
     ) -> (min: CGFloat, max: CGFloat) {
         switch dockEdge {
-        case .top, .bottom:
+        case .top:
             return (
                 min: bounds.minX,
                 max: bounds.maxX - size.width
             )
-        case .leading, .trailing:
+        case .bottom:
+            return (
+                min: bounds.minX,
+                max: bounds.maxX - size.width
+            )
+        case .leading:
+            return (
+                min: bounds.minY,
+                max: bounds.maxY - size.height
+            )
+        case .trailing:
             return (
                 min: bounds.minY,
                 max: bounds.maxY - size.height
