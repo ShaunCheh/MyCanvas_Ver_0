@@ -10,7 +10,7 @@ todos:
     status: completed
   - id: phase3-macos-viewport
     content: 先迁移 `macOSCanvasViewportView`：新增 grid/board surface layer，调整层级，切换到新 snapshot contract，并移除橙色虚线 board 路径。
-    status: pending
+    status: completed
   - id: phase4-ios-viewport
     content: 对齐迁移 `iOSCanvasViewportView`，复用同一套 shared 几何，保证 pan/zoom/long press 与编辑 chrome 行为不回退。
     status: pending
