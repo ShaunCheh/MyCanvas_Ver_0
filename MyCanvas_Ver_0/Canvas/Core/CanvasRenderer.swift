@@ -100,7 +100,7 @@ struct CanvasRenderer {
             minorStepWorld: Self.workspaceMinorGridStepWorld,
             majorGridLineEvery: Self.workspaceMajorGridLineEvery
         )
-        CanvasWorkspaceRenderOverlay(
+        return CanvasWorkspaceRenderOverlay(
             viewportBounds: viewportBounds,
             boardSurfaceWorldRect: boardSurfaceWorldRect,
             boardSurfaceScreenRect: boardSurfaceScreenRect,
