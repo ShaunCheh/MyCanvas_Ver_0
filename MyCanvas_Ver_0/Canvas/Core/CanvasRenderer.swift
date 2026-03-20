@@ -45,7 +45,6 @@ struct CanvasRenderer {
         }
 
         let workspaceOverlay: CanvasWorkspaceRenderOverlay?
-        let boardOverlay: CanvasBoardRenderOverlay?
         if let boardState {
             let boardSurfaceWorldRect = boardState.worldRect.standardized
             let boardSurfaceScreenRect = camera
@@ -58,13 +57,8 @@ struct CanvasRenderer {
                 boardSurfaceWorldRect: boardSurfaceWorldRect,
                 boardSurfaceScreenRect: boardSurfaceScreenRect
             )
-            boardOverlay = CanvasBoardRenderOverlay(
-                worldRect: boardSurfaceWorldRect,
-                screenRect: boardSurfaceScreenRect
-            )
         } else {
             workspaceOverlay = nil
-            boardOverlay = nil
         }
 
         let editOverlay = makeEditOverlay(
@@ -87,7 +81,6 @@ struct CanvasRenderer {
             viewportBounds: camera.viewportBounds,
             visibleWorldRect: visibleWorldRect,
             workspaceOverlay: workspaceOverlay,
-            boardOverlay: boardOverlay,
             items: renderItems,
             editOverlay: editOverlay,
             interactionOverlay: interactionOverlay

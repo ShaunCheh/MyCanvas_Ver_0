@@ -16,7 +16,7 @@ todos:
     status: completed
   - id: phase5-contract-cleanup
     content: 双端都切到新 contract 后，删除旧 `boardOverlay` / `boardHighlight` 语义和命名，并做性能与回归检查。
-    status: pending
+    status: completed
   - id: phase6-preview-alignment
     content: 主画布稳定后，决定是否在 minimap 与 board preview 上同步去除旧橙色 board 视觉，完成整体视觉一致性。
     status: pending
