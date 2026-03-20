@@ -7,7 +7,7 @@ todos:
     status: completed
   - id: phase2-shared-grid
     content: 在 `CanvasRenderer` 下沉 world 锁定网格和 board surface 几何计算，统一输出 screen-space segments 与 board surface rect。
-    status: pending
+    status: completed
   - id: phase3-macos-viewport
     content: 先迁移 `macOSCanvasViewportView`：新增 grid/board surface layer，调整层级，切换到新 snapshot contract，并移除橙色虚线 board 路径。
     status: pending

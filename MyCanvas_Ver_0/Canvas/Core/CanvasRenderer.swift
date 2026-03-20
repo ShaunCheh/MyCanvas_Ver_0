@@ -2,6 +2,11 @@ import CoreGraphics
 import Foundation
 
 struct CanvasRenderer {
+    private struct WorkspaceGridSegments {
+        let minor: [CanvasWorkspaceGridLineSegment]
+        let major: [CanvasWorkspaceGridLineSegment]
+    }
+
     private static let rotateHandleScreenOffset: CGFloat = 28
     private static let rotationInteractionTickStepDegrees: CGFloat = 10
     private static let minimumRotationInteractionRingRadius: CGFloat = 48
@@ -9,6 +14,7 @@ struct CanvasRenderer {
     private static let rotationInteractionTextOffset: CGFloat = 18
     private static let workspaceMinorGridStepWorld: CGFloat = 64
     private static let workspaceMajorGridLineEvery: Int = 4
+    private static let workspaceGridIndexEpsilonFactor: CGFloat = 0.0001
     private let presentationResolver = CanvasImagePresentationResolver()
 
     func makeSnapshot(
@@ -46,6 +52,8 @@ struct CanvasRenderer {
                 .worldToViewport(boardSurfaceWorldRect)
                 .standardized
             workspaceOverlay = makeWorkspaceOverlay(
+                visibleWorldRect: visibleWorldRect,
+                camera: camera,
                 viewportBounds: camera.viewportBounds,
                 boardSurfaceWorldRect: boardSurfaceWorldRect,
                 boardSurfaceScreenRect: boardSurfaceScreenRect
@@ -87,20 +95,160 @@ struct CanvasRenderer {
     }
 
     private func makeWorkspaceOverlay(
+        visibleWorldRect: CGRect,
+        camera: CanvasCamera,
         viewportBounds: CGRect,
         boardSurfaceWorldRect: CGRect,
         boardSurfaceScreenRect: CGRect
     ) -> CanvasWorkspaceRenderOverlay {
-        // Phase 1 freezes the shared contract first; grid geometry lands next.
+        let gridSegments = makeWorkspaceGridSegments(
+            visibleWorldRect: visibleWorldRect,
+            camera: camera,
+            minorStepWorld: Self.workspaceMinorGridStepWorld,
+            majorGridLineEvery: Self.workspaceMajorGridLineEvery
+        )
         CanvasWorkspaceRenderOverlay(
             viewportBounds: viewportBounds,
             boardSurfaceWorldRect: boardSurfaceWorldRect,
             boardSurfaceScreenRect: boardSurfaceScreenRect,
             minorGridStepWorld: Self.workspaceMinorGridStepWorld,
             majorGridLineEvery: Self.workspaceMajorGridLineEvery,
-            minorGridSegments: [],
-            majorGridSegments: []
+            minorGridSegments: gridSegments.minor,
+            majorGridSegments: gridSegments.major
         )
+    }
+
+    private func makeWorkspaceGridSegments(
+        visibleWorldRect: CGRect,
+        camera: CanvasCamera,
+        minorStepWorld: CGFloat,
+        majorGridLineEvery: Int
+    ) -> WorkspaceGridSegments {
+        let standardizedVisibleWorldRect = visibleWorldRect.standardized
+        let resolvedMinorStepWorld = max(minorStepWorld, 1)
+        let resolvedMajorGridLineEvery = max(majorGridLineEvery, 1)
+        guard
+            standardizedVisibleWorldRect.width > 0,
+            standardizedVisibleWorldRect.height > 0
+        else {
+            return WorkspaceGridSegments(minor: [], major: [])
+        }
+
+        // Keep the workspace grid anchored to world-space zero so board auto
+        // expansion changes the white surface bounds without rephasing the grid.
+        var minorSegments: [CanvasWorkspaceGridLineSegment] = []
+        var majorSegments: [CanvasWorkspaceGridLineSegment] = []
+        appendVerticalWorkspaceGridSegments(
+            visibleWorldRect: standardizedVisibleWorldRect,
+            camera: camera,
+            minorStepWorld: resolvedMinorStepWorld,
+            majorGridLineEvery: resolvedMajorGridLineEvery,
+            minorSegments: &minorSegments,
+            majorSegments: &majorSegments
+        )
+        appendHorizontalWorkspaceGridSegments(
+            visibleWorldRect: standardizedVisibleWorldRect,
+            camera: camera,
+            minorStepWorld: resolvedMinorStepWorld,
+            majorGridLineEvery: resolvedMajorGridLineEvery,
+            minorSegments: &minorSegments,
+            majorSegments: &majorSegments
+        )
+        return WorkspaceGridSegments(
+            minor: minorSegments,
+            major: majorSegments
+        )
+    }
+
+    private func appendVerticalWorkspaceGridSegments(
+        visibleWorldRect: CGRect,
+        camera: CanvasCamera,
+        minorStepWorld: CGFloat,
+        majorGridLineEvery: Int,
+        minorSegments: inout [CanvasWorkspaceGridLineSegment],
+        majorSegments: inout [CanvasWorkspaceGridLineSegment]
+    ) {
+        guard let xIndexRange = workspaceGridIndexRange(
+            minimumWorld: visibleWorldRect.minX,
+            maximumWorld: visibleWorldRect.maxX,
+            stepWorld: minorStepWorld
+        ) else {
+            return
+        }
+
+        for xIndex in xIndexRange {
+            let x = CGFloat(xIndex) * minorStepWorld
+            let segment = CanvasWorkspaceGridLineSegment(
+                start: camera.worldToViewport(
+                    CGPoint(x: x, y: visibleWorldRect.minY)
+                ),
+                end: camera.worldToViewport(
+                    CGPoint(x: x, y: visibleWorldRect.maxY)
+                )
+            )
+            if xIndex.isMultiple(of: majorGridLineEvery) {
+                majorSegments.append(segment)
+            } else {
+                minorSegments.append(segment)
+            }
+        }
+    }
+
+    private func appendHorizontalWorkspaceGridSegments(
+        visibleWorldRect: CGRect,
+        camera: CanvasCamera,
+        minorStepWorld: CGFloat,
+        majorGridLineEvery: Int,
+        minorSegments: inout [CanvasWorkspaceGridLineSegment],
+        majorSegments: inout [CanvasWorkspaceGridLineSegment]
+    ) {
+        guard let yIndexRange = workspaceGridIndexRange(
+            minimumWorld: visibleWorldRect.minY,
+            maximumWorld: visibleWorldRect.maxY,
+            stepWorld: minorStepWorld
+        ) else {
+            return
+        }
+
+        for yIndex in yIndexRange {
+            let y = CGFloat(yIndex) * minorStepWorld
+            let segment = CanvasWorkspaceGridLineSegment(
+                start: camera.worldToViewport(
+                    CGPoint(x: visibleWorldRect.minX, y: y)
+                ),
+                end: camera.worldToViewport(
+                    CGPoint(x: visibleWorldRect.maxX, y: y)
+                )
+            )
+            if yIndex.isMultiple(of: majorGridLineEvery) {
+                majorSegments.append(segment)
+            } else {
+                minorSegments.append(segment)
+            }
+        }
+    }
+
+    private func workspaceGridIndexRange(
+        minimumWorld: CGFloat,
+        maximumWorld: CGFloat,
+        stepWorld: CGFloat
+    ) -> ClosedRange<Int>? {
+        guard stepWorld > 0 else {
+            return nil
+        }
+
+        let epsilon = stepWorld * Self.workspaceGridIndexEpsilonFactor
+        let startIndex = Int(
+            ceil((minimumWorld - epsilon) / stepWorld)
+        )
+        let endIndex = Int(
+            floor((maximumWorld + epsilon) / stepWorld)
+        )
+        guard startIndex <= endIndex else {
+            return nil
+        }
+
+        return startIndex...endIndex
     }
 
     private func makeEditOverlay(
