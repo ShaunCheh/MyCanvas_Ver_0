@@ -7,6 +7,8 @@ struct CanvasRenderer {
     private static let minimumRotationInteractionRingRadius: CGFloat = 48
     private static let rotationInteractionTickLength: CGFloat = 8
     private static let rotationInteractionTextOffset: CGFloat = 18
+    private static let workspaceMinorGridStepWorld: CGFloat = 64
+    private static let workspaceMajorGridLineEvery: Int = 4
     private let presentationResolver = CanvasImagePresentationResolver()
 
     func makeSnapshot(
@@ -36,11 +38,25 @@ struct CanvasRenderer {
             )
         }
 
-        let boardOverlay = boardState.map { boardState in
-            CanvasBoardRenderOverlay(
-                worldRect: boardState.worldRect,
-                screenRect: camera.worldToViewport(boardState.worldRect)
+        let workspaceOverlay: CanvasWorkspaceRenderOverlay?
+        let boardOverlay: CanvasBoardRenderOverlay?
+        if let boardState {
+            let boardSurfaceWorldRect = boardState.worldRect.standardized
+            let boardSurfaceScreenRect = camera
+                .worldToViewport(boardSurfaceWorldRect)
+                .standardized
+            workspaceOverlay = makeWorkspaceOverlay(
+                viewportBounds: camera.viewportBounds,
+                boardSurfaceWorldRect: boardSurfaceWorldRect,
+                boardSurfaceScreenRect: boardSurfaceScreenRect
             )
+            boardOverlay = CanvasBoardRenderOverlay(
+                worldRect: boardSurfaceWorldRect,
+                screenRect: boardSurfaceScreenRect
+            )
+        } else {
+            workspaceOverlay = nil
+            boardOverlay = nil
         }
 
         let editOverlay = makeEditOverlay(
@@ -62,10 +78,28 @@ struct CanvasRenderer {
         return CanvasRenderSnapshot(
             viewportBounds: camera.viewportBounds,
             visibleWorldRect: visibleWorldRect,
+            workspaceOverlay: workspaceOverlay,
             boardOverlay: boardOverlay,
             items: renderItems,
             editOverlay: editOverlay,
             interactionOverlay: interactionOverlay
+        )
+    }
+
+    private func makeWorkspaceOverlay(
+        viewportBounds: CGRect,
+        boardSurfaceWorldRect: CGRect,
+        boardSurfaceScreenRect: CGRect
+    ) -> CanvasWorkspaceRenderOverlay {
+        // Phase 1 freezes the shared contract first; grid geometry lands next.
+        CanvasWorkspaceRenderOverlay(
+            viewportBounds: viewportBounds,
+            boardSurfaceWorldRect: boardSurfaceWorldRect,
+            boardSurfaceScreenRect: boardSurfaceScreenRect,
+            minorGridStepWorld: Self.workspaceMinorGridStepWorld,
+            majorGridLineEvery: Self.workspaceMajorGridLineEvery,
+            minorGridSegments: [],
+            majorGridSegments: []
         )
     }
 

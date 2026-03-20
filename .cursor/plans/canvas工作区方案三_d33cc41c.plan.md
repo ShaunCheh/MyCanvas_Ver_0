@@ -4,7 +4,7 @@ overview: 在不改变 `CanvasBoardState` 自动扩张、持久化格式和撤�
 todos:
   - id: phase1-render-contract
     content: 扩展 `CanvasRenderSnapshot` 与 shared overlay 语义，建立 `workspaceOverlay` 的加法契约，但先保留旧 `boardOverlay` 以降低迁移风险。
-    status: pending
+    status: completed
   - id: phase2-shared-grid
     content: 在 `CanvasRenderer` 下沉 world 锁定网格和 board surface 几何计算，统一输出 screen-space segments 与 board surface rect。
     status: pending

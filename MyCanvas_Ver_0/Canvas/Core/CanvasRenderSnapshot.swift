@@ -20,6 +20,24 @@ struct CanvasBoardRenderOverlay {
     let screenRect: CGRect
 }
 
+// Workspace chrome is an additive contract during the migration away from
+// board highlight rendering. Platform viewports can adopt this geometry
+// incrementally while the legacy board overlay remains available.
+struct CanvasWorkspaceGridLineSegment {
+    let start: CGPoint
+    let end: CGPoint
+}
+
+struct CanvasWorkspaceRenderOverlay {
+    let viewportBounds: CGRect
+    let boardSurfaceWorldRect: CGRect
+    let boardSurfaceScreenRect: CGRect
+    let minorGridStepWorld: CGFloat
+    let majorGridLineEvery: Int
+    let minorGridSegments: [CanvasWorkspaceGridLineSegment]
+    let majorGridSegments: [CanvasWorkspaceGridLineSegment]
+}
+
 enum CanvasSelectionHandleRole: CaseIterable {
     case topLeading
     case topTrailing
@@ -219,6 +237,7 @@ extension CanvasEditHandleRole {
 struct CanvasRenderSnapshot {
     let viewportBounds: CGRect
     let visibleWorldRect: CGRect
+    let workspaceOverlay: CanvasWorkspaceRenderOverlay?
     let boardOverlay: CanvasBoardRenderOverlay?
     let items: [CanvasRenderItem]
     let editOverlay: CanvasEditRenderOverlay?
@@ -227,6 +246,7 @@ struct CanvasRenderSnapshot {
     static let empty = CanvasRenderSnapshot(
         viewportBounds: .zero,
         visibleWorldRect: .zero,
+        workspaceOverlay: nil,
         boardOverlay: nil,
         items: [],
         editOverlay: nil,
