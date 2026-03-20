@@ -2,12 +2,27 @@
 import UIKit
 
 final class iOSCanvasViewportView: UIView {
-    private static let boardStrokeColor = CGColor(
-        red: 1,
-        green: 149.0 / 255.0,
-        blue: 0,
+    private static let workspaceBackgroundColor = CGColor(
+        red: 28.0 / 255.0,
+        green: 29.0 / 255.0,
+        blue: 31.0 / 255.0,
+        alpha: 1
+    )
+    private static let workspaceMinorGridStrokeColor = CGColor(
+        red: 58.0 / 255.0,
+        green: 60.0 / 255.0,
+        blue: 64.0 / 255.0,
+        alpha: 0.72
+    )
+    private static let workspaceMajorGridStrokeColor = CGColor(
+        red: 84.0 / 255.0,
+        green: 87.0 / 255.0,
+        blue: 93.0 / 255.0,
         alpha: 0.9
     )
+    private static let workspaceMinorGridLineWidth: CGFloat = 1
+    private static let workspaceMajorGridLineWidth: CGFloat = 1
+    private static let boardSurfaceFillColor = CGColor(gray: 1, alpha: 1)
     private static let selectionStrokeColor = CGColor(
         red: 0,
         green: 122.0 / 255.0,
@@ -52,9 +67,12 @@ final class iOSCanvasViewportView: UIView {
     }
 
     private let backgroundLayer = CALayer()
+    private let workspaceGridLayer = CALayer()
+    private let workspaceMinorGridLayer = CAShapeLayer()
+    private let workspaceMajorGridLayer = CAShapeLayer()
+    private let boardSurfaceLayer = CAShapeLayer()
     private let itemsLayer = CALayer()
     private let overlayLayer = CALayer()
-    private let boardHighlightLayer = CAShapeLayer()
     private let selectionOutlineLayer = CAShapeLayer()
     private let interactionOverlayLayer = CALayer()
     private let rotationRingLayer = CAShapeLayer()
@@ -209,7 +227,7 @@ final class iOSCanvasViewportView: UIView {
         updateBackgroundAppearance()
         performWithoutLayerActions {
             refreshImageLayers()
-            refreshBoardHighlight()
+            refreshWorkspaceChrome()
             refreshEditOverlay()
             refreshInteractionOverlay()
         }
@@ -225,7 +243,7 @@ final class iOSCanvasViewportView: UIView {
         performWithoutLayerActions {
             updateLayerFrames()
             refreshImageLayers()
-            refreshBoardHighlight()
+            refreshWorkspaceChrome()
             refreshEditOverlay()
             refreshInteractionOverlay()
         }
@@ -237,9 +255,12 @@ final class iOSCanvasViewportView: UIView {
         isMultipleTouchEnabled = true
 
         layer.addSublayer(backgroundLayer)
+        layer.addSublayer(workspaceGridLayer)
+        workspaceGridLayer.addSublayer(workspaceMinorGridLayer)
+        workspaceGridLayer.addSublayer(workspaceMajorGridLayer)
+        layer.addSublayer(boardSurfaceLayer)
         layer.addSublayer(itemsLayer)
         layer.addSublayer(overlayLayer)
-        overlayLayer.addSublayer(boardHighlightLayer)
         overlayLayer.addSublayer(selectionOutlineLayer)
         overlayLayer.addSublayer(interactionOverlayLayer)
         overlayLayer.addSublayer(cropMaskLayer)
@@ -254,7 +275,8 @@ final class iOSCanvasViewportView: UIView {
         addGestureRecognizer(pinchGestureRecognizer)
         addGestureRecognizer(longPressGestureRecognizer)
 
-        configureBoardHighlightLayer()
+        configureWorkspaceGridLayers()
+        configureBoardSurfaceLayer()
         configureSelectionOutlineLayer()
         configureInteractionOverlayLayer()
         configureRotationRingLayer()
@@ -276,16 +298,28 @@ final class iOSCanvasViewportView: UIView {
             backgroundLayer.frame = bounds
         }
 
+        if workspaceGridLayer.frame != bounds {
+            workspaceGridLayer.frame = bounds
+        }
+
+        if workspaceMinorGridLayer.frame != bounds {
+            workspaceMinorGridLayer.frame = bounds
+        }
+
+        if workspaceMajorGridLayer.frame != bounds {
+            workspaceMajorGridLayer.frame = bounds
+        }
+
+        if boardSurfaceLayer.frame != bounds {
+            boardSurfaceLayer.frame = bounds
+        }
+
         if itemsLayer.frame != bounds {
             itemsLayer.frame = bounds
         }
 
         if overlayLayer.frame != bounds {
             overlayLayer.frame = bounds
-        }
-
-        if boardHighlightLayer.frame != bounds {
-            boardHighlightLayer.frame = bounds
         }
 
         if selectionOutlineLayer.frame != bounds {
@@ -320,7 +354,7 @@ final class iOSCanvasViewportView: UIView {
     }
 
     private func updateBackgroundAppearance() {
-        backgroundLayer.backgroundColor = UIColor.systemBackground.cgColor
+        backgroundLayer.backgroundColor = Self.workspaceBackgroundColor
     }
 
     private func refreshImageLayers() {
@@ -339,12 +373,24 @@ final class iOSCanvasViewportView: UIView {
         }
     }
 
-    private func configureBoardHighlightLayer() {
-        boardHighlightLayer.fillColor = nil
-        boardHighlightLayer.strokeColor = Self.boardStrokeColor
-        boardHighlightLayer.lineWidth = 2
-        boardHighlightLayer.lineDashPattern = [10, 6]
-        boardHighlightLayer.isHidden = true
+    private func configureWorkspaceGridLayers() {
+        workspaceGridLayer.masksToBounds = true
+
+        workspaceMinorGridLayer.fillColor = nil
+        workspaceMinorGridLayer.strokeColor = Self.workspaceMinorGridStrokeColor
+        workspaceMinorGridLayer.lineWidth = Self.workspaceMinorGridLineWidth
+        workspaceMinorGridLayer.isHidden = true
+
+        workspaceMajorGridLayer.fillColor = nil
+        workspaceMajorGridLayer.strokeColor = Self.workspaceMajorGridStrokeColor
+        workspaceMajorGridLayer.lineWidth = Self.workspaceMajorGridLineWidth
+        workspaceMajorGridLayer.isHidden = true
+    }
+
+    private func configureBoardSurfaceLayer() {
+        boardSurfaceLayer.fillColor = Self.boardSurfaceFillColor
+        boardSurfaceLayer.strokeColor = nil
+        boardSurfaceLayer.isHidden = true
     }
 
     private func configureSelectionOutlineLayer() {
@@ -448,16 +494,75 @@ final class iOSCanvasViewportView: UIView {
         rotateHandleLayer.isHidden = true
     }
 
-    private func refreshBoardHighlight() {
-        guard let boardOverlay = snapshot.boardOverlay else {
-            boardHighlightLayer.path = nil
-            boardHighlightLayer.isHidden = true
+    private func refreshWorkspaceChrome() {
+        guard let workspaceOverlay = snapshot.workspaceOverlay else {
+            hideWorkspaceChrome()
             return
         }
 
-        boardHighlightLayer.path = CGPath(rect: boardOverlay.screenRect, transform: nil)
-        boardHighlightLayer.isHidden = false
-        boardHighlightLayer.contentsScale = window?.screen.scale ?? UIScreen.main.scale
+        let boardSurfaceRect = workspaceOverlay.boardSurfaceScreenRect.standardized
+        if boardSurfaceRect.width > 0, boardSurfaceRect.height > 0 {
+            boardSurfaceLayer.path = CGPath(
+                rect: boardSurfaceRect,
+                transform: nil
+            )
+            boardSurfaceLayer.isHidden = false
+            boardSurfaceLayer.contentsScale = currentContentsScale
+        } else {
+            boardSurfaceLayer.path = nil
+            boardSurfaceLayer.isHidden = true
+        }
+
+        if workspaceOverlay.minorGridSegments.isEmpty {
+            workspaceMinorGridLayer.path = nil
+            workspaceMinorGridLayer.isHidden = true
+        } else {
+            workspaceMinorGridLayer.path = Self.workspaceGridPath(
+                workspaceOverlay.minorGridSegments
+            )
+            workspaceMinorGridLayer.isHidden = false
+            workspaceMinorGridLayer.contentsScale = currentContentsScale
+        }
+
+        if workspaceOverlay.majorGridSegments.isEmpty {
+            workspaceMajorGridLayer.path = nil
+            workspaceMajorGridLayer.isHidden = true
+        } else {
+            workspaceMajorGridLayer.path = Self.workspaceGridPath(
+                workspaceOverlay.majorGridSegments
+            )
+            workspaceMajorGridLayer.isHidden = false
+            workspaceMajorGridLayer.contentsScale = currentContentsScale
+        }
+
+        workspaceGridLayer.isHidden = workspaceOverlay.minorGridSegments.isEmpty &&
+            workspaceOverlay.majorGridSegments.isEmpty
+    }
+
+    private func hideWorkspaceChrome() {
+        workspaceGridLayer.isHidden = true
+
+        workspaceMinorGridLayer.path = nil
+        workspaceMinorGridLayer.isHidden = true
+
+        workspaceMajorGridLayer.path = nil
+        workspaceMajorGridLayer.isHidden = true
+
+        boardSurfaceLayer.path = nil
+        boardSurfaceLayer.isHidden = true
+    }
+
+    private static func workspaceGridPath(
+        _ segments: [CanvasWorkspaceGridLineSegment]
+    ) -> CGPath {
+        let path = CGMutablePath()
+
+        for segment in segments {
+            path.move(to: segment.start)
+            path.addLine(to: segment.end)
+        }
+
+        return path
     }
 
     private func refreshEditOverlay() {

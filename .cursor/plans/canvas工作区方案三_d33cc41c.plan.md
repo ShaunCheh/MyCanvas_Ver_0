@@ -13,7 +13,7 @@ todos:
     status: completed
   - id: phase4-ios-viewport
     content: 对齐迁移 `iOSCanvasViewportView`，复用同一套 shared 几何，保证 pan/zoom/long press 与编辑 chrome 行为不回退。
-    status: pending
+    status: completed
   - id: phase5-contract-cleanup
     content: 双端都切到新 contract 后，删除旧 `boardOverlay` / `boardHighlight` 语义和命名，并做性能与回归检查。
     status: pending
