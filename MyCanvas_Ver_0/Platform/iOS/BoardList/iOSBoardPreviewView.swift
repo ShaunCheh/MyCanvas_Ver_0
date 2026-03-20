@@ -61,8 +61,8 @@ final class iOSBoardPreviewView: UIView {
 
         imageLayer.contentsGravity = .resizeAspectFill
 
-        boardLayer.fillColor = UIColor.secondarySystemBackground.withAlphaComponent(0.55).cgColor
-        boardLayer.strokeColor = UIColor.systemOrange.withAlphaComponent(0.75).cgColor
+        boardLayer.fillColor = CanvasWorkspacePalette.boardSurfaceFillColor
+        boardLayer.strokeColor = nil
         boardLayer.lineWidth = Self.boardLineWidth
 
         occupancyLayer.fillColor = UIColor.systemGray.cgColor
@@ -78,7 +78,7 @@ final class iOSBoardPreviewView: UIView {
     }
 
     private func updateAppearance() {
-        backgroundLayer.backgroundColor = UIColor.systemBackground.withAlphaComponent(0.92).cgColor
+        backgroundLayer.backgroundColor = CanvasWorkspacePalette.backgroundColor
         layer.borderColor = UIColor.separator.withAlphaComponent(0.75).cgColor
         layer.borderWidth = Self.borderWidth
     }

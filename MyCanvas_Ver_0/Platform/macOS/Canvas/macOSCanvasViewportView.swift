@@ -2,27 +2,12 @@
 import AppKit
 
 final class macOSCanvasViewportView: NSView {
-    private static let workspaceBackgroundColor = CGColor(
-        red: 28.0 / 255.0,
-        green: 29.0 / 255.0,
-        blue: 31.0 / 255.0,
-        alpha: 1
-    )
-    private static let workspaceMinorGridStrokeColor = CGColor(
-        red: 58.0 / 255.0,
-        green: 60.0 / 255.0,
-        blue: 64.0 / 255.0,
-        alpha: 0.72
-    )
-    private static let workspaceMajorGridStrokeColor = CGColor(
-        red: 84.0 / 255.0,
-        green: 87.0 / 255.0,
-        blue: 93.0 / 255.0,
-        alpha: 0.9
-    )
+    private static let workspaceBackgroundColor = CanvasWorkspacePalette.backgroundColor
+    private static let workspaceMinorGridStrokeColor = CanvasWorkspacePalette.minorGridStrokeColor
+    private static let workspaceMajorGridStrokeColor = CanvasWorkspacePalette.majorGridStrokeColor
     private static let workspaceMinorGridLineWidth: CGFloat = 1
     private static let workspaceMajorGridLineWidth: CGFloat = 1
-    private static let boardSurfaceFillColor = CGColor(gray: 1, alpha: 1)
+    private static let boardSurfaceFillColor = CanvasWorkspacePalette.boardSurfaceFillColor
     private static let selectionStrokeColor = CGColor(
         red: 0,
         green: 122.0 / 255.0,

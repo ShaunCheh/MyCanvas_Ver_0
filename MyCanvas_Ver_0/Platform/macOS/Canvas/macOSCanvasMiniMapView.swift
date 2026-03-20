@@ -84,8 +84,8 @@ final class macOSCanvasMiniMapView: NSView {
         layer?.addSublayer(occupancyLayer)
         layer?.addSublayer(viewportLayer)
 
-        boardLayer.fillColor = NSColor.controlBackgroundColor.withAlphaComponent(0.55).cgColor
-        boardLayer.strokeColor = NSColor.systemOrange.withAlphaComponent(0.75).cgColor
+        boardLayer.fillColor = CanvasWorkspacePalette.boardSurfaceFillColor
+        boardLayer.strokeColor = nil
         boardLayer.lineWidth = Self.boardLineWidth
 
         occupancyLayer.fillColor = NSColor.systemGray.cgColor
@@ -119,7 +119,7 @@ final class macOSCanvasMiniMapView: NSView {
     }
 
     private func updateAppearance() {
-        backgroundLayer.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.92).cgColor
+        backgroundLayer.backgroundColor = CanvasWorkspacePalette.backgroundColor
         layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.75).cgColor
         layer?.borderWidth = Self.borderWidth
     }
