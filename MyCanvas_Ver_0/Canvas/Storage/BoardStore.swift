@@ -105,7 +105,7 @@ enum BoardStore {
             persistedState.updatedAt = Date()
             let document = BoardDocumentMapper.makeDocument(from: persistedState)
 
-            for item in runtimeState.items {
+            for item in persistedState.imageItems {
                 let assetURL = assetsDirectoryURL.appendingPathComponent(
                     "\(item.id.uuidString).png"
                 )

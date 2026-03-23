@@ -207,7 +207,7 @@ final class CanvasEditorSession {
 
     func currentBoardHistorySnapshot() -> BoardHistorySnapshot {
         BoardHistorySnapshot(
-            items: scene.orderedItems(),
+            items: scene.orderedBoardItems(),
             boardState: boardState,
             interactionState: interactionState
         )
@@ -665,7 +665,7 @@ final class CanvasEditorSession {
             title: activeBoardTitle,
             createdAt: activeBoardCreatedAt,
             updatedAt: Date(),
-            items: scene.orderedItems(),
+            items: scene.orderedBoardItems(),
             boardState: boardState,
             camera: camera,
             interactionState: interactionState
@@ -710,7 +710,7 @@ final class CanvasEditorSession {
     }
 
     func nextImageZIndex() -> CGFloat {
-        (scene.orderedItems().last?.zIndex ?? -1) + 1
+        (scene.orderedBoardItems().last?.zIndex ?? -1) + 1
     }
 
     func duplicateOffsetInWorld() -> CGPoint {

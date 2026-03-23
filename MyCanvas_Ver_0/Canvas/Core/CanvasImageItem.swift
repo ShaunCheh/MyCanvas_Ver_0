@@ -1,7 +1,8 @@
 import CoreGraphics
 import Foundation
 
-typealias CanvasImageItemID = UUID
+typealias CanvasItemID = UUID
+typealias CanvasImageItemID = CanvasItemID
 
 // Crop stays in normalized image space so later editing can change what is shown
 // without mutating the original image asset in memory or on disk.

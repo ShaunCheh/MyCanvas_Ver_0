@@ -3,7 +3,13 @@ import Foundation
 
 enum BoardDocumentMapper {
     static func makeDocument(from runtimeState: BoardRuntimeState) -> BoardDocument {
-        BoardDocument(
+        let imageItems = runtimeState.imageItems
+        assert(
+            imageItems.count == runtimeState.items.count,
+            "BoardDocument v2 can only persist image items before T-2."
+        )
+
+        return BoardDocument(
             formatVersion: BoardDocument.currentFormatVersion,
             boardID: runtimeState.boardID,
             title: runtimeState.title,
@@ -14,7 +20,7 @@ enum BoardDocumentMapper {
             cameraCenter: BoardPointRecord(runtimeState.camera.center),
             cameraZoomScale: Double(runtimeState.camera.zoomScale),
             selectedItemID: runtimeState.interactionState.selectedItemID,
-            items: runtimeState.items.map(makeImageRecord)
+            items: imageItems.map(makeImageRecord)
         )
     }
 
@@ -23,14 +29,16 @@ enum BoardDocumentMapper {
         imageLoader: (BoardImageItemRecord) throws -> CGImage
     ) throws -> BoardRuntimeState {
         let items = try document.items.map { itemRecord in
-            CanvasImageItem(
-                id: itemRecord.id,
-                cgImage: try imageLoader(itemRecord),
-                center: itemRecord.center.cgPoint,
-                size: itemRecord.size.cgSize,
-                zIndex: CGFloat(itemRecord.zIndex),
-                cropRectNormalized: itemRecord.cropRectNormalized?.canvasImageCropRect ?? .fullImage,
-                rotationRadians: CGFloat(itemRecord.rotationRadians ?? 0)
+            CanvasBoardItem.image(
+                CanvasImageItem(
+                    id: itemRecord.id,
+                    cgImage: try imageLoader(itemRecord),
+                    center: itemRecord.center.cgPoint,
+                    size: itemRecord.size.cgSize,
+                    zIndex: CGFloat(itemRecord.zIndex),
+                    cropRectNormalized: itemRecord.cropRectNormalized?.canvasImageCropRect ?? .fullImage,
+                    rotationRadians: CGFloat(itemRecord.rotationRadians ?? 0)
+                )
             )
         }
 

@@ -1,0 +1,330 @@
+import CoreGraphics
+import Foundation
+
+enum CanvasBoardItemKind {
+    case image
+    case text
+}
+
+struct CanvasTextColor: Equatable {
+    let red: CGFloat
+    let green: CGFloat
+    let blue: CGFloat
+    let alpha: CGFloat
+
+    static let black = CanvasTextColor(
+        red: 0,
+        green: 0,
+        blue: 0,
+        alpha: 1
+    )
+
+    init(
+        red: CGFloat,
+        green: CGFloat,
+        blue: CGFloat,
+        alpha: CGFloat = 1
+    ) {
+        self.red = Self.clamped(red)
+        self.green = Self.clamped(green)
+        self.blue = Self.clamped(blue)
+        self.alpha = Self.clamped(alpha)
+    }
+
+    private static func clamped(_ component: CGFloat) -> CGFloat {
+        min(max(component, 0), 1)
+    }
+}
+
+struct CanvasTextStyle: Equatable {
+    private static let fallbackFontName = "System"
+
+    var fontName: String
+    var fontSize: CGFloat
+    var color: CanvasTextColor
+
+    static let `default` = CanvasTextStyle()
+
+    init(
+        fontName: String = CanvasTextStyle.fallbackFontName,
+        fontSize: CGFloat = 32,
+        color: CanvasTextColor = .black
+    ) {
+        self.fontName = fontName.isEmpty
+            ? Self.fallbackFontName
+            : fontName
+        self.fontSize = max(fontSize, 1)
+        self.color = color
+    }
+}
+
+struct CanvasTextItem {
+    let id: CanvasItemID
+    var text: String
+    var style: CanvasTextStyle
+    var center: CGPoint
+    var size: CGSize
+    var zIndex: CGFloat
+    var rotationRadians: CGFloat
+
+    init(
+        id: CanvasItemID = UUID(),
+        text: String,
+        style: CanvasTextStyle = .default,
+        center: CGPoint,
+        size: CGSize,
+        zIndex: CGFloat = 0,
+        rotationRadians: CGFloat = 0
+    ) {
+        self.id = id
+        self.text = text
+        self.style = style
+        self.center = center
+        self.size = size
+        self.zIndex = zIndex
+        self.rotationRadians = rotationRadians
+    }
+
+    var localFrame: CGRect {
+        CGRect(
+            x: -size.width / 2,
+            y: -size.height / 2,
+            width: size.width,
+            height: size.height
+        )
+    }
+
+    var localQuad: CanvasQuad {
+        CanvasQuad(rect: localFrame)
+    }
+
+    var worldQuad: CanvasQuad {
+        localQuad.map(worldPoint(fromLocal:))
+    }
+
+    var worldFrame: CGRect {
+        CGRect(
+            x: center.x - size.width / 2,
+            y: center.y - size.height / 2,
+            width: size.width,
+            height: size.height
+        )
+    }
+
+    var worldBounds: CGRect {
+        worldQuad.boundingRect
+    }
+
+    func contains(worldPoint: CGPoint) -> Bool {
+        localFrame.contains(localPoint(fromWorld: worldPoint))
+    }
+
+    func worldPoint(fromLocal localPoint: CGPoint) -> CGPoint {
+        let rotatedPoint = Self.rotated(localPoint, by: rotationRadians)
+        return CGPoint(
+            x: rotatedPoint.x + center.x,
+            y: rotatedPoint.y + center.y
+        )
+    }
+
+    func localPoint(fromWorld worldPoint: CGPoint) -> CGPoint {
+        let translatedPoint = CGPoint(
+            x: worldPoint.x - center.x,
+            y: worldPoint.y - center.y
+        )
+        return Self.rotated(translatedPoint, by: -rotationRadians)
+    }
+
+    private static func rotated(
+        _ point: CGPoint,
+        by radians: CGFloat
+    ) -> CGPoint {
+        guard radians != 0 else {
+            return point
+        }
+
+        let cosine = cos(radians)
+        let sine = sin(radians)
+        return CGPoint(
+            x: point.x * cosine - point.y * sine,
+            y: point.x * sine + point.y * cosine
+        )
+    }
+}
+
+enum CanvasBoardItem {
+    case image(CanvasImageItem)
+    case text(CanvasTextItem)
+
+    var kind: CanvasBoardItemKind {
+        switch self {
+        case .image:
+            return .image
+        case .text:
+            return .text
+        }
+    }
+
+    var id: CanvasItemID {
+        switch self {
+        case let .image(item):
+            return item.id
+        case let .text(item):
+            return item.id
+        }
+    }
+
+    var center: CGPoint {
+        get {
+            switch self {
+            case let .image(item):
+                return item.center
+            case let .text(item):
+                return item.center
+            }
+        }
+        set {
+            switch self {
+            case var .image(item):
+                item.center = newValue
+                self = .image(item)
+            case var .text(item):
+                item.center = newValue
+                self = .text(item)
+            }
+        }
+    }
+
+    var size: CGSize {
+        get {
+            switch self {
+            case let .image(item):
+                return item.size
+            case let .text(item):
+                return item.size
+            }
+        }
+        set {
+            switch self {
+            case var .image(item):
+                item.size = newValue
+                self = .image(item)
+            case var .text(item):
+                item.size = newValue
+                self = .text(item)
+            }
+        }
+    }
+
+    var zIndex: CGFloat {
+        get {
+            switch self {
+            case let .image(item):
+                return item.zIndex
+            case let .text(item):
+                return item.zIndex
+            }
+        }
+        set {
+            switch self {
+            case var .image(item):
+                item.zIndex = newValue
+                self = .image(item)
+            case var .text(item):
+                item.zIndex = newValue
+                self = .text(item)
+            }
+        }
+    }
+
+    var rotationRadians: CGFloat {
+        get {
+            switch self {
+            case let .image(item):
+                return item.rotationRadians
+            case let .text(item):
+                return item.rotationRadians
+            }
+        }
+        set {
+            switch self {
+            case var .image(item):
+                item.rotationRadians = newValue
+                self = .image(item)
+            case var .text(item):
+                item.rotationRadians = newValue
+                self = .text(item)
+            }
+        }
+    }
+
+    var localFrame: CGRect {
+        switch self {
+        case let .image(item):
+            return item.localFrame
+        case let .text(item):
+            return item.localFrame
+        }
+    }
+
+    var worldQuad: CanvasQuad {
+        switch self {
+        case let .image(item):
+            return item.worldQuad
+        case let .text(item):
+            return item.worldQuad
+        }
+    }
+
+    var worldFrame: CGRect {
+        switch self {
+        case let .image(item):
+            return item.worldFrame
+        case let .text(item):
+            return item.worldFrame
+        }
+    }
+
+    var worldBounds: CGRect {
+        switch self {
+        case let .image(item):
+            return item.worldBounds
+        case let .text(item):
+            return item.worldBounds
+        }
+    }
+
+    var imageItem: CanvasImageItem? {
+        guard case let .image(item) = self else {
+            return nil
+        }
+
+        return item
+    }
+
+    var textItem: CanvasTextItem? {
+        guard case let .text(item) = self else {
+            return nil
+        }
+
+        return item
+    }
+
+    func contains(worldPoint: CGPoint) -> Bool {
+        switch self {
+        case let .image(item):
+            return item.contains(worldPoint: worldPoint)
+        case let .text(item):
+            return item.contains(worldPoint: worldPoint)
+        }
+    }
+
+    func worldPoint(fromLocal localPoint: CGPoint) -> CGPoint {
+        switch self {
+        case let .image(item):
+            return item.worldPoint(fromLocal: localPoint)
+        case let .text(item):
+            return item.worldPoint(fromLocal: localPoint)
+        }
+    }
+}

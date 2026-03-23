@@ -4,7 +4,7 @@ overview: 为画板新增最小可用纯文本框能力，作为独立于 import
 todos:
   - id: t1-mixed-runtime
     content: 引入 CanvasTextItem / CanvasBoardItem，并让 Scene、RuntimeState、History 承载 mixed items
-    status: pending
+    status: completed
   - id: t2-storage-v3
     content: 升级 BoardDocument / Mapper / Store，支持 v3 mixed item 持久化并兼容 v2
     status: pending

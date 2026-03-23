@@ -13,7 +13,7 @@ struct BoardRuntimeState {
     var title: String
     let createdAt: Date
     var updatedAt: Date
-    var items: [CanvasImageItem]
+    var items: [CanvasBoardItem]
     var boardState: CanvasBoardState?
     var camera: CanvasCamera
     var interactionState: CanvasInteractionState
@@ -42,6 +42,16 @@ struct BoardRuntimeState {
             createdAt: createdAt,
             updatedAt: updatedAt
         )
+    }
+
+    // T-1 keeps persistence and thumbnail generation on the existing image-only
+    // path while runtime/history move to mixed item storage.
+    var imageItems: [CanvasImageItem] {
+        items.compactMap(\.imageItem)
+    }
+
+    var textItems: [CanvasTextItem] {
+        items.compactMap(\.textItem)
     }
 }
 

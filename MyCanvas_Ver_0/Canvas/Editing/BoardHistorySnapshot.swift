@@ -2,7 +2,7 @@ import CoreGraphics
 import Foundation
 
 struct BoardHistorySnapshot {
-    var items: [CanvasImageItem]
+    var items: [CanvasBoardItem]
     var boardState: CanvasBoardState?
     var interactionState: CanvasInteractionState
 }
@@ -15,20 +15,33 @@ extension BoardHistorySnapshot: Equatable {
     }
 
     private static func itemsMatch(
-        _ lhsItems: [CanvasImageItem],
-        _ rhsItems: [CanvasImageItem]
+        _ lhsItems: [CanvasBoardItem],
+        _ rhsItems: [CanvasBoardItem]
     ) -> Bool {
         guard lhsItems.count == rhsItems.count else {
             return false
         }
 
         return zip(lhsItems, rhsItems).allSatisfy { lhsItem, rhsItem in
-            lhsItem.id == rhsItem.id &&
-            lhsItem.center == rhsItem.center &&
-            lhsItem.size == rhsItem.size &&
-            lhsItem.zIndex == rhsItem.zIndex &&
-            lhsItem.cropRectNormalized == rhsItem.cropRectNormalized &&
-            lhsItem.rotationRadians == rhsItem.rotationRadians
+            switch (lhsItem, rhsItem) {
+            case let (.image(lhsImage), .image(rhsImage)):
+                return lhsImage.id == rhsImage.id &&
+                    lhsImage.center == rhsImage.center &&
+                    lhsImage.size == rhsImage.size &&
+                    lhsImage.zIndex == rhsImage.zIndex &&
+                    lhsImage.cropRectNormalized == rhsImage.cropRectNormalized &&
+                    lhsImage.rotationRadians == rhsImage.rotationRadians
+            case let (.text(lhsText), .text(rhsText)):
+                return lhsText.id == rhsText.id &&
+                    lhsText.text == rhsText.text &&
+                    lhsText.style == rhsText.style &&
+                    lhsText.center == rhsText.center &&
+                    lhsText.size == rhsText.size &&
+                    lhsText.zIndex == rhsText.zIndex &&
+                    lhsText.rotationRadians == rhsText.rotationRadians
+            default:
+                return false
+            }
         }
     }
 

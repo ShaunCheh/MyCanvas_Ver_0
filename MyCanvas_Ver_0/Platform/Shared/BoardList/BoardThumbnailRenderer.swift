@@ -61,7 +61,8 @@ final class BoardThumbnailRenderer {
         maximumLongestSide: CGFloat = BoardPersistedThumbnailStore.maximumLongestSide,
         cancellationCheck: () throws -> Void = {}
     ) throws -> CGImage? {
-        guard runtimeState.items.isEmpty == false else {
+        let runtimeImageItems = runtimeState.imageItems
+        guard runtimeImageItems.isEmpty == false else {
             return nil
         }
 
@@ -77,7 +78,7 @@ final class BoardThumbnailRenderer {
         }
 
         let runtimeItemsByID = Dictionary(
-            uniqueKeysWithValues: runtimeState.items.map { ($0.id, $0) }
+            uniqueKeysWithValues: runtimeImageItems.map { ($0.id, $0) }
         )
         return try renderThumbnail(
             itemRecords: document.items,
