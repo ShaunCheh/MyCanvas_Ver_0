@@ -105,6 +105,16 @@ final class macOSAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidat
         redoItem.keyEquivalentModifierMask = [.command, .shift]
         editMenu.addItem(redoItem)
 
+        editMenu.addItem(.separator())
+
+        let pasteItem = NSMenuItem(
+            title: "Paste",
+            action: #selector(macOSViewController.paste(_:)),
+            keyEquivalent: "v"
+        )
+        pasteItem.keyEquivalentModifierMask = .command
+        editMenu.addItem(pasteItem)
+
         editMenuItem.submenu = editMenu
         return editMenuItem
     }

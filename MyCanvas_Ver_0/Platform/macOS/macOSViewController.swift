@@ -8,10 +8,9 @@
 #if os(macOS)
 import Foundation
 import AppKit
-import ImageIO
 import UniformTypeIdentifiers
 
-final class macOSViewController: NSViewController {
+final class macOSViewController: NSViewController, NSUserInterfaceValidations {
     private struct PointerResizeState {
         let itemID: CanvasImageItemID
         let handleRole: CanvasSelectionHandleRole
@@ -372,6 +371,22 @@ final class macOSViewController: NSViewController {
              .sendItemToBack:
             break
         }
+    }
+
+    func validateUserInterfaceItem(
+        _ item: any NSValidatedUserInterfaceItem
+    ) -> Bool {
+        switch item.action {
+        case #selector(macOSViewController.paste(_:)):
+            return canImportImages(from: .general)
+        default:
+            return true
+        }
+    }
+
+    @objc
+    func paste(_ sender: Any?) {
+        handlePasteRequest()
     }
 
     override func loadView() {
@@ -830,6 +845,12 @@ final class macOSViewController: NSViewController {
                 viewportSize,
                 source: "viewport layout"
             )
+        }
+        canvasViewportView.onImportDragOperation = { [weak self] _, pasteboard in
+            self?.dragOperation(for: pasteboard) ?? []
+        }
+        canvasViewportView.onImportDrop = { [weak self] _, pasteboard in
+            self?.handleImportDrop(pasteboard: pasteboard) ?? false
         }
 
         installCanvasContentView(canvasViewportView)
@@ -1344,21 +1365,25 @@ final class macOSViewController: NSViewController {
 
         let openPanel = NSOpenPanel()
         openPanel.allowedContentTypes = [.image]
-        openPanel.allowsMultipleSelection = false
+        openPanel.allowsMultipleSelection = true
         openPanel.canChooseDirectories = false
         openPanel.canChooseFiles = true
 
         openPanel.beginSheetModal(for: window) { [weak self] response in
             guard
                 response == .OK,
-                let url = openPanel.url,
-                let imageSource = CGImageSourceCreateWithURL(url as CFURL, nil),
-                let cgImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil)
+                let self
             else {
                 return
             }
 
-            self?.appendImportedImage(cgImage)
+            let resolvedImages = macOSCanvasImportAdapter.resolvedImages(
+                from: openPanel.urls
+            )
+            _ = self.importResolvedImages(
+                resolvedImages,
+                source: "open panel"
+            )
         }
     }
 
@@ -1401,9 +1426,61 @@ final class macOSViewController: NSViewController {
         onBackToBoardList?()
     }
 
-    private func appendImportedImage(_ cgImage: CGImage) {
-        _ = editorSession.appendImportedImage(cgImage)
-        refreshCanvas()
+    private func canImportImages(from pasteboard: NSPasteboard) -> Bool {
+        macOSCanvasImportAdapter.canResolveImages(from: pasteboard)
+    }
+
+    private func handlePasteRequest() {
+        let resolvedImages = macOSCanvasImportAdapter.resolvedImages(
+            from: .general
+        )
+        _ = importResolvedImages(
+            resolvedImages,
+            source: "pasteboard"
+        )
+    }
+
+    private func dragOperation(for pasteboard: NSPasteboard) -> NSDragOperation {
+        canImportImages(from: pasteboard) ? .copy : []
+    }
+
+    private func handleImportDrop(
+        pasteboard: NSPasteboard
+    ) -> Bool {
+        let didImport = importResolvedImages(
+            macOSCanvasImportAdapter.resolvedImages(from: pasteboard),
+            source: "drag and drop"
+        )
+        if didImport {
+            view.window?.makeFirstResponder(canvasViewportView)
+        }
+
+        return didImport
+    }
+
+    @discardableResult
+    private func importResolvedImages(
+        _ images: [CanvasResolvedImportImage],
+        source: String,
+        placement: CanvasImportPlacement = .cameraCenter,
+        layout: CanvasImportLayout = .automatic
+    ) -> Bool {
+        guard images.isEmpty == false else {
+            return false
+        }
+
+        dismissContextMenu()
+        let importedItems = editorSession.appendImportedImages(
+            images,
+            placement: placement,
+            layout: layout
+        )
+        let imageCount = importedItems.count
+        let imageLabel = imageCount == 1 ? "image" : "images"
+        refreshCanvas(
+            reason: "import \(imageCount) \(imageLabel) from \(source)"
+        )
+        return true
     }
 
     private func selectItem(

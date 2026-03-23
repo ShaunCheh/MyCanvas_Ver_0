@@ -36,6 +36,10 @@ final class macOSCanvasViewportView: NSView {
     private static let rotationTextHorizontalPadding: CGFloat = 8
     private static let rotationTextVerticalPadding: CGFloat = 4
     private static let rotationTextCornerRadius: CGFloat = 8
+    private static let importDragTypes: [NSPasteboard.PasteboardType] = [
+        .fileURL,
+        .tiff
+    ]
 
     private let backgroundLayer = CALayer()
     private let workspaceGridLayer = CALayer()
@@ -69,6 +73,8 @@ final class macOSCanvasViewportView: NSView {
     var onPan: ((CGPoint) -> Void)?
     var onZoom: ((CGFloat, CGPoint) -> Void)?
     var onViewportSizeChange: ((CGSize) -> Void)?
+    var onImportDragOperation: ((CGPoint, NSPasteboard) -> NSDragOperation)?
+    var onImportDrop: ((CGPoint, NSPasteboard) -> Bool)?
 
     override var isFlipped: Bool {
         true
@@ -81,6 +87,7 @@ final class macOSCanvasViewportView: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         setupLayers()
+        registerForDraggedTypes(Self.importDragTypes)
     }
 
     required init?(coder: NSCoder) {
@@ -909,6 +916,30 @@ final class macOSCanvasViewportView: NSView {
         let scaleDelta = max(0.01, 1 + event.magnification)
         let anchor = convert(event.locationInWindow, from: nil)
         onZoom?(scaleDelta, anchor)
+    }
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        resolvedImportDragOperation(for: sender)
+    }
+
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        resolvedImportDragOperation(for: sender)
+    }
+
+    override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        resolvedImportDragOperation(for: sender) != []
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        let location = convert(sender.draggingLocation, from: nil)
+        return onImportDrop?(location, sender.draggingPasteboard) ?? false
+    }
+
+    private func resolvedImportDragOperation(
+        for sender: NSDraggingInfo
+    ) -> NSDragOperation {
+        let location = convert(sender.draggingLocation, from: nil)
+        return onImportDragOperation?(location, sender.draggingPasteboard) ?? []
     }
 }
 
