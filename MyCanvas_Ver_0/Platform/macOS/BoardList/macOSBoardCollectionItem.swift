@@ -8,6 +8,8 @@ private func boardListSelectionTraceTimestamp() -> String {
 final class macOSBoardCollectionItem: NSCollectionViewItem {
     static let reuseIdentifier = NSUserInterfaceItemIdentifier("macOSBoardCollectionItem")
 
+    typealias MoreActionsHandler = (UUID, CGRect, NSView) -> Void
+
     private enum PresentationStyle {
         case boardGrid
         case boardList
@@ -38,6 +40,20 @@ final class macOSBoardCollectionItem: NSCollectionViewItem {
         label.lineBreakMode = .byTruncatingTail
         return label
     }()
+    private let moreButton: NSButton = {
+        let button = NSButton()
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.isBordered = false
+        button.setButtonType(.momentaryChange)
+        button.image = NSImage(
+            systemSymbolName: "ellipsis",
+            accessibilityDescription: "More Actions"
+        )
+        button.imagePosition = .imageOnly
+        button.contentTintColor = .secondaryLabelColor
+        button.bezelStyle = .regularSquare
+        return button
+    }()
 
     private var gridConstraints: [NSLayoutConstraint] = []
     private var listConstraints: [NSLayoutConstraint] = []
@@ -49,6 +65,7 @@ final class macOSBoardCollectionItem: NSCollectionViewItem {
     private var representedDisplayMode: BoardListDisplayMode?
     private var representedRevisionToken: String?
     private var thumbnailRequestToken: BoardPreviewRequestToken?
+    private var onMoreActionsRequested: MoreActionsHandler?
 
     override func loadView() {
         view = NSView()
@@ -94,13 +111,16 @@ final class macOSBoardCollectionItem: NSCollectionViewItem {
         titleLabel.stringValue = ""
         previewView.isHidden = false
         placeholderIconView.isHidden = true
+        moreButton.isHidden = true
+        onMoreActionsRequested = nil
         previewView.apply(content: .empty)
     }
 
     func configure(
         with entry: BoardListEntry,
         previewContent: BoardPreviewContent,
-        displayMode: BoardListDisplayMode
+        displayMode: BoardListDisplayMode,
+        onMoreActionsRequested: MoreActionsHandler? = nil
     ) {
         cancelThumbnailRequest()
         representedEntryID = entry.id
@@ -108,6 +128,7 @@ final class macOSBoardCollectionItem: NSCollectionViewItem {
         representedTitle = entry.title
         representedDisplayMode = displayMode
         representedRevisionToken = entry.revisionToken
+        self.onMoreActionsRequested = onMoreActionsRequested
         titleLabel.stringValue = entry.title
         previewView.apply(content: previewContent)
         applyPresentation(
@@ -169,9 +190,13 @@ final class macOSBoardCollectionItem: NSCollectionViewItem {
         previewView.translatesAutoresizingMaskIntoConstraints = false
         placeholderIconView.translatesAutoresizingMaskIntoConstraints = false
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        moreButton.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(previewView)
         view.addSubview(placeholderIconView)
         view.addSubview(titleLabel)
+        view.addSubview(moreButton)
+        moreButton.target = self
+        moreButton.action = #selector(handleMoreButtonClick(_:))
     }
 
     private func setupConstraints() {
@@ -180,6 +205,10 @@ final class macOSBoardCollectionItem: NSCollectionViewItem {
             previewView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
             previewView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
             previewView.heightAnchor.constraint(equalToConstant: 120),
+            moreButton.topAnchor.constraint(equalTo: view.topAnchor, constant: 12),
+            moreButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
+            moreButton.widthAnchor.constraint(equalToConstant: 32),
+            moreButton.heightAnchor.constraint(equalToConstant: 32),
             titleLabel.topAnchor.constraint(equalTo: previewView.bottomAnchor, constant: 10),
             titleLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
             titleLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
@@ -192,8 +221,12 @@ final class macOSBoardCollectionItem: NSCollectionViewItem {
             previewView.widthAnchor.constraint(equalToConstant: 72),
             previewView.heightAnchor.constraint(equalToConstant: 72),
             titleLabel.leadingAnchor.constraint(equalTo: previewView.trailingAnchor, constant: 12),
-            titleLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
-            titleLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor)
+            titleLabel.trailingAnchor.constraint(equalTo: moreButton.leadingAnchor, constant: -8),
+            titleLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            moreButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
+            moreButton.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            moreButton.widthAnchor.constraint(equalToConstant: 32),
+            moreButton.heightAnchor.constraint(equalToConstant: 32)
         ]
 
         placeholderGridConstraints = [
@@ -256,13 +289,16 @@ final class macOSBoardCollectionItem: NSCollectionViewItem {
 
         previewView.isHidden = false
         placeholderIconView.isHidden = true
+        moreButton.isHidden = true
 
         switch presentationStyle {
         case .boardGrid:
             titleLabel.alignment = .center
+            moreButton.isHidden = false
             NSLayoutConstraint.activate(gridConstraints)
         case .boardList:
             titleLabel.alignment = .left
+            moreButton.isHidden = false
             NSLayoutConstraint.activate(listConstraints)
         case .placeholderGrid:
             titleLabel.alignment = .center
@@ -348,6 +384,23 @@ final class macOSBoardCollectionItem: NSCollectionViewItem {
         case .list:
             return CGSize(width: 72, height: 72)
         }
+    }
+
+    @objc
+    private func handleMoreButtonClick(_ sender: NSButton) {
+        guard let representedBoardID else {
+            return
+        }
+
+        let anchorRect = view.convert(
+            sender.bounds,
+            from: sender
+        )
+        onMoreActionsRequested?(
+            representedBoardID,
+            anchorRect.standardized,
+            view
+        )
     }
 }
 #endif

@@ -596,7 +596,14 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
         cell.configure(
             with: entry,
             previewContent: previewContent,
-            displayMode: displayMode
+            displayMode: displayMode,
+            onMoreActionsRequested: { [weak self] boardID, anchorRect, sourceView in
+                self?.presentRenameActionPanel(
+                    for: boardID,
+                    anchorRect: anchorRect,
+                    from: sourceView
+                )
+            }
         )
 
         if entry.canRequestPreview,

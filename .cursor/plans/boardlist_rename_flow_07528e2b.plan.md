@@ -13,7 +13,7 @@ todos:
     status: completed
   - id: cell-item-more-button
     content: 在 iOS/macOS Grid/List cell/item 中加入三点按钮与回调锚点
-    status: pending
+    status: completed
   - id: inline-rename-flow
     content: 为 iOS/macOS cell/item 加入标题内联编辑，并接上提交/取消/聚焦逻辑
     status: pending

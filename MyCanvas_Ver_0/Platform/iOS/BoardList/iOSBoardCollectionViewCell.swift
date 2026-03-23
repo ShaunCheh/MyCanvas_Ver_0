@@ -4,6 +4,8 @@ import UIKit
 final class iOSBoardCollectionViewCell: UICollectionViewCell {
     static let reuseIdentifier = "iOSBoardCollectionViewCell"
 
+    typealias MoreActionsHandler = (UUID, CGRect, UIView) -> Void
+
     private enum PresentationStyle {
         case boardGrid
         case boardList
@@ -35,6 +37,24 @@ final class iOSBoardCollectionViewCell: UICollectionViewCell {
         label.lineBreakMode = .byTruncatingTail
         return label
     }()
+    private let moreButton: UIButton = {
+        let button = UIButton(type: .system)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.accessibilityLabel = "More Actions"
+        button.tintColor = .secondaryLabel
+
+        var configuration = UIButton.Configuration.plain()
+        configuration.image = UIImage(systemName: "ellipsis")
+        configuration.contentInsets = NSDirectionalEdgeInsets(
+            top: 6,
+            leading: 6,
+            bottom: 6,
+            trailing: 6
+        )
+        configuration.baseForegroundColor = .secondaryLabel
+        button.configuration = configuration
+        return button
+    }()
 
     private var gridConstraints: [NSLayoutConstraint] = []
     private var listConstraints: [NSLayoutConstraint] = []
@@ -43,6 +63,7 @@ final class iOSBoardCollectionViewCell: UICollectionViewCell {
     private var representedBoardID: UUID?
     private var representedRevisionToken: String?
     private var thumbnailRequestToken: BoardPreviewRequestToken?
+    private var onMoreActionsRequested: MoreActionsHandler?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -70,18 +91,22 @@ final class iOSBoardCollectionViewCell: UICollectionViewCell {
         titleLabel.text = nil
         previewView.isHidden = false
         placeholderIconView.isHidden = true
+        moreButton.isHidden = true
+        onMoreActionsRequested = nil
         previewView.apply(content: .empty)
     }
 
     func configure(
         with entry: BoardListEntry,
         previewContent: BoardPreviewContent,
-        displayMode: BoardListDisplayMode
+        displayMode: BoardListDisplayMode,
+        onMoreActionsRequested: MoreActionsHandler? = nil
     ) {
         cancelThumbnailRequest()
         representedBoardID = entry.boardID
         representedRevisionToken = entry.revisionToken
         titleLabel.text = entry.title
+        self.onMoreActionsRequested = onMoreActionsRequested
         previewView.apply(content: previewContent)
         applyPresentation(
             for: entry,
@@ -139,9 +164,13 @@ final class iOSBoardCollectionViewCell: UICollectionViewCell {
         previewView.translatesAutoresizingMaskIntoConstraints = false
         placeholderIconView.translatesAutoresizingMaskIntoConstraints = false
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        moreButton.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(previewView)
         contentView.addSubview(placeholderIconView)
         contentView.addSubview(titleLabel)
+        contentView.addSubview(moreButton)
+        contentView.bringSubviewToFront(moreButton)
+        moreButton.addTarget(self, action: #selector(handleMoreButtonTap), for: .touchUpInside)
     }
 
     private func setupConstraints() {
@@ -150,6 +179,10 @@ final class iOSBoardCollectionViewCell: UICollectionViewCell {
             previewView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 12),
             previewView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -12),
             previewView.heightAnchor.constraint(equalToConstant: 120),
+            moreButton.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 12),
+            moreButton.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -12),
+            moreButton.widthAnchor.constraint(equalToConstant: 32),
+            moreButton.heightAnchor.constraint(equalToConstant: 32),
             titleLabel.topAnchor.constraint(equalTo: previewView.bottomAnchor, constant: 10),
             titleLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 12),
             titleLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -12),
@@ -162,8 +195,12 @@ final class iOSBoardCollectionViewCell: UICollectionViewCell {
             previewView.widthAnchor.constraint(equalToConstant: 72),
             previewView.heightAnchor.constraint(equalToConstant: 72),
             titleLabel.leadingAnchor.constraint(equalTo: previewView.trailingAnchor, constant: 12),
-            titleLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -12),
-            titleLabel.centerYAnchor.constraint(equalTo: contentView.centerYAnchor)
+            titleLabel.trailingAnchor.constraint(equalTo: moreButton.leadingAnchor, constant: -8),
+            titleLabel.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+            moreButton.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -12),
+            moreButton.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+            moreButton.widthAnchor.constraint(equalToConstant: 32),
+            moreButton.heightAnchor.constraint(equalToConstant: 32)
         ]
 
         placeholderGridConstraints = [
@@ -226,13 +263,16 @@ final class iOSBoardCollectionViewCell: UICollectionViewCell {
 
         previewView.isHidden = false
         placeholderIconView.isHidden = true
+        moreButton.isHidden = true
 
         switch presentationStyle {
         case .boardGrid:
             titleLabel.textAlignment = .center
+            moreButton.isHidden = false
             NSLayoutConstraint.activate(gridConstraints)
         case .boardList:
             titleLabel.textAlignment = .left
+            moreButton.isHidden = false
             NSLayoutConstraint.activate(listConstraints)
         case .placeholderGrid:
             titleLabel.textAlignment = .center
@@ -269,6 +309,23 @@ final class iOSBoardCollectionViewCell: UICollectionViewCell {
         case .list:
             return CGSize(width: 72, height: 72)
         }
+    }
+
+    @objc
+    private func handleMoreButtonTap() {
+        guard let representedBoardID else {
+            return
+        }
+
+        let anchorRect = contentView.convert(
+            moreButton.bounds,
+            from: moreButton
+        )
+        onMoreActionsRequested?(
+            representedBoardID,
+            anchorRect.standardized,
+            contentView
+        )
     }
 }
 #endif
