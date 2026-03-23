@@ -7,7 +7,7 @@ todos:
     status: completed
   - id: t2-storage-v3
     content: 升级 BoardDocument / Mapper / Store，支持 v3 mixed item 持久化并兼容 v2
-    status: pending
+    status: completed
   - id: t3-rendering
     content: 扩展 RenderSnapshot、Renderer、ContextResolver 与 viewport layer，支持文本渲染和命中测试
     status: pending

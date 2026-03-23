@@ -3,12 +3,6 @@ import Foundation
 
 enum BoardDocumentMapper {
     static func makeDocument(from runtimeState: BoardRuntimeState) -> BoardDocument {
-        let imageItems = runtimeState.imageItems
-        assert(
-            imageItems.count == runtimeState.items.count,
-            "BoardDocument v2 can only persist image items before T-2."
-        )
-
         return BoardDocument(
             formatVersion: BoardDocument.currentFormatVersion,
             boardID: runtimeState.boardID,
@@ -20,7 +14,7 @@ enum BoardDocumentMapper {
             cameraCenter: BoardPointRecord(runtimeState.camera.center),
             cameraZoomScale: Double(runtimeState.camera.zoomScale),
             selectedItemID: runtimeState.interactionState.selectedItemID,
-            items: imageItems.map(makeImageRecord)
+            items: runtimeState.items.map(makeItemRecord)
         )
     }
 
@@ -29,17 +23,32 @@ enum BoardDocumentMapper {
         imageLoader: (BoardImageItemRecord) throws -> CGImage
     ) throws -> BoardRuntimeState {
         let items = try document.items.map { itemRecord in
-            CanvasBoardItem.image(
-                CanvasImageItem(
-                    id: itemRecord.id,
-                    cgImage: try imageLoader(itemRecord),
-                    center: itemRecord.center.cgPoint,
-                    size: itemRecord.size.cgSize,
-                    zIndex: CGFloat(itemRecord.zIndex),
-                    cropRectNormalized: itemRecord.cropRectNormalized?.canvasImageCropRect ?? .fullImage,
-                    rotationRadians: CGFloat(itemRecord.rotationRadians ?? 0)
+            switch itemRecord {
+            case let .image(imageRecord):
+                return CanvasBoardItem.image(
+                    CanvasImageItem(
+                        id: imageRecord.id,
+                        cgImage: try imageLoader(imageRecord),
+                        center: imageRecord.center.cgPoint,
+                        size: imageRecord.size.cgSize,
+                        zIndex: CGFloat(imageRecord.zIndex),
+                        cropRectNormalized: imageRecord.cropRectNormalized?.canvasImageCropRect ?? .fullImage,
+                        rotationRadians: CGFloat(imageRecord.rotationRadians ?? 0)
+                    )
                 )
-            )
+            case let .text(textRecord):
+                return CanvasBoardItem.text(
+                    CanvasTextItem(
+                        id: textRecord.id,
+                        text: textRecord.text,
+                        style: textRecord.style.canvasTextStyle,
+                        center: textRecord.center.cgPoint,
+                        size: textRecord.size.cgSize,
+                        zIndex: CGFloat(textRecord.zIndex),
+                        rotationRadians: CGFloat(textRecord.rotationRadians ?? 0)
+                    )
+                )
+            }
         }
 
         let runtimeState = BoardRuntimeState(
@@ -75,6 +84,15 @@ enum BoardDocumentMapper {
         return runtimeState
     }
 
+    private static func makeItemRecord(from item: CanvasBoardItem) -> BoardItemRecord {
+        switch item {
+        case let .image(imageItem):
+            return .image(makeImageRecord(from: imageItem))
+        case let .text(textItem):
+            return .text(makeTextRecord(from: textItem))
+        }
+    }
+
     private static func makeImageRecord(from item: CanvasImageItem) -> BoardImageItemRecord {
         BoardImageItemRecord(
             id: item.id,
@@ -83,6 +101,18 @@ enum BoardDocumentMapper {
             zIndex: Double(item.zIndex),
             assetFilename: "\(item.id.uuidString).png",
             cropRectNormalized: BoardImageCropRecord(item.cropRectNormalized),
+            rotationRadians: Double(item.rotationRadians)
+        )
+    }
+
+    private static func makeTextRecord(from item: CanvasTextItem) -> BoardTextItemRecord {
+        BoardTextItemRecord(
+            id: item.id,
+            center: BoardPointRecord(item.center),
+            size: BoardSizeRecord(item.size),
+            zIndex: Double(item.zIndex),
+            text: item.text,
+            style: BoardTextStyleRecord(item.style),
             rotationRadians: Double(item.rotationRadians)
         )
     }

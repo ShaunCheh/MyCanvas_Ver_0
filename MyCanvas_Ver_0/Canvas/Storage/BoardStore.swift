@@ -114,7 +114,7 @@ enum BoardStore {
             }
 
             try removeOrphanedAssets(
-                keeping: Set(document.items.map(\.assetFilename)),
+                keeping: Set(document.imageItemRecords.map(\.assetFilename)),
                 in: assetsDirectoryURL
             )
 

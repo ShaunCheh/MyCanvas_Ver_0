@@ -27,7 +27,7 @@ struct BoardGeometryPreviewBuilder {
     }
 
     private func makeNodes(
-        from itemRecords: [BoardImageItemRecord]
+        from itemRecords: [BoardItemRecord]
     ) -> [CanvasMiniMapNode] {
         itemRecords
             .compactMap(makeNode)
@@ -41,44 +41,81 @@ struct BoardGeometryPreviewBuilder {
     }
 
     private func makeNode(
-        from itemRecord: BoardImageItemRecord
+        from itemRecord: BoardItemRecord
     ) -> CanvasMiniMapNode? {
-        let size = itemRecord.size.cgSize
-        guard size.width > 0, size.height > 0 else {
+        switch itemRecord {
+        case let .image(imageRecord):
+            return makeNode(
+                id: imageRecord.id,
+                kind: .image,
+                center: imageRecord.center,
+                size: imageRecord.size,
+                zIndex: imageRecord.zIndex,
+                rotationRadians: imageRecord.rotationRadians
+            )
+        case let .text(textRecord):
+            return makeNode(
+                id: textRecord.id,
+                kind: .text,
+                center: textRecord.center,
+                size: textRecord.size,
+                zIndex: textRecord.zIndex,
+                rotationRadians: textRecord.rotationRadians
+            )
+        }
+    }
+
+    private func makeNode(
+        id: UUID,
+        kind: CanvasMiniMapNodeKind,
+        center: BoardPointRecord,
+        size: BoardSizeRecord,
+        zIndex: Double,
+        rotationRadians: Double?
+    ) -> CanvasMiniMapNode? {
+        let resolvedSize = size.cgSize
+        guard resolvedSize.width > 0, resolvedSize.height > 0 else {
             return nil
         }
 
         return CanvasMiniMapNode(
-            id: itemRecord.id,
-            kind: .image,
-            worldQuad: makeVisibleWorldQuad(from: itemRecord),
-            zIndex: CGFloat(itemRecord.zIndex),
+            id: id,
+            kind: kind,
+            worldQuad: makeVisibleWorldQuad(
+                center: center,
+                size: size,
+                rotationRadians: rotationRadians
+            ),
+            zIndex: CGFloat(zIndex),
             isPreviewActive: false
         )
     }
 
     private func makeVisibleWorldQuad(
-        from itemRecord: BoardImageItemRecord
+        center: BoardPointRecord,
+        size: BoardSizeRecord,
+        rotationRadians: Double?
     ) -> CanvasQuad {
         // Persisted item size is already the committed visible footprint, so the
-        // catalog preview can rebuild board geometry without decoding assets.
+        // catalog preview can rebuild board geometry without decoding image assets
+        // or creating runtime text layout.
         let localFrame = CGRect(
-            x: -itemRecord.size.cgSize.width / 2,
-            y: -itemRecord.size.cgSize.height / 2,
-            width: itemRecord.size.cgSize.width,
-            height: itemRecord.size.cgSize.height
+            x: -size.cgSize.width / 2,
+            y: -size.cgSize.height / 2,
+            width: size.cgSize.width,
+            height: size.cgSize.height
         )
         let localQuad = CanvasQuad(rect: localFrame)
-        let center = itemRecord.center.cgPoint
-        let rotationRadians = normalizedCanvasAngle(
-            CGFloat(itemRecord.rotationRadians ?? 0)
+        let worldCenter = center.cgPoint
+        let normalizedRotationRadians = normalizedCanvasAngle(
+            CGFloat(rotationRadians ?? 0)
         )
 
         return localQuad.map { localPoint in
-            let rotatedPoint = rotated(localPoint, by: rotationRadians)
+            let rotatedPoint = rotated(localPoint, by: normalizedRotationRadians)
             return CGPoint(
-                x: rotatedPoint.x + center.x,
-                y: rotatedPoint.y + center.y
+                x: rotatedPoint.x + worldCenter.x,
+                y: rotatedPoint.y + worldCenter.y
             )
         }
     }

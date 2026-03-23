@@ -44,8 +44,8 @@ struct BoardRuntimeState {
         )
     }
 
-    // T-1 keeps persistence and thumbnail generation on the existing image-only
-    // path while runtime/history move to mixed item storage.
+    // Image-backed items still need a projection because assets/ thumbnail code
+    // remains PNG-based even after the document format becomes mixed-item aware.
     var imageItems: [CanvasImageItem] {
         items.compactMap(\.imageItem)
     }
@@ -56,7 +56,7 @@ struct BoardRuntimeState {
 }
 
 struct BoardDocument: Codable {
-    static let currentFormatVersion = 2
+    static let currentFormatVersion = 3
     static let defaultTitle = "Untitled Board"
 
     let formatVersion: Int
@@ -69,7 +69,7 @@ struct BoardDocument: Codable {
     var cameraCenter: BoardPointRecord
     var cameraZoomScale: Double
     var selectedItemID: UUID?
-    var items: [BoardImageItemRecord]
+    var items: [BoardItemRecord]
 
     var summary: BoardSummary {
         BoardSummary(
@@ -78,6 +78,14 @@ struct BoardDocument: Codable {
             createdAt: createdAt,
             updatedAt: updatedAt
         )
+    }
+
+    var imageItemRecords: [BoardImageItemRecord] {
+        items.compactMap(\.imageItemRecord)
+    }
+
+    var textItemRecords: [BoardTextItemRecord] {
+        items.compactMap(\.textItemRecord)
     }
 }
 
@@ -89,6 +97,173 @@ struct BoardImageItemRecord: Codable {
     var assetFilename: String
     var cropRectNormalized: BoardImageCropRecord?
     var rotationRadians: Double?
+}
+
+struct BoardTextColorRecord: Codable {
+    var red: Double
+    var green: Double
+    var blue: Double
+    var alpha: Double
+
+    init(
+        red: Double,
+        green: Double,
+        blue: Double,
+        alpha: Double
+    ) {
+        self.red = red
+        self.green = green
+        self.blue = blue
+        self.alpha = alpha
+    }
+
+    init(_ color: CanvasTextColor) {
+        self.init(
+            red: Double(color.red),
+            green: Double(color.green),
+            blue: Double(color.blue),
+            alpha: Double(color.alpha)
+        )
+    }
+
+    var canvasTextColor: CanvasTextColor {
+        CanvasTextColor(
+            red: CGFloat(red),
+            green: CGFloat(green),
+            blue: CGFloat(blue),
+            alpha: CGFloat(alpha)
+        )
+    }
+}
+
+struct BoardTextStyleRecord: Codable {
+    var fontName: String
+    var fontSize: Double
+    var color: BoardTextColorRecord
+
+    init(
+        fontName: String,
+        fontSize: Double,
+        color: BoardTextColorRecord
+    ) {
+        self.fontName = fontName
+        self.fontSize = fontSize
+        self.color = color
+    }
+
+    init(_ style: CanvasTextStyle) {
+        self.init(
+            fontName: style.fontName,
+            fontSize: Double(style.fontSize),
+            color: BoardTextColorRecord(style.color)
+        )
+    }
+
+    var canvasTextStyle: CanvasTextStyle {
+        CanvasTextStyle(
+            fontName: fontName,
+            fontSize: CGFloat(fontSize),
+            color: color.canvasTextColor
+        )
+    }
+}
+
+struct BoardTextItemRecord: Codable {
+    let id: UUID
+    var center: BoardPointRecord
+    var size: BoardSizeRecord
+    var zIndex: Double
+    var text: String
+    var style: BoardTextStyleRecord
+    var rotationRadians: Double?
+}
+
+enum BoardItemRecord: Codable {
+    case image(BoardImageItemRecord)
+    case text(BoardTextItemRecord)
+
+    private enum CodingKeys: String, CodingKey {
+        case type
+        case image
+        case text
+    }
+
+    private enum ItemType: String, Codable {
+        case image
+        case text
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        if let type = try container.decodeIfPresent(ItemType.self, forKey: .type) {
+            switch type {
+            case .image:
+                self = .image(
+                    try container.decode(
+                        BoardImageItemRecord.self,
+                        forKey: .image
+                    )
+                )
+            case .text:
+                self = .text(
+                    try container.decode(
+                        BoardTextItemRecord.self,
+                        forKey: .text
+                    )
+                )
+            }
+            return
+        }
+
+        // v2 documents stored plain image records without a type tag.
+        self = .image(try BoardImageItemRecord(from: decoder))
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case let .image(record):
+            try container.encode(ItemType.image, forKey: .type)
+            try container.encode(record, forKey: .image)
+        case let .text(record):
+            try container.encode(ItemType.text, forKey: .type)
+            try container.encode(record, forKey: .text)
+        }
+    }
+
+    var id: UUID {
+        switch self {
+        case let .image(record):
+            return record.id
+        case let .text(record):
+            return record.id
+        }
+    }
+
+    var zIndex: Double {
+        switch self {
+        case let .image(record):
+            return record.zIndex
+        case let .text(record):
+            return record.zIndex
+        }
+    }
+
+    var imageItemRecord: BoardImageItemRecord? {
+        guard case let .image(record) = self else {
+            return nil
+        }
+
+        return record
+    }
+
+    var textItemRecord: BoardTextItemRecord? {
+        guard case let .text(record) = self else {
+            return nil
+        }
+
+        return record
+    }
 }
 
 struct BoardImageCropRecord: Codable {

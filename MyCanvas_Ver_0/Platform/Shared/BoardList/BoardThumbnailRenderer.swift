@@ -38,7 +38,7 @@ final class BoardThumbnailRenderer {
         cancellationCheck: () throws -> Void = {}
     ) throws -> CGImage? {
         try renderThumbnail(
-            itemRecords: item.document.items,
+            itemRecords: item.document.imageItemRecords,
             previewSeed: item.previewSeed,
             targetPixelSize: targetPixelSize,
             contentInset: contentInset,
@@ -81,7 +81,7 @@ final class BoardThumbnailRenderer {
             uniqueKeysWithValues: runtimeImageItems.map { ($0.id, $0) }
         )
         return try renderThumbnail(
-            itemRecords: document.items,
+            itemRecords: document.imageItemRecords,
             previewSeed: previewSeed,
             targetPixelSize: targetPixelSize,
             contentInset: 0,
