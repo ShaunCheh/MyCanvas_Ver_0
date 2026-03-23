@@ -32,6 +32,8 @@ struct CanvasContextMenuCommandResolver {
         context: CanvasContextMenuContext
     ) -> CanvasCommand? {
         switch commandID {
+        case .importImages:
+            return nil
         case .crop:
             return .crop
         case .undo:

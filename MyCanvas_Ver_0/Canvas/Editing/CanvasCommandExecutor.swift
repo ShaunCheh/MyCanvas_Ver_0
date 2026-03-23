@@ -9,6 +9,8 @@ final class CanvasCommandExecutor {
 
     func canExecute(_ command: CanvasCommand) -> Bool {
         switch command {
+        case let .importImages(request):
+            return request.isEmpty == false
         case .crop:
             return session.isInlineCropModeActive || session.canBeginCropMode
         case .undo:
@@ -40,6 +42,20 @@ final class CanvasCommandExecutor {
         }
 
         switch command {
+        case let .importImages(request):
+            let importedItems = session.appendImportedImages(
+                request.images,
+                placement: request.placement,
+                layout: request.layout
+            )
+            let imageCount = importedItems.count
+            let imageLabel = imageCount == 1 ? "image" : "images"
+            let sourceDescription = request.sourceDescription.isEmpty
+                ? ""
+                : " from \(request.sourceDescription)"
+            return CanvasCommandExecutionResult(
+                refreshReason: "import \(imageCount) \(imageLabel)\(sourceDescription)"
+            )
         case .crop:
             if session.isInlineCropModeActive {
                 guard session.endInlineEditMode() else {

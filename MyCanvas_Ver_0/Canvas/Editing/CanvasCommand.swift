@@ -1,6 +1,7 @@
 import Foundation
 
 enum CanvasCommandID: String {
+    case importImages
     case crop
     case undo
     case redo
@@ -15,6 +16,7 @@ enum CanvasCommandID: String {
 }
 
 enum CanvasCommand {
+    case importImages(CanvasImportRequest)
     case crop
     case undo
     case redo
@@ -29,6 +31,8 @@ enum CanvasCommand {
 
     var id: CanvasCommandID {
         switch self {
+        case .importImages:
+            return .importImages
         case .crop:
             return .crop
         case .undo:
@@ -58,7 +62,8 @@ enum CanvasCommand {
     // controllers should cancel active rotation before applying these commands.
     var shouldCancelActiveRotation: Bool {
         switch self {
-        case .crop,
+        case .importImages,
+             .crop,
              .undo,
              .redo,
              .selectItem,

@@ -355,6 +355,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations {
 
     func performCommand(withID commandID: CanvasCommandID) {
         switch commandID {
+        case .importImages:
+            break
         case .crop:
             performCommand(CanvasCommand.crop)
         case .undo:

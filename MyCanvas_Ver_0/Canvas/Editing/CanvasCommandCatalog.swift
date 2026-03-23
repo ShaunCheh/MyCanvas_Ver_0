@@ -7,6 +7,14 @@ struct CanvasCommandCatalog {
         context: CanvasContextMenuContext? = nil
     ) -> CanvasCommandDescriptor {
         switch commandID {
+        case .importImages:
+            return CanvasCommandDescriptor(
+                id: .importImages,
+                title: "Import Images",
+                systemImageName: "photo.on.rectangle.angled",
+                isEnabled: false,
+                isActive: false
+            )
         case .crop:
             let isActive = session.isInlineCropModeActive
             return CanvasCommandDescriptor(
