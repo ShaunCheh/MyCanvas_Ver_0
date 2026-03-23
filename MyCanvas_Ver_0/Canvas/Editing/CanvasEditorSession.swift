@@ -722,23 +722,124 @@ final class CanvasEditorSession {
         )
     }
 
-    @discardableResult
-    func appendImportedImage(_ cgImage: CGImage) -> CanvasImageItem {
-        let beforeSnapshot = currentBoardHistorySnapshot()
-        let item = CanvasImageItem(
-            cgImage: cgImage,
-            center: camera.center,
-            size: normalizedDisplaySize(for: cgImage),
-            zIndex: nextImageZIndex()
-        )
+    private func resolvedImportCenter(
+        for placement: CanvasImportPlacement
+    ) -> CGPoint {
+        switch placement {
+        case .cameraCenter:
+            return camera.center
+        case let .worldPoint(point):
+            return point
+        }
+    }
 
-        scene.append(item)
-        expandBoardIfNeeded(toInclude: item.worldFrame)
+    private func resolvedImportLayout(
+        _ layout: CanvasImportLayout,
+        imageCount: Int
+    ) -> CanvasImportLayout {
+        switch layout {
+        case .automatic:
+            if imageCount <= 1 {
+                return .stacked
+            }
+
+            return .staggered(stepInWorld: duplicateOffsetInWorld())
+        case .stacked:
+            return .stacked
+        case let .staggered(stepInWorld):
+            return .staggered(stepInWorld: stepInWorld)
+        }
+    }
+
+    private func importOffset(
+        forImageAt index: Int,
+        layout: CanvasImportLayout
+    ) -> CGPoint {
+        switch layout {
+        case .automatic, .stacked:
+            return .zero
+        case let .staggered(stepInWorld):
+            let multiplier = CGFloat(index)
+            return CGPoint(
+                x: stepInWorld.x * multiplier,
+                y: stepInWorld.y * multiplier
+            )
+        }
+    }
+
+    private func importedImageChangeReason(for imageCount: Int) -> String {
+        guard imageCount > 1 else {
+            return "append image"
+        }
+
+        return "append \(imageCount) images"
+    }
+
+    @discardableResult
+    func appendImportedImages(
+        _ images: [CanvasResolvedImportImage],
+        placement: CanvasImportPlacement = .cameraCenter,
+        layout: CanvasImportLayout = .automatic
+    ) -> [CanvasImageItem] {
+        guard images.isEmpty == false else {
+            return []
+        }
+
+        let beforeSnapshot = currentBoardHistorySnapshot()
+        let importCenter = resolvedImportCenter(for: placement)
+        let resolvedLayout = resolvedImportLayout(
+            layout,
+            imageCount: images.count
+        )
+        let startingZIndex = nextImageZIndex()
+        var importedItems: [CanvasImageItem] = []
+        importedItems.reserveCapacity(images.count)
+
+        for (index, image) in images.enumerated() {
+            let offset = importOffset(
+                forImageAt: index,
+                layout: resolvedLayout
+            )
+            let item = CanvasImageItem(
+                cgImage: image.cgImage,
+                center: CGPoint(
+                    x: importCenter.x + offset.x,
+                    y: importCenter.y + offset.y
+                ),
+                size: normalizedDisplaySize(for: image.cgImage),
+                zIndex: startingZIndex + CGFloat(index)
+            )
+
+            scene.append(item)
+            expandBoardIfNeeded(toInclude: item.worldFrame)
+            importedItems.append(item)
+        }
+
+        let changeReason = importedImageChangeReason(
+            for: importedItems.count
+        )
         _ = recordImmediateHistoryChange(
             from: beforeSnapshot,
-            reason: "append image",
-            autosaveReason: "append image"
+            reason: changeReason,
+            autosaveReason: changeReason
         )
+        return importedItems
+    }
+
+    @discardableResult
+    func appendImportedImage(
+        _ cgImage: CGImage,
+        placement: CanvasImportPlacement = .cameraCenter
+    ) -> CanvasImageItem {
+        let importedItems = appendImportedImages(
+            [CanvasResolvedImportImage(cgImage: cgImage)],
+            placement: placement,
+            layout: .stacked
+        )
+        guard let item = importedItems.first else {
+            preconditionFailure("Expected a single imported image result.")
+        }
+
         return item
     }
 }
