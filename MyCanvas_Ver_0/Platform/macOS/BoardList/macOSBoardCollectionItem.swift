@@ -25,6 +25,13 @@ final class macOSBoardCollectionItem: NSCollectionViewItem, NSTextFieldDelegate 
         case cancel
     }
 
+    private enum TitleEditTiming {
+        static let initialFocusDelay: TimeInterval = 0.12
+        static let refocusDelay: TimeInterval = 0.05
+        static let stabilizationDelay: TimeInterval = 0.18
+        static let maximumUnexpectedEndRetries = 1
+    }
+
     private let previewView = macOSBoardPreviewView()
     private let placeholderIconView: NSImageView = {
         let configuration = NSImage.SymbolConfiguration(pointSize: 22, weight: .medium)
@@ -91,6 +98,9 @@ final class macOSBoardCollectionItem: NSCollectionViewItem, NSTextFieldDelegate 
     private var isTitleEditingActive = false
     private var didHandleCurrentTitleEditEnd = false
     private var pendingTitleEditEndDisposition: TitleEditEndDisposition = .unspecified
+    private var titleEditFocusRequestID = 0
+    private var isAwaitingInitialFocusStabilization = false
+    private var unexpectedInitialEndRetryCount = 0
 
     override func loadView() {
         view = NSView()
@@ -130,6 +140,7 @@ final class macOSBoardCollectionItem: NSCollectionViewItem, NSTextFieldDelegate 
         if isTitleEditingActive || representedBoardID != nil {
             logRenameTrace("prepareForReuse")
         }
+        invalidateTitleEditingFocusRequests()
         cancelThumbnailRequest()
         representedEntryID = nil
         representedBoardID = nil
@@ -150,6 +161,7 @@ final class macOSBoardCollectionItem: NSCollectionViewItem, NSTextFieldDelegate 
         isTitleEditingActive = false
         didHandleCurrentTitleEditEnd = false
         pendingTitleEditEndDisposition = .unspecified
+        unexpectedInitialEndRetryCount = 0
         previewView.apply(content: .empty)
     }
 
@@ -171,9 +183,11 @@ final class macOSBoardCollectionItem: NSCollectionViewItem, NSTextFieldDelegate 
         self.onMoreActionsRequested = onMoreActionsRequested
         self.onRenameSubmitted = onRenameSubmitted
         self.onRenameCancelled = onRenameCancelled
+        invalidateTitleEditingFocusRequests()
         isTitleEditingActive = isEditingTitle
         didHandleCurrentTitleEditEnd = false
         pendingTitleEditEndDisposition = .unspecified
+        unexpectedInitialEndRetryCount = 0
         titleLabel.stringValue = entry.title
         titleTextField.stringValue = entry.title
         previewView.apply(content: previewContent)
@@ -200,20 +214,11 @@ final class macOSBoardCollectionItem: NSCollectionViewItem, NSTextFieldDelegate 
 
         didHandleCurrentTitleEditEnd = false
         pendingTitleEditEndDisposition = .unspecified
-        logRenameTrace("beginTitleEditing")
-        view.window?.makeFirstResponder(titleTextField)
-        DispatchQueue.main.async { [weak self] in
-            guard
-                let self,
-                self.isTitleEditingActive
-            else {
-                return
-            }
-
-            self.view.window?.makeFirstResponder(self.titleTextField)
-            (self.view.window?.fieldEditor(true, for: self.titleTextField) as? NSTextView)?
-                .selectAll(nil)
-        }
+        unexpectedInitialEndRetryCount = 0
+        scheduleTitleEditingFocus(
+            delay: TitleEditTiming.initialFocusDelay,
+            reason: "initial"
+        )
     }
 
     func cancelThumbnailRequest() {
@@ -517,6 +522,7 @@ final class macOSBoardCollectionItem: NSCollectionViewItem, NSTextFieldDelegate 
             return
         }
 
+        invalidateTitleEditingFocusRequests()
         didHandleCurrentTitleEditEnd = true
         logRenameTrace("commitTitleEdit")
         onRenameSubmitted?(representedBoardID, titleTextField.stringValue)
@@ -532,9 +538,80 @@ final class macOSBoardCollectionItem: NSCollectionViewItem, NSTextFieldDelegate 
             return
         }
 
+        invalidateTitleEditingFocusRequests()
         didHandleCurrentTitleEditEnd = true
         logRenameTrace("cancelTitleEdit")
         onRenameCancelled?(representedBoardID)
+    }
+
+    private func scheduleTitleEditingFocus(
+        delay: TimeInterval,
+        reason: String
+    ) {
+        titleEditFocusRequestID += 1
+        let requestID = titleEditFocusRequestID
+        isAwaitingInitialFocusStabilization = true
+        pendingTitleEditEndDisposition = .unspecified
+        logRenameTrace(
+            "scheduleTitleEditingFocus",
+            extra:
+                "requestID=\(requestID) " +
+                "delay=\(String(format: "%.2f", delay)) " +
+                "reason=\(reason)"
+        )
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard
+                let self,
+                self.titleEditFocusRequestID == requestID,
+                self.isTitleEditingActive,
+                self.titleTextField.isHidden == false
+            else {
+                self?.logRenameTrace(
+                    "scheduleTitleEditingFocusAborted",
+                    extra:
+                        "requestID=\(requestID) " +
+                        "reason=\(reason)"
+                )
+                return
+            }
+
+            self.logRenameTrace(
+                "performTitleEditingFocus",
+                extra:
+                    "requestID=\(requestID) " +
+                    "reason=\(reason)"
+            )
+            self.view.window?.makeFirstResponder(self.titleTextField)
+
+            DispatchQueue.main.async { [weak self] in
+                guard
+                    let self,
+                    self.titleEditFocusRequestID == requestID
+                else {
+                    return
+                }
+
+                (self.view.window?.fieldEditor(true, for: self.titleTextField) as? NSTextView)?
+                    .selectAll(nil)
+            }
+        }
+    }
+
+    private func scheduleRefocusAfterUnexpectedInitialEnd() {
+        logRenameTrace(
+            "scheduleRefocusAfterUnexpectedInitialEnd",
+            extra: "retryCount=\(unexpectedInitialEndRetryCount)"
+        )
+        scheduleTitleEditingFocus(
+            delay: TitleEditTiming.refocusDelay,
+            reason: "unexpectedInitialEnd"
+        )
+    }
+
+    private func invalidateTitleEditingFocusRequests() {
+        titleEditFocusRequestID += 1
+        isAwaitingInitialFocusStabilization = false
     }
 
     private func logRenameTrace(_ phase: String, extra: String = "") {
@@ -549,7 +626,8 @@ final class macOSBoardCollectionItem: NSCollectionViewItem, NSTextFieldDelegate 
                 "textFieldText=\"\(titleTextField.stringValue)\" " +
                 "editing=\(isTitleEditingActive) " +
                 "textFieldHidden=\(titleTextField.isHidden) " +
-                "isFirstResponder=\(isFirstResponder)" +
+                "isFirstResponder=\(isFirstResponder) " +
+                "isAwaitingInitialFocusStabilization=\(isAwaitingInitialFocusStabilization)" +
                 extraSuffix
         )
     }
@@ -569,6 +647,30 @@ final class macOSBoardCollectionItem: NSCollectionViewItem, NSTextFieldDelegate 
             anchorRect.standardized,
             view
         )
+    }
+
+    func controlTextDidBeginEditing(_ obj: Notification) {
+        guard obj.object as AnyObject? === titleTextField else {
+            return
+        }
+
+        let requestID = titleEditFocusRequestID
+        logRenameTrace("controlTextDidBeginEditing", extra: "requestID=\(requestID)")
+        DispatchQueue.main.asyncAfter(deadline: .now() + TitleEditTiming.stabilizationDelay) { [weak self] in
+            guard
+                let self,
+                self.titleEditFocusRequestID == requestID,
+                self.isTitleEditingActive
+            else {
+                return
+            }
+
+            self.isAwaitingInitialFocusStabilization = false
+            self.logRenameTrace(
+                "titleEditingFocusStabilized",
+                extra: "requestID=\(requestID)"
+            )
+        }
     }
 
     func control(
@@ -603,7 +705,20 @@ final class macOSBoardCollectionItem: NSCollectionViewItem, NSTextFieldDelegate 
         logRenameTrace("controlTextDidEndEditing", extra: "disposition=\(String(describing: disposition))")
 
         switch disposition {
-        case .unspecified, .commit:
+        case .commit:
+            commitTitleEditIfNeeded()
+        case .unspecified:
+            if isAwaitingInitialFocusStabilization,
+               unexpectedInitialEndRetryCount < TitleEditTiming.maximumUnexpectedEndRetries {
+                unexpectedInitialEndRetryCount += 1
+                logRenameTrace(
+                    "controlTextDidEndEditingIgnoredDuringStabilization",
+                    extra: "retryCount=\(unexpectedInitialEndRetryCount)"
+                )
+                scheduleRefocusAfterUnexpectedInitialEnd()
+                return
+            }
+
             commitTitleEditIfNeeded()
         case .cancel:
             cancelTitleEditIfNeeded()
