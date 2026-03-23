@@ -5,12 +5,10 @@
 //  Created by Shaun on 2026/3/13.
 //
 #if os(iOS)
-import ImageIO
 import PhotosUI
-import UniformTypeIdentifiers
 import UIKit
 
-final class iOSViewController: UIViewController, PHPickerViewControllerDelegate {
+final class iOSViewController: UIViewController, PHPickerViewControllerDelegate, UIDropInteractionDelegate {
     private struct PointerResizeState {
         let itemID: CanvasImageItemID
         let handleRole: CanvasSelectionHandleRole
@@ -363,6 +361,20 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         performCommand(command)
     }
 
+    override var canBecomeFirstResponder: Bool {
+        true
+    }
+
+    override var keyCommands: [UIKeyCommand]? {
+        let pasteCommand = UIKeyCommand(
+            input: "v",
+            modifierFlags: [.command],
+            action: #selector(handlePasteKeyCommand(_:))
+        )
+        pasteCommand.discoverabilityTitle = "Paste Image"
+        return [pasteCommand]
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
         setupViewHierarchy()
@@ -378,6 +390,11 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         setupContextMenuHostView()
         restoreInitialBoardState()
         setupCanvasViewport()
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        becomeFirstResponder()
     }
 
     override func viewDidLayoutSubviews() {
@@ -743,6 +760,9 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
                 source: "viewport layout"
             )
         }
+        canvasViewportView.addInteraction(
+            UIDropInteraction(delegate: self)
+        )
 
         installCanvasContentView(canvasViewportView)
         requestCanvasRefresh(reason: "initial setup")
@@ -1148,7 +1168,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
     private func handleImportButtonTap() {
         var configuration = PHPickerConfiguration(photoLibrary: .shared())
         configuration.filter = .images
-        configuration.selectionLimit = 1
+        configuration.selectionLimit = 0
 
         let pickerViewController = PHPickerViewController(configuration: configuration)
         pickerViewController.delegate = self
@@ -1204,44 +1224,121 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate 
         onBackToBoardList?()
     }
 
-    func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
-        picker.dismiss(animated: true)
-
-        guard let result = results.first else {
-            return
-        }
-
-        loadSelectedImage(from: result)
+    @objc
+    private func handlePasteKeyCommand(_ sender: UIKeyCommand) {
+        handlePasteRequest()
     }
 
-    private func loadSelectedImage(from result: PHPickerResult) {
-        let itemProvider = result.itemProvider
-        guard itemProvider.hasItemConformingToTypeIdentifier(UTType.image.identifier) else {
-            return
+    func dropInteraction(
+        _ interaction: UIDropInteraction,
+        canHandle session: UIDropSession
+    ) -> Bool {
+        iOSCanvasImportAdapter.canResolveImages(from: session)
+    }
+
+    func dropInteraction(
+        _ interaction: UIDropInteraction,
+        sessionDidUpdate session: UIDropSession
+    ) -> UIDropProposal {
+        if iOSCanvasImportAdapter.canResolveImages(from: session) {
+            return UIDropProposal(operation: .copy)
         }
 
-        itemProvider.loadDataRepresentation(forTypeIdentifier: UTType.image.identifier) { [weak self] data, _ in
-            guard
-                let data,
-                let imageSource = CGImageSourceCreateWithData(data as CFData, nil),
-                let cgImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil)
-            else {
+        return UIDropProposal(operation: .cancel)
+    }
+
+    func dropInteraction(
+        _ interaction: UIDropInteraction,
+        performDrop session: UIDropSession
+    ) {
+        Task { @MainActor [weak self] in
+            guard let self else {
                 return
             }
 
-            Task { @MainActor [weak self] in
-                self?.logImport(dataCount: data.count, cgImage: cgImage)
-                self?.appendImportedImage(cgImage)
-            }
+            let resolvedImages = await iOSCanvasImportAdapter.resolvedImages(
+                from: session
+            )
+            _ = self.importResolvedImages(
+                resolvedImages,
+                source: "drag and drop"
+            )
+            self.becomeFirstResponder()
         }
     }
 
-    private func appendImportedImage(_ cgImage: CGImage) {
-        let item = editorSession.appendImportedImage(cgImage)
+    func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
+        picker.dismiss(animated: true)
+
+        guard results.isEmpty == false else {
+            return
+        }
+
+        Task { @MainActor [weak self] in
+            guard let self else {
+                return
+            }
+
+            let resolvedImages = await iOSCanvasImportAdapter.resolvedImages(
+                from: results
+            )
+            _ = self.importResolvedImages(
+                resolvedImages,
+                source: "photo picker"
+            )
+            self.becomeFirstResponder()
+        }
+    }
+
+    private func canImportImages(from pasteboard: UIPasteboard) -> Bool {
+        iOSCanvasImportAdapter.canResolveImages(from: pasteboard)
+    }
+
+    private func handlePasteRequest() {
+        guard canImportImages(from: .general) else {
+            return
+        }
+
+        Task { @MainActor [weak self] in
+            guard let self else {
+                return
+            }
+
+            let resolvedImages = await iOSCanvasImportAdapter.resolvedImages(
+                from: .general
+            )
+            _ = self.importResolvedImages(
+                resolvedImages,
+                source: "pasteboard"
+            )
+            self.becomeFirstResponder()
+        }
+    }
+
+    @discardableResult
+    private func importResolvedImages(
+        _ images: [CanvasResolvedImportImage],
+        source: String,
+        placement: CanvasImportPlacement = .cameraCenter,
+        layout: CanvasImportLayout = .automatic
+    ) -> Bool {
+        guard images.isEmpty == false else {
+            return false
+        }
+
+        dismissContextMenu()
+        let importedItems = editorSession.appendImportedImages(
+            images,
+            placement: placement,
+            layout: layout
+        )
+        let imageCount = importedItems.count
+        let imageLabel = imageCount == 1 ? "image" : "images"
         requestCanvasRefresh(
-            reason: "append image size=\(describe(size: item.size)) center=\(describe(point: item.center))"
+            reason: "import \(imageCount) \(imageLabel) from \(source)"
         )
         updateHistoryButtonsAppearance()
+        return true
     }
 
     private func selectItem(
