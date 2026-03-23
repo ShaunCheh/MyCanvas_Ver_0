@@ -34,9 +34,7 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
                 return
             }
 
-            updateCollectionLayout()
-            collectionView.reloadData()
-            syncCollectionSelection()
+            reloadBoardList()
         }
     }
 
@@ -331,6 +329,8 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
         updateDisplayModeControlState()
         updateCollectionLayout()
         syncCollectionSelection()
+        revealPendingBoardIfNeeded()
+        focusTitleEditorIfNeeded()
     }
 
     private func updateDisplayModeControlState() {
@@ -424,6 +424,27 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
         }
 
         return entries[indexPath.item]
+    }
+
+    private func indexPath(for boardID: UUID) -> IndexPath? {
+        guard let index = entries.firstIndex(where: { $0.boardID == boardID }) else {
+            return nil
+        }
+
+        return IndexPath(item: index, section: 0)
+    }
+
+    private func boardTitle(for boardID: UUID) -> String? {
+        availableBoards.first(where: { $0.boardID == boardID })?.title
+    }
+
+    private func normalizedBoardTitle(_ title: String) -> String {
+        let normalizedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard normalizedTitle.isEmpty == false else {
+            return BoardDocument.defaultTitle
+        }
+
+        return normalizedTitle
     }
 
     private func performPrimaryAction(for entry: BoardListEntry) {
@@ -545,9 +566,117 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
 
         switch actionID {
         case .rename:
+            guard let boardID else {
+                return
+            }
+
+            selectedEntryID = .board(boardID)
+            pendingRevealBoardID = nil
             editingBoardID = boardID
             reloadBoardList()
         }
+    }
+
+    private func commitRename(boardID: UUID, title: String) {
+        guard editingBoardID == boardID else {
+            return
+        }
+
+        let normalizedTitle = normalizedBoardTitle(title)
+        if boardTitle(for: boardID) == normalizedTitle {
+            editingBoardID = nil
+            pendingRevealBoardID = nil
+            reloadBoardList()
+            return
+        }
+
+        do {
+            try BoardStore.renameBoard(id: boardID, title: normalizedTitle)
+            editingBoardID = nil
+            selectedEntryID = .board(boardID)
+            pendingRevealBoardID = boardID
+            refreshBookmarkStatus()
+        } catch {
+            presentRenameError(error)
+        }
+    }
+
+    private func focusTitleEditorIfNeeded() {
+        guard let editingBoardID else {
+            return
+        }
+
+        guard let indexPath = indexPath(for: editingBoardID) else {
+            self.editingBoardID = nil
+            return
+        }
+
+        DispatchQueue.main.async { [weak self] in
+            self?.focusTitleEditor(
+                at: indexPath,
+                boardID: editingBoardID
+            )
+        }
+    }
+
+    private func focusTitleEditor(
+        at indexPath: IndexPath,
+        boardID: UUID
+    ) {
+        guard editingBoardID == boardID else {
+            return
+        }
+
+        collectionView.layoutIfNeeded()
+        collectionView.scrollToItem(
+            at: indexPath,
+            at: .centeredVertically,
+            animated: false
+        )
+        collectionView.layoutIfNeeded()
+
+        guard
+            let cell = collectionView.cellForItem(at: indexPath) as? iOSBoardCollectionViewCell
+        else {
+            return
+        }
+
+        cell.beginTitleEditing()
+    }
+
+    private func revealPendingBoardIfNeeded() {
+        guard let pendingRevealBoardID else {
+            return
+        }
+
+        guard let indexPath = indexPath(for: pendingRevealBoardID) else {
+            self.pendingRevealBoardID = nil
+            return
+        }
+
+        DispatchQueue.main.async { [weak self] in
+            self?.revealBoard(
+                at: indexPath,
+                boardID: pendingRevealBoardID
+            )
+        }
+    }
+
+    private func revealBoard(
+        at indexPath: IndexPath,
+        boardID: UUID
+    ) {
+        guard pendingRevealBoardID == boardID else {
+            return
+        }
+
+        collectionView.layoutIfNeeded()
+        collectionView.scrollToItem(
+            at: indexPath,
+            at: .top,
+            animated: false
+        )
+        pendingRevealBoardID = nil
     }
 
     private func presentSelectionError(_ error: Error) {
@@ -557,6 +686,20 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
             preferredStyle: .alert
         )
         alertController.addAction(UIAlertAction(title: "OK", style: .default))
+        present(alertController, animated: true)
+    }
+
+    private func presentRenameError(_ error: Error) {
+        let alertController = UIAlertController(
+            title: "Unable to Rename Board",
+            message: error.localizedDescription,
+            preferredStyle: .alert
+        )
+        alertController.addAction(
+            UIAlertAction(title: "OK", style: .default) { [weak self] _ in
+                self?.focusTitleEditorIfNeeded()
+            }
+        )
         present(alertController, animated: true)
     }
 
@@ -593,15 +736,29 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
             previewContent = .empty
         }
 
-        cell.configure(
-            with: entry,
-            previewContent: previewContent,
-            displayMode: displayMode,
-            onMoreActionsRequested: { [weak self] boardID, anchorRect, sourceView in
+        let moreActionsHandler: iOSBoardCollectionViewCell.MoreActionsHandler?
+        if editingBoardID == nil {
+            moreActionsHandler = { [weak self] boardID, anchorRect, sourceView in
                 self?.presentRenameActionPanel(
                     for: boardID,
                     anchorRect: anchorRect,
                     from: sourceView
+                )
+            }
+        } else {
+            moreActionsHandler = nil
+        }
+
+        cell.configure(
+            with: entry,
+            previewContent: previewContent,
+            displayMode: displayMode,
+            isEditingTitle: entry.boardID.map { $0 == editingBoardID } ?? false,
+            onMoreActionsRequested: moreActionsHandler,
+            onRenameSubmitted: { [weak self] boardID, title in
+                self?.commitRename(
+                    boardID: boardID,
+                    title: title
                 )
             }
         )

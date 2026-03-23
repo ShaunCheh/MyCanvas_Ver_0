@@ -5,16 +5,24 @@ private func boardListSelectionTraceTimestamp() -> String {
     String(format: "%.3f", ProcessInfo.processInfo.systemUptime)
 }
 
-final class macOSBoardCollectionItem: NSCollectionViewItem {
+final class macOSBoardCollectionItem: NSCollectionViewItem, NSTextFieldDelegate {
     static let reuseIdentifier = NSUserInterfaceItemIdentifier("macOSBoardCollectionItem")
 
     typealias MoreActionsHandler = (UUID, CGRect, NSView) -> Void
+    typealias RenameSubmitHandler = (UUID, String) -> Void
+    typealias RenameCancelHandler = (UUID) -> Void
 
     private enum PresentationStyle {
         case boardGrid
         case boardList
         case placeholderGrid
         case placeholderList
+    }
+
+    private enum TitleEditEndDisposition {
+        case unspecified
+        case commit
+        case cancel
     }
 
     private let previewView = macOSBoardPreviewView()
@@ -39,6 +47,17 @@ final class macOSBoardCollectionItem: NSCollectionViewItem {
         label.maximumNumberOfLines = 2
         label.lineBreakMode = .byTruncatingTail
         return label
+    }()
+    private let titleTextField: NSTextField = {
+        let textField = NSTextField(string: "")
+        textField.translatesAutoresizingMaskIntoConstraints = false
+        textField.font = .systemFont(ofSize: 14, weight: .medium)
+        textField.textColor = .labelColor
+        textField.isHidden = true
+        textField.lineBreakMode = .byTruncatingTail
+        textField.maximumNumberOfLines = 1
+        textField.usesSingleLineMode = true
+        return textField
     }()
     private let moreButton: NSButton = {
         let button = NSButton()
@@ -66,6 +85,12 @@ final class macOSBoardCollectionItem: NSCollectionViewItem {
     private var representedRevisionToken: String?
     private var thumbnailRequestToken: BoardPreviewRequestToken?
     private var onMoreActionsRequested: MoreActionsHandler?
+    private var onRenameSubmitted: RenameSubmitHandler?
+    private var onRenameCancelled: RenameCancelHandler?
+    private var currentPresentationStyle: PresentationStyle = .boardGrid
+    private var isTitleEditingActive = false
+    private var didHandleCurrentTitleEditEnd = false
+    private var pendingTitleEditEndDisposition: TitleEditEndDisposition = .unspecified
 
     override func loadView() {
         view = NSView()
@@ -109,10 +134,19 @@ final class macOSBoardCollectionItem: NSCollectionViewItem {
         representedDisplayMode = nil
         representedRevisionToken = nil
         titleLabel.stringValue = ""
+        titleLabel.isHidden = false
+        titleTextField.stringValue = ""
+        titleTextField.isHidden = true
         previewView.isHidden = false
         placeholderIconView.isHidden = true
         moreButton.isHidden = true
         onMoreActionsRequested = nil
+        onRenameSubmitted = nil
+        onRenameCancelled = nil
+        currentPresentationStyle = .boardGrid
+        isTitleEditingActive = false
+        didHandleCurrentTitleEditEnd = false
+        pendingTitleEditEndDisposition = .unspecified
         previewView.apply(content: .empty)
     }
 
@@ -120,7 +154,10 @@ final class macOSBoardCollectionItem: NSCollectionViewItem {
         with entry: BoardListEntry,
         previewContent: BoardPreviewContent,
         displayMode: BoardListDisplayMode,
-        onMoreActionsRequested: MoreActionsHandler? = nil
+        isEditingTitle: Bool = false,
+        onMoreActionsRequested: MoreActionsHandler? = nil,
+        onRenameSubmitted: RenameSubmitHandler? = nil,
+        onRenameCancelled: RenameCancelHandler? = nil
     ) {
         cancelThumbnailRequest()
         representedEntryID = entry.id
@@ -129,13 +166,44 @@ final class macOSBoardCollectionItem: NSCollectionViewItem {
         representedDisplayMode = displayMode
         representedRevisionToken = entry.revisionToken
         self.onMoreActionsRequested = onMoreActionsRequested
+        self.onRenameSubmitted = onRenameSubmitted
+        self.onRenameCancelled = onRenameCancelled
+        isTitleEditingActive = isEditingTitle
+        didHandleCurrentTitleEditEnd = false
+        pendingTitleEditEndDisposition = .unspecified
         titleLabel.stringValue = entry.title
+        titleTextField.stringValue = entry.title
         previewView.apply(content: previewContent)
         applyPresentation(
             for: entry,
             displayMode: displayMode
         )
         view.layoutSubtreeIfNeeded()
+    }
+
+    func beginTitleEditing() {
+        guard
+            isTitleEditingActive,
+            titleTextField.isHidden == false
+        else {
+            return
+        }
+
+        didHandleCurrentTitleEditEnd = false
+        pendingTitleEditEndDisposition = .unspecified
+        view.window?.makeFirstResponder(titleTextField)
+        DispatchQueue.main.async { [weak self] in
+            guard
+                let self,
+                self.isTitleEditingActive
+            else {
+                return
+            }
+
+            self.view.window?.makeFirstResponder(self.titleTextField)
+            (self.view.window?.fieldEditor(true, for: self.titleTextField) as? NSTextView)?
+                .selectAll(nil)
+        }
     }
 
     func cancelThumbnailRequest() {
@@ -190,11 +258,14 @@ final class macOSBoardCollectionItem: NSCollectionViewItem {
         previewView.translatesAutoresizingMaskIntoConstraints = false
         placeholderIconView.translatesAutoresizingMaskIntoConstraints = false
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        titleTextField.translatesAutoresizingMaskIntoConstraints = false
         moreButton.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(previewView)
         view.addSubview(placeholderIconView)
         view.addSubview(titleLabel)
+        view.addSubview(titleTextField)
         view.addSubview(moreButton)
+        titleTextField.delegate = self
         moreButton.target = self
         moreButton.action = #selector(handleMoreButtonClick(_:))
     }
@@ -212,7 +283,11 @@ final class macOSBoardCollectionItem: NSCollectionViewItem {
             titleLabel.topAnchor.constraint(equalTo: previewView.bottomAnchor, constant: 10),
             titleLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
             titleLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
-            titleLabel.bottomAnchor.constraint(lessThanOrEqualTo: view.bottomAnchor, constant: -12)
+            titleLabel.bottomAnchor.constraint(lessThanOrEqualTo: view.bottomAnchor, constant: -12),
+            titleTextField.topAnchor.constraint(equalTo: previewView.bottomAnchor, constant: 8),
+            titleTextField.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
+            titleTextField.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
+            titleTextField.bottomAnchor.constraint(lessThanOrEqualTo: view.bottomAnchor, constant: -12)
         ]
 
         listConstraints = [
@@ -223,6 +298,9 @@ final class macOSBoardCollectionItem: NSCollectionViewItem {
             titleLabel.leadingAnchor.constraint(equalTo: previewView.trailingAnchor, constant: 12),
             titleLabel.trailingAnchor.constraint(equalTo: moreButton.leadingAnchor, constant: -8),
             titleLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            titleTextField.leadingAnchor.constraint(equalTo: previewView.trailingAnchor, constant: 12),
+            titleTextField.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
+            titleTextField.centerYAnchor.constraint(equalTo: view.centerYAnchor),
             moreButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
             moreButton.centerYAnchor.constraint(equalTo: view.centerYAnchor),
             moreButton.widthAnchor.constraint(equalToConstant: 32),
@@ -280,6 +358,7 @@ final class macOSBoardCollectionItem: NSCollectionViewItem {
     }
 
     private func applyPresentationStyle(_ presentationStyle: PresentationStyle) {
+        currentPresentationStyle = presentationStyle
         NSLayoutConstraint.deactivate(
             gridConstraints +
                 listConstraints +
@@ -290,14 +369,18 @@ final class macOSBoardCollectionItem: NSCollectionViewItem {
         previewView.isHidden = false
         placeholderIconView.isHidden = true
         moreButton.isHidden = true
+        titleLabel.isHidden = false
+        titleTextField.isHidden = true
 
         switch presentationStyle {
         case .boardGrid:
             titleLabel.alignment = .center
+            titleTextField.alignment = .center
             moreButton.isHidden = false
             NSLayoutConstraint.activate(gridConstraints)
         case .boardList:
             titleLabel.alignment = .left
+            titleTextField.alignment = .left
             moreButton.isHidden = false
             NSLayoutConstraint.activate(listConstraints)
         case .placeholderGrid:
@@ -311,6 +394,8 @@ final class macOSBoardCollectionItem: NSCollectionViewItem {
             placeholderIconView.isHidden = false
             NSLayoutConstraint.activate(placeholderListConstraints)
         }
+
+        applyTitleEditingAppearance()
     }
 
     private func updateSelectionAppearance() {
@@ -386,6 +471,54 @@ final class macOSBoardCollectionItem: NSCollectionViewItem {
         }
     }
 
+    private func applyTitleEditingAppearance() {
+        let isEditablePresentation: Bool
+        switch currentPresentationStyle {
+        case .boardGrid, .boardList:
+            isEditablePresentation = true
+        case .placeholderGrid, .placeholderList:
+            isEditablePresentation = false
+        }
+
+        let shouldShowTitleEditor = isTitleEditingActive && isEditablePresentation
+        titleLabel.isHidden = shouldShowTitleEditor
+        titleTextField.isHidden = !shouldShowTitleEditor
+
+        if shouldShowTitleEditor {
+            moreButton.isHidden = true
+            titleTextField.stringValue = representedTitle ?? ""
+            return
+        }
+
+        moreButton.isHidden = onMoreActionsRequested == nil
+    }
+
+    private func commitTitleEditIfNeeded() {
+        guard
+            isTitleEditingActive,
+            didHandleCurrentTitleEditEnd == false,
+            let representedBoardID
+        else {
+            return
+        }
+
+        didHandleCurrentTitleEditEnd = true
+        onRenameSubmitted?(representedBoardID, titleTextField.stringValue)
+    }
+
+    private func cancelTitleEditIfNeeded() {
+        guard
+            isTitleEditingActive,
+            didHandleCurrentTitleEditEnd == false,
+            let representedBoardID
+        else {
+            return
+        }
+
+        didHandleCurrentTitleEditEnd = true
+        onRenameCancelled?(representedBoardID)
+    }
+
     @objc
     private func handleMoreButtonClick(_ sender: NSButton) {
         guard let representedBoardID else {
@@ -401,6 +534,42 @@ final class macOSBoardCollectionItem: NSCollectionViewItem {
             anchorRect.standardized,
             view
         )
+    }
+
+    func control(
+        _ control: NSControl,
+        textView: NSTextView,
+        doCommandBy commandSelector: Selector
+    ) -> Bool {
+        if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+            pendingTitleEditEndDisposition = .commit
+            view.window?.makeFirstResponder(nil)
+            return true
+        }
+
+        if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
+            pendingTitleEditEndDisposition = .cancel
+            view.window?.makeFirstResponder(nil)
+            return true
+        }
+
+        return false
+    }
+
+    func controlTextDidEndEditing(_ obj: Notification) {
+        guard obj.object as AnyObject? === titleTextField else {
+            return
+        }
+
+        let disposition = pendingTitleEditEndDisposition
+        pendingTitleEditEndDisposition = .unspecified
+
+        switch disposition {
+        case .unspecified, .commit:
+            commitTitleEditIfNeeded()
+        case .cancel:
+            cancelTitleEditIfNeeded()
+        }
     }
 }
 #endif

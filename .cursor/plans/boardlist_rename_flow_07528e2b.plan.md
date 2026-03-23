@@ -16,7 +16,7 @@ todos:
     status: completed
   - id: inline-rename-flow
     content: 为 iOS/macOS cell/item 加入标题内联编辑，并接上提交/取消/聚焦逻辑
-    status: pending
+    status: completed
   - id: reveal-and-verify
     content: 补齐 rename 后回顶与滚动可见逻辑，并完成 Grid/List 双平台回归验证
     status: pending

@@ -1,10 +1,11 @@
 #if os(iOS)
 import UIKit
 
-final class iOSBoardCollectionViewCell: UICollectionViewCell {
+final class iOSBoardCollectionViewCell: UICollectionViewCell, UITextFieldDelegate {
     static let reuseIdentifier = "iOSBoardCollectionViewCell"
 
     typealias MoreActionsHandler = (UUID, CGRect, UIView) -> Void
+    typealias RenameSubmitHandler = (UUID, String) -> Void
 
     private enum PresentationStyle {
         case boardGrid
@@ -37,6 +38,17 @@ final class iOSBoardCollectionViewCell: UICollectionViewCell {
         label.lineBreakMode = .byTruncatingTail
         return label
     }()
+    private let titleTextField: UITextField = {
+        let textField = UITextField()
+        textField.translatesAutoresizingMaskIntoConstraints = false
+        textField.font = .systemFont(ofSize: 14, weight: .medium)
+        textField.textColor = .label
+        textField.borderStyle = .roundedRect
+        textField.returnKeyType = .done
+        textField.clearButtonMode = .never
+        textField.isHidden = true
+        return textField
+    }()
     private let moreButton: UIButton = {
         let button = UIButton(type: .system)
         button.translatesAutoresizingMaskIntoConstraints = false
@@ -61,9 +73,14 @@ final class iOSBoardCollectionViewCell: UICollectionViewCell {
     private var placeholderGridConstraints: [NSLayoutConstraint] = []
     private var placeholderListConstraints: [NSLayoutConstraint] = []
     private var representedBoardID: UUID?
+    private var representedTitle: String?
     private var representedRevisionToken: String?
     private var thumbnailRequestToken: BoardPreviewRequestToken?
     private var onMoreActionsRequested: MoreActionsHandler?
+    private var onRenameSubmitted: RenameSubmitHandler?
+    private var currentPresentationStyle: PresentationStyle = .boardGrid
+    private var isTitleEditingActive = false
+    private var didHandleCurrentTitleEditEnd = false
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -86,13 +103,21 @@ final class iOSBoardCollectionViewCell: UICollectionViewCell {
     override func prepareForReuse() {
         super.prepareForReuse()
         cancelThumbnailRequest()
+        titleTextField.resignFirstResponder()
         representedBoardID = nil
+        representedTitle = nil
         representedRevisionToken = nil
         titleLabel.text = nil
+        titleLabel.isHidden = false
+        titleTextField.text = nil
+        titleTextField.isHidden = true
         previewView.isHidden = false
         placeholderIconView.isHidden = true
         moreButton.isHidden = true
         onMoreActionsRequested = nil
+        onRenameSubmitted = nil
+        isTitleEditingActive = false
+        didHandleCurrentTitleEditEnd = false
         previewView.apply(content: .empty)
     }
 
@@ -100,19 +125,41 @@ final class iOSBoardCollectionViewCell: UICollectionViewCell {
         with entry: BoardListEntry,
         previewContent: BoardPreviewContent,
         displayMode: BoardListDisplayMode,
-        onMoreActionsRequested: MoreActionsHandler? = nil
+        isEditingTitle: Bool = false,
+        onMoreActionsRequested: MoreActionsHandler? = nil,
+        onRenameSubmitted: RenameSubmitHandler? = nil
     ) {
         cancelThumbnailRequest()
         representedBoardID = entry.boardID
+        representedTitle = entry.title
         representedRevisionToken = entry.revisionToken
         titleLabel.text = entry.title
+        titleTextField.text = entry.title
+        isTitleEditingActive = isEditingTitle
+        didHandleCurrentTitleEditEnd = false
         self.onMoreActionsRequested = onMoreActionsRequested
+        self.onRenameSubmitted = onRenameSubmitted
         previewView.apply(content: previewContent)
         applyPresentation(
             for: entry,
             displayMode: displayMode
         )
         contentView.layoutIfNeeded()
+    }
+
+    func beginTitleEditing() {
+        guard
+            isTitleEditingActive,
+            titleTextField.isHidden == false
+        else {
+            return
+        }
+
+        didHandleCurrentTitleEditEnd = false
+        titleTextField.becomeFirstResponder()
+        DispatchQueue.main.async { [weak self] in
+            self?.selectAllTitleTextIfNeeded()
+        }
     }
 
     func cancelThumbnailRequest() {
@@ -164,12 +211,15 @@ final class iOSBoardCollectionViewCell: UICollectionViewCell {
         previewView.translatesAutoresizingMaskIntoConstraints = false
         placeholderIconView.translatesAutoresizingMaskIntoConstraints = false
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        titleTextField.translatesAutoresizingMaskIntoConstraints = false
         moreButton.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(previewView)
         contentView.addSubview(placeholderIconView)
         contentView.addSubview(titleLabel)
+        contentView.addSubview(titleTextField)
         contentView.addSubview(moreButton)
         contentView.bringSubviewToFront(moreButton)
+        titleTextField.delegate = self
         moreButton.addTarget(self, action: #selector(handleMoreButtonTap), for: .touchUpInside)
     }
 
@@ -186,7 +236,11 @@ final class iOSBoardCollectionViewCell: UICollectionViewCell {
             titleLabel.topAnchor.constraint(equalTo: previewView.bottomAnchor, constant: 10),
             titleLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 12),
             titleLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -12),
-            titleLabel.bottomAnchor.constraint(lessThanOrEqualTo: contentView.bottomAnchor, constant: -12)
+            titleLabel.bottomAnchor.constraint(lessThanOrEqualTo: contentView.bottomAnchor, constant: -12),
+            titleTextField.topAnchor.constraint(equalTo: previewView.bottomAnchor, constant: 8),
+            titleTextField.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 12),
+            titleTextField.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -12),
+            titleTextField.bottomAnchor.constraint(lessThanOrEqualTo: contentView.bottomAnchor, constant: -12)
         ]
 
         listConstraints = [
@@ -197,6 +251,9 @@ final class iOSBoardCollectionViewCell: UICollectionViewCell {
             titleLabel.leadingAnchor.constraint(equalTo: previewView.trailingAnchor, constant: 12),
             titleLabel.trailingAnchor.constraint(equalTo: moreButton.leadingAnchor, constant: -8),
             titleLabel.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+            titleTextField.leadingAnchor.constraint(equalTo: previewView.trailingAnchor, constant: 12),
+            titleTextField.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -12),
+            titleTextField.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
             moreButton.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -12),
             moreButton.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
             moreButton.widthAnchor.constraint(equalToConstant: 32),
@@ -254,6 +311,7 @@ final class iOSBoardCollectionViewCell: UICollectionViewCell {
     }
 
     private func applyPresentationStyle(_ presentationStyle: PresentationStyle) {
+        currentPresentationStyle = presentationStyle
         NSLayoutConstraint.deactivate(
             gridConstraints +
                 listConstraints +
@@ -264,14 +322,18 @@ final class iOSBoardCollectionViewCell: UICollectionViewCell {
         previewView.isHidden = false
         placeholderIconView.isHidden = true
         moreButton.isHidden = true
+        titleLabel.isHidden = false
+        titleTextField.isHidden = true
 
         switch presentationStyle {
         case .boardGrid:
             titleLabel.textAlignment = .center
+            titleTextField.textAlignment = .center
             moreButton.isHidden = false
             NSLayoutConstraint.activate(gridConstraints)
         case .boardList:
             titleLabel.textAlignment = .left
+            titleTextField.textAlignment = .left
             moreButton.isHidden = false
             NSLayoutConstraint.activate(listConstraints)
         case .placeholderGrid:
@@ -285,6 +347,8 @@ final class iOSBoardCollectionViewCell: UICollectionViewCell {
             placeholderIconView.isHidden = false
             NSLayoutConstraint.activate(placeholderListConstraints)
         }
+
+        applyTitleEditingAppearance()
     }
 
     private func updateSelectionAppearance() {
@@ -311,6 +375,57 @@ final class iOSBoardCollectionViewCell: UICollectionViewCell {
         }
     }
 
+    private func applyTitleEditingAppearance() {
+        let isEditablePresentation: Bool
+        switch currentPresentationStyle {
+        case .boardGrid, .boardList:
+            isEditablePresentation = true
+        case .placeholderGrid, .placeholderList:
+            isEditablePresentation = false
+        }
+
+        let shouldShowTitleEditor = isTitleEditingActive && isEditablePresentation
+        titleLabel.isHidden = shouldShowTitleEditor
+        titleTextField.isHidden = !shouldShowTitleEditor
+
+        if shouldShowTitleEditor {
+            moreButton.isHidden = true
+            titleTextField.text = representedTitle
+            return
+        }
+
+        moreButton.isHidden = onMoreActionsRequested == nil
+    }
+
+    private func selectAllTitleTextIfNeeded() {
+        guard
+            let textRange = titleTextField.textRange(
+                from: titleTextField.beginningOfDocument,
+                to: titleTextField.endOfDocument
+            )
+        else {
+            return
+        }
+
+        titleTextField.selectedTextRange = textRange
+    }
+
+    private func commitTitleEditIfNeeded() {
+        guard
+            isTitleEditingActive,
+            didHandleCurrentTitleEditEnd == false,
+            let representedBoardID
+        else {
+            return
+        }
+
+        didHandleCurrentTitleEditEnd = true
+        onRenameSubmitted?(
+            representedBoardID,
+            titleTextField.text ?? representedTitle ?? ""
+        )
+    }
+
     @objc
     private func handleMoreButtonTap() {
         guard let representedBoardID else {
@@ -326,6 +441,19 @@ final class iOSBoardCollectionViewCell: UICollectionViewCell {
             anchorRect.standardized,
             contentView
         )
+    }
+
+    func textFieldDidBeginEditing(_ textField: UITextField) {
+        selectAllTitleTextIfNeeded()
+    }
+
+    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+        textField.resignFirstResponder()
+        return false
+    }
+
+    func textFieldDidEndEditing(_ textField: UITextField) {
+        commitTitleEditIfNeeded()
     }
 }
 #endif

@@ -37,9 +37,7 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
                 return
             }
 
-            updateCollectionLayout()
-            collectionView.reloadData()
-            syncCollectionSelection()
+            reloadBoardList()
         }
     }
 
@@ -550,6 +548,8 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
         updateDisplayModeControlState()
         updateCollectionLayout()
         syncCollectionSelection()
+        revealPendingBoardIfNeeded()
+        focusTitleEditorIfNeeded()
         logSelectionTrace(
             "reloadBoardListEnd",
             extra: "entries=\(entries.count)"
@@ -677,6 +677,27 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
         }
 
         return entries[indexPath.item]
+    }
+
+    private func indexPath(for boardID: UUID) -> IndexPath? {
+        guard let index = entries.firstIndex(where: { $0.boardID == boardID }) else {
+            return nil
+        }
+
+        return IndexPath(item: index, section: 0)
+    }
+
+    private func boardTitle(for boardID: UUID) -> String? {
+        availableBoards.first(where: { $0.boardID == boardID })?.title
+    }
+
+    private func normalizedBoardTitle(_ title: String) -> String {
+        let normalizedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard normalizedTitle.isEmpty == false else {
+            return BoardDocument.defaultTitle
+        }
+
+        return normalizedTitle
     }
 
     private func performPrimaryAction(for entry: BoardListEntry) {
@@ -817,9 +838,124 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
 
         switch actionID {
         case .rename:
+            guard let boardID else {
+                return
+            }
+
+            selectedEntryID = .board(boardID)
+            pendingRevealBoardID = nil
             editingBoardID = boardID
             reloadBoardList()
         }
+    }
+
+    private func commitRename(boardID: UUID, title: String) {
+        guard editingBoardID == boardID else {
+            return
+        }
+
+        let normalizedTitle = normalizedBoardTitle(title)
+        if boardTitle(for: boardID) == normalizedTitle {
+            editingBoardID = nil
+            pendingRevealBoardID = nil
+            reloadBoardList()
+            return
+        }
+
+        do {
+            try BoardStore.renameBoard(id: boardID, title: normalizedTitle)
+            editingBoardID = nil
+            selectedEntryID = .board(boardID)
+            pendingRevealBoardID = boardID
+            refreshBookmarkStatus()
+        } catch {
+            presentRenameError(error)
+        }
+    }
+
+    private func cancelRename(boardID: UUID) {
+        guard editingBoardID == boardID else {
+            return
+        }
+
+        editingBoardID = nil
+        pendingRevealBoardID = nil
+        reloadBoardList()
+    }
+
+    private func focusTitleEditorIfNeeded() {
+        guard let editingBoardID else {
+            return
+        }
+
+        guard let indexPath = indexPath(for: editingBoardID) else {
+            self.editingBoardID = nil
+            return
+        }
+
+        DispatchQueue.main.async { [weak self] in
+            self?.focusTitleEditor(
+                at: indexPath,
+                boardID: editingBoardID
+            )
+        }
+    }
+
+    private func focusTitleEditor(
+        at indexPath: IndexPath,
+        boardID: UUID
+    ) {
+        guard editingBoardID == boardID else {
+            return
+        }
+
+        collectionView.layoutSubtreeIfNeeded()
+        collectionView.scrollToItems(
+            at: Set([indexPath]),
+            scrollPosition: .nearestVerticalEdge
+        )
+        collectionScrollView.layoutSubtreeIfNeeded()
+        collectionView.layoutSubtreeIfNeeded()
+
+        guard let item = collectionView.item(at: indexPath) as? macOSBoardCollectionItem else {
+            return
+        }
+
+        item.beginTitleEditing()
+    }
+
+    private func revealPendingBoardIfNeeded() {
+        guard let pendingRevealBoardID else {
+            return
+        }
+
+        guard let indexPath = indexPath(for: pendingRevealBoardID) else {
+            self.pendingRevealBoardID = nil
+            return
+        }
+
+        DispatchQueue.main.async { [weak self] in
+            self?.revealBoard(
+                at: indexPath,
+                boardID: pendingRevealBoardID
+            )
+        }
+    }
+
+    private func revealBoard(
+        at indexPath: IndexPath,
+        boardID: UUID
+    ) {
+        guard pendingRevealBoardID == boardID else {
+            return
+        }
+
+        collectionView.layoutSubtreeIfNeeded()
+        collectionView.scrollToItems(
+            at: Set([indexPath]),
+            scrollPosition: .nearestVerticalEdge
+        )
+        pendingRevealBoardID = nil
     }
 
     private func handleCollectionScrollBoundsDidChange() {
@@ -877,6 +1013,23 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
         }
     }
 
+    private func presentRenameError(_ error: Error) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Unable to Rename Board"
+        alert.informativeText = error.localizedDescription
+        alert.addButton(withTitle: "OK")
+
+        if let window = view.window {
+            alert.beginSheetModal(for: window) { [weak self] _ in
+                self?.focusTitleEditorIfNeeded()
+            }
+        } else {
+            alert.runModal()
+            focusTitleEditorIfNeeded()
+        }
+    }
+
     func collectionView(
         _ collectionView: NSCollectionView,
         numberOfItemsInSection section: Int
@@ -910,16 +1063,33 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
             previewContent = .empty
         }
 
-        item.configure(
-            with: entry,
-            previewContent: previewContent,
-            displayMode: displayMode,
-            onMoreActionsRequested: { [weak self] boardID, anchorRect, sourceView in
+        let moreActionsHandler: macOSBoardCollectionItem.MoreActionsHandler?
+        if editingBoardID == nil {
+            moreActionsHandler = { [weak self] boardID, anchorRect, sourceView in
                 self?.presentRenameActionPanel(
                     for: boardID,
                     anchorRect: anchorRect,
                     from: sourceView
                 )
+            }
+        } else {
+            moreActionsHandler = nil
+        }
+
+        item.configure(
+            with: entry,
+            previewContent: previewContent,
+            displayMode: displayMode,
+            isEditingTitle: entry.boardID.map { $0 == editingBoardID } ?? false,
+            onMoreActionsRequested: moreActionsHandler,
+            onRenameSubmitted: { [weak self] boardID, title in
+                self?.commitRename(
+                    boardID: boardID,
+                    title: title
+                )
+            },
+            onRenameCancelled: { [weak self] boardID in
+                self?.cancelRename(boardID: boardID)
             }
         )
 
