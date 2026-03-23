@@ -380,7 +380,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations {
     ) -> Bool {
         switch item.action {
         case #selector(macOSViewController.paste(_:)):
-            return canImportImages(from: .general)
+            return canTransferContent(from: .general)
         default:
             return true
         }
@@ -1379,13 +1379,14 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations {
                 return
             }
 
-            let resolvedImages = macOSCanvasImportAdapter.resolvedImages(
-                from: openPanel.urls
-            )
-            _ = self.importResolvedImages(
-                resolvedImages,
-                source: "open panel"
-            )
+            guard let transferRequest = macOSCanvasImportAdapter.transferRequest(
+                from: openPanel.urls,
+                sourceDescription: "open panel"
+            ) else {
+                return
+            }
+
+            _ = self.performTransferRequest(transferRequest)
         }
     }
 
@@ -1428,31 +1429,36 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations {
         onBackToBoardList?()
     }
 
-    private func canImportImages(from pasteboard: NSPasteboard) -> Bool {
-        macOSCanvasImportAdapter.canResolveImages(from: pasteboard)
+    private func canTransferContent(from pasteboard: NSPasteboard) -> Bool {
+        macOSCanvasImportAdapter.canResolveTransfer(from: pasteboard)
     }
 
     private func handlePasteRequest() {
-        let resolvedImages = macOSCanvasImportAdapter.resolvedImages(
-            from: .general
-        )
-        _ = importResolvedImages(
-            resolvedImages,
-            source: "pasteboard"
-        )
+        guard let transferRequest = macOSCanvasImportAdapter.transferRequest(
+            from: .general,
+            sourceDescription: "pasteboard"
+        ) else {
+            return
+        }
+
+        _ = performTransferRequest(transferRequest)
     }
 
     private func dragOperation(for pasteboard: NSPasteboard) -> NSDragOperation {
-        canImportImages(from: pasteboard) ? .copy : []
+        canTransferContent(from: pasteboard) ? .copy : []
     }
 
     private func handleImportDrop(
         pasteboard: NSPasteboard
     ) -> Bool {
-        let didImport = importResolvedImages(
-            macOSCanvasImportAdapter.resolvedImages(from: pasteboard),
-            source: "drag and drop"
-        )
+        guard let transferRequest = macOSCanvasImportAdapter.transferRequest(
+            from: pasteboard,
+            sourceDescription: "drag and drop"
+        ) else {
+            return false
+        }
+
+        let didImport = performTransferRequest(transferRequest)
         if didImport {
             view.window?.makeFirstResponder(canvasViewportView)
         }
@@ -1461,26 +1467,16 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations {
     }
 
     @discardableResult
-    private func importResolvedImages(
-        _ images: [CanvasResolvedImportImage],
-        source: String,
-        placement: CanvasImportPlacement = .cameraCenter,
-        layout: CanvasImportLayout = .automatic
+    private func performTransferRequest(
+        _ request: CanvasTransferRequest
     ) -> Bool {
-        guard images.isEmpty == false else {
+        guard let command = CanvasTransferCommandLowerer.loweredCommand(
+            for: request
+        ) else {
             return false
         }
 
-        performCommand(
-            .importImages(
-                CanvasImportRequest(
-                    images: images,
-                    placement: placement,
-                    layout: layout,
-                    sourceDescription: source
-                )
-            )
-        )
+        performCommand(command)
         return true
     }
 

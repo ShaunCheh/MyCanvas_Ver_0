@@ -19,7 +19,7 @@ todos:
     status: completed
   - id: phase-d1
     content: 在不改存储模型的前提下引入 transfer domain API 边界
-    status: pending
+    status: completed
   - id: phase-d2
     content: 在第二种内容类型明确后，再泛化 runtime、文档与持久化模型
     status: pending

@@ -1233,14 +1233,14 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         _ interaction: UIDropInteraction,
         canHandle session: UIDropSession
     ) -> Bool {
-        iOSCanvasImportAdapter.canResolveImages(from: session)
+        iOSCanvasImportAdapter.canResolveTransfer(from: session)
     }
 
     func dropInteraction(
         _ interaction: UIDropInteraction,
         sessionDidUpdate session: UIDropSession
     ) -> UIDropProposal {
-        if iOSCanvasImportAdapter.canResolveImages(from: session) {
+        if iOSCanvasImportAdapter.canResolveTransfer(from: session) {
             return UIDropProposal(operation: .copy)
         }
 
@@ -1256,13 +1256,14 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
                 return
             }
 
-            let resolvedImages = await iOSCanvasImportAdapter.resolvedImages(
-                from: session
-            )
-            _ = self.importResolvedImages(
-                resolvedImages,
-                source: "drag and drop"
-            )
+            guard let transferRequest = await iOSCanvasImportAdapter.transferRequest(
+                from: session,
+                sourceDescription: "drag and drop"
+            ) else {
+                return
+            }
+
+            _ = self.performTransferRequest(transferRequest)
             self.becomeFirstResponder()
         }
     }
@@ -1279,23 +1280,24 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
                 return
             }
 
-            let resolvedImages = await iOSCanvasImportAdapter.resolvedImages(
-                from: results
-            )
-            _ = self.importResolvedImages(
-                resolvedImages,
-                source: "photo picker"
-            )
+            guard let transferRequest = await iOSCanvasImportAdapter.transferRequest(
+                from: results,
+                sourceDescription: "photo picker"
+            ) else {
+                return
+            }
+
+            _ = self.performTransferRequest(transferRequest)
             self.becomeFirstResponder()
         }
     }
 
-    private func canImportImages(from pasteboard: UIPasteboard) -> Bool {
-        iOSCanvasImportAdapter.canResolveImages(from: pasteboard)
+    private func canTransferContent(from pasteboard: UIPasteboard) -> Bool {
+        iOSCanvasImportAdapter.canResolveTransfer(from: pasteboard)
     }
 
     private func handlePasteRequest() {
-        guard canImportImages(from: .general) else {
+        guard canTransferContent(from: .general) else {
             return
         }
 
@@ -1304,38 +1306,29 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
                 return
             }
 
-            let resolvedImages = await iOSCanvasImportAdapter.resolvedImages(
-                from: .general
-            )
-            _ = self.importResolvedImages(
-                resolvedImages,
-                source: "pasteboard"
-            )
+            guard let transferRequest = await iOSCanvasImportAdapter.transferRequest(
+                from: .general,
+                sourceDescription: "pasteboard"
+            ) else {
+                return
+            }
+
+            _ = self.performTransferRequest(transferRequest)
             self.becomeFirstResponder()
         }
     }
 
     @discardableResult
-    private func importResolvedImages(
-        _ images: [CanvasResolvedImportImage],
-        source: String,
-        placement: CanvasImportPlacement = .cameraCenter,
-        layout: CanvasImportLayout = .automatic
+    private func performTransferRequest(
+        _ request: CanvasTransferRequest
     ) -> Bool {
-        guard images.isEmpty == false else {
+        guard let command = CanvasTransferCommandLowerer.loweredCommand(
+            for: request
+        ) else {
             return false
         }
 
-        performCommand(
-            .importImages(
-                CanvasImportRequest(
-                    images: images,
-                    placement: placement,
-                    layout: layout,
-                    sourceDescription: source
-                )
-            )
-        )
+        performCommand(command)
         return true
     }
 

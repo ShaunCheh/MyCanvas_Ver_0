@@ -5,24 +5,42 @@ import UniformTypeIdentifiers
 import UIKit
 
 enum iOSCanvasImportAdapter {
-    static func resolvedImages(
-        from results: [PHPickerResult]
-    ) async -> [CanvasResolvedImportImage] {
-        await resolvedImages(
+    static func transferRequest(
+        from results: [PHPickerResult],
+        sourceDescription: String,
+        placement: CanvasImportPlacement = .cameraCenter,
+        layout: CanvasImportLayout = .automatic
+    ) async -> CanvasTransferRequest? {
+        let resolvedImages = await resolvedImages(
             from: results.map(\.itemProvider)
+        )
+
+        return makeTransferRequest(
+            from: resolvedImages,
+            sourceDescription: sourceDescription,
+            placement: placement,
+            layout: layout
         )
     }
 
-    static func resolvedImages(
-        from pasteboard: UIPasteboard
-    ) async -> [CanvasResolvedImportImage] {
+    static func transferRequest(
+        from pasteboard: UIPasteboard,
+        sourceDescription: String,
+        placement: CanvasImportPlacement = .cameraCenter,
+        layout: CanvasImportLayout = .automatic
+    ) async -> CanvasTransferRequest? {
         let imageProviders = pasteboard.itemProviders.filter {
             $0.hasItemConformingToTypeIdentifier(UTType.image.identifier)
         }
         if imageProviders.isEmpty == false {
             let resolvedImages = await resolvedImages(from: imageProviders)
             if resolvedImages.isEmpty == false {
-                return resolvedImages
+                return makeTransferRequest(
+                    from: resolvedImages,
+                    sourceDescription: sourceDescription,
+                    placement: placement,
+                    layout: layout
+                )
             }
         }
 
@@ -30,21 +48,36 @@ enum iOSCanvasImportAdapter {
             let image = pasteboard.image,
             let resolvedImage = makeResolvedImportImage(from: image)
         else {
-            return []
+            return nil
         }
 
-        return [resolvedImage]
-    }
-
-    static func resolvedImages(
-        from dropSession: UIDropSession
-    ) async -> [CanvasResolvedImportImage] {
-        await resolvedImages(
-            from: dropSession.items.map(\.itemProvider)
+        return makeTransferRequest(
+            from: [resolvedImage],
+            sourceDescription: sourceDescription,
+            placement: placement,
+            layout: layout
         )
     }
 
-    static func canResolveImages(
+    static func transferRequest(
+        from dropSession: UIDropSession,
+        sourceDescription: String,
+        placement: CanvasImportPlacement = .cameraCenter,
+        layout: CanvasImportLayout = .automatic
+    ) async -> CanvasTransferRequest? {
+        let resolvedImages = await resolvedImages(
+            from: dropSession.items.map(\.itemProvider)
+        )
+
+        return makeTransferRequest(
+            from: resolvedImages,
+            sourceDescription: sourceDescription,
+            placement: placement,
+            layout: layout
+        )
+    }
+
+    static func canResolveTransfer(
         from pasteboard: UIPasteboard
     ) -> Bool {
         if pasteboard.hasImages {
@@ -56,7 +89,7 @@ enum iOSCanvasImportAdapter {
         }
     }
 
-    static func canResolveImages(
+    static func canResolveTransfer(
         from dropSession: UIDropSession
     ) -> Bool {
         dropSession.hasItemsConforming(
@@ -83,6 +116,24 @@ enum iOSCanvasImportAdapter {
         }
 
         return resolvedImages
+    }
+
+    private static func makeTransferRequest(
+        from images: [CanvasResolvedImportImage],
+        sourceDescription: String,
+        placement: CanvasImportPlacement,
+        layout: CanvasImportLayout
+    ) -> CanvasTransferRequest? {
+        guard images.isEmpty == false else {
+            return nil
+        }
+
+        return CanvasTransferRequest(
+            images: images,
+            placement: placement,
+            layout: layout,
+            sourceDescription: sourceDescription
+        )
     }
 
     private static func resolvedImage(

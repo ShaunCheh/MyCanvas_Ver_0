@@ -10,32 +10,81 @@ enum macOSCanvasImportAdapter {
         .urlReadingContentsConformToTypes: [UTType.image.identifier]
     ]
 
-    static func resolvedImages(from urls: [URL]) -> [CanvasResolvedImportImage] {
-        urls.compactMap(makeResolvedImportImage(from:))
+    static func transferRequest(
+        from urls: [URL],
+        sourceDescription: String,
+        placement: CanvasImportPlacement = .cameraCenter,
+        layout: CanvasImportLayout = .automatic
+    ) -> CanvasTransferRequest? {
+        makeTransferRequest(
+            from: resolvedImages(from: urls),
+            sourceDescription: sourceDescription,
+            placement: placement,
+            layout: layout
+        )
     }
 
-    static func resolvedImages(from pasteboard: NSPasteboard) -> [CanvasResolvedImportImage] {
+    static func transferRequest(
+        from pasteboard: NSPasteboard,
+        sourceDescription: String,
+        placement: CanvasImportPlacement = .cameraCenter,
+        layout: CanvasImportLayout = .automatic
+    ) -> CanvasTransferRequest? {
         let imageFileURLs = self.imageFileURLs(from: pasteboard)
         if imageFileURLs.isEmpty == false {
-            return resolvedImages(from: imageFileURLs)
+            return transferRequest(
+                from: imageFileURLs,
+                sourceDescription: sourceDescription,
+                placement: placement,
+                layout: layout
+            )
         }
 
         guard
             let image = NSImage(pasteboard: pasteboard),
             let resolvedImage = makeResolvedImportImage(from: image)
         else {
-            return []
+            return nil
         }
 
-        return [resolvedImage]
+        return makeTransferRequest(
+            from: [resolvedImage],
+            sourceDescription: sourceDescription,
+            placement: placement,
+            layout: layout
+        )
     }
 
-    static func canResolveImages(from pasteboard: NSPasteboard) -> Bool {
+    static func canResolveTransfer(from pasteboard: NSPasteboard) -> Bool {
         if imageFileURLs(from: pasteboard).isEmpty == false {
             return true
         }
 
         return NSImage(pasteboard: pasteboard) != nil
+    }
+
+    private static func resolvedImages(
+        from urls: [URL]
+    ) -> [CanvasResolvedImportImage] {
+        urls.compactMap(makeResolvedImportImage(from:))
+    }
+
+    private static func makeTransferRequest(
+        from images: [CanvasResolvedImportImage],
+        sourceDescription: String,
+        placement: CanvasImportPlacement,
+        layout: CanvasImportLayout
+    ) -> CanvasTransferRequest? {
+        guard images.isEmpty == false else {
+            return nil
+        }
+
+        return CanvasTransferRequest(
+            images: images,
+            placement: placement,
+            layout: layout,
+            sourceDescription: sourceDescription
+        )
     }
 
     private static func imageFileURLs(from pasteboard: NSPasteboard) -> [URL] {
