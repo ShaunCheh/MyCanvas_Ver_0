@@ -18,9 +18,16 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
     private let previewProvider = BoardPreviewProvider()
     private var availableBoards: [BoardCatalogItem] = []
     private var selectedEntryID: BoardListEntryID?
+    private var actionPanelState: BoardListActionPanelState? {
+        didSet {
+            updateActionPanelPresentation()
+        }
+    }
     private var hasSelectedFolder = false
     private var storageErrorMessage: String?
     private var isSyncingSelection = false
+    private var editingBoardID: UUID?
+    private var pendingRevealBoardID: UUID?
     private var displayMode: BoardListDisplayMode = .grid {
         didSet {
             guard oldValue != displayMode else {
@@ -125,6 +132,7 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
         view.translatesAutoresizingMaskIntoConstraints = false
         return view
     }()
+    private let actionPanelHostView = BoardListActionPanelHostView()
 
     private let collectionViewLayout = UICollectionViewFlowLayout()
 
@@ -159,12 +167,14 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
         setupViewHierarchy()
         setupConstraints()
         setupActions()
+        setupActionPanelHostView()
         refreshBookmarkStatus()
     }
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         updateCollectionLayout()
+        updateActionPanelLayout()
     }
 
     func prepareForDisplay() {
@@ -187,6 +197,7 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
         view.addSubview(bookmarkTitleLabel)
         view.addSubview(bookmarkDetailLabel)
         view.addSubview(contentContainerView)
+        view.addSubview(actionPanelHostView)
 
         contentContainerView.addSubview(collectionView)
         contentContainerView.addSubview(emptyStateLabel)
@@ -212,6 +223,10 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
             contentContainerView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             contentContainerView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             contentContainerView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            actionPanelHostView.topAnchor.constraint(equalTo: view.topAnchor),
+            actionPanelHostView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            actionPanelHostView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            actionPanelHostView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             collectionView.topAnchor.constraint(equalTo: contentContainerView.topAnchor),
             collectionView.leadingAnchor.constraint(equalTo: contentContainerView.leadingAnchor),
             collectionView.trailingAnchor.constraint(equalTo: contentContainerView.trailingAnchor),
@@ -228,6 +243,15 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
         displayModeControl.addTarget(self, action: #selector(handleDisplayModeChange), for: .valueChanged)
     }
 
+    private func setupActionPanelHostView() {
+        actionPanelHostView.onDismissRequested = { [weak self] in
+            self?.dismissActionPanel()
+        }
+        actionPanelHostView.onActionSelected = { [weak self] actionID in
+            self?.performBoardAction(actionID)
+        }
+    }
+
     private func applyHeaderState(_ headerState: BoardListHeaderState) {
         bookmarkTitleLabel.text = headerState.title
         bookmarkDetailLabel.text = headerState.detail
@@ -239,6 +263,7 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
     }
 
     private func refreshBookmarkStatus() {
+        dismissActionPanel()
         let bookmarkStatus = FolderBookmarkStore.bookmarkStatus()
         do {
             let boards = try catalogLoader.loadCatalog()
@@ -402,7 +427,12 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
     }
 
     private func performPrimaryAction(for entry: BoardListEntry) {
-        guard hasSelectedFolder, storageErrorMessage == nil else {
+        dismissActionPanel()
+        guard
+            hasSelectedFolder,
+            storageErrorMessage == nil,
+            editingBoardID == nil
+        else {
             return
         }
 
@@ -416,6 +446,7 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
 
     @objc
     private func handleSelectFolderButtonTap() {
+        dismissActionPanel()
         folderPicker.present(from: self) { [weak self] result in
             switch result {
             case let .success(bookmarkData):
@@ -431,7 +462,92 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
 
     @objc
     private func handleDisplayModeChange() {
+        dismissActionPanel()
         displayMode = BoardListDisplayMode(segmentIndex: displayModeControl.selectedSegmentIndex)
+    }
+
+    private func presentRenameActionPanel(
+        for boardID: UUID,
+        anchorRect: CGRect,
+        from sourceView: UIView
+    ) {
+        let anchorPoint = actionPanelHostView.convert(
+            CGPoint(
+                x: anchorRect.maxX,
+                y: anchorRect.maxY
+            ),
+            from: sourceView
+        )
+        selectedEntryID = .board(boardID)
+        syncCollectionSelection()
+        actionPanelState = .renameMenu(
+            boardID: boardID,
+            anchorPoint: anchorPoint
+        )
+    }
+
+    private func dismissActionPanel() {
+        actionPanelState = nil
+    }
+
+    private func updateActionPanelPresentation() {
+        guard isViewLoaded else {
+            return
+        }
+
+        actionPanelHostView.apply(
+            state: actionPanelState,
+            layoutContext: makeActionPanelLayoutContext()
+        )
+    }
+
+    private func updateActionPanelLayout() {
+        guard actionPanelState != nil else {
+            return
+        }
+
+        actionPanelHostView.updateLayout(
+            layoutContext: makeActionPanelLayoutContext()
+        )
+    }
+
+    private func makeActionPanelLayoutContext() -> BoardListActionPanelLayoutContext {
+        BoardListActionPanelLayoutContext(
+            safeBounds: view.safeAreaLayoutGuide.layoutFrame,
+            occupiedRects: actionPanelOccupiedRects()
+        )
+    }
+
+    private func actionPanelOccupiedRects() -> [CGRect] {
+        var occupiedRects: [CGRect] = [
+            titleLabel.frame,
+            subtitleLabel.frame,
+            actionStackView.frame,
+            bookmarkTitleLabel.frame,
+            bookmarkDetailLabel.frame
+        ].filter { $0.isEmpty == false }
+
+        if emptyStateLabel.isHidden == false {
+            occupiedRects.append(
+                view.convert(
+                    emptyStateLabel.frame,
+                    from: contentContainerView
+                ).standardized
+            )
+        }
+
+        return occupiedRects
+    }
+
+    private func performBoardAction(_ actionID: BoardListActionID) {
+        let boardID = actionPanelState?.boardID
+        dismissActionPanel()
+
+        switch actionID {
+        case .rename:
+            editingBoardID = boardID
+            reloadBoardList()
+        }
     }
 
     private func presentSelectionError(_ error: Error) {
@@ -508,6 +624,18 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
         if entry.isPlaceholder {
             clearPlaceholderSelectionAfterAction()
         }
+    }
+
+    func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        guard
+            scrollView === collectionView,
+            actionPanelState != nil,
+            scrollView.isDragging || scrollView.isDecelerating || scrollView.isTracking
+        else {
+            return
+        }
+
+        dismissActionPanel()
     }
 
     func collectionView(

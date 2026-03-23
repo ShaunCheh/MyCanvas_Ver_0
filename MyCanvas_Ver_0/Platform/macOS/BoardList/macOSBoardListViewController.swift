@@ -19,10 +19,18 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
     private let previewProvider = BoardPreviewProvider()
     private var availableBoards: [BoardCatalogItem] = []
     private var selectedEntryID: BoardListEntryID?
+    private var actionPanelState: BoardListActionPanelState? {
+        didSet {
+            updateActionPanelPresentation()
+        }
+    }
     private var hasSelectedFolder = false
     private var storageErrorMessage: String?
     private var isSyncingSelection = false
     private var leftMouseEventMonitor: Any?
+    private var scrollBoundsObserver: NSObjectProtocol?
+    private var editingBoardID: UUID?
+    private var pendingRevealBoardID: UUID?
     private var displayMode: BoardListDisplayMode = .grid {
         didSet {
             guard oldValue != displayMode else {
@@ -113,6 +121,7 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
         view.translatesAutoresizingMaskIntoConstraints = false
         return view
     }()
+    private let actionPanelHostView = BoardListActionPanelHostView()
 
     private let bookmarkTitleLabel: NSTextField = {
         let label = NSTextField(labelWithString: "")
@@ -192,6 +201,9 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
         if let leftMouseEventMonitor {
             NSEvent.removeMonitor(leftMouseEventMonitor)
         }
+        if let scrollBoundsObserver {
+            NotificationCenter.default.removeObserver(scrollBoundsObserver)
+        }
     }
 
     override func viewDidLoad() {
@@ -199,6 +211,8 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
         setupViewHierarchy()
         setupConstraints()
         setupActions()
+        setupActionPanelHostView()
+        setupCollectionScrollObservation()
         setupMouseEventLogging()
         refreshBookmarkStatus()
     }
@@ -206,6 +220,7 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
     override func viewDidLayout() {
         super.viewDidLayout()
         updateCollectionLayout()
+        updateActionPanelLayout()
     }
 
     func prepareForDisplay() {
@@ -380,6 +395,7 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
         view.addSubview(bookmarkTitleLabel)
         view.addSubview(bookmarkDetailLabel)
         view.addSubview(contentContainerView)
+        view.addSubview(actionPanelHostView)
 
         contentContainerView.addSubview(collectionScrollView)
         contentContainerView.addSubview(emptyStateLabel)
@@ -405,6 +421,10 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
             contentContainerView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             contentContainerView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             contentContainerView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            actionPanelHostView.topAnchor.constraint(equalTo: view.topAnchor),
+            actionPanelHostView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            actionPanelHostView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            actionPanelHostView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             collectionScrollView.topAnchor.constraint(equalTo: contentContainerView.topAnchor),
             collectionScrollView.leadingAnchor.constraint(equalTo: contentContainerView.leadingAnchor),
             collectionScrollView.trailingAnchor.constraint(equalTo: contentContainerView.trailingAnchor),
@@ -423,6 +443,30 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
         displayModeControl.action = #selector(handleDisplayModeChange)
     }
 
+    private func setupActionPanelHostView() {
+        actionPanelHostView.onDismissRequested = { [weak self] in
+            self?.dismissActionPanel()
+        }
+        actionPanelHostView.onActionSelected = { [weak self] actionID in
+            self?.performBoardAction(actionID)
+        }
+    }
+
+    private func setupCollectionScrollObservation() {
+        guard scrollBoundsObserver == nil else {
+            return
+        }
+
+        collectionScrollView.contentView.postsBoundsChangedNotifications = true
+        scrollBoundsObserver = NotificationCenter.default.addObserver(
+            forName: NSView.boundsDidChangeNotification,
+            object: collectionScrollView.contentView,
+            queue: .main
+        ) { [weak self] _ in
+            self?.handleCollectionScrollBoundsDidChange()
+        }
+    }
+
     private func applyHeaderState(_ headerState: BoardListHeaderState) {
         bookmarkTitleLabel.stringValue = headerState.title
         bookmarkDetailLabel.stringValue = headerState.detail
@@ -434,6 +478,7 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
     }
 
     private func refreshBookmarkStatus() {
+        dismissActionPanel()
         let bookmarkStatus = FolderBookmarkStore.bookmarkStatus()
         do {
             let boards = try catalogLoader.loadCatalog()
@@ -635,7 +680,12 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
     }
 
     private func performPrimaryAction(for entry: BoardListEntry) {
-        guard hasSelectedFolder, storageErrorMessage == nil else {
+        dismissActionPanel()
+        guard
+            hasSelectedFolder,
+            storageErrorMessage == nil,
+            editingBoardID == nil
+        else {
             return
         }
 
@@ -649,6 +699,7 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
 
     @objc
     private func handleSelectFolderButtonClick() {
+        dismissActionPanel()
         do {
             guard let bookmarkData = try FilePickerManager.selectFolder() else {
                 return
@@ -665,6 +716,7 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
 
     @objc
     private func handleDisplayModeChange() {
+        dismissActionPanel()
         let requestedDisplayMode = BoardListDisplayMode(
             segmentIndex: displayModeControl.selectedSegment
         )
@@ -673,6 +725,109 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
             extra: "requestedDisplayMode=\(requestedDisplayMode.title)"
         )
         displayMode = requestedDisplayMode
+    }
+
+    private func presentRenameActionPanel(
+        for boardID: UUID,
+        anchorRect: CGRect,
+        from sourceView: NSView
+    ) {
+        let anchorPoint = actionPanelHostView.convert(
+            CGPoint(
+                x: anchorRect.maxX,
+                y: anchorRect.maxY
+            ),
+            from: sourceView
+        )
+        selectedEntryID = .board(boardID)
+        syncCollectionSelection()
+        actionPanelState = .renameMenu(
+            boardID: boardID,
+            anchorPoint: anchorPoint
+        )
+    }
+
+    private func dismissActionPanel() {
+        actionPanelState = nil
+    }
+
+    private func updateActionPanelPresentation() {
+        guard isViewLoaded else {
+            return
+        }
+
+        actionPanelHostView.apply(
+            state: actionPanelState,
+            layoutContext: makeActionPanelLayoutContext()
+        )
+    }
+
+    private func updateActionPanelLayout() {
+        guard actionPanelState != nil else {
+            return
+        }
+
+        actionPanelHostView.updateLayout(
+            layoutContext: makeActionPanelLayoutContext()
+        )
+    }
+
+    private func makeActionPanelLayoutContext() -> BoardListActionPanelLayoutContext {
+        BoardListActionPanelLayoutContext(
+            safeBounds: CGRect(
+                x: view.bounds.minX + view.safeAreaInsets.left,
+                y: view.bounds.minY + view.safeAreaInsets.top,
+                width: max(
+                    view.bounds.width - view.safeAreaInsets.left - view.safeAreaInsets.right,
+                    0
+                ),
+                height: max(
+                    view.bounds.height - view.safeAreaInsets.top - view.safeAreaInsets.bottom,
+                    0
+                )
+            ).standardized,
+            occupiedRects: actionPanelOccupiedRects()
+        )
+    }
+
+    private func actionPanelOccupiedRects() -> [CGRect] {
+        var occupiedRects: [CGRect] = [
+            titleLabel.frame,
+            subtitleLabel.frame,
+            actionStackView.frame,
+            bookmarkTitleLabel.frame,
+            bookmarkDetailLabel.frame
+        ].filter { $0.isEmpty == false }
+
+        if emptyStateLabel.isHidden == false {
+            occupiedRects.append(
+                view.convert(
+                    emptyStateLabel.frame,
+                    from: contentContainerView
+                ).standardized
+            )
+        }
+
+        return occupiedRects
+    }
+
+    private func performBoardAction(_ actionID: BoardListActionID) {
+        let boardID = actionPanelState?.boardID
+        dismissActionPanel()
+
+        switch actionID {
+        case .rename:
+            editingBoardID = boardID
+            reloadBoardList()
+        }
+    }
+
+    private func handleCollectionScrollBoundsDidChange() {
+        guard actionPanelState != nil else {
+            return
+        }
+
+        dismissActionPanel()
     }
 
     @objc

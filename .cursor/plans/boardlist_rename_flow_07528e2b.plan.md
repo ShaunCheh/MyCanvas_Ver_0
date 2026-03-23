@@ -10,7 +10,7 @@ todos:
     status: completed
   - id: controller-panel-state
     content: 在 iOS/macOS BoardListViewController 中接入 panel state、editingBoardID、pendingRevealBoardID 和面板生命周期
-    status: pending
+    status: completed
   - id: cell-item-more-button
     content: 在 iOS/macOS Grid/List cell/item 中加入三点按钮与回调锚点
     status: pending
