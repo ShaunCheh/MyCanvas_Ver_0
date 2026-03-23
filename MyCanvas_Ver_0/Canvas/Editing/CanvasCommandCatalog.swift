@@ -15,6 +15,35 @@ struct CanvasCommandCatalog {
                 isEnabled: false,
                 isActive: false
             )
+        case .addTextItem:
+            return CanvasCommandDescriptor(
+                id: .addTextItem,
+                title: "Add Text",
+                systemImageName: "textformat",
+                isEnabled: session.canAddTextItem,
+                isActive: false
+            )
+        case .beginTextEdit:
+            return CanvasCommandDescriptor(
+                id: .beginTextEdit,
+                title: "Edit Text",
+                systemImageName: "pencil",
+                isEnabled: targetItemID(
+                    in: context,
+                    session: session
+                ).map { itemID in
+                    session.canBeginTextEdit(withID: itemID)
+                } ?? false,
+                isActive: false
+            )
+        case .commitTextEdit:
+            return CanvasCommandDescriptor(
+                id: .commitTextEdit,
+                title: "Done",
+                systemImageName: "checkmark",
+                isEnabled: session.canCommitTextEdit,
+                isActive: session.isInlineTextModeActive
+            )
         case .crop:
             let isActive = session.isInlineCropModeActive
             return CanvasCommandDescriptor(
@@ -45,7 +74,7 @@ struct CanvasCommandCatalog {
                 id: .selectItem,
                 title: "Select",
                 systemImageName: "checkmark.circle",
-                isEnabled: targetItemID(in: context).map { itemID in
+                isEnabled: targetItemID(in: context, session: session).map { itemID in
                     session.canSelectItem(withID: itemID)
                 } ?? false,
                 isActive: false
@@ -63,7 +92,7 @@ struct CanvasCommandCatalog {
                 id: .duplicateItem,
                 title: "Duplicate",
                 systemImageName: "square.on.square",
-                isEnabled: targetItemID(in: context).map { itemID in
+                isEnabled: targetItemID(in: context, session: session).map { itemID in
                     session.canDuplicateItem(withID: itemID)
                 } ?? false,
                 isActive: false
@@ -73,7 +102,7 @@ struct CanvasCommandCatalog {
                 id: .deleteItem,
                 title: "Delete",
                 systemImageName: "trash",
-                isEnabled: targetItemID(in: context).map { itemID in
+                isEnabled: targetItemID(in: context, session: session).map { itemID in
                     session.canDeleteItem(withID: itemID)
                 } ?? false,
                 isActive: false
@@ -83,7 +112,7 @@ struct CanvasCommandCatalog {
                 id: .bringItemForward,
                 title: "Bring Forward",
                 systemImageName: "chevron.up",
-                isEnabled: targetItemID(in: context).map { itemID in
+                isEnabled: targetItemID(in: context, session: session).map { itemID in
                     session.canBringItemForward(withID: itemID)
                 } ?? false,
                 isActive: false
@@ -93,7 +122,7 @@ struct CanvasCommandCatalog {
                 id: .sendItemBackward,
                 title: "Send Backward",
                 systemImageName: "chevron.down",
-                isEnabled: targetItemID(in: context).map { itemID in
+                isEnabled: targetItemID(in: context, session: session).map { itemID in
                     session.canSendItemBackward(withID: itemID)
                 } ?? false,
                 isActive: false
@@ -103,7 +132,7 @@ struct CanvasCommandCatalog {
                 id: .bringItemToFront,
                 title: "Bring To Front",
                 systemImageName: "chevron.up.2",
-                isEnabled: targetItemID(in: context).map { itemID in
+                isEnabled: targetItemID(in: context, session: session).map { itemID in
                     session.canBringItemToFront(withID: itemID)
                 } ?? false,
                 isActive: false
@@ -113,7 +142,7 @@ struct CanvasCommandCatalog {
                 id: .sendItemToBack,
                 title: "Send To Back",
                 systemImageName: "chevron.down.2",
-                isEnabled: targetItemID(in: context).map { itemID in
+                isEnabled: targetItemID(in: context, session: session).map { itemID in
                     session.canSendItemToBack(withID: itemID)
                 } ?? false,
                 isActive: false
@@ -122,8 +151,9 @@ struct CanvasCommandCatalog {
     }
 
     private func targetItemID(
-        in context: CanvasContextMenuContext?
+        in context: CanvasContextMenuContext?,
+        session: CanvasEditorSession
     ) -> CanvasItemID? {
-        context?.targetItemID
+        context?.targetItemID ?? session.interactionState.selectedItemID
     }
 }

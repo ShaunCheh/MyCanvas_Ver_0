@@ -1,7 +1,7 @@
 import CoreGraphics
 import Foundation
 
-enum CanvasBoardItemKind {
+enum CanvasBoardItemKind: Equatable {
     case image
     case text
 }

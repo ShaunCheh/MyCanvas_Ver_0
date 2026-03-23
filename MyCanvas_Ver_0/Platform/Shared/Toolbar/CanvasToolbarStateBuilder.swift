@@ -10,13 +10,17 @@ struct CanvasToolbarStateBuilder {
         isImportEnabled: Bool = true,
         showsBackground: Bool = true
     ) -> CanvasToolbarState {
-        CanvasToolbarState(
+        var itemStates: [CanvasToolbarItemState] = []
+        if shouldShowCropItem(session: session) {
+            itemStates.append(cropItemState(session: session))
+        }
+        itemStates.append(saveItemState(saveState: saveState))
+        itemStates.append(textItemState(session: session))
+        itemStates.append(importItemState(isEnabled: isImportEnabled))
+
+        return CanvasToolbarState(
             placement: placement,
-            items: [
-                cropItemState(session: session),
-                saveItemState(saveState: saveState),
-                importItemState(isEnabled: isImportEnabled)
-            ],
+            items: itemStates,
             showsBackground: showsBackground
         )
     }
@@ -52,6 +56,21 @@ struct CanvasToolbarStateBuilder {
         )
     }
 
+    func textItemState(session: CanvasEditorSession) -> CanvasToolbarItemState {
+        let descriptor = commandCatalog.descriptor(
+            for: session.isInlineTextModeActive ? .commitTextEdit : .addTextItem,
+            session: session
+        )
+        return CanvasToolbarItemState(
+            id: .text,
+            systemImageName: descriptor.systemImageName,
+            isEnabled: descriptor.isEnabled,
+            isActive: descriptor.isActive,
+            accessibilityLabel: descriptor.title == "Done" ? "Done editing text" : "Add text",
+            visualRole: descriptor.isActive ? .success : .accent
+        )
+    }
+
     func importItemState(isEnabled: Bool = true) -> CanvasToolbarItemState {
         CanvasToolbarItemState(
             id: .importImage,
@@ -60,5 +79,13 @@ struct CanvasToolbarStateBuilder {
             accessibilityLabel: "Import image",
             visualRole: .accent
         )
+    }
+
+    private func shouldShowCropItem(session: CanvasEditorSession) -> Bool {
+        guard session.isInlineCropModeActive == false else {
+            return true
+        }
+
+        return session.selectedBoardItemKind != .text
     }
 }

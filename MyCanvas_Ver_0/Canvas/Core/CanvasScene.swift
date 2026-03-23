@@ -218,6 +218,22 @@ final class CanvasScene {
     }
 
     @discardableResult
+    func updateTextItem(
+        withID id: CanvasItemID,
+        text: String
+    ) -> CanvasTextItem? {
+        updateBoardItem(withID: id) { item in
+            guard case var .text(textItem) = item else {
+                return nil
+            }
+
+            textItem.text = text
+            item = .text(textItem)
+            return textItem
+        } ?? nil
+    }
+
+    @discardableResult
     // Rotation writes stay centralized in Scene so controllers only manage draft
     // angles while the persisted presentation state changes in one shared place.
     func rotateBoardItem(

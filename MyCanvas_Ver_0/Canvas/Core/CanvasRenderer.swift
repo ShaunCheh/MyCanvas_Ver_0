@@ -498,6 +498,7 @@ struct CanvasRenderer {
             return makeTextRenderItem(
                 for: textItem,
                 camera: camera,
+                inlineEditState: inlineEditState,
                 rotationPreviewState: rotationPreviewState
             )
         }
@@ -549,6 +550,7 @@ struct CanvasRenderer {
     private func makeTextRenderItem(
         for item: CanvasTextItem,
         camera: CanvasCamera,
+        inlineEditState: CanvasInlineEditState?,
         rotationPreviewState: CanvasRotationPreviewState?
     ) -> CanvasRenderItem {
         let effectiveTextItem: CanvasTextItem
@@ -561,6 +563,13 @@ struct CanvasRenderer {
         case .image:
             assertionFailure("Expected text item after applying text presentation.")
             effectiveTextItem = item
+        }
+
+        let resolvedText: String
+        if inlineEditState?.mode == .text, inlineEditState?.itemID == effectiveTextItem.id {
+            resolvedText = inlineEditState?.draftText ?? effectiveTextItem.text
+        } else {
+            resolvedText = effectiveTextItem.text
         }
 
         let screenQuad = camera.worldToViewport(effectiveTextItem.worldQuad)
@@ -577,7 +586,7 @@ struct CanvasRenderer {
             zIndex: effectiveTextItem.zIndex,
             payload: .text(
                 CanvasTextRenderPayload(
-                    text: effectiveTextItem.text,
+                    text: resolvedText,
                     style: effectiveTextItem.style,
                     zoomScale: camera.zoomScale
                 )

@@ -7,7 +7,10 @@ struct CanvasContextMenuCommandResolver {
         for context: CanvasContextMenuContext,
         session: CanvasEditorSession
     ) -> [CanvasCommandID] {
-        let candidateIDs = candidateCommandIDs(for: context)
+        let candidateIDs = candidateCommandIDs(
+            for: context,
+            session: session
+        )
         let enabledIDs = candidateIDs.filter { commandID in
             commandCatalog.descriptor(
                 for: commandID,
@@ -34,6 +37,16 @@ struct CanvasContextMenuCommandResolver {
         switch commandID {
         case .importImages:
             return nil
+        case .addTextItem:
+            return .addTextItem
+        case .beginTextEdit:
+            guard let itemID = context.targetItemID else {
+                return nil
+            }
+
+            return .beginTextEdit(itemID: itemID)
+        case .commitTextEdit:
+            return .commitTextEdit
         case .crop:
             return .crop
         case .undo:
@@ -109,8 +122,13 @@ struct CanvasContextMenuCommandResolver {
     }
 
     private func candidateCommandIDs(
-        for context: CanvasContextMenuContext
+        for context: CanvasContextMenuContext,
+        session: CanvasEditorSession
     ) -> [CanvasCommandID] {
+        let targetTextItem = context.targetItemID.flatMap { itemID in
+            session.scene.textItem(withID: itemID)
+        }
+
         switch context.targetKind {
         case .blank:
             return [
@@ -119,33 +137,35 @@ struct CanvasContextMenuCommandResolver {
                 .redo
             ]
         case .selectedItemBody, .selectionHandle, .rotateHandle:
-            return selectedItemCommandIDs(includeCropCommand: true)
+            return selectedItemCommandIDs(
+                includeCropCommand: targetTextItem == nil,
+                includeBeginTextEditCommand: targetTextItem != nil
+            )
         case .unselectedItemBody:
             // Keep invocation target and current selection separate so opening a
             // menu does not rewrite selection/history before the user chooses an
             // explicit command.
-            return [
-                .selectItem,
-                .duplicateItem,
-                .deleteItem,
-                .bringItemForward,
-                .sendItemBackward,
-                .bringItemToFront,
-                .sendItemToBack,
-                .undo,
-                .redo
-            ]
+            return unselectedItemCommandIDs(
+                includeBeginTextEditCommand: targetTextItem != nil
+            )
         case .cropHandle, .cropOutline:
-            return selectedItemCommandIDs(includeCropCommand: true)
+            return selectedItemCommandIDs(
+                includeCropCommand: true,
+                includeBeginTextEditCommand: false
+            )
         }
     }
 
     private func selectedItemCommandIDs(
-        includeCropCommand: Bool
+        includeCropCommand: Bool,
+        includeBeginTextEditCommand: Bool
     ) -> [CanvasCommandID] {
         var commandIDs: [CanvasCommandID] = []
         if includeCropCommand {
             commandIDs.append(.crop)
+        }
+        if includeBeginTextEditCommand {
+            commandIDs.append(.beginTextEdit)
         }
         commandIDs.append(contentsOf: [
             .duplicateItem,
@@ -155,6 +175,26 @@ struct CanvasContextMenuCommandResolver {
             .bringItemToFront,
             .sendItemToBack,
             .clearSelection,
+            .undo,
+            .redo
+        ])
+        return commandIDs
+    }
+
+    private func unselectedItemCommandIDs(
+        includeBeginTextEditCommand: Bool
+    ) -> [CanvasCommandID] {
+        var commandIDs: [CanvasCommandID] = [.selectItem]
+        if includeBeginTextEditCommand {
+            commandIDs.append(.beginTextEdit)
+        }
+        commandIDs.append(contentsOf: [
+            .duplicateItem,
+            .deleteItem,
+            .bringItemForward,
+            .sendItemBackward,
+            .bringItemToFront,
+            .sendItemToBack,
             .undo,
             .redo
         ])

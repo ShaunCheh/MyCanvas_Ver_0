@@ -11,6 +11,12 @@ final class CanvasCommandExecutor {
         switch command {
         case let .importImages(request):
             return request.isEmpty == false
+        case .addTextItem:
+            return session.canAddTextItem
+        case let .beginTextEdit(itemID):
+            return session.canBeginTextEdit(withID: itemID)
+        case .commitTextEdit:
+            return session.canCommitTextEdit
         case .crop:
             return session.isInlineCropModeActive || session.canBeginCropMode
         case .undo:
@@ -55,6 +61,39 @@ final class CanvasCommandExecutor {
                 : " from \(request.sourceDescription)"
             return CanvasCommandExecutionResult(
                 refreshReason: "import \(imageCount) \(imageLabel)\(sourceDescription)"
+            )
+        case .addTextItem:
+            guard let addedTextItem = session.addTextItem() else {
+                return nil
+            }
+
+            return CanvasCommandExecutionResult(
+                refreshReason: "add text item \(addedTextItem.id.uuidString)"
+            )
+        case let .beginTextEdit(itemID):
+            guard session.beginTextEdit(withID: itemID) else {
+                return nil
+            }
+
+            return CanvasCommandExecutionResult(
+                refreshReason: "begin text edit \(itemID.uuidString)"
+            )
+        case .commitTextEdit:
+            guard let commitResult = session.commitTextEdit() else {
+                return nil
+            }
+
+            let refreshReason: String
+            if commitResult.didDeleteItem {
+                refreshReason = "delete empty text item \(commitResult.itemID.uuidString)"
+            } else if commitResult.didChangeDocument {
+                refreshReason = "commit text edit \(commitResult.itemID.uuidString)"
+            } else {
+                refreshReason = "finish text edit \(commitResult.itemID.uuidString)"
+            }
+
+            return CanvasCommandExecutionResult(
+                refreshReason: refreshReason
             )
         case .crop:
             if session.isInlineCropModeActive {

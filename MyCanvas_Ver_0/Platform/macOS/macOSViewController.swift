@@ -10,7 +10,7 @@ import Foundation
 import AppKit
 import UniformTypeIdentifiers
 
-final class macOSViewController: NSViewController, NSUserInterfaceValidations {
+final class macOSViewController: NSViewController, NSUserInterfaceValidations, NSTextViewDelegate {
     private struct PointerResizeState {
         let itemID: CanvasItemID
         let handleRole: CanvasSelectionHandleRole
@@ -127,6 +127,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations {
     }
     private let toolbarPlacementSolver = CanvasToolbarPlacementSolver()
     private let toolbarHostView = macOSCanvasToolbarHostView()
+    private let textEditorOverlayView = macOSCanvasTextEditorOverlayView()
     private let miniMapMountView: macOSCanvasChromeOverlayView = {
         let view = macOSCanvasChromeOverlayView()
         view.translatesAutoresizingMaskIntoConstraints = true
@@ -150,10 +151,16 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations {
         button.translatesAutoresizingMaskIntoConstraints = false
         return button
     }()
+    private let textButton: NSButton = {
+        let button = NSButton()
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }()
     private var toolbarButtonsByID: [CanvasToolbarItemID: NSButton] {
         [
             .crop: cropButton,
             .save: saveButton,
+            .text: textButton,
             .importImage: importButton
         ]
     }
@@ -175,6 +182,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations {
             updateContextMenuPresentation()
         }
     }
+    private var activeTextEditorItemID: CanvasItemID?
+    private var isSyncingTextEditorContent = false
 
     private var scene: CanvasScene {
         editorSession.scene
@@ -259,6 +268,10 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations {
     }
 
     private func performCommand(_ command: CanvasCommand) {
+        if command.id != .commitTextEdit, isInlineTextModeActive {
+            performCommand(.commitTextEdit)
+        }
+
         guard commandExecutor.canExecute(command) else {
             return
         }
@@ -357,6 +370,14 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations {
         switch commandID {
         case .importImages:
             break
+        case .addTextItem:
+            performCommand(.addTextItem)
+        case .beginTextEdit:
+            if let selectedItemID = interactionState.selectedItemID {
+                performCommand(.beginTextEdit(itemID: selectedItemID))
+            }
+        case .commitTextEdit:
+            performCommand(.commitTextEdit)
         case .crop:
             performCommand(CanvasCommand.crop)
         case .undo:
@@ -411,9 +432,11 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations {
         setupViewHierarchy()
         setupConstraints()
         updatePreparedToolbarPlacement()
+        setupTextEditorOverlay()
         setupImportButton()
         setupSaveButton()
         setupCropButton()
+        setupTextButton()
         setupBackButton()
         setupMiniMapView()
         setupContextMenuHostView()
@@ -529,6 +552,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations {
         chromeOverlayView.addSubview(miniMapMountView)
         toolbarHostView.translatesAutoresizingMaskIntoConstraints = true
         chromeOverlayView.addSubview(toolbarHostView)
+        chromeOverlayView.addSubview(textEditorOverlayView)
         chromeOverlayView.addSubview(contextMenuHostView)
         chromeOverlayView.addSubview(backButton)
         registerToolbarButtons()
@@ -536,6 +560,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations {
 
     private func setupConstraints() {
         let safeAreaLayoutGuide = chromeOverlayView.safeAreaLayoutGuide
+        let preferredTextEditorWidth = textEditorOverlayView.widthAnchor.constraint(equalToConstant: 360)
+        preferredTextEditorWidth.priority = .defaultHigh
         NSLayoutConstraint.activate([
             canvasHostView.topAnchor.constraint(equalTo: view.topAnchor),
             canvasHostView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -552,7 +578,13 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations {
             backButton.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor, constant: 20),
             backButton.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor, constant: 20),
             backButton.widthAnchor.constraint(equalToConstant: 44),
-            backButton.heightAnchor.constraint(equalToConstant: 44)
+            backButton.heightAnchor.constraint(equalToConstant: 44),
+            textEditorOverlayView.centerXAnchor.constraint(equalTo: safeAreaLayoutGuide.centerXAnchor),
+            textEditorOverlayView.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor, constant: 76),
+            textEditorOverlayView.leadingAnchor.constraint(greaterThanOrEqualTo: safeAreaLayoutGuide.leadingAnchor, constant: 20),
+            textEditorOverlayView.trailingAnchor.constraint(lessThanOrEqualTo: safeAreaLayoutGuide.trailingAnchor, constant: -20),
+            preferredTextEditorWidth,
+            textEditorOverlayView.heightAnchor.constraint(equalToConstant: 156)
         ])
     }
 
@@ -785,6 +817,11 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations {
         renderToolbar()
     }
 
+    private func setupTextEditorOverlay() {
+        textEditorOverlayView.textView.delegate = self
+        syncTextEditorPresentation()
+    }
+
     private func setupSaveButton() {
         saveButton.target = self
         saveButton.action = #selector(handleSaveButtonClick)
@@ -794,6 +831,12 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations {
     private func setupCropButton() {
         cropButton.target = self
         cropButton.action = #selector(handleCropButtonClick)
+        updateInlineEditButtonsAppearance()
+    }
+
+    private func setupTextButton() {
+        textButton.target = self
+        textButton.action = #selector(handleTextButtonClick)
         updateInlineEditButtonsAppearance()
     }
 
@@ -989,6 +1032,9 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations {
             "snapshotViewportBounds=\(describe(rect: lastRenderSnapshot.viewportBounds)) " +
             "snapshotEditOverlay=\(describe(editOverlay: lastRenderSnapshot.editOverlay))"
         )
+        if commitActiveTextEditIfNeeded() {
+            return
+        }
         if contextMenuState != nil {
             dismissContextMenu()
             return
@@ -1003,6 +1049,10 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations {
     }
 
     private func handleSecondaryClick(at location: CGPoint) {
+        if commitActiveTextEditIfNeeded() {
+            return
+        }
+
         let cameraBeforeSync = camera
         let snapshotBeforeSync = lastRenderSnapshot
         let worldPointBeforeSync = cameraBeforeSync.viewportToWorld(location)
@@ -1212,6 +1262,12 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations {
                     )
                     if previousSelectedItemID != itemID {
                         clickResult = "item_selected"
+                    } else {
+                        if case .selectedItemBody = pressContext.targetKind,
+                           beginTextEditIfPossible(for: itemID)
+                        {
+                            clickResult = "text_edit_began"
+                        }
                     }
                 } else {
                     clickTarget = "mismatched_hit_test"
@@ -1361,6 +1417,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations {
 
     @objc
     private func handleImportButtonClick() {
+        commitActiveTextEditIfNeeded()
         guard let window = view.window else {
             return
         }
@@ -1392,6 +1449,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations {
 
     @objc
     private func handleSaveButtonClick() {
+        commitActiveTextEditIfNeeded()
         beginSaveButtonSaveState()
         saveBoardNow(
             reason: "manual save",
@@ -1424,7 +1482,17 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations {
     }
 
     @objc
+    private func handleTextButtonClick() {
+        if isInlineTextModeActive {
+            performCommand(.commitTextEdit)
+        } else {
+            performCommand(.addTextItem)
+        }
+    }
+
+    @objc
     private func handleBackButtonClick() {
+        commitActiveTextEditIfNeeded()
         dismissContextMenu()
         onBackToBoardList?()
     }
@@ -1478,6 +1546,19 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations {
 
         performCommand(command)
         return true
+    }
+
+    func textDidChange(_ notification: Notification) {
+        guard
+            let textView = notification.object as? NSTextView,
+            textView === textEditorOverlayView.textView,
+            isSyncingTextEditorContent == false,
+            editorSession.updateTextEditDraft(textView.string)
+        else {
+            return
+        }
+
+        refreshCanvas(reason: "update text edit draft")
     }
 
     private func selectItem(
@@ -2567,6 +2648,10 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations {
         editorSession.isInlineEditModeActive
     }
 
+    private var isInlineTextModeActive: Bool {
+        editorSession.isInlineTextModeActive
+    }
+
     private func scheduleAutosave(reason: String) {
         editorSession.scheduleAutosave(reason: reason)
     }
@@ -2602,6 +2687,64 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations {
         saveButtonState = .idle
     }
 
+    @discardableResult
+    private func commitActiveTextEditIfNeeded() -> Bool {
+        guard isInlineTextModeActive else {
+            return false
+        }
+
+        performCommand(.commitTextEdit)
+        return true
+    }
+
+    private func beginTextEditIfPossible(for itemID: CanvasItemID) -> Bool {
+        guard scene.textItem(withID: itemID) != nil else {
+            return false
+        }
+
+        performCommand(.beginTextEdit(itemID: itemID))
+        return isInlineTextModeActive
+    }
+
+    private func syncTextEditorPresentation() {
+        guard isViewLoaded else {
+            return
+        }
+
+        guard
+            let inlineEditState,
+            inlineEditState.mode == .text
+        else {
+            if view.window?.firstResponder === textEditorOverlayView.textView {
+                view.window?.makeFirstResponder(canvasViewportView)
+            }
+            textEditorOverlayView.isHidden = true
+            activeTextEditorItemID = nil
+            return
+        }
+
+        let didChangeEditedItem = activeTextEditorItemID != inlineEditState.itemID
+        activeTextEditorItemID = inlineEditState.itemID
+        textEditorOverlayView.isHidden = false
+        if textEditorOverlayView.textView.string != inlineEditState.draftText {
+            isSyncingTextEditorContent = true
+            textEditorOverlayView.apply(text: inlineEditState.draftText)
+            isSyncingTextEditorContent = false
+        }
+
+        guard let window = view.window else {
+            return
+        }
+
+        if window.firstResponder !== textEditorOverlayView.textView {
+            window.makeFirstResponder(textEditorOverlayView.textView)
+        }
+
+        if didChangeEditedItem {
+            textEditorOverlayView.textView.selectAll(nil)
+        }
+    }
+
     private func makeToolbarState() -> CanvasToolbarState {
         toolbarStateBuilder.mainToolbarState(
             session: editorSession,
@@ -2620,6 +2763,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations {
 
     private func updateInlineEditButtonsAppearance() {
         renderToolbar()
+        syncTextEditorPresentation()
     }
 
     private func presentSaveError(message: String) {

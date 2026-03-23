@@ -8,7 +8,7 @@
 import PhotosUI
 import UIKit
 
-final class iOSViewController: UIViewController, PHPickerViewControllerDelegate, UIDropInteractionDelegate {
+final class iOSViewController: UIViewController, PHPickerViewControllerDelegate, UIDropInteractionDelegate, UITextViewDelegate {
     private struct PointerResizeState {
         let itemID: CanvasItemID
         let handleRole: CanvasSelectionHandleRole
@@ -117,6 +117,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     }
     private let toolbarPlacementSolver = CanvasToolbarPlacementSolver()
     private let toolbarHostView = iOSCanvasToolbarHostView()
+    private let textEditorOverlayView = iOSCanvasTextEditorOverlayView()
     private let historyButtonsStackView: iOSCanvasChromeStackView = {
         let stackView = iOSCanvasChromeStackView()
         stackView.translatesAutoresizingMaskIntoConstraints = false
@@ -149,6 +150,11 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         button.translatesAutoresizingMaskIntoConstraints = false
         return button
     }()
+    private let textButton: UIButton = {
+        let button = UIButton(type: .system)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }()
     private let undoButton: UIButton = {
         let button = UIButton(type: .system)
         button.translatesAutoresizingMaskIntoConstraints = false
@@ -163,6 +169,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         [
             .crop: cropButton,
             .save: saveButton,
+            .text: textButton,
             .importImage: importButton
         ]
     }
@@ -187,6 +194,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             updateContextMenuPresentation()
         }
     }
+    private var activeTextEditorItemID: CanvasItemID?
+    private var isSyncingTextEditorContent = false
 
     private var scene: CanvasScene {
         editorSession.scene
@@ -271,6 +280,10 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     }
 
     private func performCommand(_ command: CanvasCommand) {
+        if command.id != .commitTextEdit, isInlineTextModeActive {
+            performCommand(.commitTextEdit)
+        }
+
         guard commandExecutor.canExecute(command) else {
             return
         }
@@ -380,9 +393,11 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         setupViewHierarchy()
         setupConstraints()
         updatePreparedToolbarPlacement()
+        setupTextEditorOverlay()
         setupImportButton()
         setupSaveButton()
         setupCropButton()
+        setupTextButton()
         setupUndoButton()
         setupRedoButton()
         setupBackButton()
@@ -431,6 +446,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         chromeOverlayView.addSubview(historyButtonsStackView)
         toolbarHostView.translatesAutoresizingMaskIntoConstraints = true
         chromeOverlayView.addSubview(toolbarHostView)
+        chromeOverlayView.addSubview(textEditorOverlayView)
         chromeOverlayView.addSubview(contextMenuHostView)
         chromeOverlayView.addSubview(backButton)
         installHistoryButtons()
@@ -439,6 +455,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
 
     private func setupConstraints() {
         let safeAreaLayoutGuide = chromeOverlayView.safeAreaLayoutGuide
+        let preferredTextEditorWidth = textEditorOverlayView.widthAnchor.constraint(equalToConstant: 320)
+        preferredTextEditorWidth.priority = .defaultHigh
         NSLayoutConstraint.activate([
             canvasHostView.topAnchor.constraint(equalTo: view.topAnchor),
             canvasHostView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -456,6 +474,12 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             backButton.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor, constant: 20),
             backButton.widthAnchor.constraint(equalToConstant: 44),
             backButton.heightAnchor.constraint(equalToConstant: 44),
+            textEditorOverlayView.centerXAnchor.constraint(equalTo: safeAreaLayoutGuide.centerXAnchor),
+            textEditorOverlayView.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor, constant: 76),
+            textEditorOverlayView.leadingAnchor.constraint(greaterThanOrEqualTo: safeAreaLayoutGuide.leadingAnchor, constant: 20),
+            textEditorOverlayView.trailingAnchor.constraint(lessThanOrEqualTo: safeAreaLayoutGuide.trailingAnchor, constant: -20),
+            preferredTextEditorWidth,
+            textEditorOverlayView.heightAnchor.constraint(equalToConstant: 148),
             historyButtonsStackView.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -20),
             historyButtonsStackView.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -20),
             undoButton.heightAnchor.constraint(equalToConstant: 40),
@@ -693,6 +717,11 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         renderToolbar()
     }
 
+    private func setupTextEditorOverlay() {
+        textEditorOverlayView.textView.delegate = self
+        syncTextEditorPresentation()
+    }
+
     private func setupSaveButton() {
         saveButton.addTarget(self, action: #selector(handleSaveButtonTap), for: .touchUpInside)
         renderToolbar()
@@ -700,6 +729,11 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
 
     private func setupCropButton() {
         cropButton.addTarget(self, action: #selector(handleCropButtonTap), for: .touchUpInside)
+        updateInlineEditButtonsAppearance()
+    }
+
+    private func setupTextButton() {
+        textButton.addTarget(self, action: #selector(handleTextButtonTap), for: .touchUpInside)
         updateInlineEditButtonsAppearance()
     }
 
@@ -811,6 +845,10 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             return
         }
 
+        if commitActiveTextEditIfNeeded() {
+            return
+        }
+
         if contextMenuState != nil {
             dismissContextMenu()
             return
@@ -828,6 +866,10 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         syncCameraViewportSizeFromCurrentBoundsIfPossible()
         guard hasRenderableViewportSize else {
             logIgnoredCanvasInput("long press \(describe(point: location))")
+            return
+        }
+
+        if commitActiveTextEditIfNeeded() {
             return
         }
 
@@ -1017,6 +1059,12 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
                     )
                     if previousSelectedItemID != itemID {
                         clickResult = "item_selected"
+                    } else {
+                        if case .selectedItemBody = pressContext.targetKind,
+                           beginTextEditIfPossible(for: itemID)
+                        {
+                            clickResult = "text_edit_began"
+                        }
                     }
                 } else {
                     clickTarget = "mismatched_hit_test"
@@ -1166,6 +1214,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
 
     @objc
     private func handleImportButtonTap() {
+        commitActiveTextEditIfNeeded()
         var configuration = PHPickerConfiguration(photoLibrary: .shared())
         configuration.filter = .images
         configuration.selectionLimit = 0
@@ -1177,6 +1226,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
 
     @objc
     private func handleSaveButtonTap() {
+        commitActiveTextEditIfNeeded()
         beginSaveButtonSaveState()
         saveBoardNow(
             reason: "manual save",
@@ -1209,6 +1259,15 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     }
 
     @objc
+    private func handleTextButtonTap() {
+        if isInlineTextModeActive {
+            performCommand(.commitTextEdit)
+        } else {
+            performCommand(.addTextItem)
+        }
+    }
+
+    @objc
     private func handleUndoButtonTap() {
         performCommand(.undo)
     }
@@ -1220,6 +1279,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
 
     @objc
     private func handleBackButtonTap() {
+        commitActiveTextEditIfNeeded()
         dismissContextMenu()
         onBackToBoardList?()
     }
@@ -1290,6 +1350,18 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             _ = self.performTransferRequest(transferRequest)
             self.becomeFirstResponder()
         }
+    }
+
+    func textViewDidChange(_ textView: UITextView) {
+        guard
+            textView === textEditorOverlayView.textView,
+            isSyncingTextEditorContent == false,
+            editorSession.updateTextEditDraft(textView.text)
+        else {
+            return
+        }
+
+        requestCanvasRefresh(reason: "update text edit draft")
     }
 
     private func canTransferContent(from pasteboard: UIPasteboard) -> Bool {
@@ -2364,6 +2436,10 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         editorSession.isInlineEditModeActive
     }
 
+    private var isInlineTextModeActive: Bool {
+        editorSession.isInlineTextModeActive
+    }
+
     private func scheduleAutosave(reason: String) {
         editorSession.scheduleAutosave(reason: reason)
     }
@@ -2399,6 +2475,69 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         saveButtonState = .idle
     }
 
+    @discardableResult
+    private func commitActiveTextEditIfNeeded() -> Bool {
+        guard isInlineTextModeActive else {
+            return false
+        }
+
+        performCommand(.commitTextEdit)
+        return true
+    }
+
+    private func beginTextEditIfPossible(for itemID: CanvasItemID) -> Bool {
+        guard scene.textItem(withID: itemID) != nil else {
+            return false
+        }
+
+        performCommand(.beginTextEdit(itemID: itemID))
+        return isInlineTextModeActive
+    }
+
+    private func syncTextEditorPresentation() {
+        guard isViewLoaded else {
+            return
+        }
+
+        guard
+            let inlineEditState,
+            inlineEditState.mode == .text
+        else {
+            if textEditorOverlayView.textView.isFirstResponder {
+                textEditorOverlayView.textView.resignFirstResponder()
+            }
+            textEditorOverlayView.isHidden = true
+            activeTextEditorItemID = nil
+            becomeFirstResponder()
+            return
+        }
+
+        let didChangeEditedItem = activeTextEditorItemID != inlineEditState.itemID
+        activeTextEditorItemID = inlineEditState.itemID
+        textEditorOverlayView.isHidden = false
+        if textEditorOverlayView.textView.text != inlineEditState.draftText {
+            isSyncingTextEditorContent = true
+            textEditorOverlayView.apply(text: inlineEditState.draftText)
+            isSyncingTextEditorContent = false
+        }
+
+        guard textEditorOverlayView.window != nil else {
+            return
+        }
+
+        if textEditorOverlayView.textView.isFirstResponder == false {
+            textEditorOverlayView.textView.becomeFirstResponder()
+        }
+
+        if didChangeEditedItem {
+            let textLength = textEditorOverlayView.textView.text.utf16.count
+            textEditorOverlayView.textView.selectedRange = NSRange(
+                location: 0,
+                length: textLength
+            )
+        }
+    }
+
     private func makeToolbarState() -> CanvasToolbarState {
         toolbarStateBuilder.mainToolbarState(
             session: editorSession,
@@ -2418,6 +2557,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     private func updateInlineEditButtonsAppearance() {
         renderToolbar()
         updateHistoryButtonsAppearance()
+        syncTextEditorPresentation()
     }
 
     private func updateHistoryButtonsAppearance() {

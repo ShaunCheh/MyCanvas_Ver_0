@@ -2,6 +2,9 @@ import Foundation
 
 enum CanvasCommandID: String {
     case importImages
+    case addTextItem
+    case beginTextEdit
+    case commitTextEdit
     case crop
     case undo
     case redo
@@ -17,6 +20,9 @@ enum CanvasCommandID: String {
 
 enum CanvasCommand {
     case importImages(CanvasImportRequest)
+    case addTextItem
+    case beginTextEdit(itemID: CanvasItemID)
+    case commitTextEdit
     case crop
     case undo
     case redo
@@ -33,6 +39,12 @@ enum CanvasCommand {
         switch self {
         case .importImages:
             return .importImages
+        case .addTextItem:
+            return .addTextItem
+        case .beginTextEdit:
+            return .beginTextEdit
+        case .commitTextEdit:
+            return .commitTextEdit
         case .crop:
             return .crop
         case .undo:
@@ -63,6 +75,9 @@ enum CanvasCommand {
     var shouldCancelActiveRotation: Bool {
         switch self {
         case .importImages,
+             .addTextItem,
+             .beginTextEdit,
+             .commitTextEdit,
              .crop,
              .undo,
              .redo,

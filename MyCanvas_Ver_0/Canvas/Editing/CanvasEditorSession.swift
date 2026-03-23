@@ -1,6 +1,12 @@
 import CoreGraphics
 import Foundation
 
+struct CanvasTextEditCommitResult {
+    let itemID: CanvasItemID
+    let didDeleteItem: Bool
+    let didChangeDocument: Bool
+}
+
 final class CanvasEditorSession {
     let scene = CanvasScene()
     var camera = CanvasCamera()
@@ -41,12 +47,24 @@ final class CanvasEditorSession {
         inlineEditState == nil && historyController.canRedo
     }
 
+    var canAddTextItem: Bool {
+        inlineEditState == nil
+    }
+
     var canBeginCropMode: Bool {
+        guard inlineEditState == nil else {
+            return false
+        }
+
         guard let selectedItemID = interactionState.selectedItemID else {
             return false
         }
 
         return scene.item(withID: selectedItemID) != nil
+    }
+
+    var canCommitTextEdit: Bool {
+        isInlineTextModeActive
     }
 
     var canClearSelection: Bool {
@@ -59,6 +77,22 @@ final class CanvasEditorSession {
 
     var isInlineEditModeActive: Bool {
         inlineEditState != nil
+    }
+
+    var isInlineTextModeActive: Bool {
+        inlineEditState?.mode == .text
+    }
+
+    var selectedBoardItem: CanvasBoardItem? {
+        guard let selectedItemID = interactionState.selectedItemID else {
+            return nil
+        }
+
+        return scene.boardItem(withID: selectedItemID)
+    }
+
+    var selectedBoardItemKind: CanvasBoardItemKind? {
+        selectedBoardItem?.kind
     }
 
     func makeCanvasSnapshot() -> CanvasRenderSnapshot {
@@ -296,6 +330,124 @@ final class CanvasEditorSession {
         return true
     }
 
+    func canBeginTextEdit(withID itemID: CanvasItemID) -> Bool {
+        guard inlineEditState == nil else {
+            return false
+        }
+
+        return scene.textItem(withID: itemID) != nil
+    }
+
+    @discardableResult
+    func beginTextEdit(withID itemID: CanvasItemID) -> Bool {
+        guard
+            canBeginTextEdit(withID: itemID),
+            let item = scene.textItem(withID: itemID)
+        else {
+            return false
+        }
+
+        interactionState.selectedItemID = itemID
+        inlineEditState = CanvasInlineEditState(item: item)
+        return true
+    }
+
+    @discardableResult
+    func updateTextEditDraft(_ draftText: String) -> Bool {
+        guard
+            var inlineEditState,
+            inlineEditState.mode == .text,
+            inlineEditState.draftText != draftText
+        else {
+            return false
+        }
+
+        inlineEditState.draftText = draftText
+        self.inlineEditState = inlineEditState
+        return true
+    }
+
+    @discardableResult
+    func commitTextEdit() -> CanvasTextEditCommitResult? {
+        guard
+            let inlineEditState,
+            inlineEditState.mode == .text
+        else {
+            return nil
+        }
+
+        let itemID = inlineEditState.itemID
+        defer {
+            self.inlineEditState = nil
+        }
+
+        guard let item = scene.textItem(withID: itemID) else {
+            if interactionState.selectedItemID == itemID {
+                interactionState.selectedItemID = nil
+            }
+            return CanvasTextEditCommitResult(
+                itemID: itemID,
+                didDeleteItem: false,
+                didChangeDocument: false
+            )
+        }
+
+        let draftText = inlineEditState.draftText
+        if draftText == item.text {
+            return CanvasTextEditCommitResult(
+                itemID: itemID,
+                didDeleteItem: false,
+                didChangeDocument: false
+            )
+        }
+
+        let beforeSnapshot = currentBoardHistorySnapshot()
+        if draftText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            guard scene.removeItem(withID: itemID) else {
+                return CanvasTextEditCommitResult(
+                    itemID: itemID,
+                    didDeleteItem: false,
+                    didChangeDocument: false
+                )
+            }
+
+            if interactionState.selectedItemID == itemID {
+                interactionState.selectedItemID = nil
+            }
+            let changeReason = "delete empty text item"
+            _ = recordImmediateHistoryChange(
+                from: beforeSnapshot,
+                reason: changeReason,
+                autosaveReason: changeReason
+            )
+            return CanvasTextEditCommitResult(
+                itemID: itemID,
+                didDeleteItem: true,
+                didChangeDocument: true
+            )
+        }
+
+        guard scene.updateTextItem(withID: itemID, text: draftText) != nil else {
+            return CanvasTextEditCommitResult(
+                itemID: itemID,
+                didDeleteItem: false,
+                didChangeDocument: false
+            )
+        }
+
+        let changeReason = "edit text item"
+        _ = recordImmediateHistoryChange(
+            from: beforeSnapshot,
+            reason: changeReason,
+            autosaveReason: changeReason
+        )
+        return CanvasTextEditCommitResult(
+            itemID: itemID,
+            didDeleteItem: false,
+            didChangeDocument: true
+        )
+    }
+
     @discardableResult
     func beginCropModeIfPossible() -> Bool {
         guard
@@ -330,11 +482,20 @@ final class CanvasEditorSession {
             return
         }
 
-        if let item = scene.item(withID: inlineEditState.itemID) {
-            self.inlineEditState = CanvasInlineEditState(
-                item: item,
-                mode: inlineEditState.mode
-            )
+        switch inlineEditState.mode {
+        case .crop:
+            if let item = scene.item(withID: inlineEditState.itemID) {
+                self.inlineEditState = CanvasInlineEditState(
+                    item: item,
+                    mode: .crop
+                )
+            } else {
+                self.inlineEditState = nil
+            }
+        case .text:
+            if scene.textItem(withID: inlineEditState.itemID) == nil {
+                self.inlineEditState = nil
+            }
         }
     }
 
@@ -709,8 +870,21 @@ final class CanvasEditorSession {
         )
     }
 
-    func nextImageZIndex() -> CGFloat {
+    func defaultTextItemSize(
+        for style: CanvasTextStyle = .default
+    ) -> CGSize {
+        CGSize(
+            width: max(style.fontSize * 7.5, 240),
+            height: max(style.fontSize * 3, 96)
+        )
+    }
+
+    func nextBoardItemZIndex() -> CGFloat {
         (scene.orderedBoardItems().last?.zIndex ?? -1) + 1
+    }
+
+    func nextImageZIndex() -> CGFloat {
+        nextBoardItemZIndex()
     }
 
     func duplicateOffsetInWorld() -> CGPoint {
@@ -773,6 +947,36 @@ final class CanvasEditorSession {
         }
 
         return "append \(imageCount) images"
+    }
+
+    @discardableResult
+    func addTextItem(
+        text: String = "Text",
+        style: CanvasTextStyle = .default
+    ) -> CanvasTextItem? {
+        guard canAddTextItem else {
+            return nil
+        }
+
+        let beforeSnapshot = currentBoardHistorySnapshot()
+        let item = CanvasTextItem(
+            text: text,
+            style: style,
+            center: camera.center,
+            size: defaultTextItemSize(for: style),
+            zIndex: nextBoardItemZIndex()
+        )
+        scene.append(item)
+        interactionState.selectedItemID = item.id
+        inlineEditState = CanvasInlineEditState(item: item)
+        expandBoardIfNeeded(toInclude: item.worldFrame)
+        let changeReason = "add text item"
+        _ = recordImmediateHistoryChange(
+            from: beforeSnapshot,
+            reason: changeReason,
+            autosaveReason: changeReason
+        )
+        return item
     }
 
     @discardableResult

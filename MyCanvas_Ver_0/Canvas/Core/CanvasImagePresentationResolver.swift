@@ -7,7 +7,9 @@ struct CanvasImagePresentationResolver {
         inlineEditState: CanvasInlineEditState?,
         rotationPreviewState: CanvasRotationPreviewState?
     ) -> CanvasImagePresentation {
-        let isCropPreviewActive = inlineEditState?.itemID == item.id
+        let isCropPreviewActive =
+            inlineEditState?.mode == .crop &&
+            inlineEditState?.itemID == item.id
         let isRotationPreviewActive = rotationPreviewState?.itemID == item.id
 
         var effectiveItem = item

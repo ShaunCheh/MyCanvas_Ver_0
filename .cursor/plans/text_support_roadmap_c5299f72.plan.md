@@ -13,7 +13,7 @@ todos:
     status: completed
   - id: t4-text-editing
     content: 增加文本命令、inline edit 状态，并在主工具栏容器里加入 icon-only 的添加文本按钮
-    status: pending
+    status: completed
   - id: t5-preview-regression
     content: 补齐 minimap、board list preview、thumbnail 和完整回归验证
     status: pending
