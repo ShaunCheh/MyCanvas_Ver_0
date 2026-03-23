@@ -1,6 +1,10 @@
 #if os(iOS)
 import UIKit
 
+private func iOSBoardListRenameTraceTimestamp() -> String {
+    String(format: "%.3f", ProcessInfo.processInfo.systemUptime)
+}
+
 final class iOSBoardListViewController: UIViewController, UICollectionViewDataSource, UICollectionViewDelegateFlowLayout {
     private enum Layout {
         static let listItemHeight: CGFloat = 96
@@ -20,14 +24,38 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
     private var selectedEntryID: BoardListEntryID?
     private var actionPanelState: BoardListActionPanelState? {
         didSet {
+            logRenameTrace(
+                "actionPanelStateChanged",
+                extra:
+                    "oldBoardID=\(oldValue?.boardID.uuidString ?? "nil") " +
+                    "newBoardID=\(actionPanelState?.boardID.uuidString ?? "nil")"
+            )
             updateActionPanelPresentation()
         }
     }
     private var hasSelectedFolder = false
     private var storageErrorMessage: String?
     private var isSyncingSelection = false
-    private var editingBoardID: UUID?
-    private var pendingRevealBoardID: UUID?
+    private var editingBoardID: UUID? {
+        didSet {
+            logRenameTrace(
+                "editingBoardIDChanged",
+                extra:
+                    "oldValue=\(oldValue?.uuidString ?? "nil") " +
+                    "newValue=\(editingBoardID?.uuidString ?? "nil")"
+            )
+        }
+    }
+    private var pendingRevealBoardID: UUID? {
+        didSet {
+            logRenameTrace(
+                "pendingRevealBoardIDChanged",
+                extra:
+                    "oldValue=\(oldValue?.uuidString ?? "nil") " +
+                    "newValue=\(pendingRevealBoardID?.uuidString ?? "nil")"
+            )
+        }
+    }
     private var displayMode: BoardListDisplayMode = .grid {
         didSet {
             guard oldValue != displayMode else {
@@ -260,7 +288,35 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
             : .secondaryLabel
     }
 
+    private func logRenameTrace(_ phase: String, extra: String = "") {
+        let extraSuffix = extra.isEmpty ? "" : " \(extra)"
+        print(
+            "[BoardList][iOS][RenameTrace] " +
+                "t=\(iOSBoardListRenameTraceTimestamp()) " +
+                "phase=\(phase) " +
+                "editingBoardID=\(editingBoardID?.uuidString ?? "nil") " +
+                "pendingRevealBoardID=\(pendingRevealBoardID?.uuidString ?? "nil") " +
+                "selectedEntryID=\(describeRenameTraceEntryID(selectedEntryID)) " +
+                "actionPanelBoardID=\(actionPanelState?.boardID.uuidString ?? "nil")" +
+                extraSuffix
+        )
+    }
+
+    private func describeRenameTraceEntryID(_ entryID: BoardListEntryID?) -> String {
+        guard let entryID else {
+            return "nil"
+        }
+
+        switch entryID {
+        case .newBoard:
+            return "newBoard"
+        case let .board(boardID):
+            return "board(\(boardID.uuidString))"
+        }
+    }
+
     private func refreshBookmarkStatus() {
+        logRenameTrace("refreshBookmarkStatusBegin")
         dismissActionPanel()
         let bookmarkStatus = FolderBookmarkStore.bookmarkStatus()
         do {
@@ -300,6 +356,7 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
             )
             reloadBoardList()
         }
+        logRenameTrace("refreshBookmarkStatusEnd", extra: "boardCount=\(availableBoards.count)")
     }
 
     private func ensureValidSelection() {
@@ -324,6 +381,7 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
     }
 
     private func reloadBoardList() {
+        logRenameTrace("reloadBoardListBegin", extra: "entryCount=\(entries.count)")
         collectionView.reloadData()
         updateCollectionVisibility()
         updateDisplayModeControlState()
@@ -331,6 +389,7 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
         syncCollectionSelection()
         revealPendingBoardIfNeeded()
         focusTitleEditorIfNeeded()
+        logRenameTrace("reloadBoardListEnd", extra: "entryCount=\(entries.count)")
     }
 
     private func updateDisplayModeControlState() {
@@ -454,6 +513,13 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
             storageErrorMessage == nil,
             editingBoardID == nil
         else {
+            logRenameTrace(
+                "performPrimaryActionBlocked",
+                extra:
+                    "entryID=\(describeRenameTraceEntryID(entry.id)) " +
+                    "hasSelectedFolder=\(hasSelectedFolder) " +
+                    "hasStorageError=\(storageErrorMessage != nil)"
+            )
             return
         }
 
@@ -492,6 +558,13 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
         anchorRect: CGRect,
         from sourceView: UIView
     ) {
+        logRenameTrace(
+            "presentRenameActionPanel",
+            extra:
+                "boardID=\(boardID.uuidString) " +
+                "anchorMaxX=\(String(format: "%.1f", anchorRect.maxX)) " +
+                "anchorMaxY=\(String(format: "%.1f", anchorRect.maxY))"
+        )
         let anchorPoint = actionPanelHostView.convert(
             CGPoint(
                 x: anchorRect.maxX,
@@ -508,6 +581,7 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
     }
 
     private func dismissActionPanel() {
+        logRenameTrace("dismissActionPanel")
         actionPanelState = nil
     }
 
@@ -562,6 +636,12 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
 
     private func performBoardAction(_ actionID: BoardListActionID) {
         let boardID = actionPanelState?.boardID
+        logRenameTrace(
+            "performBoardAction",
+            extra:
+                "actionID=\(actionID.rawValue) " +
+                "boardID=\(boardID?.uuidString ?? "nil")"
+        )
         dismissActionPanel()
 
         switch actionID {
@@ -579,11 +659,26 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
 
     private func commitRename(boardID: UUID, title: String) {
         guard editingBoardID == boardID else {
+            logRenameTrace(
+                "commitRenameIgnored",
+                extra:
+                    "boardID=\(boardID.uuidString) " +
+                    "rawTitle=\"\(title)\""
+            )
             return
         }
 
         let normalizedTitle = normalizedBoardTitle(title)
+        logRenameTrace(
+            "commitRenameBegin",
+            extra:
+                "boardID=\(boardID.uuidString) " +
+                "rawTitle=\"\(title)\" " +
+                "normalizedTitle=\"\(normalizedTitle)\" " +
+                "existingTitle=\"\(boardTitle(for: boardID) ?? "")\""
+        )
         if boardTitle(for: boardID) == normalizedTitle {
+            logRenameTrace("commitRenameNoop", extra: "boardID=\(boardID.uuidString)")
             editingBoardID = nil
             pendingRevealBoardID = nil
             reloadBoardList()
@@ -597,6 +692,12 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
             pendingRevealBoardID = boardID
             refreshBookmarkStatus()
         } catch {
+            logRenameTrace(
+                "commitRenameFailed",
+                extra:
+                    "boardID=\(boardID.uuidString) " +
+                    "error=\"\(error.localizedDescription)\""
+            )
             presentRenameError(error)
         }
     }
@@ -606,7 +707,13 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
             return
         }
 
+        logRenameTrace("focusTitleEditorIfNeeded", extra: "boardID=\(editingBoardID.uuidString)")
+
         guard let indexPath = indexPath(for: editingBoardID) else {
+            logRenameTrace(
+                "focusTitleEditorMissingIndexPath",
+                extra: "boardID=\(editingBoardID.uuidString)"
+            )
             self.editingBoardID = nil
             return
         }
@@ -624,8 +731,19 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
         boardID: UUID
     ) {
         guard editingBoardID == boardID else {
+            logRenameTrace(
+                "focusTitleEditorAborted",
+                extra: "boardID=\(boardID.uuidString)"
+            )
             return
         }
+
+        logRenameTrace(
+            "focusTitleEditorBegin",
+            extra:
+                "boardID=\(boardID.uuidString) " +
+                "indexPath=[section=\(indexPath.section),item=\(indexPath.item)]"
+        )
 
         collectionView.layoutIfNeeded()
         collectionView.scrollToItem(
@@ -638,9 +756,16 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
         guard
             let cell = collectionView.cellForItem(at: indexPath) as? iOSBoardCollectionViewCell
         else {
+            logRenameTrace(
+                "focusTitleEditorMissingCell",
+                extra:
+                    "boardID=\(boardID.uuidString) " +
+                    "indexPath=[section=\(indexPath.section),item=\(indexPath.item)]"
+            )
             return
         }
 
+        logRenameTrace("focusTitleEditorBeginEditing", extra: "boardID=\(boardID.uuidString)")
         cell.beginTitleEditing()
     }
 
@@ -649,7 +774,16 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
             return
         }
 
+        logRenameTrace(
+            "revealPendingBoardIfNeeded",
+            extra: "boardID=\(pendingRevealBoardID.uuidString)"
+        )
+
         guard let indexPath = indexPath(for: pendingRevealBoardID) else {
+            logRenameTrace(
+                "revealPendingBoardMissingIndexPath",
+                extra: "boardID=\(pendingRevealBoardID.uuidString)"
+            )
             self.pendingRevealBoardID = nil
             return
         }
@@ -667,8 +801,16 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
         boardID: UUID
     ) {
         guard pendingRevealBoardID == boardID else {
+            logRenameTrace("revealBoardAborted", extra: "boardID=\(boardID.uuidString)")
             return
         }
+
+        logRenameTrace(
+            "revealBoard",
+            extra:
+                "boardID=\(boardID.uuidString) " +
+                "indexPath=[section=\(indexPath.section),item=\(indexPath.item)]"
+        )
 
         collectionView.layoutIfNeeded()
         collectionView.scrollToItem(
@@ -749,6 +891,15 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
             moreActionsHandler = nil
         }
 
+        if entry.boardID == editingBoardID {
+            logRenameTrace(
+                "configureEditingCell",
+                extra:
+                    "boardID=\(entry.boardID?.uuidString ?? "nil") " +
+                    "indexPath=[section=\(indexPath.section),item=\(indexPath.item)]"
+            )
+        }
+
         cell.configure(
             with: entry,
             previewContent: previewContent,
@@ -784,6 +935,12 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
         }
 
         selectedEntryID = entry.id
+        logRenameTrace(
+            "didSelectItemAt",
+            extra:
+                "entryID=\(describeRenameTraceEntryID(entry.id)) " +
+                "indexPath=[section=\(indexPath.section),item=\(indexPath.item)]"
+        )
         performPrimaryAction(for: entry)
         if entry.isPlaceholder {
             clearPlaceholderSelectionAfterAction()

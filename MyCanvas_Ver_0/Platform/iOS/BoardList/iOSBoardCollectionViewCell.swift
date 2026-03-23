@@ -1,6 +1,10 @@
 #if os(iOS)
 import UIKit
 
+private func iOSBoardListCellRenameTraceTimestamp() -> String {
+    String(format: "%.3f", ProcessInfo.processInfo.systemUptime)
+}
+
 final class iOSBoardCollectionViewCell: UICollectionViewCell, UITextFieldDelegate {
     static let reuseIdentifier = "iOSBoardCollectionViewCell"
 
@@ -102,6 +106,9 @@ final class iOSBoardCollectionViewCell: UICollectionViewCell, UITextFieldDelegat
 
     override func prepareForReuse() {
         super.prepareForReuse()
+        if isTitleEditingActive || representedBoardID != nil {
+            logRenameTrace("prepareForReuse")
+        }
         cancelThumbnailRequest()
         titleTextField.resignFirstResponder()
         representedBoardID = nil
@@ -145,6 +152,12 @@ final class iOSBoardCollectionViewCell: UICollectionViewCell, UITextFieldDelegat
             displayMode: displayMode
         )
         contentView.layoutIfNeeded()
+        logRenameTrace(
+            "configure",
+            extra:
+                "displayMode=\(displayMode.title) " +
+                "isEditingTitle=\(isEditingTitle)"
+        )
     }
 
     func beginTitleEditing() {
@@ -156,6 +169,7 @@ final class iOSBoardCollectionViewCell: UICollectionViewCell, UITextFieldDelegat
         }
 
         didHandleCurrentTitleEditEnd = false
+        logRenameTrace("beginTitleEditing")
         titleTextField.becomeFirstResponder()
         DispatchQueue.main.async { [weak self] in
             self?.selectAllTitleTextIfNeeded()
@@ -387,6 +401,10 @@ final class iOSBoardCollectionViewCell: UICollectionViewCell, UITextFieldDelegat
         let shouldShowTitleEditor = isTitleEditingActive && isEditablePresentation
         titleLabel.isHidden = shouldShowTitleEditor
         titleTextField.isHidden = !shouldShowTitleEditor
+        logRenameTrace(
+            "applyTitleEditingAppearance",
+            extra: "shouldShowTitleEditor=\(shouldShowTitleEditor)"
+        )
 
         if shouldShowTitleEditor {
             moreButton.isHidden = true
@@ -416,13 +434,31 @@ final class iOSBoardCollectionViewCell: UICollectionViewCell, UITextFieldDelegat
             didHandleCurrentTitleEditEnd == false,
             let representedBoardID
         else {
+            logRenameTrace("commitTitleEditIgnored")
             return
         }
 
         didHandleCurrentTitleEditEnd = true
+        logRenameTrace("commitTitleEdit")
         onRenameSubmitted?(
             representedBoardID,
             titleTextField.text ?? representedTitle ?? ""
+        )
+    }
+
+    private func logRenameTrace(_ phase: String, extra: String = "") {
+        let extraSuffix = extra.isEmpty ? "" : " \(extra)"
+        print(
+            "[BoardList][iOS][RenameTrace][Cell] " +
+                "t=\(iOSBoardListCellRenameTraceTimestamp()) " +
+                "phase=\(phase) " +
+                "boardID=\(representedBoardID?.uuidString ?? "nil") " +
+                "representedTitle=\"\(representedTitle ?? "")\" " +
+                "textFieldText=\"\(titleTextField.text ?? "")\" " +
+                "editing=\(isTitleEditingActive) " +
+                "textFieldHidden=\(titleTextField.isHidden) " +
+                "isFirstResponder=\(titleTextField.isFirstResponder)" +
+                extraSuffix
         )
     }
 
@@ -444,6 +480,7 @@ final class iOSBoardCollectionViewCell: UICollectionViewCell, UITextFieldDelegat
     }
 
     func textFieldDidBeginEditing(_ textField: UITextField) {
+        logRenameTrace("textFieldDidBeginEditing")
         selectAllTitleTextIfNeeded()
     }
 
@@ -453,6 +490,7 @@ final class iOSBoardCollectionViewCell: UICollectionViewCell, UITextFieldDelegat
     }
 
     func textFieldDidEndEditing(_ textField: UITextField) {
+        logRenameTrace("textFieldDidEndEditing")
         commitTitleEditIfNeeded()
     }
 }

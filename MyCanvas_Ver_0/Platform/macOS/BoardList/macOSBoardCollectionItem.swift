@@ -127,6 +127,9 @@ final class macOSBoardCollectionItem: NSCollectionViewItem, NSTextFieldDelegate 
 
     override func prepareForReuse() {
         super.prepareForReuse()
+        if isTitleEditingActive || representedBoardID != nil {
+            logRenameTrace("prepareForReuse")
+        }
         cancelThumbnailRequest()
         representedEntryID = nil
         representedBoardID = nil
@@ -179,6 +182,12 @@ final class macOSBoardCollectionItem: NSCollectionViewItem, NSTextFieldDelegate 
             displayMode: displayMode
         )
         view.layoutSubtreeIfNeeded()
+        logRenameTrace(
+            "configure",
+            extra:
+                "displayMode=\(displayMode.title) " +
+                "isEditingTitle=\(isEditingTitle)"
+        )
     }
 
     func beginTitleEditing() {
@@ -191,6 +200,7 @@ final class macOSBoardCollectionItem: NSCollectionViewItem, NSTextFieldDelegate 
 
         didHandleCurrentTitleEditEnd = false
         pendingTitleEditEndDisposition = .unspecified
+        logRenameTrace("beginTitleEditing")
         view.window?.makeFirstResponder(titleTextField)
         DispatchQueue.main.async { [weak self] in
             guard
@@ -483,6 +493,10 @@ final class macOSBoardCollectionItem: NSCollectionViewItem, NSTextFieldDelegate 
         let shouldShowTitleEditor = isTitleEditingActive && isEditablePresentation
         titleLabel.isHidden = shouldShowTitleEditor
         titleTextField.isHidden = !shouldShowTitleEditor
+        logRenameTrace(
+            "applyTitleEditingAppearance",
+            extra: "shouldShowTitleEditor=\(shouldShowTitleEditor)"
+        )
 
         if shouldShowTitleEditor {
             moreButton.isHidden = true
@@ -499,10 +513,12 @@ final class macOSBoardCollectionItem: NSCollectionViewItem, NSTextFieldDelegate 
             didHandleCurrentTitleEditEnd == false,
             let representedBoardID
         else {
+            logRenameTrace("commitTitleEditIgnored")
             return
         }
 
         didHandleCurrentTitleEditEnd = true
+        logRenameTrace("commitTitleEdit")
         onRenameSubmitted?(representedBoardID, titleTextField.stringValue)
     }
 
@@ -512,11 +528,30 @@ final class macOSBoardCollectionItem: NSCollectionViewItem, NSTextFieldDelegate 
             didHandleCurrentTitleEditEnd == false,
             let representedBoardID
         else {
+            logRenameTrace("cancelTitleEditIgnored")
             return
         }
 
         didHandleCurrentTitleEditEnd = true
+        logRenameTrace("cancelTitleEdit")
         onRenameCancelled?(representedBoardID)
+    }
+
+    private func logRenameTrace(_ phase: String, extra: String = "") {
+        let extraSuffix = extra.isEmpty ? "" : " \(extra)"
+        let isFirstResponder = view.window?.firstResponder === titleTextField
+        print(
+            "[BoardList][macOS][RenameTrace][Item] " +
+                "t=\(boardListSelectionTraceTimestamp()) " +
+                "phase=\(phase) " +
+                "boardID=\(representedBoardID?.uuidString ?? "nil") " +
+                "representedTitle=\"\(representedTitle ?? "")\" " +
+                "textFieldText=\"\(titleTextField.stringValue)\" " +
+                "editing=\(isTitleEditingActive) " +
+                "textFieldHidden=\(titleTextField.isHidden) " +
+                "isFirstResponder=\(isFirstResponder)" +
+                extraSuffix
+        )
     }
 
     @objc
@@ -542,12 +577,14 @@ final class macOSBoardCollectionItem: NSCollectionViewItem, NSTextFieldDelegate 
         doCommandBy commandSelector: Selector
     ) -> Bool {
         if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+            logRenameTrace("doCommandInsertNewline")
             pendingTitleEditEndDisposition = .commit
             view.window?.makeFirstResponder(nil)
             return true
         }
 
         if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
+            logRenameTrace("doCommandCancelOperation")
             pendingTitleEditEndDisposition = .cancel
             view.window?.makeFirstResponder(nil)
             return true
@@ -563,6 +600,7 @@ final class macOSBoardCollectionItem: NSCollectionViewItem, NSTextFieldDelegate 
 
         let disposition = pendingTitleEditEndDisposition
         pendingTitleEditEndDisposition = .unspecified
+        logRenameTrace("controlTextDidEndEditing", extra: "disposition=\(String(describing: disposition))")
 
         switch disposition {
         case .unspecified, .commit:
