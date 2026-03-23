@@ -4,7 +4,7 @@ overview: Implement a BoardList-specific custom action panel plus inline rename 
 todos:
   - id: storage-rename-path
     content: 新增 BoardStore.renameBoard，并让 rename 同时更新 title 与 updatedAt
-    status: pending
+    status: completed
   - id: shared-action-panel
     content: 新增 BoardListActionPanelState 与 BoardListActionPanelHostView，完成 BoardList 专用自定义面板基础设施
     status: pending

@@ -128,6 +128,35 @@ enum BoardStore {
         }
     }
 
+    static func renameBoard(
+        id: UUID,
+        title: String,
+        userDefaults: UserDefaults = .standard
+    ) throws {
+        try SelectedFolderAccess.withBoardsDirectoryURL(userDefaults: userDefaults) { boardsDirectoryURL in
+            try CoordinatedFileIO.ensureDirectory(at: boardsDirectoryURL)
+
+            let boardDirectoryURL = self.boardDirectoryURL(
+                for: id,
+                boardsDirectoryURL: boardsDirectoryURL
+            )
+            let boardDocumentURL = boardDirectoryURL.appendingPathComponent(boardDocumentFilename)
+            var document = try readBoardDocument(at: boardDocumentURL)
+            let normalizedTitle = normalizedBoardTitle(title)
+            document.title = normalizedTitle
+            document.updatedAt = Date()
+
+            let encodedDocument = try makeDocumentData(for: document)
+            try CoordinatedFileIO.writeData(encodedDocument, to: boardDocumentURL)
+            print(
+                "[BoardStore] " +
+                "action=renameBoard " +
+                "boardID=\(id.uuidString) " +
+                "title=\"\(normalizedTitle)\""
+            )
+        }
+    }
+
     static func deleteBoard(
         id: UUID,
         userDefaults: UserDefaults = .standard
@@ -312,6 +341,15 @@ enum BoardStore {
     ) throws -> Bool {
         let resourceValues = try url.resourceValues(forKeys: [.isDirectoryKey])
         return resourceValues.isDirectory == true
+    }
+
+    private static func normalizedBoardTitle(_ title: String) -> String {
+        let normalizedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard normalizedTitle.isEmpty == false else {
+            return BoardDocument.defaultTitle
+        }
+
+        return normalizedTitle
     }
 }
 
