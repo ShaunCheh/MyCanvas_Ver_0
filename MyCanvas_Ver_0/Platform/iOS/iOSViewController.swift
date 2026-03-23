@@ -2555,7 +2555,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     }
 
     private func updateInlineEditButtonsAppearance() {
-        renderToolbar()
+        updatePreparedToolbarPlacement()
         updateHistoryButtonsAppearance()
         syncTextEditorPresentation()
     }

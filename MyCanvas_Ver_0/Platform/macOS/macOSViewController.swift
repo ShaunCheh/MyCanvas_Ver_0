@@ -2762,7 +2762,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     }
 
     private func updateInlineEditButtonsAppearance() {
-        renderToolbar()
+        updatePreparedToolbarPlacement()
         syncTextEditorPresentation()
     }
 

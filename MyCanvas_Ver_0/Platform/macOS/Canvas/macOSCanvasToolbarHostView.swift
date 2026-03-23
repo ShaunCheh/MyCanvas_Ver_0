@@ -40,8 +40,6 @@ final class macOSCanvasToolbarHostView: NSView {
 
     private var registeredButtons: [CanvasToolbarItemID: NSButton] = [:]
     private var preferredAxisOverride: CanvasToolbarAxis?
-    private var lastLoggedRenderSignature: String?
-    private var lastLoggedLayoutSignature: String?
 
     var dockEdge: CanvasToolbarDockEdge = .trailing {
         didSet {
@@ -71,11 +69,6 @@ final class macOSCanvasToolbarHostView: NSView {
         return nil
     }
 
-    override func layout() {
-        super.layout()
-        logLayoutIfNeeded(reason: "layout")
-    }
-
     func registerButtons(_ buttons: [CanvasToolbarItemID: NSButton]) {
         registeredButtons = buttons
         buttons.values.forEach { button in
@@ -89,7 +82,6 @@ final class macOSCanvasToolbarHostView: NSView {
         backgroundView.isHidden = state.showsBackground == false
         isHidden = state.items.isEmpty
         syncButtons(with: state.items)
-        logRenderIfNeeded(state)
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -188,103 +180,6 @@ final class macOSCanvasToolbarHostView: NSView {
             heightConstraint.identifier = "canvasToolbarHost.buttonHeight"
             heightConstraint.isActive = true
         }
-    }
-
-    private func logRenderIfNeeded(_ state: CanvasToolbarState) {
-        let signature = [
-            dockEdge.rawValue,
-            state.preferredAxis.rawValue,
-            axisDescription,
-            describe(bounds),
-            state.items.map { $0.id.rawValue + ":" + $0.systemImageName }.joined(separator: ",")
-        ].joined(separator: "|")
-        guard signature != lastLoggedRenderSignature else {
-            return
-        }
-
-        lastLoggedRenderSignature = signature
-        let itemSummary = state.items.map { itemState in
-            "\(itemState.id.rawValue):image=\(itemState.systemImageName):enabled=\(itemState.isEnabled):active=\(itemState.isActive)"
-        }.joined(separator: ", ")
-        print(
-            "[Canvas Toolbar Debug][macOS][Render] " +
-            "dockEdge=\(dockEdge.rawValue) " +
-            "preferredAxis=\(state.preferredAxis.rawValue) " +
-            "stackAxis=\(axisDescription) " +
-            "hostBounds=\(describe(bounds)) " +
-            "items=[\(itemSummary)]"
-        )
-    }
-
-    private func logLayoutIfNeeded(reason: String) {
-        let buttonSummary = buttonsStackView.arrangedSubviews.compactMap { arrangedSubview in
-            guard let button = arrangedSubview as? NSButton else {
-                return nil
-            }
-
-            return buttonDebugSummary(button)
-        }.joined(separator: ", ")
-        let signature = [
-            axisDescription,
-            describe(bounds),
-            describe(buttonsStackView.frame),
-            buttonSummary
-        ].joined(separator: "|")
-        guard signature != lastLoggedLayoutSignature else {
-            return
-        }
-
-        lastLoggedLayoutSignature = signature
-        print(
-            "[Canvas Toolbar Debug][macOS][Layout] " +
-            "reason=\(reason) " +
-            "stackAxis=\(axisDescription) " +
-            "stackAlignment=\(String(describing: buttonsStackView.alignment)) " +
-            "stackDistribution=\(String(describing: buttonsStackView.distribution)) " +
-            "hostBounds=\(describe(bounds)) " +
-            "stackFrame=\(describe(buttonsStackView.frame)) " +
-            "buttons=[\(buttonSummary)]"
-        )
-    }
-
-    private func buttonDebugSummary(_ button: NSButton) -> String {
-        let widthConstraint = button.constraints.first {
-            $0.identifier == "canvasToolbarHost.buttonWidth"
-        }?.constant ?? -1
-        let heightConstraint = button.constraints.first {
-            $0.identifier == "canvasToolbarHost.buttonHeight"
-        }?.constant ?? -1
-        let itemID = registeredButtons.first { _, registeredButton in
-            registeredButton === button
-        }?.key.rawValue ?? "unknown"
-        return
-            "\(itemID):frame=\(describe(button.frame)):" +
-            "bounds=\(describe(button.bounds)):" +
-            "intrinsic=\(describe(button.intrinsicContentSize)):" +
-            "title=\(button.title):" +
-            "imagePosition=\(String(describing: button.imagePosition)):" +
-            "widthC=\(format(widthConstraint)):" +
-            "heightC=\(format(heightConstraint))"
-    }
-
-    private var axisDescription: String {
-        buttonsStackView.orientation == .horizontal ? "horizontal" : "vertical"
-    }
-
-    private func describe(_ rect: CGRect) -> String {
-        "{x=\(format(rect.origin.x)), y=\(format(rect.origin.y)), w=\(format(rect.size.width)), h=\(format(rect.size.height))}"
-    }
-
-    private func describe(_ size: CGSize) -> String {
-        "{w=\(format(size.width)), h=\(format(size.height))}"
-    }
-
-    private func format(_ value: CGFloat) -> String {
-        guard value.isFinite else {
-            return String(describing: value)
-        }
-
-        return String(format: "%.1f", Double(value))
     }
 }
 #endif

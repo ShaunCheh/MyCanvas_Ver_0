@@ -4,13 +4,13 @@ overview: 修复选中文本后 toolbar item 数量变化但 host 尺寸未重�
 todos:
   - id: wire-toolbar-relayout
     content: 在 iOS/macOS view controller 中把 toolbar 内容变化路径接到完整的 placement 更新，而不只是 renderToolbar()
-    status: pending
+    status: completed
   - id: remove-toolbar-debug-logs
     content: 移除共享 builder 与 iOS/macOS toolbar host 中的临时调试日志
-    status: pending
+    status: completed
   - id: verify-toolbar-fix
     content: 做 lints + macOS typecheck，并复核文本/图片选择时 toolbar 尺寸变化
-    status: pending
+    status: completed
 isProject: false
 ---
 

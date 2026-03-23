@@ -18,16 +18,11 @@ struct CanvasToolbarStateBuilder {
         itemStates.append(textItemState(session: session))
         itemStates.append(importItemState(isEnabled: isImportEnabled))
 
-        let toolbarState = CanvasToolbarState(
+        return CanvasToolbarState(
             placement: placement,
             items: itemStates,
             showsBackground: showsBackground
         )
-        logMainToolbarStateIfNeeded(
-            toolbarState,
-            session: session
-        )
-        return toolbarState
     }
 
     func cropItemState(session: CanvasEditorSession) -> CanvasToolbarItemState {
@@ -92,46 +87,5 @@ struct CanvasToolbarStateBuilder {
         }
 
         return session.selectedBoardItemKind != .text
-    }
-
-    private func logMainToolbarStateIfNeeded(
-        _ toolbarState: CanvasToolbarState,
-        session: CanvasEditorSession
-    ) {
-        guard
-            session.selectedBoardItemKind == .text ||
-            session.isInlineTextModeActive
-        else {
-            return
-        }
-
-        let itemSummary = toolbarState.items.map { itemState in
-            "\(itemState.id.rawValue):image=\(itemState.systemImageName):enabled=\(itemState.isEnabled):active=\(itemState.isActive)"
-        }.joined(separator: ", ")
-        print(
-            "[Canvas Toolbar Debug][Shared] " +
-            "selectedKind=\(describeBoardItemKind(session.selectedBoardItemKind)) " +
-            "isInlineText=\(session.isInlineTextModeActive) " +
-            "isInlineCrop=\(session.isInlineCropModeActive) " +
-            "showsCrop=\(shouldShowCropItem(session: session)) " +
-            "placementEdge=\(toolbarState.placement.preferredEdge.rawValue) " +
-            "preferredAxis=\(toolbarState.preferredAxis.rawValue) " +
-            "items=[\(itemSummary)]"
-        )
-    }
-
-    private func describeBoardItemKind(
-        _ kind: CanvasBoardItemKind?
-    ) -> String {
-        guard let kind else {
-            return "nil"
-        }
-
-        switch kind {
-        case .image:
-            return "image"
-        case .text:
-            return "text"
-        }
     }
 }
