@@ -12,7 +12,7 @@ todos:
     content: 扩展 RenderSnapshot、Renderer、ContextResolver 与 viewport layer，支持文本渲染和命中测试
     status: pending
   - id: t4-text-editing
-    content: 增加文本命令、inline edit 状态、toolbar/context menu/platform UI 入口
+    content: 增加文本命令、inline edit 状态，并在主工具栏容器里加入 icon-only 的添加文本按钮
     status: pending
   - id: t5-preview-regression
     content: 补齐 minimap、board list preview、thumbnail 和完整回归验证
@@ -76,9 +76,11 @@ flowchart LR
 
 - 在 [MyCanvas_Ver_0/Canvas/Core/CanvasInlineEditState.swift](MyCanvas_Ver_0/Canvas/Core/CanvasInlineEditState.swift) 增加 `.text` 编辑态，和现有 `.crop` 并存。
 - 在 [MyCanvas_Ver_0/Canvas/Editing/CanvasCommand.swift](MyCanvas_Ver_0/Canvas/Editing/CanvasCommand.swift) 与 [MyCanvas_Ver_0/Canvas/Editing/CanvasCommandExecutor.swift](MyCanvas_Ver_0/Canvas/Editing/CanvasCommandExecutor.swift) 增加最小文本命令：例如 `addTextItem`、`beginTextEdit`、`commitTextEdit`。
-- 在 [MyCanvas_Ver_0/Canvas/Editing/CanvasCommandCatalog.swift](MyCanvas_Ver_0/Canvas/Editing/CanvasCommandCatalog.swift)、[MyCanvas_Ver_0/Platform/Shared/ContextMenu/CanvasContextMenuCommandResolver.swift](MyCanvas_Ver_0/Platform/Shared/ContextMenu/CanvasContextMenuCommandResolver.swift)、[MyCanvas_Ver_0/Platform/Shared/Toolbar/CanvasToolbarStateBuilder.swift](MyCanvas_Ver_0/Platform/Shared/Toolbar/CanvasToolbarStateBuilder.swift) 做类型感知：文本项不显示/不启用 `crop`，图片项保持现状。
-- 在 [MyCanvas_Ver_0/Platform/iOS/iOSViewController.swift](MyCanvas_Ver_0/Platform/iOS/iOSViewController.swift) 和 [MyCanvas_Ver_0/Platform/macOS/macOSViewController.swift](MyCanvas_Ver_0/Platform/macOS/macOSViewController.swift) 新增 `Add Text` 入口和最小文本编辑 UI。
-- 完成标志：用户可新增文本项、编辑内容，并通过共享命令完成历史记录、刷新和 autosave。
+- 在 [MyCanvas_Ver_0/Platform/Shared/Toolbar/CanvasToolbarState.swift](MyCanvas_Ver_0/Platform/Shared/Toolbar/CanvasToolbarState.swift) 为主工具栏新增一个文本按钮 ID，并在 [MyCanvas_Ver_0/Platform/Shared/Toolbar/CanvasToolbarStateBuilder.swift](MyCanvas_Ver_0/Platform/Shared/Toolbar/CanvasToolbarStateBuilder.swift) 的 `mainToolbarState(...)` 中把它加入和 `crop`、`save`、`import` 相同的按钮容器里。
+- 这个文本按钮保持和现有工具栏按钮一致的表现形式：只显示图标，不显示文字；可保留 `accessibilityLabel`，但不额外引入可见标题或文字型按钮样式。
+- 在 [MyCanvas_Ver_0/Canvas/Editing/CanvasCommandCatalog.swift](MyCanvas_Ver_0/Canvas/Editing/CanvasCommandCatalog.swift)、[MyCanvas_Ver_0/Platform/Shared/ContextMenu/CanvasContextMenuCommandResolver.swift](MyCanvas_Ver_0/Platform/Shared/ContextMenu/CanvasContextMenuCommandResolver.swift)、[MyCanvas_Ver_0/Platform/Shared/Toolbar/CanvasToolbarStateBuilder.swift](MyCanvas_Ver_0/Platform/Shared/Toolbar/CanvasToolbarStateBuilder.swift) 做类型感知：文本项不显示/不启用 `crop`，图片项保持现状；新增的添加文本按钮则作为全局入口常驻主工具栏。
+- 在 [MyCanvas_Ver_0/Platform/iOS/iOSViewController.swift](MyCanvas_Ver_0/Platform/iOS/iOSViewController.swift) 和 [MyCanvas_Ver_0/Platform/macOS/macOSViewController.swift](MyCanvas_Ver_0/Platform/macOS/macOSViewController.swift) 将该工具栏按钮接到 `Add Text` 流程，并补最小文本编辑 UI。
+- 完成标志：用户可直接通过主工具栏里的无文字文本按钮新增文本项、编辑内容，并通过共享命令完成历史记录、刷新和 autosave。
 
 ## T-5：minimap、board list 预览与回归补齐
 
@@ -92,5 +94,6 @@ flowchart LR
 - 图片行为零回归：已有 image board、crop、import、undo/redo 必须保持稳定。
 - 文本初版只做纯文本，不在本路线里扩成富文本。
 - 文档升级必须向后兼容 `v2` image-only board。
+- 主工具栏中的“添加文本”入口必须复用现有按钮容器样式，保持 icon-only，不引入额外文字按钮。
 - 每个阶段结束至少验证：image-only、text-only、mixed 三种板子的打开、编辑、保存路径。
 
