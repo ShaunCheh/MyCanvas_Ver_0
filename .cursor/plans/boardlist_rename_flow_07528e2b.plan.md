@@ -7,7 +7,7 @@ todos:
     status: completed
   - id: shared-action-panel
     content: 新增 BoardListActionPanelState 与 BoardListActionPanelHostView，完成 BoardList 专用自定义面板基础设施
-    status: pending
+    status: completed
   - id: controller-panel-state
     content: 在 iOS/macOS BoardListViewController 中接入 panel state、editingBoardID、pendingRevealBoardID 和面板生命周期
     status: pending
