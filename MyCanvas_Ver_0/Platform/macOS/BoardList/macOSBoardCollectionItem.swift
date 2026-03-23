@@ -291,14 +291,14 @@ final class macOSBoardCollectionItem: NSCollectionViewItem, NSTextFieldDelegate 
             previewView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
             previewView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
             previewView.heightAnchor.constraint(equalToConstant: 120),
-            moreButton.topAnchor.constraint(equalTo: view.topAnchor, constant: 12),
-            moreButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
-            moreButton.widthAnchor.constraint(equalToConstant: 32),
-            moreButton.heightAnchor.constraint(equalToConstant: 32),
             titleLabel.topAnchor.constraint(equalTo: previewView.bottomAnchor, constant: 10),
             titleLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
-            titleLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
+            titleLabel.trailingAnchor.constraint(equalTo: moreButton.leadingAnchor, constant: -8),
             titleLabel.bottomAnchor.constraint(lessThanOrEqualTo: view.bottomAnchor, constant: -12),
+            moreButton.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
+            moreButton.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
+            moreButton.widthAnchor.constraint(equalToConstant: 32),
+            moreButton.heightAnchor.constraint(equalToConstant: 32),
             titleTextField.topAnchor.constraint(equalTo: previewView.bottomAnchor, constant: 8),
             titleTextField.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
             titleTextField.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
@@ -389,8 +389,8 @@ final class macOSBoardCollectionItem: NSCollectionViewItem, NSTextFieldDelegate 
 
         switch presentationStyle {
         case .boardGrid:
-            titleLabel.alignment = .center
-            titleTextField.alignment = .center
+            titleLabel.alignment = .left
+            titleTextField.alignment = .left
             moreButton.isHidden = false
             NSLayoutConstraint.activate(gridConstraints)
         case .boardList:
