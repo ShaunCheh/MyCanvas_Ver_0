@@ -1471,16 +1471,15 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations {
             return false
         }
 
-        dismissContextMenu()
-        let importedItems = editorSession.appendImportedImages(
-            images,
-            placement: placement,
-            layout: layout
-        )
-        let imageCount = importedItems.count
-        let imageLabel = imageCount == 1 ? "image" : "images"
-        refreshCanvas(
-            reason: "import \(imageCount) \(imageLabel) from \(source)"
+        performCommand(
+            .importImages(
+                CanvasImportRequest(
+                    images: images,
+                    placement: placement,
+                    layout: layout,
+                    sourceDescription: source
+                )
+            )
         )
         return true
     }

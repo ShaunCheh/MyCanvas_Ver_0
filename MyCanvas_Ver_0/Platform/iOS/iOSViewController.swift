@@ -1326,18 +1326,16 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             return false
         }
 
-        dismissContextMenu()
-        let importedItems = editorSession.appendImportedImages(
-            images,
-            placement: placement,
-            layout: layout
+        performCommand(
+            .importImages(
+                CanvasImportRequest(
+                    images: images,
+                    placement: placement,
+                    layout: layout,
+                    sourceDescription: source
+                )
+            )
         )
-        let imageCount = importedItems.count
-        let imageLabel = imageCount == 1 ? "image" : "images"
-        requestCanvasRefresh(
-            reason: "import \(imageCount) \(imageLabel) from \(source)"
-        )
-        updateHistoryButtonsAppearance()
         return true
     }
 

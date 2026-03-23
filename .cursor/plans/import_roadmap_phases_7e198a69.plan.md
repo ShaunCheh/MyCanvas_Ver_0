@@ -4,19 +4,19 @@ overview: Phase the image-import architecture from a shared batch import core (B
 todos:
   - id: phase-b1
     content: 设计并落地共享批量 import core，保持单图行为兼容
-    status: pending
+    status: completed
   - id: phase-b2
     content: 让 macOS 的 open panel、Paste、Finder 文件粘贴与拖拽统一接入 import core
-    status: pending
+    status: completed
   - id: phase-b3
     content: 让 iOS 的 picker、外接键盘 Paste 与拖放统一接入 import core
-    status: pending
+    status: completed
   - id: phase-c1
     content: 为已解析图片批次新增 CanvasCommand/CanvasCommandExecutor 支持
-    status: pending
+    status: completed
   - id: phase-c2
     content: 把各平台控制器的导入终点迁移到 performCommand(...)
-    status: pending
+    status: completed
   - id: phase-d1
     content: 在不改存储模型的前提下引入 transfer domain API 边界
     status: pending
