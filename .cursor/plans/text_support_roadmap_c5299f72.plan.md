@@ -10,7 +10,7 @@ todos:
     status: completed
   - id: t3-rendering
     content: 扩展 RenderSnapshot、Renderer、ContextResolver 与 viewport layer，支持文本渲染和命中测试
-    status: pending
+    status: completed
   - id: t4-text-editing
     content: 增加文本命令、inline edit 状态，并在主工具栏容器里加入 icon-only 的添加文本按钮
     status: pending

@@ -4,7 +4,7 @@ import QuartzCore
 // Image layers only render image content. Selection visuals live in viewport
 // overlays so shared render items stay free of platform-specific chrome.
 final class CanvasImageLayer: CALayer {
-    let itemID: CanvasImageItemID
+    let itemID: CanvasItemID
     private var lastAppliedPosition: CGPoint
     private var lastAppliedBoundsSize: CGSize
     private var lastAppliedImage: CGImage?
@@ -13,7 +13,7 @@ final class CanvasImageLayer: CALayer {
     private var lastAppliedContentsRect: CGRect
     private var lastAppliedRotationRadians: CGFloat
 
-    init(itemID: CanvasImageItemID) {
+    init(itemID: CanvasItemID) {
         self.itemID = itemID
         lastAppliedPosition = CGPoint(x: CGFloat.nan, y: CGFloat.nan)
         lastAppliedBoundsSize = CGSize(width: CGFloat.nan, height: CGFloat.nan)
@@ -55,7 +55,11 @@ final class CanvasImageLayer: CALayer {
         return nil
     }
 
-    func update(with item: CanvasRenderItem, contentsScale: CGFloat) {
+    func update(
+        with item: CanvasRenderItem,
+        imagePayload: CanvasImageRenderPayload,
+        contentsScale: CGFloat
+    ) {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
 
@@ -69,14 +73,14 @@ final class CanvasImageLayer: CALayer {
             lastAppliedPosition = item.screenCenter
         }
 
-        if !isDisplayingImage(item.cgImage) {
-            contents = item.cgImage
-            lastAppliedImage = item.cgImage
+        if !isDisplayingImage(imagePayload.cgImage) {
+            contents = imagePayload.cgImage
+            lastAppliedImage = imagePayload.cgImage
         }
 
-        if lastAppliedContentsRect != item.contentsRect {
-            contentsRect = item.contentsRect
-            lastAppliedContentsRect = item.contentsRect
+        if lastAppliedContentsRect != imagePayload.contentsRect {
+            contentsRect = imagePayload.contentsRect
+            lastAppliedContentsRect = imagePayload.contentsRect
         }
 
         if lastAppliedRotationRadians != item.rotationRadians {

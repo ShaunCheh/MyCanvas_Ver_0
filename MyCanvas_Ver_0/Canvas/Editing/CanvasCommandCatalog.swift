@@ -123,7 +123,7 @@ struct CanvasCommandCatalog {
 
     private func targetItemID(
         in context: CanvasContextMenuContext?
-    ) -> CanvasImageItemID? {
+    ) -> CanvasItemID? {
         context?.targetItemID
     }
 }

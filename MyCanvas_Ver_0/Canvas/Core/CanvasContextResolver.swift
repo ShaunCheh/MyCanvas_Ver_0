@@ -14,7 +14,7 @@ struct CanvasContextResolver {
         scene: CanvasScene,
         camera: CanvasCamera,
         renderSnapshot: CanvasRenderSnapshot,
-        selectedItemID: CanvasImageItemID?,
+        selectedItemID: CanvasItemID?,
         isInlineEditModeActive: Bool,
         isInlineCropModeActive: Bool,
         interactionMetrics: CanvasContextResolverMetrics
@@ -25,7 +25,7 @@ struct CanvasContextResolver {
         func finalize(
             branch: String,
             resolvedTarget: ResolvedTarget,
-            sceneHitItemID: CanvasImageItemID? = nil
+            sceneHitItemID: CanvasItemID? = nil
         ) -> CanvasContextMenuContext {
             let context = makeContext(
                 viewportPoint: viewportPoint,
@@ -80,7 +80,7 @@ struct CanvasContextResolver {
             )
         }
 
-        guard let itemID = scene.topmostItemID(containing: invocationWorldPoint) else {
+        guard let itemID = scene.topmostBoardItemID(containing: invocationWorldPoint) else {
             return finalize(
                 branch: "blank",
                 resolvedTarget: ResolvedTarget(targetKind: .blank)
@@ -201,7 +201,7 @@ struct CanvasContextResolver {
     }
 
     private func itemAnchorRect(
-        for itemID: CanvasImageItemID,
+        for itemID: CanvasItemID,
         renderSnapshot: CanvasRenderSnapshot
     ) -> CGRect? {
         if let editOverlay = renderSnapshot.editOverlay,
@@ -221,7 +221,7 @@ struct CanvasContextResolver {
         viewportPoint: CGPoint,
         worldPoint: CGPoint,
         resolvedTarget: ResolvedTarget,
-        selectedItemID: CanvasImageItemID?,
+        selectedItemID: CanvasItemID?,
         isInlineEditModeActive: Bool,
         isInlineCropModeActive: Bool
     ) -> CanvasContextMenuContext {
@@ -283,7 +283,7 @@ struct CanvasContextResolver {
 
     private struct ResolvedTarget {
         let targetKind: CanvasContextMenuTargetKind
-        var targetItemID: CanvasImageItemID? = nil
+        var targetItemID: CanvasItemID? = nil
         var anchorRect: CGRect? = nil
     }
 }
@@ -296,7 +296,7 @@ private func describeContextResolverRect(_ rect: CGRect) -> String {
     "{{\(formatContextResolverValue(rect.origin.x)), \(formatContextResolverValue(rect.origin.y))}, {\(formatContextResolverValue(rect.size.width)), \(formatContextResolverValue(rect.size.height))}}"
 }
 
-private func describeContextResolverItemID(_ itemID: CanvasImageItemID?) -> String {
+private func describeContextResolverItemID(_ itemID: CanvasItemID?) -> String {
     itemID?.uuidString ?? "nil"
 }
 

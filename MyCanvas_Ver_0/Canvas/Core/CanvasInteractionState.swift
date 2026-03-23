@@ -1,9 +1,9 @@
 import Foundation
 
 struct CanvasInteractionState {
-    var selectedItemID: CanvasImageItemID?
+    var selectedItemID: CanvasItemID?
 
-    init(selectedItemID: CanvasImageItemID? = nil) {
+    init(selectedItemID: CanvasItemID? = nil) {
         self.selectedItemID = selectedItemID
     }
 }

@@ -43,9 +43,9 @@ struct CanvasContextMenuContext {
     let invocationViewportPoint: CGPoint
     let invocationWorldPoint: CGPoint
     let targetKind: CanvasContextMenuTargetKind
-    let targetItemID: CanvasImageItemID?
+    let targetItemID: CanvasItemID?
     let anchorRect: CGRect?
-    let selectedItemID: CanvasImageItemID?
+    let selectedItemID: CanvasItemID?
     let isInlineEditModeActive: Bool
     let isInlineCropModeActive: Bool
 

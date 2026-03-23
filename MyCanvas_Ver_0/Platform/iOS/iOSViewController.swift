@@ -10,7 +10,7 @@ import UIKit
 
 final class iOSViewController: UIViewController, PHPickerViewControllerDelegate, UIDropInteractionDelegate {
     private struct PointerResizeState {
-        let itemID: CanvasImageItemID
+        let itemID: CanvasItemID
         let handleRole: CanvasSelectionHandleRole
         let referenceCenter: CGPoint
         let referenceRotationRadians: CGFloat
@@ -35,7 +35,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     }
 
     private struct PointerRotateState {
-        let itemID: CanvasImageItemID
+        let itemID: CanvasItemID
         let referenceCenter: CGPoint
         let rotationOffsetToPointerAngle: CGFloat
     }
@@ -49,7 +49,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         case croppingSelectedItem(PointerCropState)
         case movingCropFrame(PointerCropTranslationState)
         case rotatingSelectedItem(PointerRotateState)
-        case draggingSelectedItem(itemID: CanvasImageItemID)
+        case draggingSelectedItem(itemID: CanvasItemID)
         case resizingSelectedItem(PointerResizeState)
         case draggingCanvas
     }
@@ -990,7 +990,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             let previousSelectedItemID = interactionState.selectedItemID
             var clickTarget = "blank"
             var clickResult = "selection_unchanged"
-            var affectedItemID: CanvasImageItemID?
+            var affectedItemID: CanvasItemID?
 
             switch pressContext.targetKind {
             case .rotateHandle:
@@ -1009,14 +1009,14 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
                 if let itemID = pressContext.targetItemID,
                    releasedItemID == itemID
                 {
-                    clickTarget = "image"
+                    clickTarget = "item"
                     affectedItemID = itemID
                     selectItem(
                         withID: itemID,
                         recordHistory: true
                     )
                     if previousSelectedItemID != itemID {
-                        clickResult = "image_selected"
+                        clickResult = "item_selected"
                     }
                 } else {
                     clickTarget = "mismatched_hit_test"
@@ -1027,7 +1027,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
                     affectedItemID = previousSelectedItemID
                     clearSelectionIfNeeded(recordHistory: true)
                     if previousSelectedItemID != nil {
-                        clickResult = "image_deselected"
+                        clickResult = "item_deselected"
                     }
                 } else {
                     clickTarget = "mismatched_hit_test"
@@ -1333,7 +1333,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     }
 
     private func selectItem(
-        withID itemID: CanvasImageItemID,
+        withID itemID: CanvasItemID,
         recordHistory: Bool = false
     ) {
         performCommand(
@@ -1351,11 +1351,11 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     private func logClickResult(
         target: String,
         result: String,
-        pressedItemID: CanvasImageItemID?,
-        releasedItemID: CanvasImageItemID?,
-        previousSelectedItemID: CanvasImageItemID?,
-        currentSelectedItemID: CanvasImageItemID?,
-        affectedItemID: CanvasImageItemID?
+        pressedItemID: CanvasItemID?,
+        releasedItemID: CanvasItemID?,
+        previousSelectedItemID: CanvasItemID?,
+        currentSelectedItemID: CanvasItemID?,
+        affectedItemID: CanvasItemID?
     ) {
         print(
             "[Canvas iOS][ClickSelection] " +
@@ -1370,12 +1370,12 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     }
 
     private func makePointerRotateState(
-        itemID: CanvasImageItemID,
+        itemID: CanvasItemID,
         initialViewportLocation: CGPoint
     ) -> PointerRotateState? {
         guard
             inlineEditState == nil,
-            let item = scene.item(withID: itemID)
+            let item = scene.boardItem(withID: itemID)
         else {
             return nil
         }
@@ -1551,7 +1551,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             inlineEditState == nil,
             interactionState.selectedItemID == rotateState.itemID,
             rotationInteractionState?.itemID == rotateState.itemID,
-            let item = scene.item(withID: rotateState.itemID)
+            let item = scene.boardItem(withID: rotateState.itemID)
         else {
             return
         }
@@ -1580,7 +1580,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     private func commitRotationDraftIfNeeded() {
         guard
             let rotationPreviewState,
-            let item = scene.item(withID: rotationPreviewState.itemID)
+            let item = scene.boardItem(withID: rotationPreviewState.itemID)
         else {
             cancelRotationInteractionIfNeeded(
                 refreshReason: "discard rotate interaction"
@@ -1595,7 +1595,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             return
         }
 
-        guard let rotatedItem = scene.rotateItem(
+        guard let rotatedItem = scene.rotateBoardItem(
             withID: rotationPreviewState.itemID,
             to: rotationPreviewState.draftRotationRadians
         ) else {
@@ -1611,7 +1611,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         commitPendingPointerHistoryTransaction(autosaveReason: "rotate item")
     }
 
-    private func displayedRotationRadians(for item: CanvasImageItem) -> CGFloat {
+    private func displayedRotationRadians(for item: CanvasBoardItem) -> CGFloat {
         guard
             let rotationPreviewState,
             rotationPreviewState.itemID == item.id
@@ -1631,7 +1631,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         rotationPreviewState = nil
     }
 
-    private func beginRotationInteraction(for itemID: CanvasImageItemID) {
+    private func beginRotationInteraction(for itemID: CanvasItemID) {
         guard rotationInteractionState?.itemID != itemID else {
             return
         }
@@ -1675,7 +1675,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     }
 
     private func moveSelectedItem(
-        withID itemID: CanvasImageItemID,
+        withID itemID: CanvasItemID,
         from previousLocation: CGPoint,
         to location: CGPoint
     ) {
@@ -1690,17 +1690,17 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         }
 
         scene.moveItem(withID: itemID, by: deltaInWorld)
-        if let movedItem = scene.item(withID: itemID) {
+        if let movedItem = scene.boardItem(withID: itemID) {
             expandBoardIfNeeded(toInclude: movedItem.worldBounds)
         }
         requestCanvasRefresh(reason: "move selected item by \(describe(point: deltaInWorld))")
     }
 
     private func makePointerResizeState(
-        itemID: CanvasImageItemID,
+        itemID: CanvasItemID,
         handleRole: CanvasSelectionHandleRole
     ) -> PointerResizeState? {
-        guard let item = scene.item(withID: itemID) else {
+        guard let item = scene.boardItem(withID: itemID) else {
             return nil
         }
 
@@ -1740,7 +1740,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
                 using: resizeState,
                 draggedViewportLocation: viewportLocation
             ),
-            let currentItem = scene.item(withID: resizeState.itemID)
+            let currentItem = scene.boardItem(withID: resizeState.itemID)
         else {
             return
         }
@@ -1760,7 +1760,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             return
         }
 
-        guard let resizedItem = scene.resizeItem(
+        guard let resizedItem = scene.resizeBoardItem(
             withID: resizeState.itemID,
             toCenter: resizedCenter,
             size: resizedLocalFrame.size
@@ -2593,7 +2593,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         NSCoder.string(for: rect)
     }
 
-    private func describe(itemID: CanvasImageItemID?) -> String {
+    private func describe(itemID: CanvasItemID?) -> String {
         itemID?.uuidString ?? "nil"
     }
 

@@ -338,41 +338,41 @@ final class CanvasEditorSession {
         }
     }
 
-    func canSelectItem(withID itemID: CanvasImageItemID) -> Bool {
-        guard scene.item(withID: itemID) != nil else {
+    func canSelectItem(withID itemID: CanvasItemID) -> Bool {
+        guard scene.boardItem(withID: itemID) != nil else {
             return false
         }
 
         return interactionState.selectedItemID != itemID
     }
 
-    func canDeleteItem(withID itemID: CanvasImageItemID) -> Bool {
-        scene.item(withID: itemID) != nil
+    func canDeleteItem(withID itemID: CanvasItemID) -> Bool {
+        scene.boardItem(withID: itemID) != nil
     }
 
-    func canDuplicateItem(withID itemID: CanvasImageItemID) -> Bool {
-        scene.item(withID: itemID) != nil
+    func canDuplicateItem(withID itemID: CanvasItemID) -> Bool {
+        scene.boardItem(withID: itemID) != nil
     }
 
-    func canBringItemForward(withID itemID: CanvasImageItemID) -> Bool {
+    func canBringItemForward(withID itemID: CanvasItemID) -> Bool {
         scene.canBringItemForward(withID: itemID)
     }
 
-    func canSendItemBackward(withID itemID: CanvasImageItemID) -> Bool {
+    func canSendItemBackward(withID itemID: CanvasItemID) -> Bool {
         scene.canSendItemBackward(withID: itemID)
     }
 
-    func canBringItemToFront(withID itemID: CanvasImageItemID) -> Bool {
+    func canBringItemToFront(withID itemID: CanvasItemID) -> Bool {
         scene.canBringItemToFront(withID: itemID)
     }
 
-    func canSendItemToBack(withID itemID: CanvasImageItemID) -> Bool {
+    func canSendItemToBack(withID itemID: CanvasItemID) -> Bool {
         scene.canSendItemToBack(withID: itemID)
     }
 
     @discardableResult
     func selectItem(
-        withID itemID: CanvasImageItemID,
+        withID itemID: CanvasItemID,
         recordHistory: Bool = false
     ) -> Bool {
         guard canSelectItem(withID: itemID) else {
@@ -457,7 +457,7 @@ final class CanvasEditorSession {
 
     @discardableResult
     func deleteItem(
-        withID itemID: CanvasImageItemID,
+        withID itemID: CanvasItemID,
         recordHistory: Bool = false
     ) -> Bool {
         guard canDeleteItem(withID: itemID) else {
@@ -486,16 +486,16 @@ final class CanvasEditorSession {
 
     @discardableResult
     func duplicateItem(
-        withID itemID: CanvasImageItemID,
+        withID itemID: CanvasItemID,
         selectDuplicatedItem: Bool = true,
         recordHistory: Bool = false
-    ) -> CanvasImageItem? {
+    ) -> CanvasBoardItem? {
         guard canDuplicateItem(withID: itemID) else {
             return nil
         }
 
         let beforeSnapshot = recordHistory ? currentBoardHistorySnapshot() : nil
-        guard let duplicatedItem = scene.duplicateItem(
+        guard let duplicatedItem = scene.duplicateBoardItem(
             withID: itemID,
             offsetInWorld: duplicateOffsetInWorld()
         ) else {
@@ -520,7 +520,7 @@ final class CanvasEditorSession {
 
     @discardableResult
     func bringItemForward(
-        withID itemID: CanvasImageItemID,
+        withID itemID: CanvasItemID,
         recordHistory: Bool = false
     ) -> Bool {
         guard canBringItemForward(withID: itemID) else {
@@ -545,7 +545,7 @@ final class CanvasEditorSession {
 
     @discardableResult
     func sendItemBackward(
-        withID itemID: CanvasImageItemID,
+        withID itemID: CanvasItemID,
         recordHistory: Bool = false
     ) -> Bool {
         guard canSendItemBackward(withID: itemID) else {
@@ -570,7 +570,7 @@ final class CanvasEditorSession {
 
     @discardableResult
     func bringItemToFront(
-        withID itemID: CanvasImageItemID,
+        withID itemID: CanvasItemID,
         recordHistory: Bool = false
     ) -> Bool {
         guard canBringItemToFront(withID: itemID) else {
@@ -595,7 +595,7 @@ final class CanvasEditorSession {
 
     @discardableResult
     func sendItemToBack(
-        withID itemID: CanvasImageItemID,
+        withID itemID: CanvasItemID,
         recordHistory: Bool = false
     ) -> Bool {
         guard canSendItemToBack(withID: itemID) else {
@@ -844,7 +844,7 @@ final class CanvasEditorSession {
     }
 }
 
-private func describeSelectionMutationItemID(_ itemID: CanvasImageItemID?) -> String {
+private func describeSelectionMutationItemID(_ itemID: CanvasItemID?) -> String {
     itemID?.uuidString ?? "nil"
 }
 
@@ -866,7 +866,7 @@ private func describeRuntimeRestoreRect(_ rect: CGRect) -> String {
     "{{\(formatRuntimeRestoreValue(rect.origin.x)), \(formatRuntimeRestoreValue(rect.origin.y))}, {\(formatRuntimeRestoreValue(rect.size.width)), \(formatRuntimeRestoreValue(rect.size.height))}}"
 }
 
-private func describeRuntimeRestoreItemID(_ itemID: CanvasImageItemID?) -> String {
+private func describeRuntimeRestoreItemID(_ itemID: CanvasItemID?) -> String {
     itemID?.uuidString ?? "nil"
 }
 

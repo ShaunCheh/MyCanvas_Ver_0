@@ -20,14 +20,14 @@ enum CanvasCommand {
     case crop
     case undo
     case redo
-    case selectItem(itemID: CanvasImageItemID, recordHistory: Bool)
+    case selectItem(itemID: CanvasItemID, recordHistory: Bool)
     case clearSelection(recordHistory: Bool)
-    case duplicateItem(itemID: CanvasImageItemID, recordHistory: Bool)
-    case deleteItem(itemID: CanvasImageItemID, recordHistory: Bool)
-    case bringItemForward(itemID: CanvasImageItemID, recordHistory: Bool)
-    case sendItemBackward(itemID: CanvasImageItemID, recordHistory: Bool)
-    case bringItemToFront(itemID: CanvasImageItemID, recordHistory: Bool)
-    case sendItemToBack(itemID: CanvasImageItemID, recordHistory: Bool)
+    case duplicateItem(itemID: CanvasItemID, recordHistory: Bool)
+    case deleteItem(itemID: CanvasItemID, recordHistory: Bool)
+    case bringItemForward(itemID: CanvasItemID, recordHistory: Bool)
+    case sendItemBackward(itemID: CanvasItemID, recordHistory: Bool)
+    case bringItemToFront(itemID: CanvasItemID, recordHistory: Bool)
+    case sendItemToBack(itemID: CanvasItemID, recordHistory: Bool)
 
     var id: CanvasCommandID {
         switch self {

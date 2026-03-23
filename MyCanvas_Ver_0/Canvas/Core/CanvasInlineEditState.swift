@@ -12,7 +12,7 @@ struct CanvasInlineCropSession {
 // Keep rotation preview separate from crop-only inline edit state so selected
 // items can rotate directly without entering a dedicated mode.
 struct CanvasRotationPreviewState {
-    let itemID: CanvasImageItemID
+    let itemID: CanvasItemID
     var draftRotationRadians: CGFloat
 }
 
@@ -20,7 +20,7 @@ struct CanvasRotationPreviewState {
 // overlays can appear immediately when rotation starts, even before the angle
 // diverges from the persisted item rotation.
 struct CanvasRotationInteractionState {
-    let itemID: CanvasImageItemID
+    let itemID: CanvasItemID
 }
 
 // This transient editing state is intentionally kept out of BoardRuntimeState /

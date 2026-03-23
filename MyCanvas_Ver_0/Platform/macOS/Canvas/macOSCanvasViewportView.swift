@@ -61,7 +61,8 @@ final class macOSCanvasViewportView: NSView {
     private var cropHandleLayers: [CanvasCropHandleRole: CAShapeLayer] = [:]
     private let rotateGuideLayer = CAShapeLayer()
     private let rotateHandleLayer = CAShapeLayer()
-    private var imageLayers: [CanvasImageItemID: CanvasImageLayer] = [:]
+    private var imageLayers: [CanvasItemID: CanvasImageLayer] = [:]
+    private var textLayers: [CanvasItemID: CanvasTextLayer] = [:]
     private var lastReportedViewportSize: CGSize?
     private var snapshot: CanvasRenderSnapshot = .empty
     private var lastPrimaryPointerLocation: CGPoint?
@@ -120,7 +121,7 @@ final class macOSCanvasViewportView: NSView {
         )
         updateBackgroundAppearance()
         performWithoutLayerActions {
-            refreshImageLayers()
+            refreshItemLayers()
             refreshWorkspaceChrome()
             refreshEditOverlay()
             refreshInteractionOverlay()
@@ -140,7 +141,7 @@ final class macOSCanvasViewportView: NSView {
         )
         performWithoutLayerActions {
             updateLayerFrames()
-            refreshImageLayers()
+            refreshItemLayers()
             refreshWorkspaceChrome()
             refreshEditOverlay()
             refreshInteractionOverlay()
@@ -250,19 +251,56 @@ final class macOSCanvasViewportView: NSView {
         backgroundLayer.backgroundColor = Self.workspaceBackgroundColor
     }
 
-    private func refreshImageLayers() {
-        let incomingIDs = Set(snapshot.items.map(\.id))
-        let existingIDs = Set(imageLayers.keys)
+    private func refreshItemLayers() {
+        let incomingImageIDs = Set(
+            snapshot.items.compactMap { item in
+                if case .image = item.payload {
+                    return item.id
+                }
 
-        for removedID in existingIDs.subtracting(incomingIDs) {
+                return nil
+            }
+        )
+        let incomingTextIDs = Set(
+            snapshot.items.compactMap { item in
+                if case .text = item.payload {
+                    return item.id
+                }
+
+                return nil
+            }
+        )
+        let existingImageIDs = Set(imageLayers.keys)
+        let existingTextIDs = Set(textLayers.keys)
+
+        for removedID in existingImageIDs.subtracting(incomingImageIDs) {
             imageLayers[removedID]?.removeFromSuperlayer()
             imageLayers[removedID] = nil
         }
 
+        for removedID in existingTextIDs.subtracting(incomingTextIDs) {
+            textLayers[removedID]?.removeFromSuperlayer()
+            textLayers[removedID] = nil
+        }
+
         let contentsScale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
         for item in snapshot.items {
-            let imageLayer = imageLayer(for: item.id)
-            imageLayer.update(with: item, contentsScale: contentsScale)
+            switch item.payload {
+            case let .image(imagePayload):
+                let imageLayer = imageLayer(for: item.id)
+                imageLayer.update(
+                    with: item,
+                    imagePayload: imagePayload,
+                    contentsScale: contentsScale
+                )
+            case let .text(textPayload):
+                let textLayer = textLayer(for: item.id)
+                textLayer.update(
+                    with: item,
+                    textPayload: textPayload,
+                    contentsScale: contentsScale
+                )
+            }
         }
     }
 
@@ -854,7 +892,7 @@ final class macOSCanvasViewportView: NSView {
         CATransaction.commit()
     }
 
-    private func imageLayer(for itemID: CanvasImageItemID) -> CanvasImageLayer {
+    private func imageLayer(for itemID: CanvasItemID) -> CanvasImageLayer {
         if let imageLayer = imageLayers[itemID] {
             return imageLayer
         }
@@ -863,6 +901,17 @@ final class macOSCanvasViewportView: NSView {
         itemsLayer.addSublayer(imageLayer)
         imageLayers[itemID] = imageLayer
         return imageLayer
+    }
+
+    private func textLayer(for itemID: CanvasItemID) -> CanvasTextLayer {
+        if let textLayer = textLayers[itemID] {
+            return textLayer
+        }
+
+        let textLayer = CanvasTextLayer(itemID: itemID)
+        itemsLayer.addSublayer(textLayer)
+        textLayers[itemID] = textLayer
+        return textLayer
     }
 
     override func mouseDown(with event: NSEvent) {

@@ -1,18 +1,33 @@
 import CoreGraphics
 import Foundation
 
-// Render items stay focused on image content. Selection chrome travels separately
-// so platform overlays and interaction state do not leak into per-item rendering.
+// Render items now carry either image or text payloads while keeping geometry
+// shared, so viewport reconciliation stays type-aware without re-solving layout.
+struct CanvasImageRenderPayload {
+    let contentsRect: CGRect
+    let cgImage: CGImage
+}
+
+struct CanvasTextRenderPayload {
+    let text: String
+    let style: CanvasTextStyle
+    let zoomScale: CGFloat
+}
+
+enum CanvasRenderPayload {
+    case image(CanvasImageRenderPayload)
+    case text(CanvasTextRenderPayload)
+}
+
 struct CanvasRenderItem {
-    let id: CanvasImageItemID
+    let id: CanvasItemID
     let screenFrame: CGRect
     let screenQuad: CanvasQuad
     let screenCenter: CGPoint
     let screenBoundsSize: CGSize
-    let contentsRect: CGRect
     let rotationRadians: CGFloat
-    let cgImage: CGImage
     let zIndex: CGFloat
+    let payload: CanvasRenderPayload
 }
 
 // Workspace chrome is now the shared source of truth for board surface and
@@ -91,7 +106,7 @@ enum CanvasEditRenderOverlayPayload {
 // (including rotate affordances) and crop chrome across renderer, viewport,
 // and controller layers.
 struct CanvasEditRenderOverlay {
-    let itemID: CanvasImageItemID
+    let itemID: CanvasItemID
     let kind: CanvasEditOverlayKind
     let activeWorldQuad: CanvasQuad
     let activeScreenQuad: CanvasQuad
@@ -134,7 +149,7 @@ enum CanvasInteractionRenderOverlayPayload {
 // Interaction overlays intentionally live alongside edit overlays so transient
 // gesture HUDs can evolve without being folded back into selection/crop chrome.
 struct CanvasInteractionRenderOverlay {
-    let itemID: CanvasImageItemID
+    let itemID: CanvasItemID
     let kind: CanvasInteractionOverlayKind
     let payload: CanvasInteractionRenderOverlayPayload
 }

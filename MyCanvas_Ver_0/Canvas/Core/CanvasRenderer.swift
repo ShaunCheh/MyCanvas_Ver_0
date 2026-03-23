@@ -28,11 +28,11 @@ struct CanvasRenderer {
     ) -> CanvasRenderSnapshot {
         let visibleWorldRect = camera.visibleWorldRect
         // Avoid turning an invalid zero-sized viewport into point-based culling.
-        let visibleItems: [CanvasImageItem]
+        let visibleItems: [CanvasBoardItem]
         if camera.viewportSize.width > 0, camera.viewportSize.height > 0 {
-            visibleItems = scene.visibleItems(in: visibleWorldRect)
+            visibleItems = scene.visibleBoardItems(in: visibleWorldRect)
         } else {
-            visibleItems = scene.orderedItems()
+            visibleItems = scene.orderedBoardItems()
         }
 
         let renderItems = visibleItems.map { item in
@@ -285,28 +285,26 @@ struct CanvasRenderer {
 
         guard
             let selectedItemID = interactionState.selectedItemID,
-            let selectedItem = scene.item(withID: selectedItemID)
+            let selectedItem = scene.boardItem(withID: selectedItemID)
         else {
             return nil
         }
 
-        let presentation = presentationResolver.resolve(
-            item: selectedItem,
-            inlineEditState: inlineEditState,
+        let effectiveItem = effectiveBoardItem(
+            from: selectedItem,
             rotationPreviewState: rotationPreviewState
         )
-        let worldQuad = presentation.visibleWorldQuad
+        let worldQuad = effectiveItem.worldQuad
         let screenQuad = camera.worldToViewport(worldQuad)
         let selectionPayload = CanvasEditSelectionOverlayPayload(
             rotateAffordance: makeRotateAffordance(
-                for: presentation,
-                camera: camera,
+                screenCenter: camera.worldToViewport(effectiveItem.center),
                 screenQuad: screenQuad
             )
         )
 
         return CanvasEditRenderOverlay(
-            itemID: presentation.itemID,
+            itemID: effectiveItem.id,
             kind: .selection,
             activeWorldQuad: worldQuad,
             activeScreenQuad: screenQuad,
@@ -388,25 +386,23 @@ struct CanvasRenderer {
         guard
             let rotationInteractionState,
             interactionState.selectedItemID == rotationInteractionState.itemID,
-            let item = scene.item(withID: rotationInteractionState.itemID)
+            let item = scene.boardItem(withID: rotationInteractionState.itemID)
         else {
             return nil
         }
 
-        let presentation = presentationResolver.resolve(
-            item: item,
-            inlineEditState: inlineEditState,
+        let effectiveItem = effectiveBoardItem(
+            from: item,
             rotationPreviewState: rotationPreviewState
         )
-        let screenQuad = camera.worldToViewport(presentation.visibleWorldQuad)
+        let screenQuad = camera.worldToViewport(effectiveItem.worldQuad)
+        let screenCenter = camera.worldToViewport(effectiveItem.center)
         let rotateAffordance = makeRotateAffordance(
-            for: presentation,
-            camera: camera,
+            screenCenter: screenCenter,
             screenQuad: screenQuad
         )
-        let screenCenter = camera.worldToViewport(item.center)
         let currentRotationRadians = normalizedCanvasAngle(
-            presentation.effectiveRotationRadians
+            effectiveItem.rotationRadians
         )
         let displayDegrees0To360 = canvasDisplayDegrees0To360(
             forRotationRadians: currentRotationRadians
@@ -444,7 +440,7 @@ struct CanvasRenderer {
         )
 
         return CanvasInteractionRenderOverlay(
-            itemID: presentation.itemID,
+            itemID: effectiveItem.id,
             kind: .rotation,
             payload: .rotation(
                 CanvasRotationInteractionOverlayPayload(
@@ -468,7 +464,46 @@ struct CanvasRenderer {
         )
     }
 
+    private func effectiveBoardItem(
+        from item: CanvasBoardItem,
+        rotationPreviewState: CanvasRotationPreviewState?
+    ) -> CanvasBoardItem {
+        guard
+            let rotationPreviewState,
+            rotationPreviewState.itemID == item.id
+        else {
+            return item
+        }
+
+        var effectiveItem = item
+        effectiveItem.rotationRadians = rotationPreviewState.draftRotationRadians
+        return effectiveItem
+    }
+
     private func makeRenderItem(
+        for item: CanvasBoardItem,
+        camera: CanvasCamera,
+        inlineEditState: CanvasInlineEditState?,
+        rotationPreviewState: CanvasRotationPreviewState?
+    ) -> CanvasRenderItem {
+        switch item {
+        case let .image(imageItem):
+            return makeImageRenderItem(
+                for: imageItem,
+                camera: camera,
+                inlineEditState: inlineEditState,
+                rotationPreviewState: rotationPreviewState
+            )
+        case let .text(textItem):
+            return makeTextRenderItem(
+                for: textItem,
+                camera: camera,
+                rotationPreviewState: rotationPreviewState
+            )
+        }
+    }
+
+    private func makeImageRenderItem(
         for item: CanvasImageItem,
         camera: CanvasCamera,
         inlineEditState: CanvasInlineEditState?,
@@ -488,9 +523,6 @@ struct CanvasRenderer {
         let renderSize = presentation.isCropPreviewActive
             ? presentation.fullImageSize
             : presentation.visibleSize
-        let contentsRect = presentation.isCropPreviewActive
-            ? CanvasImageCropRect.fullImage.cgRect
-            : presentation.effectiveCropRectNormalized.cgRect
         let screenQuad = camera.worldToViewport(worldQuad)
         return CanvasRenderItem(
             id: presentation.itemID,
@@ -501,10 +533,55 @@ struct CanvasRenderer {
                 width: renderSize.width * camera.zoomScale,
                 height: renderSize.height * camera.zoomScale
             ),
-            contentsRect: contentsRect,
             rotationRadians: presentation.effectiveRotationRadians,
-            cgImage: presentation.cgImage,
-            zIndex: presentation.zIndex
+            zIndex: presentation.zIndex,
+            payload: .image(
+                CanvasImageRenderPayload(
+                    contentsRect: presentation.isCropPreviewActive
+                        ? CanvasImageCropRect.fullImage.cgRect
+                        : presentation.effectiveCropRectNormalized.cgRect,
+                    cgImage: presentation.cgImage
+                )
+            )
+        )
+    }
+
+    private func makeTextRenderItem(
+        for item: CanvasTextItem,
+        camera: CanvasCamera,
+        rotationPreviewState: CanvasRotationPreviewState?
+    ) -> CanvasRenderItem {
+        let effectiveTextItem: CanvasTextItem
+        switch effectiveBoardItem(
+            from: .text(item),
+            rotationPreviewState: rotationPreviewState
+        ) {
+        case let .text(resolvedTextItem):
+            effectiveTextItem = resolvedTextItem
+        case .image:
+            assertionFailure("Expected text item after applying text presentation.")
+            effectiveTextItem = item
+        }
+
+        let screenQuad = camera.worldToViewport(effectiveTextItem.worldQuad)
+        return CanvasRenderItem(
+            id: effectiveTextItem.id,
+            screenFrame: screenQuad.boundingRect.standardized,
+            screenQuad: screenQuad,
+            screenCenter: camera.worldToViewport(effectiveTextItem.center),
+            screenBoundsSize: CGSize(
+                width: effectiveTextItem.size.width * camera.zoomScale,
+                height: effectiveTextItem.size.height * camera.zoomScale
+            ),
+            rotationRadians: effectiveTextItem.rotationRadians,
+            zIndex: effectiveTextItem.zIndex,
+            payload: .text(
+                CanvasTextRenderPayload(
+                    text: effectiveTextItem.text,
+                    style: effectiveTextItem.style,
+                    zoomScale: camera.zoomScale
+                )
+            )
         )
     }
 
@@ -584,11 +661,9 @@ struct CanvasRenderer {
     }
 
     private func makeRotateAffordance(
-        for presentation: CanvasImagePresentation,
-        camera: CanvasCamera,
+        screenCenter: CGPoint,
         screenQuad: CanvasQuad
     ) -> CanvasEditRotateOverlayPayload {
-        let screenCenter = camera.worldToViewport(presentation.visibleCenter)
         let guideScreenStart = screenQuad.topMidpoint
         let outwardDirection = normalizedDirection(
             from: screenCenter,
