@@ -16,7 +16,7 @@ todos:
     status: completed
   - id: t5-preview-regression
     content: 补齐 minimap、board list preview、thumbnail 和完整回归验证
-    status: pending
+    status: completed
 isProject: false
 ---
 

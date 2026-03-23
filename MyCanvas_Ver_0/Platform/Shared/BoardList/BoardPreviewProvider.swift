@@ -182,6 +182,12 @@ final class BoardPreviewProvider {
         cacheKey: BoardThumbnailCacheKey,
         cancellationCheck: () throws -> Void = {}
     ) throws -> CGImage? {
+        // Older persisted thumbnails may predate text rendering support, so mixed
+        // and text-only boards should be regenerated from the current document.
+        guard item.document.textItemRecords.isEmpty else {
+            return nil
+        }
+
         let decodeMaxPixelSize = max(
             cacheKey.pixelWidth,
             cacheKey.pixelHeight

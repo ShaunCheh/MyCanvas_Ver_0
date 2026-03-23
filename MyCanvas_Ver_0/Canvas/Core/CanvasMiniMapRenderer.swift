@@ -5,7 +5,10 @@ struct CanvasMiniMapRenderer {
     private let nodeProviders: [any CanvasMiniMapNodeProviding]
 
     init(nodeProviders: [any CanvasMiniMapNodeProviding]? = nil) {
-        self.nodeProviders = nodeProviders ?? [CanvasMiniMapImageNodeProvider()]
+        self.nodeProviders = nodeProviders ?? [
+            CanvasMiniMapImageNodeProvider(),
+            CanvasMiniMapTextNodeProvider()
+        ]
     }
 
     func makeSnapshot(

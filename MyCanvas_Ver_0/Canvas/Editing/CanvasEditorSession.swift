@@ -115,8 +115,8 @@ final class CanvasEditorSession {
                 scene: scene,
                 boardState: boardState,
                 camera: camera,
-                imageInlineEditState: inlineEditState,
-                imageRotationPreviewState: rotationPreviewState
+                inlineEditState: inlineEditState,
+                rotationPreviewState: rotationPreviewState
             )
         )
     }

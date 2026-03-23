@@ -2,8 +2,8 @@ import Foundation
 
 struct CanvasMiniMapNodeProviderContext {
     let scene: CanvasScene
-    let imageInlineEditState: CanvasInlineEditState?
-    let imageRotationPreviewState: CanvasRotationPreviewState?
+    let inlineEditState: CanvasInlineEditState?
+    let rotationPreviewState: CanvasRotationPreviewState?
 }
 
 struct CanvasMiniMapRenderContext {
@@ -25,16 +25,16 @@ struct CanvasMiniMapRenderContext {
         scene: CanvasScene,
         boardState: CanvasBoardState? = nil,
         camera: CanvasCamera,
-        imageInlineEditState: CanvasInlineEditState? = nil,
-        imageRotationPreviewState: CanvasRotationPreviewState? = nil
+        inlineEditState: CanvasInlineEditState? = nil,
+        rotationPreviewState: CanvasRotationPreviewState? = nil
     ) {
         self.init(
             boardState: boardState,
             camera: camera,
             nodeProviderContext: CanvasMiniMapNodeProviderContext(
                 scene: scene,
-                imageInlineEditState: imageInlineEditState,
-                imageRotationPreviewState: imageRotationPreviewState
+                inlineEditState: inlineEditState,
+                rotationPreviewState: rotationPreviewState
             )
         )
     }
@@ -57,8 +57,8 @@ struct CanvasMiniMapImageNodeProvider: CanvasMiniMapNodeProviding {
         context.scene.orderedItems().map { item in
             let presentation = presentationResolver.resolve(
                 item: item,
-                inlineEditState: context.imageInlineEditState,
-                rotationPreviewState: context.imageRotationPreviewState
+                inlineEditState: context.inlineEditState,
+                rotationPreviewState: context.rotationPreviewState
             )
             return CanvasMiniMapNode(
                 id: presentation.itemID,
@@ -66,6 +66,27 @@ struct CanvasMiniMapImageNodeProvider: CanvasMiniMapNodeProviding {
                 worldQuad: presentation.visibleWorldQuad,
                 zIndex: presentation.zIndex,
                 isPreviewActive: presentation.isCropPreviewActive || presentation.isRotationPreviewActive
+            )
+        }
+    }
+}
+
+struct CanvasMiniMapTextNodeProvider: CanvasMiniMapNodeProviding {
+    func makeNodes(
+        context: CanvasMiniMapNodeProviderContext
+    ) -> [CanvasMiniMapNode] {
+        context.scene.orderedBoardItems().compactMap { boardItem in
+            guard let item = boardItem.textItem else {
+                return nil
+            }
+
+            return CanvasMiniMapNode(
+                id: item.id,
+                kind: .text,
+                worldQuad: item.worldQuad,
+                zIndex: item.zIndex,
+                isPreviewActive: context.inlineEditState?.mode == .text &&
+                    context.inlineEditState?.itemID == item.id
             )
         }
     }

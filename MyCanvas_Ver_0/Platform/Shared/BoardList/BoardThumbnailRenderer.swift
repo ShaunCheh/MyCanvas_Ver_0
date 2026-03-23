@@ -1,4 +1,5 @@
 import CoreGraphics
+import CoreText
 import Foundation
 import ImageIO
 
@@ -38,7 +39,7 @@ final class BoardThumbnailRenderer {
         cancellationCheck: () throws -> Void = {}
     ) throws -> CGImage? {
         try renderThumbnail(
-            itemRecords: item.document.imageItemRecords,
+            itemRecords: item.document.items,
             previewSeed: item.previewSeed,
             targetPixelSize: targetPixelSize,
             contentInset: contentInset,
@@ -61,8 +62,7 @@ final class BoardThumbnailRenderer {
         maximumLongestSide: CGFloat = BoardPersistedThumbnailStore.maximumLongestSide,
         cancellationCheck: () throws -> Void = {}
     ) throws -> CGImage? {
-        let runtimeImageItems = runtimeState.imageItems
-        guard runtimeImageItems.isEmpty == false else {
+        guard runtimeState.items.isEmpty == false else {
             return nil
         }
 
@@ -78,10 +78,10 @@ final class BoardThumbnailRenderer {
         }
 
         let runtimeItemsByID = Dictionary(
-            uniqueKeysWithValues: runtimeImageItems.map { ($0.id, $0) }
+            uniqueKeysWithValues: runtimeState.imageItems.map { ($0.id, $0) }
         )
         return try renderThumbnail(
-            itemRecords: document.imageItemRecords,
+            itemRecords: document.items,
             previewSeed: previewSeed,
             targetPixelSize: targetPixelSize,
             contentInset: 0,
@@ -135,7 +135,7 @@ final class BoardThumbnailRenderer {
     }
 
     private func renderThumbnail(
-        itemRecords: [BoardImageItemRecord],
+        itemRecords: [BoardItemRecord],
         previewSeed: BoardPreviewSeed,
         targetPixelSize: CGSize,
         contentInset: CGFloat,
@@ -173,14 +173,23 @@ final class BoardThumbnailRenderer {
 
         for itemRecord in orderedItemRecords(from: itemRecords) {
             try cancellationCheck()
-            let image = try imageProvider(itemRecord, geometry)
-            try cancellationCheck()
-            drawLoadedImage(
-                image,
-                for: itemRecord,
-                geometry: geometry,
-                in: context
-            )
+            switch itemRecord {
+            case let .image(imageItemRecord):
+                let image = try imageProvider(imageItemRecord, geometry)
+                try cancellationCheck()
+                drawLoadedImage(
+                    image,
+                    for: imageItemRecord,
+                    geometry: geometry,
+                    in: context
+                )
+            case let .text(textItemRecord):
+                drawTextItem(
+                    textItemRecord,
+                    geometry: geometry,
+                    in: context
+                )
+            }
         }
 
         try cancellationCheck()
@@ -304,6 +313,247 @@ final class BoardThumbnailRenderer {
         context.restoreGState()
     }
 
+    private func drawTextItem(
+        _ itemRecord: BoardTextItemRecord,
+        geometry: CanvasMiniMapViewGeometry,
+        in context: CGContext
+    ) {
+        guard itemRecord.text.isEmpty == false else {
+            return
+        }
+
+        let visibleSize = itemRecord.size.cgSize
+        guard visibleSize.width > 0, visibleSize.height > 0 else {
+            return
+        }
+
+        let mappedVisibleSize = CGSize(
+            width: visibleSize.width * geometry.scale,
+            height: visibleSize.height * geometry.scale
+        )
+        guard mappedVisibleSize.width > 0, mappedVisibleSize.height > 0 else {
+            return
+        }
+
+        let mappedCenter = geometry.worldToMiniMap(itemRecord.center.cgPoint)
+        let textRect = CGRect(
+            x: -mappedVisibleSize.width / 2,
+            y: -mappedVisibleSize.height / 2,
+            width: mappedVisibleSize.width,
+            height: mappedVisibleSize.height
+        ).standardized
+        let rotationRadians = normalizedCanvasAngle(
+            CGFloat(itemRecord.rotationRadians ?? 0)
+        )
+
+        context.saveGState()
+        context.translateBy(x: mappedCenter.x, y: mappedCenter.y)
+        context.rotate(by: rotationRadians)
+        context.clip(to: textRect)
+        drawText(
+            itemRecord.text,
+            style: itemRecord.style,
+            in: textRect,
+            worldToPixelScale: geometry.scale,
+            context: context
+        )
+        context.restoreGState()
+    }
+
+    private func drawText(
+        _ text: String,
+        style: BoardTextStyleRecord,
+        in rect: CGRect,
+        worldToPixelScale: CGFloat,
+        context: CGContext
+    ) {
+        let availableSize = rect.size
+        guard availableSize.width > 0, availableSize.height > 0 else {
+            return
+        }
+
+        let paragraphStyle = textParagraphStyle()
+        let font = fittedTextFont(
+            for: text,
+            style: style,
+            availableSize: availableSize,
+            worldToPixelScale: worldToPixelScale,
+            paragraphStyle: paragraphStyle
+        )
+        let attributedText = NSAttributedString(
+            string: text,
+            attributes: textAttributes(
+                font: font,
+                paragraphStyle: paragraphStyle,
+                color: textColor(for: style.color)
+            )
+        )
+        let framesetter = CTFramesetterCreateWithAttributedString(
+            attributedText as CFAttributedString
+        )
+        let textBounds = CGRect(origin: .zero, size: availableSize)
+
+        context.saveGState()
+        context.translateBy(x: rect.minX, y: rect.maxY)
+        context.scaleBy(x: 1, y: -1)
+        context.textMatrix = .identity
+        let frame = CTFramesetterCreateFrame(
+            framesetter,
+            CFRange(location: 0, length: attributedText.length),
+            CGPath(rect: textBounds, transform: nil),
+            nil
+        )
+        CTFrameDraw(frame, context)
+        context.restoreGState()
+    }
+
+    private func fittedTextFont(
+        for text: String,
+        style: BoardTextStyleRecord,
+        availableSize: CGSize,
+        worldToPixelScale: CGFloat,
+        paragraphStyle: CTParagraphStyle
+    ) -> CTFont {
+        let baseFontSize = max(CGFloat(style.fontSize) * worldToPixelScale, 1)
+        let baseFont = textFont(named: style.fontName, size: baseFontSize)
+        let intrinsicSize = measureText(
+            text,
+            font: baseFont,
+            paragraphStyle: paragraphStyle
+        )
+        guard
+            availableSize.width > 0,
+            availableSize.height > 0,
+            intrinsicSize.width > 0,
+            intrinsicSize.height > 0
+        else {
+            return baseFont
+        }
+
+        let scale = min(
+            availableSize.width / intrinsicSize.width,
+            availableSize.height / intrinsicSize.height
+        )
+        guard scale.isFinite, scale > 0 else {
+            return baseFont
+        }
+
+        return textFont(
+            named: style.fontName,
+            size: max(baseFontSize * scale, 1)
+        )
+    }
+
+    private func measureText(
+        _ text: String,
+        font: CTFont,
+        paragraphStyle: CTParagraphStyle
+    ) -> CGSize {
+        let attributedText = NSAttributedString(
+            string: text,
+            attributes: textAttributes(
+                font: font,
+                paragraphStyle: paragraphStyle
+            )
+        )
+        let framesetter = CTFramesetterCreateWithAttributedString(
+            attributedText as CFAttributedString
+        )
+        let measuredSize = CTFramesetterSuggestFrameSizeWithConstraints(
+            framesetter,
+            CFRange(location: 0, length: attributedText.length),
+            nil,
+            CGSize(
+                width: CGFloat.greatestFiniteMagnitude,
+                height: CGFloat.greatestFiniteMagnitude
+            ),
+            nil
+        )
+        return CGSize(
+            width: ceil(max(measuredSize.width, 0)),
+            height: ceil(max(measuredSize.height, 0))
+        )
+    }
+
+    private func textParagraphStyle() -> CTParagraphStyle {
+        var alignment = CTTextAlignment.center
+        var lineBreakMode = CTLineBreakMode.byClipping
+        return withUnsafePointer(to: &alignment) { alignmentPointer in
+            withUnsafePointer(to: &lineBreakMode) { lineBreakModePointer in
+                let settings = [
+                    CTParagraphStyleSetting(
+                        spec: .alignment,
+                        valueSize: MemoryLayout<CTTextAlignment>.size,
+                        value: alignmentPointer
+                    ),
+                    CTParagraphStyleSetting(
+                        spec: .lineBreakMode,
+                        valueSize: MemoryLayout<CTLineBreakMode>.size,
+                        value: lineBreakModePointer
+                    )
+                ]
+                return settings.withUnsafeBufferPointer { buffer in
+                    CTParagraphStyleCreate(buffer.baseAddress!, buffer.count)
+                }
+            }
+        }
+    }
+
+    private func textAttributes(
+        font: CTFont,
+        paragraphStyle: CTParagraphStyle,
+        color: CGColor? = nil
+    ) -> [NSAttributedString.Key: Any] {
+        var attributes: [NSAttributedString.Key: Any] = [
+            NSAttributedString.Key(rawValue: kCTFontAttributeName as String): font,
+            NSAttributedString.Key(
+                rawValue: kCTParagraphStyleAttributeName as String
+            ): paragraphStyle
+        ]
+        if let color {
+            attributes[
+                NSAttributedString.Key(
+                    rawValue: kCTForegroundColorAttributeName as String
+                )
+            ] = color
+        }
+        return attributes
+    }
+
+    private func textFont(
+        named fontName: String,
+        size: CGFloat
+    ) -> CTFont {
+        let resolvedSize = max(size, 1)
+        guard fontName.isEmpty == false, fontName != "System" else {
+            return CTFontCreateUIFontForLanguage(
+                .system,
+                resolvedSize,
+                nil
+            ) ?? CTFontCreateWithName(
+                "Helvetica" as CFString,
+                resolvedSize,
+                nil
+            )
+        }
+
+        return CTFontCreateWithName(
+            fontName as CFString,
+            resolvedSize,
+            nil
+        )
+    }
+
+    private func textColor(for colorRecord: BoardTextColorRecord) -> CGColor {
+        let color = colorRecord.canvasTextColor
+        return CGColor(
+            red: color.red,
+            green: color.green,
+            blue: color.blue,
+            alpha: color.alpha
+        )
+    }
+
     private func decodeMaxPixelSize(
         for itemRecord: BoardImageItemRecord,
         geometry: CanvasMiniMapViewGeometry
@@ -389,8 +639,8 @@ final class BoardThumbnailRenderer {
     }
 
     private func orderedItemRecords(
-        from itemRecords: [BoardImageItemRecord]
-    ) -> [BoardImageItemRecord] {
+        from itemRecords: [BoardItemRecord]
+    ) -> [BoardItemRecord] {
         itemRecords.sorted { lhs, rhs in
             if lhs.zIndex == rhs.zIndex {
                 return lhs.id.uuidString < rhs.id.uuidString
