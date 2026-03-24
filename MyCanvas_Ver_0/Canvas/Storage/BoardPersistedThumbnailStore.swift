@@ -1,6 +1,5 @@
 import CoreGraphics
 import Foundation
-import ImageIO
 import UniformTypeIdentifiers
 
 enum BoardPersistedThumbnailStoreError: LocalizedError {
@@ -21,6 +20,17 @@ enum BoardPersistedThumbnailStore {
     static let filename = "thumbnail.png"
     static let maximumLongestSide: CGFloat = 1024
     private static let freshnessTolerance: TimeInterval = 1
+    static let animatedImagePreviewSurface: CanvasAnimatedImagePreviewSurface = .persistedThumbnail
+
+    static var animatedImagePreviewMode: CanvasAnimatedImagePreviewMode {
+        CanvasImageAssetContract.current.previewMode(
+            for: animatedImagePreviewSurface
+        )
+    }
+
+    static var usesPosterFrameForAnimatedImages: Bool {
+        animatedImagePreviewMode == .posterFrameOnly
+    }
 
     static func thumbnailURL(
         forBoardDirectoryURL boardDirectoryURL: URL
@@ -67,37 +77,10 @@ enum BoardPersistedThumbnailStore {
 
         let thumbnailData = try CoordinatedFileIO.readData(at: thumbnailURL)
         guard
-            let imageSource = CGImageSourceCreateWithData(
-                thumbnailData as CFData,
-                nil
-            )
-        else {
-            throw BoardPersistedThumbnailStoreError.invalidPersistedThumbnail
-        }
-
-        let decodeMaxPixelSize = max(maxPixelSize, 64)
-        let thumbnailOptions: [CFString: Any] = [
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceShouldCacheImmediately: true,
-            kCGImageSourceThumbnailMaxPixelSize: decodeMaxPixelSize
-        ]
-        if let thumbnail = CGImageSourceCreateThumbnailAtIndex(
-            imageSource,
-            0,
-            thumbnailOptions as CFDictionary
-        ) {
-            return thumbnail
-        }
-
-        let imageOptions: [CFString: Any] = [
-            kCGImageSourceShouldCacheImmediately: true
-        ]
-        guard
-            let image = CGImageSourceCreateImageAtIndex(
-                imageSource,
-                0,
-                imageOptions as CFDictionary
+            usesPosterFrameForAnimatedImages,
+            let image = CanvasImagePosterFrameDecoder.decodePosterFrame(
+                from: thumbnailData,
+                maxPixelSize: maxPixelSize
             )
         else {
             throw BoardPersistedThumbnailStoreError.invalidPersistedThumbnail

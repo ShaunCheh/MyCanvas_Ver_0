@@ -1,7 +1,6 @@
 import CoreGraphics
 import CoreText
 import Foundation
-import ImageIO
 
 enum BoardThumbnailRendererError: LocalizedError {
     case invalidBitmapContext
@@ -35,30 +34,51 @@ final class BoardThumbnailRenderer {
     func renderThumbnail(
         for item: BoardCatalogItem,
         targetPixelSize: CGSize,
+        animatedImagePreviewMode: CanvasAnimatedImagePreviewMode =
+            BoardPreviewContent.animatedImagePreviewMode,
         contentInset: CGFloat = 10,
         cancellationCheck: () throws -> Void = {}
     ) throws -> CGImage? {
+        var cachedImagesByFilename: [String: CGImage] = [:]
+        var decodeMaxPixelSizesByFilename: [String: Int] = [:]
         try renderThumbnail(
             itemRecords: item.document.items,
             previewSeed: item.previewSeed,
             targetPixelSize: targetPixelSize,
             contentInset: contentInset,
             cancellationCheck: cancellationCheck
-        ) { itemRecord, geometry in
-            let decodeMaxPixelSize = self.decodeMaxPixelSize(
+        ) { itemRecord, geometry, itemRecords in
+            if decodeMaxPixelSizesByFilename.isEmpty {
+                decodeMaxPixelSizesByFilename = self.decodeMaxPixelSizesByFilename(
+                    from: itemRecords,
+                    geometry: geometry
+                )
+            }
+            let decodeMaxPixelSize = decodeMaxPixelSizesByFilename[
+                itemRecord.assetFilename
+            ] ?? self.decodeMaxPixelSize(
                 for: itemRecord,
                 geometry: geometry
             )
-            return try self.loadAssetImage(
+            if let cachedImage = cachedImagesByFilename[itemRecord.assetFilename] {
+                return cachedImage
+            }
+
+            let image = try self.loadAssetPreviewImage(
                 for: itemRecord,
                 assetsDirectoryURL: item.assetsDirectoryURL,
+                animatedImagePreviewMode: animatedImagePreviewMode,
                 maxPixelSize: decodeMaxPixelSize
             )
+            cachedImagesByFilename[itemRecord.assetFilename] = image
+            return image
         }
     }
 
     func renderPersistedThumbnail(
         for runtimeState: BoardRuntimeState,
+        animatedImagePreviewMode: CanvasAnimatedImagePreviewMode =
+            BoardPersistedThumbnailStore.animatedImagePreviewMode,
         maximumLongestSide: CGFloat = BoardPersistedThumbnailStore.maximumLongestSide,
         cancellationCheck: () throws -> Void = {}
     ) throws -> CGImage? {
@@ -86,13 +106,18 @@ final class BoardThumbnailRenderer {
             targetPixelSize: targetPixelSize,
             contentInset: 0,
             cancellationCheck: cancellationCheck
-        ) { itemRecord, _ in
+        ) { itemRecord, _, _ in
             guard let runtimeItem = runtimeItemsByID[itemRecord.id] else {
                 throw BoardThumbnailRendererError.invalidRuntimeImageAsset(
                     itemID: itemRecord.id
                 )
             }
 
+            // Persisted board thumbnails stay static even for GIF boards; the
+            // runtime poster is the single frame we rasterize into thumbnail.png.
+            guard animatedImagePreviewMode == .posterFrameOnly else {
+                return runtimeItem.posterCGImage
+            }
             return runtimeItem.posterCGImage
         }
     }
@@ -140,7 +165,11 @@ final class BoardThumbnailRenderer {
         targetPixelSize: CGSize,
         contentInset: CGFloat,
         cancellationCheck: () throws -> Void,
-        imageProvider: (BoardImageItemRecord, CanvasMiniMapViewGeometry) throws -> CGImage
+        imageProvider: (
+            BoardImageItemRecord,
+            CanvasMiniMapViewGeometry,
+            [BoardItemRecord]
+        ) throws -> CGImage
     ) throws -> CGImage? {
         guard itemRecords.isEmpty == false else {
             return nil
@@ -175,7 +204,11 @@ final class BoardThumbnailRenderer {
             try cancellationCheck()
             switch itemRecord {
             case let .image(imageItemRecord):
-                let image = try imageProvider(imageItemRecord, geometry)
+                let image = try imageProvider(
+                    imageItemRecord,
+                    geometry,
+                    itemRecords
+                )
                 try cancellationCheck()
                 drawLoadedImage(
                     image,
@@ -257,6 +290,33 @@ final class BoardThumbnailRenderer {
             width: max(targetPixelSize.width.rounded(.up), 1),
             height: max(targetPixelSize.height.rounded(.up), 1)
         )
+    }
+
+    private func decodeMaxPixelSizesByFilename(
+        from itemRecords: [BoardItemRecord],
+        geometry: CanvasMiniMapViewGeometry
+    ) -> [String: Int] {
+        var resolvedMaxPixelSizesByFilename: [String: Int] = [:]
+
+        for itemRecord in itemRecords {
+            guard case let .image(imageItemRecord) = itemRecord else {
+                continue
+            }
+
+            let decodeMaxPixelSize = decodeMaxPixelSize(
+                for: imageItemRecord,
+                geometry: geometry
+            )
+            let existingPixelSize = resolvedMaxPixelSizesByFilename[
+                imageItemRecord.assetFilename
+            ] ?? 0
+            resolvedMaxPixelSizesByFilename[imageItemRecord.assetFilename] = max(
+                existingPixelSize,
+                decodeMaxPixelSize
+            )
+        }
+
+        return resolvedMaxPixelSizesByFilename
     }
 
     private func drawLoadedImage(
@@ -591,45 +651,24 @@ final class BoardThumbnailRenderer {
         )
     }
 
-    private func loadAssetImage(
+    private func loadAssetPreviewImage(
         for itemRecord: BoardImageItemRecord,
         assetsDirectoryURL: URL,
+        animatedImagePreviewMode: CanvasAnimatedImagePreviewMode,
         maxPixelSize: Int
     ) throws -> CGImage {
         let assetURL = assetsDirectoryURL.appendingPathComponent(itemRecord.assetFilename)
         let assetData = try CoordinatedFileIO.readData(at: assetURL)
-        guard
-            let imageSource = CGImageSourceCreateWithData(assetData as CFData, nil)
-        else {
-            throw BoardThumbnailRendererError.invalidBoardImageAsset(
-                filename: itemRecord.assetFilename
+        let image: CGImage?
+        switch animatedImagePreviewMode {
+        case .posterFrameOnly:
+            image = CanvasImagePosterFrameDecoder.decodePosterFrame(
+                from: assetData,
+                maxPixelSize: maxPixelSize
             )
         }
 
-        let thumbnailOptions: [CFString: Any] = [
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceShouldCacheImmediately: true,
-            kCGImageSourceThumbnailMaxPixelSize: max(maxPixelSize, 64)
-        ]
-        if let thumbnail = CGImageSourceCreateThumbnailAtIndex(
-            imageSource,
-            0,
-            thumbnailOptions as CFDictionary
-        ) {
-            return thumbnail
-        }
-
-        let imageOptions: [CFString: Any] = [
-            kCGImageSourceShouldCacheImmediately: true
-        ]
-        guard
-            let image = CGImageSourceCreateImageAtIndex(
-                imageSource,
-                0,
-                imageOptions as CFDictionary
-            )
-        else {
+        guard let image else {
             throw BoardThumbnailRendererError.invalidBoardImageAsset(
                 filename: itemRecord.assetFilename
             )

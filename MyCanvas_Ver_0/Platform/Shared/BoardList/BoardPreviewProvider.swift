@@ -173,6 +173,7 @@ final class BoardPreviewProvider {
         return try thumbnailRenderer.renderThumbnail(
             for: item,
             targetPixelSize: cacheKey.pixelSize,
+            animatedImagePreviewMode: BoardPreviewContent.animatedImagePreviewMode,
             cancellationCheck: cancellationCheck
         )
     }
