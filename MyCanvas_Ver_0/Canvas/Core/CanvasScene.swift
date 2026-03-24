@@ -440,19 +440,7 @@ final class CanvasScene {
     ) -> CanvasBoardItem {
         switch sourceItem {
         case let .image(item):
-            return .image(
-                CanvasImageItem(
-                    cgImage: item.cgImage,
-                    center: CGPoint(
-                        x: item.center.x + offsetInWorld.x,
-                        y: item.center.y + offsetInWorld.y
-                    ),
-                    size: item.size,
-                    zIndex: item.zIndex,
-                    cropRectNormalized: item.cropRectNormalized,
-                    rotationRadians: item.rotationRadians
-                )
-            )
+            return .image(item.duplicated(offsetInWorld: offsetInWorld))
         case let .text(item):
             return .text(
                 CanvasTextItem(

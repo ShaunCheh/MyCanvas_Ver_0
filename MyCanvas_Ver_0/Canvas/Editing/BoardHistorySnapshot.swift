@@ -25,12 +25,7 @@ extension BoardHistorySnapshot: Equatable {
         return zip(lhsItems, rhsItems).allSatisfy { lhsItem, rhsItem in
             switch (lhsItem, rhsItem) {
             case let (.image(lhsImage), .image(rhsImage)):
-                return lhsImage.id == rhsImage.id &&
-                    lhsImage.center == rhsImage.center &&
-                    lhsImage.size == rhsImage.size &&
-                    lhsImage.zIndex == rhsImage.zIndex &&
-                    lhsImage.cropRectNormalized == rhsImage.cropRectNormalized &&
-                    lhsImage.rotationRadians == rhsImage.rotationRadians
+                return lhsImage.matchesDocumentState(rhsImage)
             case let (.text(lhsText), .text(rhsText)):
                 return lhsText.id == rhsText.id &&
                     lhsText.text == rhsText.text &&

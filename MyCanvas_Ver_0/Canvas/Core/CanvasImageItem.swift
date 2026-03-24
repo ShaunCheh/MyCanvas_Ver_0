@@ -74,6 +74,10 @@ struct CanvasImageItem {
         self.rotationRadians = rotationRadians
     }
 
+    static var assetContract: CanvasImageAssetContract {
+        .current
+    }
+
     var localFrame: CGRect {
         CGRect(
             x: -size.width / 2,
@@ -133,6 +137,34 @@ struct CanvasImageItem {
 
     var imageContentsRect: CGRect {
         cropRectNormalized.cgRect
+    }
+
+    // Phase 0 freezes duplicate semantics so later asset-reference work keeps
+    // sharing one underlying image resource instead of cloning file storage.
+    func duplicated(offsetInWorld: CGPoint) -> CanvasImageItem {
+        CanvasImageItem(
+            cgImage: cgImage,
+            center: CGPoint(
+                x: center.x + offsetInWorld.x,
+                y: center.y + offsetInWorld.y
+            ),
+            size: size,
+            zIndex: zIndex,
+            cropRectNormalized: cropRectNormalized,
+            rotationRadians: rotationRadians
+        )
+    }
+
+    // History should track persisted document state and resource identity, but
+    // must continue to ignore transient playback progress.
+    func matchesDocumentState(_ other: CanvasImageItem) -> Bool {
+        id == other.id &&
+            cgImage === other.cgImage &&
+            center == other.center &&
+            size == other.size &&
+            zIndex == other.zIndex &&
+            cropRectNormalized == other.cropRectNormalized &&
+            rotationRadians == other.rotationRadians
     }
 
     func localFrame(forNormalizedCropRect normalizedCropRect: CanvasImageCropRect) -> CGRect {

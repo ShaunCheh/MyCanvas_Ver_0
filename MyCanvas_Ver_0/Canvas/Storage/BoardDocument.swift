@@ -57,6 +57,8 @@ struct BoardRuntimeState {
 
 struct BoardDocument: Codable {
     static let currentFormatVersion = 3
+    static let targetFormatVersionForImageAssets =
+        CanvasImageAssetContract.current.targetDocumentFormatVersion
     static let defaultTitle = "Untitled Board"
 
     let formatVersion: Int

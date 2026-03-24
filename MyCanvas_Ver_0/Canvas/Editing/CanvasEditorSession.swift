@@ -28,6 +28,14 @@ final class CanvasEditorSession {
     private let historyController = BoardHistoryController()
     private let boardStoreLogPrefix: String
 
+    var imageAssetContract: CanvasImageAssetContract {
+        .current
+    }
+
+    var shouldAutoplayAnimatedImagesOnCanvas: Bool {
+        imageAssetContract.shouldAutoplayAnimatedImagesOnCanvas
+    }
+
     init(
         saveQueueLabel: String,
         logPrefix: String
