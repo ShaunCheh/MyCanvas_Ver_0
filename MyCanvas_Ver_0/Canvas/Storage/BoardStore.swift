@@ -109,7 +109,10 @@ enum BoardStore {
                 let assetURL = assetsDirectoryURL.appendingPathComponent(
                     "\(item.id.uuidString).png"
                 )
-                let pngData = try makePNGData(for: item.cgImage, itemID: item.id)
+                let pngData = try makePNGData(
+                    for: item.posterCGImage,
+                    itemID: item.id
+                )
                 try CoordinatedFileIO.writeData(pngData, to: assetURL)
             }
 

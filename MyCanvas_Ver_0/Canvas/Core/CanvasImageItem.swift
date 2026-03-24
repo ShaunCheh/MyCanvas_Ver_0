@@ -49,7 +49,7 @@ struct CanvasImageCropRect: Equatable {
 
 struct CanvasImageItem {
     let id: CanvasImageItemID
-    let cgImage: CGImage
+    let asset: CanvasImageAsset
     var center: CGPoint
     var size: CGSize
     var zIndex: CGFloat
@@ -58,7 +58,7 @@ struct CanvasImageItem {
 
     init(
         id: CanvasImageItemID = UUID(),
-        cgImage: CGImage,
+        asset: CanvasImageAsset,
         center: CGPoint,
         size: CGSize,
         zIndex: CGFloat = 0,
@@ -66,7 +66,7 @@ struct CanvasImageItem {
         rotationRadians: CGFloat = 0
     ) {
         self.id = id
-        self.cgImage = cgImage
+        self.asset = asset
         self.center = center
         self.size = size
         self.zIndex = zIndex
@@ -76,6 +76,22 @@ struct CanvasImageItem {
 
     static var assetContract: CanvasImageAssetContract {
         .current
+    }
+
+    var assetReference: CanvasImageAssetReference {
+        asset.reference
+    }
+
+    var assetKind: CanvasImageAssetKind {
+        assetReference.kind
+    }
+
+    var posterCGImage: CGImage {
+        asset.posterCGImage
+    }
+
+    var logicalPixelSize: CGSize {
+        asset.logicalPixelSize
     }
 
     var localFrame: CGRect {
@@ -143,7 +159,7 @@ struct CanvasImageItem {
     // sharing one underlying image resource instead of cloning file storage.
     func duplicated(offsetInWorld: CGPoint) -> CanvasImageItem {
         CanvasImageItem(
-            cgImage: cgImage,
+            asset: asset,
             center: CGPoint(
                 x: center.x + offsetInWorld.x,
                 y: center.y + offsetInWorld.y
@@ -159,7 +175,7 @@ struct CanvasImageItem {
     // must continue to ignore transient playback progress.
     func matchesDocumentState(_ other: CanvasImageItem) -> Bool {
         id == other.id &&
-            cgImage === other.cgImage &&
+            assetReference == other.assetReference &&
             center == other.center &&
             size == other.size &&
             zIndex == other.zIndex &&

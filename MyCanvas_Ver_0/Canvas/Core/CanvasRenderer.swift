@@ -541,7 +541,7 @@ struct CanvasRenderer {
                     contentsRect: presentation.isCropPreviewActive
                         ? CanvasImageCropRect.fullImage.cgRect
                         : presentation.effectiveCropRectNormalized.cgRect,
-                    cgImage: presentation.cgImage
+                    cgImage: presentation.posterCGImage
                 )
             )
         )

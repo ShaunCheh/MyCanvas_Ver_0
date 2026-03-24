@@ -93,7 +93,7 @@ final class BoardThumbnailRenderer {
                 )
             }
 
-            return runtimeItem.cgImage
+            return runtimeItem.posterCGImage
         }
     }
 

@@ -5,7 +5,10 @@ import Foundation
 // the transient crop/rotation geometry the canvas is currently previewing.
 struct CanvasImagePresentation {
     let itemID: CanvasImageItemID
-    let cgImage: CGImage
+    let assetReference: CanvasImageAssetReference
+    let assetKind: CanvasImageAssetKind
+    let posterCGImage: CGImage
+    let logicalPixelSize: CGSize
     let zIndex: CGFloat
     let effectiveRotationRadians: CGFloat
     let effectiveCropRectNormalized: CanvasImageCropRect

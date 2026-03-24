@@ -861,10 +861,15 @@ final class CanvasEditorSession {
     }
 
     func normalizedDisplaySize(for cgImage: CGImage) -> CGSize {
-        let pixelSize = CGSize(
-            width: cgImage.width,
-            height: cgImage.height
+        normalizedDisplaySize(
+            for: CGSize(
+                width: cgImage.width,
+                height: cgImage.height
+            )
         )
+    }
+
+    func normalizedDisplaySize(for pixelSize: CGSize) -> CGSize {
         let longestSide = max(pixelSize.width, pixelSize.height)
         guard longestSide > 0 else {
             return CGSize(width: 240, height: 240)
@@ -1008,17 +1013,18 @@ final class CanvasEditorSession {
         importedItems.reserveCapacity(images.count)
 
         for (index, image) in images.enumerated() {
+            let asset = image.makeTransientImageAsset()
             let offset = importOffset(
                 forImageAt: index,
                 layout: resolvedLayout
             )
             let item = CanvasImageItem(
-                cgImage: image.cgImage,
+                asset: asset,
                 center: CGPoint(
                     x: importCenter.x + offset.x,
                     y: importCenter.y + offset.y
                 ),
-                size: normalizedDisplaySize(for: image.cgImage),
+                size: normalizedDisplaySize(for: asset.logicalPixelSize),
                 zIndex: startingZIndex + CGFloat(index)
             )
 

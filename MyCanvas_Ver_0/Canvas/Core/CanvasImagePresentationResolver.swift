@@ -49,7 +49,10 @@ struct CanvasImagePresentationResolver {
 
         return CanvasImagePresentation(
             itemID: effectiveItem.id,
-            cgImage: effectiveItem.cgImage,
+            assetReference: effectiveItem.assetReference,
+            assetKind: effectiveItem.assetKind,
+            posterCGImage: effectiveItem.posterCGImage,
+            logicalPixelSize: effectiveItem.logicalPixelSize,
             zIndex: effectiveItem.zIndex,
             effectiveRotationRadians: effectiveItem.rotationRadians,
             effectiveCropRectNormalized: effectiveCropRectNormalized,

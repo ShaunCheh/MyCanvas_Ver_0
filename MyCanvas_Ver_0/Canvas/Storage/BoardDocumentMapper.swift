@@ -28,7 +28,10 @@ enum BoardDocumentMapper {
                 return CanvasBoardItem.image(
                     CanvasImageItem(
                         id: imageRecord.id,
-                        cgImage: try imageLoader(imageRecord),
+                        asset: CanvasImageAsset.persistedStaticImage(
+                            filename: imageRecord.assetFilename,
+                            cgImage: try imageLoader(imageRecord)
+                        ),
                         center: imageRecord.center.cgPoint,
                         size: imageRecord.size.cgSize,
                         zIndex: CGFloat(imageRecord.zIndex),

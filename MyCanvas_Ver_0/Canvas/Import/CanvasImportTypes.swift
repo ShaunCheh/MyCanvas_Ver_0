@@ -6,6 +6,17 @@ struct CanvasResolvedImportImage {
     init(cgImage: CGImage) {
         self.cgImage = cgImage
     }
+
+    var logicalPixelSize: CGSize {
+        CGSize(
+            width: cgImage.width,
+            height: cgImage.height
+        )
+    }
+
+    func makeTransientImageAsset() -> CanvasImageAsset {
+        CanvasImageAsset.transientStaticImage(cgImage: cgImage)
+    }
 }
 
 enum CanvasImportPlacement: Equatable {
