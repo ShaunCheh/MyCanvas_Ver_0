@@ -27,22 +27,48 @@ struct CanvasImageAssetReference: Equatable, Hashable {
     let kind: CanvasImageAssetKind
     let storage: CanvasImageAssetStorage
 
-    static func transientStaticImage(
+    static func transient(
+        kind: CanvasImageAssetKind,
         assetID: UUID = UUID()
     ) -> CanvasImageAssetReference {
         CanvasImageAssetReference(
-            kind: .staticImage,
+            kind: kind,
             storage: .transient(assetID)
         )
+    }
+
+    static func persisted(
+        kind: CanvasImageAssetKind,
+        filename: String
+    ) -> CanvasImageAssetReference {
+        CanvasImageAssetReference(
+            kind: kind,
+            storage: .persisted(filename: filename)
+        )
+    }
+
+    static func transientStaticImage(
+        assetID: UUID = UUID()
+    ) -> CanvasImageAssetReference {
+        transient(kind: .staticImage, assetID: assetID)
+    }
+
+    static func transientAnimatedGIF(
+        assetID: UUID = UUID()
+    ) -> CanvasImageAssetReference {
+        transient(kind: .animatedGIF, assetID: assetID)
     }
 
     static func persistedStaticImage(
         filename: String
     ) -> CanvasImageAssetReference {
-        CanvasImageAssetReference(
-            kind: .staticImage,
-            storage: .persisted(filename: filename)
-        )
+        persisted(kind: .staticImage, filename: filename)
+    }
+
+    static func persistedAnimatedGIF(
+        filename: String
+    ) -> CanvasImageAssetReference {
+        persisted(kind: .animatedGIF, filename: filename)
     }
 }
 
@@ -74,23 +100,68 @@ struct CanvasImageAsset {
         )
     }
 
-    static func transientStaticImage(
+    static func transientImage(
+        kind: CanvasImageAssetKind,
         cgImage: CGImage,
+        logicalPixelSize: CGSize? = nil,
         assetID: UUID = UUID()
     ) -> CanvasImageAsset {
         CanvasImageAsset(
-            reference: .transientStaticImage(assetID: assetID),
-            poster: CanvasImagePoster(cgImage: cgImage)
+            reference: .transient(kind: kind, assetID: assetID),
+            poster: CanvasImagePoster(cgImage: cgImage),
+            logicalPixelSize: logicalPixelSize
+        )
+    }
+
+    static func transientStaticImage(
+        cgImage: CGImage,
+        logicalPixelSize: CGSize? = nil,
+        assetID: UUID = UUID()
+    ) -> CanvasImageAsset {
+        transientImage(
+            kind: .staticImage,
+            cgImage: cgImage,
+            logicalPixelSize: logicalPixelSize,
+            assetID: assetID
+        )
+    }
+
+    static func transientAnimatedGIF(
+        posterCGImage: CGImage,
+        logicalPixelSize: CGSize? = nil,
+        assetID: UUID = UUID()
+    ) -> CanvasImageAsset {
+        transientImage(
+            kind: .animatedGIF,
+            cgImage: posterCGImage,
+            logicalPixelSize: logicalPixelSize,
+            assetID: assetID
+        )
+    }
+
+    static func persistedImage(
+        kind: CanvasImageAssetKind,
+        filename: String,
+        cgImage: CGImage,
+        logicalPixelSize: CGSize? = nil
+    ) -> CanvasImageAsset {
+        CanvasImageAsset(
+            reference: .persisted(kind: kind, filename: filename),
+            poster: CanvasImagePoster(cgImage: cgImage),
+            logicalPixelSize: logicalPixelSize
         )
     }
 
     static func persistedStaticImage(
         filename: String,
-        cgImage: CGImage
+        cgImage: CGImage,
+        logicalPixelSize: CGSize? = nil
     ) -> CanvasImageAsset {
-        CanvasImageAsset(
-            reference: .persistedStaticImage(filename: filename),
-            poster: CanvasImagePoster(cgImage: cgImage)
+        persistedImage(
+            kind: .staticImage,
+            filename: filename,
+            cgImage: cgImage,
+            logicalPixelSize: logicalPixelSize
         )
     }
 

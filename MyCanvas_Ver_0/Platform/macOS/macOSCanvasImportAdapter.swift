@@ -98,14 +98,15 @@ enum macOSCanvasImportAdapter {
     private static func makeResolvedImportImage(
         from url: URL
     ) -> CanvasResolvedImportImage? {
-        guard
-            let imageSource = CGImageSourceCreateWithURL(url as CFURL, nil),
-            let cgImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil)
-        else {
+        guard let assetData = try? Data(contentsOf: url) else {
             return nil
         }
 
-        return CanvasResolvedImportImage(cgImage: cgImage)
+        return CanvasResolvedImportImage(
+            data: assetData,
+            typeIdentifier: resolvedTypeIdentifier(from: url),
+            filenameHint: url.lastPathComponent
+        )
     }
 
     private static func makeResolvedImportImage(
@@ -120,7 +121,55 @@ enum macOSCanvasImportAdapter {
             return nil
         }
 
+        if let pngData = makePNGData(from: cgImage),
+           let resolvedImage = CanvasResolvedImportImage(
+               data: pngData,
+               typeIdentifier: UTType.png.identifier
+           ) {
+            return resolvedImage
+        }
+
         return CanvasResolvedImportImage(cgImage: cgImage)
+    }
+
+    private static func resolvedTypeIdentifier(
+        from url: URL
+    ) -> String? {
+        if let resourceValues = try? url.resourceValues(
+            forKeys: [.contentTypeKey]
+        ),
+           let contentType = resourceValues.contentType {
+            return contentType.identifier
+        }
+
+        guard url.pathExtension.isEmpty == false else {
+            return nil
+        }
+
+        return UTType(filenameExtension: url.pathExtension)?.identifier
+    }
+
+    private static func makePNGData(
+        from cgImage: CGImage
+    ) -> Data? {
+        let mutableData = NSMutableData()
+        guard
+            let destination = CGImageDestinationCreateWithData(
+                mutableData,
+                UTType.png.identifier as CFString,
+                1,
+                nil
+            )
+        else {
+            return nil
+        }
+
+        CGImageDestinationAddImage(destination, cgImage, nil)
+        guard CGImageDestinationFinalize(destination) else {
+            return nil
+        }
+
+        return mutableData as Data
     }
 }
 #endif

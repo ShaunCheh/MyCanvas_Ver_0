@@ -27,6 +27,7 @@ final class CanvasEditorSession {
     private let saveCoordinator: BoardSaveCoordinator
     private let historyController = BoardHistoryController()
     private let boardStoreLogPrefix: String
+    private var transientImageAssetPayloads: [CanvasImageAssetReference: CanvasTransientImageAssetPayload] = [:]
 
     var imageAssetContract: CanvasImageAssetContract {
         .current
@@ -34,6 +35,12 @@ final class CanvasEditorSession {
 
     var shouldAutoplayAnimatedImagesOnCanvas: Bool {
         imageAssetContract.shouldAutoplayAnimatedImagesOnCanvas
+    }
+
+    func transientImageAssetPayload(
+        for assetReference: CanvasImageAssetReference
+    ) -> CanvasTransientImageAssetPayload? {
+        transientImageAssetPayloads[assetReference]
     }
 
     init(
@@ -222,7 +229,10 @@ final class CanvasEditorSession {
         }
     }
 
-    func applyBoardRuntimeState(_ runtimeState: BoardRuntimeState) {
+    func applyBoardRuntimeState(
+        _ runtimeState: BoardRuntimeState,
+        preserveTransientImageAssetPayloads: Bool = false
+    ) {
         print(
             "[Canvas Shared][RuntimeRestore] " +
             "action=applyBoardRuntimeState " +
@@ -244,6 +254,9 @@ final class CanvasEditorSession {
         inlineEditState = nil
         rotationPreviewState = nil
         rotationInteractionState = nil
+        if preserveTransientImageAssetPayloads == false {
+            transientImageAssetPayloads.removeAll()
+        }
         lastRenderSnapshot = .empty
     }
 
@@ -258,7 +271,8 @@ final class CanvasEditorSession {
     func applyBoardHistorySnapshot(_ snapshot: BoardHistorySnapshot) {
         if let runtimeState = currentBoardRuntimeState() {
             applyBoardRuntimeState(
-                runtimeState.replacingDocumentState(with: snapshot)
+                runtimeState.replacingDocumentState(with: snapshot),
+                preserveTransientImageAssetPayloads: true
             )
         } else {
             scene.setItems(snapshot.items)
@@ -1013,7 +1027,11 @@ final class CanvasEditorSession {
         importedItems.reserveCapacity(images.count)
 
         for (index, image) in images.enumerated() {
-            let asset = image.makeTransientImageAsset()
+            let importRegistration = image.makeTransientImageAssetRegistration()
+            let asset = importRegistration.asset
+            if let payload = importRegistration.payload {
+                transientImageAssetPayloads[payload.assetReference] = payload
+            }
             let offset = importOffset(
                 forImageAt: index,
                 layout: resolvedLayout

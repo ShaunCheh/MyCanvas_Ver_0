@@ -139,33 +139,36 @@ enum iOSCanvasImportAdapter {
     private static func resolvedImage(
         from itemProvider: NSItemProvider
     ) async -> CanvasResolvedImportImage? {
+        let preferredTypeIdentifier =
+            preferredImageTypeIdentifier(from: itemProvider) ??
+            UTType.image.identifier
         guard
             itemProvider.hasItemConformingToTypeIdentifier(
                 UTType.image.identifier
             ),
-            let data = await loadImageData(from: itemProvider),
-            let imageSource = CGImageSourceCreateWithData(
-                data as CFData,
-                nil
+            let data = await loadImageData(
+                from: itemProvider,
+                typeIdentifier: preferredTypeIdentifier
             ),
-            let cgImage = CGImageSourceCreateImageAtIndex(
-                imageSource,
-                0,
-                nil
+            let resolvedImage = CanvasResolvedImportImage(
+                data: data,
+                typeIdentifier: preferredTypeIdentifier,
+                filenameHint: itemProvider.suggestedName
             )
         else {
             return nil
         }
 
-        return CanvasResolvedImportImage(cgImage: cgImage)
+        return resolvedImage
     }
 
     private static func loadImageData(
-        from itemProvider: NSItemProvider
+        from itemProvider: NSItemProvider,
+        typeIdentifier: String
     ) async -> Data? {
         await withCheckedContinuation { continuation in
             itemProvider.loadDataRepresentation(
-                forTypeIdentifier: UTType.image.identifier
+                forTypeIdentifier: typeIdentifier
             ) { data, _ in
                 continuation.resume(returning: data)
             }
@@ -175,6 +178,14 @@ enum iOSCanvasImportAdapter {
     private static func makeResolvedImportImage(
         from image: UIImage
     ) -> CanvasResolvedImportImage? {
+        if let pngData = image.pngData(),
+           let resolvedImage = CanvasResolvedImportImage(
+               data: pngData,
+               typeIdentifier: UTType.png.identifier
+           ) {
+            return resolvedImage
+        }
+
         if let cgImage = image.cgImage {
             return CanvasResolvedImportImage(cgImage: cgImage)
         }
@@ -188,6 +199,24 @@ enum iOSCanvasImportAdapter {
         }
 
         return CanvasResolvedImportImage(cgImage: cgImage)
+    }
+
+    private static func preferredImageTypeIdentifier(
+        from itemProvider: NSItemProvider
+    ) -> String? {
+        let specificImageTypeIdentifier = itemProvider.registeredTypeIdentifiers.first {
+            $0 != UTType.image.identifier &&
+                UTType(importedAs: $0).conforms(to: .image)
+        }
+        if let specificImageTypeIdentifier {
+            return specificImageTypeIdentifier
+        }
+
+        guard itemProvider.hasItemConformingToTypeIdentifier(UTType.image.identifier) else {
+            return nil
+        }
+
+        return UTType.image.identifier
     }
 }
 #endif
