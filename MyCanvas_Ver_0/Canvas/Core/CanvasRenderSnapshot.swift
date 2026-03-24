@@ -1,11 +1,23 @@
 import CoreGraphics
 import Foundation
 
+// Image render payloads carry a stable display contract rather than a current
+// animation frame, so later GIF playback can update CALayer contents directly
+// without forcing renderer snapshots to tick every frame.
+struct CanvasImageDisplayContract {
+    let assetReference: CanvasImageAssetReference
+    let posterCGImage: CGImage
+
+    var isAnimatedAsset: Bool {
+        assetReference.kind.isAnimated
+    }
+}
+
 // Render items now carry either image or text payloads while keeping geometry
 // shared, so viewport reconciliation stays type-aware without re-solving layout.
 struct CanvasImageRenderPayload {
+    let displayContract: CanvasImageDisplayContract
     let contentsRect: CGRect
-    let cgImage: CGImage
 }
 
 struct CanvasTextRenderPayload {

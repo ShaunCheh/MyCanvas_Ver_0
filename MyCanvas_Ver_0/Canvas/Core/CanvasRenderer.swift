@@ -538,10 +538,13 @@ struct CanvasRenderer {
             zIndex: presentation.zIndex,
             payload: .image(
                 CanvasImageRenderPayload(
+                    displayContract: CanvasImageDisplayContract(
+                        assetReference: presentation.assetReference,
+                        posterCGImage: presentation.posterCGImage
+                    ),
                     contentsRect: presentation.isCropPreviewActive
                         ? CanvasImageCropRect.fullImage.cgRect
-                        : presentation.effectiveCropRectNormalized.cgRect,
-                    cgImage: presentation.posterCGImage
+                        : presentation.effectiveCropRectNormalized.cgRect
                 )
             )
         )

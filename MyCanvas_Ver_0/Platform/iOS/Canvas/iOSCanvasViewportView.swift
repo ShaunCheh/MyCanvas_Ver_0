@@ -380,7 +380,8 @@ final class iOSCanvasViewportView: UIView {
             switch item.payload {
             case let .image(imagePayload):
                 let imageLayer = imageLayer(for: item.id)
-                imageLayer.update(
+                refreshImageLayer(
+                    imageLayer,
                     with: item,
                     imagePayload: imagePayload,
                     contentsScale: contentsScale
@@ -394,6 +395,58 @@ final class iOSCanvasViewportView: UIView {
                 )
             }
         }
+    }
+
+    private func refreshImageLayer(
+        _ imageLayer: CanvasImageLayer,
+        with item: CanvasRenderItem,
+        imagePayload: CanvasImageRenderPayload,
+        contentsScale: CGFloat
+    ) {
+        if imagePayload.displayContract.isAnimatedAsset {
+            refreshAnimatedImageLayer(
+                imageLayer,
+                with: item,
+                imagePayload: imagePayload,
+                contentsScale: contentsScale
+            )
+        } else {
+            refreshStaticImageLayer(
+                imageLayer,
+                with: item,
+                imagePayload: imagePayload,
+                contentsScale: contentsScale
+            )
+        }
+    }
+
+    private func refreshStaticImageLayer(
+        _ imageLayer: CanvasImageLayer,
+        with item: CanvasRenderItem,
+        imagePayload: CanvasImageRenderPayload,
+        contentsScale: CGFloat
+    ) {
+        imageLayer.updateStaticPresentation(
+            with: item,
+            imagePayload: imagePayload,
+            contentsScale: contentsScale
+        )
+    }
+
+    private func refreshAnimatedImageLayer(
+        _ imageLayer: CanvasImageLayer,
+        with item: CanvasRenderItem,
+        imagePayload: CanvasImageRenderPayload,
+        contentsScale: CGFloat
+    ) {
+        // Stage 4 splits animated-image reconciliation away from static-image
+        // poster drawing so a later playback controller can own frame updates
+        // without forcing the viewport to rebuild its item refresh flow.
+        imageLayer.updateAnimatedPresentation(
+            with: item,
+            imagePayload: imagePayload,
+            contentsScale: contentsScale
+        )
     }
 
     private func configureWorkspaceGridLayers() {
