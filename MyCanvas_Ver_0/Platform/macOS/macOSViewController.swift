@@ -864,6 +864,11 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     }
 
     private func setupCanvasViewport() {
+        canvasViewportView.shouldAutoplayAnimatedImages =
+            editorSession.shouldAutoplayAnimatedImagesOnCanvas
+        canvasViewportView.resolveAnimatedImagePlaybackSource = { [weak self] assetReference in
+            self?.editorSession.animatedImagePlaybackSource(for: assetReference)
+        }
         canvasViewportView.onPointerDown = { [weak self] location in
             self?.handlePrimaryPointerDown(at: location)
         }

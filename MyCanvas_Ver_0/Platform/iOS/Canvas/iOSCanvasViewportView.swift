@@ -77,6 +77,12 @@ final class iOSCanvasViewportView: UIView {
     private var snapshot: CanvasRenderSnapshot = .empty
     private var interactionState: TouchInteractionState = .idle
     private var activeTouchesByID: [ObjectIdentifier: UITouch] = [:]
+    private lazy var animatedPlaybackRegistry = CanvasGIFPlaybackRegistry { [weak self] assetReference in
+        self?.resolveAnimatedImagePlaybackSource?(assetReference)
+    }
+    private var animatedPlaybackObservers: [NSObjectProtocol] = []
+    private var isApplicationPlaybackActive =
+        UIApplication.shared.applicationState == .active
     var onPointerDown: ((CGPoint) -> Void)?
     var onPointerMove: ((CGPoint, CGPoint) -> Void)?
     var onPointerUp: ((CGPoint) -> Void)?
@@ -84,6 +90,12 @@ final class iOSCanvasViewportView: UIView {
     var onLongPress: ((CGPoint) -> Void)?
     var onZoom: ((CGFloat, CGPoint) -> Void)?
     var onViewportSizeChange: ((CGSize) -> Void)?
+    var resolveAnimatedImagePlaybackSource: ((CanvasImageAssetReference) -> CanvasAnimatedImagePlaybackSource?)?
+    var shouldAutoplayAnimatedImages = true {
+        didSet {
+            updateAnimatedPlaybackState()
+        }
+    }
 
     private lazy var pinchGestureRecognizer: UIPinchGestureRecognizer = {
         let gestureRecognizer = UIPinchGestureRecognizer(target: self, action: #selector(handlePinch(_:)))
@@ -106,10 +118,16 @@ final class iOSCanvasViewportView: UIView {
     override init(frame: CGRect) {
         super.init(frame: frame)
         setupLayers()
+        setupAnimatedPlaybackLifecycle()
     }
 
     required init?(coder: NSCoder) {
         return nil
+    }
+
+    deinit {
+        removeAnimatedPlaybackObservers()
+        animatedPlaybackRegistry.invalidate()
     }
 
     override func layoutSubviews() {
@@ -118,6 +136,7 @@ final class iOSCanvasViewportView: UIView {
             updateLayerFrames()
         }
         reportViewportSizeIfNeeded()
+        updateAnimatedPlaybackState()
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -376,6 +395,7 @@ final class iOSCanvasViewportView: UIView {
         }
 
         let contentsScale = window?.screen.scale ?? UIScreen.main.scale
+        var animatedBindings: [CanvasAnimatedImagePlaybackBinding] = []
         for item in snapshot.items {
             switch item.payload {
             case let .image(imagePayload):
@@ -386,6 +406,15 @@ final class iOSCanvasViewportView: UIView {
                     imagePayload: imagePayload,
                     contentsScale: contentsScale
                 )
+                if imagePayload.displayContract.isAnimatedAsset {
+                    animatedBindings.append(
+                        CanvasAnimatedImagePlaybackBinding(
+                            itemID: item.id,
+                            displayContract: imagePayload.displayContract,
+                            layer: imageLayer
+                        )
+                    )
+                }
             case let .text(textPayload):
                 let textLayer = textLayer(for: item.id)
                 textLayer.update(
@@ -395,6 +424,9 @@ final class iOSCanvasViewportView: UIView {
                 )
             }
         }
+
+        animatedPlaybackRegistry.reconcileVisibleBindings(animatedBindings)
+        updateAnimatedPlaybackState()
     }
 
     private func refreshImageLayer(
@@ -1028,6 +1060,45 @@ final class iOSCanvasViewportView: UIView {
 
     private var currentContentsScale: CGFloat {
         window?.screen.scale ?? UIScreen.main.scale
+    }
+
+    private func setupAnimatedPlaybackLifecycle() {
+        let notificationCenter = NotificationCenter.default
+        animatedPlaybackObservers = [
+            notificationCenter.addObserver(
+                forName: UIApplication.didBecomeActiveNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                self?.isApplicationPlaybackActive = true
+                self?.updateAnimatedPlaybackState()
+            },
+            notificationCenter.addObserver(
+                forName: UIApplication.willResignActiveNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                self?.isApplicationPlaybackActive = false
+                self?.updateAnimatedPlaybackState()
+            }
+        ]
+    }
+
+    private func removeAnimatedPlaybackObservers() {
+        let notificationCenter = NotificationCenter.default
+        for observer in animatedPlaybackObservers {
+            notificationCenter.removeObserver(observer)
+        }
+        animatedPlaybackObservers.removeAll()
+    }
+
+    private func updateAnimatedPlaybackState() {
+        animatedPlaybackRegistry.setPlaybackEnabled(
+            shouldAutoplayAnimatedImages &&
+                isApplicationPlaybackActive &&
+                window != nil &&
+                bounds.isEmpty == false
+        )
     }
 
     private func performWithoutLayerActions(_ updates: () -> Void) {

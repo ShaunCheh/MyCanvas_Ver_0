@@ -66,6 +66,11 @@ final class macOSCanvasViewportView: NSView {
     private var lastReportedViewportSize: CGSize?
     private var snapshot: CanvasRenderSnapshot = .empty
     private var lastPrimaryPointerLocation: CGPoint?
+    private lazy var animatedPlaybackRegistry = CanvasGIFPlaybackRegistry { [weak self] assetReference in
+        self?.resolveAnimatedImagePlaybackSource?(assetReference)
+    }
+    private var animatedPlaybackObservers: [NSObjectProtocol] = []
+    private var isApplicationPlaybackActive = NSApplication.shared.isActive
     var onPointerDown: ((CGPoint) -> Void)?
     var onPointerMove: ((CGPoint, CGPoint) -> Void)?
     var onPointerUp: ((CGPoint) -> Void)?
@@ -76,6 +81,12 @@ final class macOSCanvasViewportView: NSView {
     var onViewportSizeChange: ((CGSize) -> Void)?
     var onImportDragOperation: ((CGPoint, NSPasteboard) -> NSDragOperation)?
     var onImportDrop: ((CGPoint, NSPasteboard) -> Bool)?
+    var resolveAnimatedImagePlaybackSource: ((CanvasImageAssetReference) -> CanvasAnimatedImagePlaybackSource?)?
+    var shouldAutoplayAnimatedImages = true {
+        didSet {
+            updateAnimatedPlaybackState()
+        }
+    }
 
     override var isFlipped: Bool {
         true
@@ -88,11 +99,17 @@ final class macOSCanvasViewportView: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         setupLayers()
+        setupAnimatedPlaybackLifecycle()
         registerForDraggedTypes(Self.importDragTypes)
     }
 
     required init?(coder: NSCoder) {
         return nil
+    }
+
+    deinit {
+        removeAnimatedPlaybackObservers()
+        animatedPlaybackRegistry.invalidate()
     }
 
     override func layout() {
@@ -108,6 +125,7 @@ final class macOSCanvasViewportView: NSView {
             updateLayerFrames()
         }
         reportViewportSizeIfNeeded()
+        updateAnimatedPlaybackState()
     }
 
     override func viewDidMoveToWindow() {
@@ -284,6 +302,7 @@ final class macOSCanvasViewportView: NSView {
         }
 
         let contentsScale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+        var animatedBindings: [CanvasAnimatedImagePlaybackBinding] = []
         for item in snapshot.items {
             switch item.payload {
             case let .image(imagePayload):
@@ -294,6 +313,15 @@ final class macOSCanvasViewportView: NSView {
                     imagePayload: imagePayload,
                     contentsScale: contentsScale
                 )
+                if imagePayload.displayContract.isAnimatedAsset {
+                    animatedBindings.append(
+                        CanvasAnimatedImagePlaybackBinding(
+                            itemID: item.id,
+                            displayContract: imagePayload.displayContract,
+                            layer: imageLayer
+                        )
+                    )
+                }
             case let .text(textPayload):
                 let textLayer = textLayer(for: item.id)
                 textLayer.update(
@@ -303,6 +331,9 @@ final class macOSCanvasViewportView: NSView {
                 )
             }
         }
+
+        animatedPlaybackRegistry.reconcileVisibleBindings(animatedBindings)
+        updateAnimatedPlaybackState()
     }
 
     private func refreshImageLayer(
@@ -936,6 +967,45 @@ final class macOSCanvasViewportView: NSView {
 
     private var currentContentsScale: CGFloat {
         window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
+    }
+
+    private func setupAnimatedPlaybackLifecycle() {
+        let notificationCenter = NotificationCenter.default
+        animatedPlaybackObservers = [
+            notificationCenter.addObserver(
+                forName: NSApplication.didBecomeActiveNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                self?.isApplicationPlaybackActive = true
+                self?.updateAnimatedPlaybackState()
+            },
+            notificationCenter.addObserver(
+                forName: NSApplication.didResignActiveNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                self?.isApplicationPlaybackActive = false
+                self?.updateAnimatedPlaybackState()
+            }
+        ]
+    }
+
+    private func removeAnimatedPlaybackObservers() {
+        let notificationCenter = NotificationCenter.default
+        for observer in animatedPlaybackObservers {
+            notificationCenter.removeObserver(observer)
+        }
+        animatedPlaybackObservers.removeAll()
+    }
+
+    private func updateAnimatedPlaybackState() {
+        animatedPlaybackRegistry.setPlaybackEnabled(
+            shouldAutoplayAnimatedImages &&
+                isApplicationPlaybackActive &&
+                window != nil &&
+                bounds.isEmpty == false
+        )
     }
 
     private func performWithoutLayerActions(_ updates: () -> Void) {

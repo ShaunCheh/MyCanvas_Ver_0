@@ -86,6 +86,25 @@ enum BoardStore {
         }
     }
 
+    static func loadImageAssetData(
+        boardID: UUID,
+        filename: String,
+        userDefaults: UserDefaults = .standard
+    ) throws -> Data {
+        try SelectedFolderAccess.withBoardsDirectoryURL(userDefaults: userDefaults) { boardsDirectoryURL in
+            let boardDirectoryURL = self.boardDirectoryURL(
+                for: boardID,
+                boardsDirectoryURL: boardsDirectoryURL
+            )
+            let assetsDirectoryURL = boardDirectoryURL.appendingPathComponent(
+                assetsDirectoryName,
+                isDirectory: true
+            )
+            let assetURL = assetsDirectoryURL.appendingPathComponent(filename)
+            return try CoordinatedFileIO.readData(at: assetURL)
+        }
+    }
+
     static func saveBoard(
         _ snapshot: BoardSaveSnapshot,
         userDefaults: UserDefaults = .standard

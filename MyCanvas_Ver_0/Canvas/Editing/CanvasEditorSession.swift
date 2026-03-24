@@ -43,6 +43,41 @@ final class CanvasEditorSession {
         transientImageAssetPayloads[assetReference]
     }
 
+    func animatedImagePlaybackSource(
+        for assetReference: CanvasImageAssetReference
+    ) -> CanvasAnimatedImagePlaybackSource? {
+        guard assetReference.kind.isAnimated else {
+            return nil
+        }
+
+        if let payload = transientImageAssetPayload(for: assetReference),
+           let data = payload.source?.data
+        {
+            return CanvasAnimatedImagePlaybackSource(
+                assetReference: assetReference,
+                data: data,
+                animatedMetadata: payload.animatedMetadata
+            )
+        }
+
+        guard let activeBoardID else {
+            return nil
+        }
+
+        guard let data = try? BoardStore.loadImageAssetData(
+            boardID: activeBoardID,
+            filename: assetReference.stableAssetFilename
+        ) else {
+            return nil
+        }
+
+        return CanvasAnimatedImagePlaybackSource(
+            assetReference: assetReference,
+            data: data,
+            animatedMetadata: nil
+        )
+    }
+
     init(
         saveQueueLabel: String,
         logPrefix: String
