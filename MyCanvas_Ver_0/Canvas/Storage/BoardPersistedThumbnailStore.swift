@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import ImageIO
 import UniformTypeIdentifiers
 
 enum BoardPersistedThumbnailStoreError: LocalizedError {

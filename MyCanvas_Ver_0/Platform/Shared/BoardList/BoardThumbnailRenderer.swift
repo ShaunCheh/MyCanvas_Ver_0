@@ -41,7 +41,7 @@ final class BoardThumbnailRenderer {
     ) throws -> CGImage? {
         var cachedImagesByFilename: [String: CGImage] = [:]
         var decodeMaxPixelSizesByFilename: [String: Int] = [:]
-        try renderThumbnail(
+        return try renderThumbnail(
             itemRecords: item.document.items,
             previewSeed: item.previewSeed,
             targetPixelSize: targetPixelSize,
