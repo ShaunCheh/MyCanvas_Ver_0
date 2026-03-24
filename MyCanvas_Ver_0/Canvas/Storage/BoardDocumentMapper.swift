@@ -28,8 +28,9 @@ enum BoardDocumentMapper {
                 return CanvasBoardItem.image(
                     CanvasImageItem(
                         id: imageRecord.id,
-                        asset: CanvasImageAsset.persistedStaticImage(
-                            filename: imageRecord.assetFilename,
+                        asset: CanvasImageAsset.persistedImage(
+                            kind: imageRecord.assetReference.kind,
+                            filename: imageRecord.assetReference.stableAssetFilename,
                             cgImage: try imageLoader(imageRecord)
                         ),
                         center: imageRecord.center.cgPoint,
@@ -102,7 +103,8 @@ enum BoardDocumentMapper {
             center: BoardPointRecord(item.center),
             size: BoardSizeRecord(item.size),
             zIndex: Double(item.zIndex),
-            assetFilename: "\(item.id.uuidString).png",
+            assetFilename: item.assetReference.stableAssetFilename,
+            assetKind: item.assetKind,
             cropRectNormalized: BoardImageCropRecord(item.cropRectNormalized),
             rotationRadians: Double(item.rotationRadians)
         )

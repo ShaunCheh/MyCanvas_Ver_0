@@ -1,5 +1,24 @@
 import Foundation
 
+struct BoardSaveSnapshot {
+    let runtimeState: BoardRuntimeState
+    let transientImageAssetPayloads: [CanvasImageAssetReference: CanvasTransientImageAssetPayload]
+
+    init(
+        runtimeState: BoardRuntimeState,
+        transientImageAssetPayloads: [CanvasImageAssetReference: CanvasTransientImageAssetPayload] = [:]
+    ) {
+        self.runtimeState = runtimeState
+        self.transientImageAssetPayloads = transientImageAssetPayloads
+    }
+
+    func transientImageAssetPayload(
+        for assetReference: CanvasImageAssetReference
+    ) -> CanvasTransientImageAssetPayload? {
+        transientImageAssetPayloads[assetReference]
+    }
+}
+
 final class BoardSaveCoordinator {
     private let autosaveDelay: TimeInterval
     private let logPrefix: String
@@ -17,7 +36,7 @@ final class BoardSaveCoordinator {
     }
 
     func scheduleAutosave(
-        snapshot: BoardRuntimeState,
+        snapshot: BoardSaveSnapshot,
         reason: String,
         onFailure: ((Error) -> Void)? = nil
     ) {
@@ -45,7 +64,7 @@ final class BoardSaveCoordinator {
     }
 
     func saveImmediately(
-        snapshot: BoardRuntimeState,
+        snapshot: BoardSaveSnapshot,
         reason: String,
         completion: @escaping (Result<Void, Error>) -> Void
     ) {
@@ -63,7 +82,7 @@ final class BoardSaveCoordinator {
     }
 
     private func enqueueSave(
-        snapshot: BoardRuntimeState,
+        snapshot: BoardSaveSnapshot,
         reason: String,
         completion: ((Result<Void, Error>) -> Void)? = nil
     ) {

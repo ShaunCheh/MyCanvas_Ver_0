@@ -8,6 +8,29 @@ enum CanvasImageAssetKind: String, Codable, Equatable, Hashable {
     var isAnimated: Bool {
         self == .animatedGIF
     }
+
+    var preferredPersistedFileExtension: String {
+        switch self {
+        case .staticImage:
+            return "png"
+        case .animatedGIF:
+            return "gif"
+        }
+    }
+
+    static func inferredPersistedKind(
+        from filename: String
+    ) -> CanvasImageAssetKind {
+        let pathExtension = URL(fileURLWithPath: filename)
+            .pathExtension
+            .lowercased()
+        switch pathExtension {
+        case "gif":
+            return .animatedGIF
+        default:
+            return .staticImage
+        }
+    }
 }
 
 enum CanvasImageAssetStorage: Equatable, Hashable {
@@ -26,6 +49,15 @@ enum CanvasImageAssetStorage: Equatable, Hashable {
 struct CanvasImageAssetReference: Equatable, Hashable {
     let kind: CanvasImageAssetKind
     let storage: CanvasImageAssetStorage
+
+    var stableAssetFilename: String {
+        switch storage {
+        case let .transient(assetID):
+            return "\(assetID.uuidString).\(kind.preferredPersistedFileExtension)"
+        case let .persisted(filename):
+            return filename
+        }
+    }
 
     static func transient(
         kind: CanvasImageAssetKind,

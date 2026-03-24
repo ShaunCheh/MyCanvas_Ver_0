@@ -44,8 +44,8 @@ struct BoardRuntimeState {
         )
     }
 
-    // Image-backed items still need a projection because assets/ thumbnail code
-    // remains PNG-based even after the document format becomes mixed-item aware.
+    // Image-backed items still need a projection because storage and thumbnail
+    // code still reason about persisted image assets as a filtered subset.
     var imageItems: [CanvasImageItem] {
         items.compactMap(\.imageItem)
     }
@@ -56,9 +56,9 @@ struct BoardRuntimeState {
 }
 
 struct BoardDocument: Codable {
-    static let currentFormatVersion = 3
-    static let targetFormatVersionForImageAssets =
+    static let currentFormatVersion =
         CanvasImageAssetContract.current.targetDocumentFormatVersion
+    static let targetFormatVersionForImageAssets = currentFormatVersion
     static let defaultTitle = "Untitled Board"
 
     let formatVersion: Int
@@ -97,8 +97,86 @@ struct BoardImageItemRecord: Codable {
     var size: BoardSizeRecord
     var zIndex: Double
     var assetFilename: String
+    var assetKind: CanvasImageAssetKind
     var cropRectNormalized: BoardImageCropRecord?
     var rotationRadians: Double?
+
+    init(
+        id: UUID,
+        center: BoardPointRecord,
+        size: BoardSizeRecord,
+        zIndex: Double,
+        assetFilename: String,
+        assetKind: CanvasImageAssetKind = .staticImage,
+        cropRectNormalized: BoardImageCropRecord?,
+        rotationRadians: Double?
+    ) {
+        self.id = id
+        self.center = center
+        self.size = size
+        self.zIndex = zIndex
+        self.assetFilename = assetFilename
+        self.assetKind = assetKind
+        self.cropRectNormalized = cropRectNormalized
+        self.rotationRadians = rotationRadians
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case center
+        case size
+        case zIndex
+        case assetFilename
+        case assetKind
+        case cropRectNormalized
+        case rotationRadians
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        center = try container.decode(BoardPointRecord.self, forKey: .center)
+        size = try container.decode(BoardSizeRecord.self, forKey: .size)
+        zIndex = try container.decode(Double.self, forKey: .zIndex)
+        assetFilename = try container.decode(String.self, forKey: .assetFilename)
+        assetKind = try container.decodeIfPresent(
+            CanvasImageAssetKind.self,
+            forKey: .assetKind
+        ) ?? CanvasImageAssetKind.inferredPersistedKind(from: assetFilename)
+        cropRectNormalized = try container.decodeIfPresent(
+            BoardImageCropRecord.self,
+            forKey: .cropRectNormalized
+        )
+        rotationRadians = try container.decodeIfPresent(
+            Double.self,
+            forKey: .rotationRadians
+        )
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(center, forKey: .center)
+        try container.encode(size, forKey: .size)
+        try container.encode(zIndex, forKey: .zIndex)
+        try container.encode(assetFilename, forKey: .assetFilename)
+        try container.encode(assetKind, forKey: .assetKind)
+        try container.encodeIfPresent(
+            cropRectNormalized,
+            forKey: .cropRectNormalized
+        )
+        try container.encodeIfPresent(
+            rotationRadians,
+            forKey: .rotationRadians
+        )
+    }
+
+    var assetReference: CanvasImageAssetReference {
+        .persisted(
+            kind: assetKind,
+            filename: assetFilename
+        )
+    }
 }
 
 struct BoardTextColorRecord: Codable {

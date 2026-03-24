@@ -802,7 +802,7 @@ final class CanvasEditorSession {
     }
 
     func scheduleAutosave(reason: String) {
-        guard let snapshot = currentBoardRuntimeState() else {
+        guard let snapshot = currentBoardSaveSnapshot() else {
             return
         }
 
@@ -817,7 +817,7 @@ final class CanvasEditorSession {
         createBoardIfNeeded: Bool = false,
         completion: @escaping (Result<Void, Error>) -> Void
     ) {
-        guard let snapshot = currentBoardRuntimeState(createBoardIfNeeded: createBoardIfNeeded) else {
+        guard let snapshot = currentBoardSaveSnapshot(createBoardIfNeeded: createBoardIfNeeded) else {
             completion(.failure(FolderBookmarkStoreError.missingBookmarkData))
             return
         }
@@ -852,6 +852,29 @@ final class CanvasEditorSession {
             boardState: boardState,
             camera: camera,
             interactionState: interactionState
+        )
+    }
+
+    func currentBoardSaveSnapshot(
+        createBoardIfNeeded: Bool = false
+    ) -> BoardSaveSnapshot? {
+        guard let runtimeState = currentBoardRuntimeState(
+            createBoardIfNeeded: createBoardIfNeeded
+        ) else {
+            return nil
+        }
+
+        let referencedAssetReferences = Set(
+            runtimeState.imageItems.map(\.assetReference)
+        )
+        let payloads = Dictionary(
+            uniqueKeysWithValues: transientImageAssetPayloads.filter {
+                referencedAssetReferences.contains($0.key)
+            }
+        )
+        return BoardSaveSnapshot(
+            runtimeState: runtimeState,
+            transientImageAssetPayloads: payloads
         )
     }
 

@@ -18,6 +18,7 @@ enum BoardStoreError: LocalizedError {
     case invalidBoardDirectory
     case invalidBoardImageAsset(filename: String)
     case failedToEncodeImageAsset(itemID: UUID)
+    case missingAnimatedImageSource(itemID: UUID)
 
     var errorDescription: String? {
         switch self {
@@ -27,6 +28,8 @@ enum BoardStoreError: LocalizedError {
             return "The board image asset could not be decoded: \(filename)"
         case let .failedToEncodeImageAsset(itemID):
             return "The image asset could not be encoded for board item \(itemID.uuidString)."
+        case let .missingAnimatedImageSource(itemID):
+            return "The original animated image data is unavailable for board item \(itemID.uuidString)."
         }
     }
 }
@@ -84,14 +87,14 @@ enum BoardStore {
     }
 
     static func saveBoard(
-        _ runtimeState: BoardRuntimeState,
+        _ snapshot: BoardSaveSnapshot,
         userDefaults: UserDefaults = .standard
     ) throws {
         try SelectedFolderAccess.withBoardsDirectoryURL(userDefaults: userDefaults) { boardsDirectoryURL in
             try CoordinatedFileIO.ensureDirectory(at: boardsDirectoryURL)
 
             let boardDirectoryURL = self.boardDirectoryURL(
-                for: runtimeState.boardID,
+                for: snapshot.runtimeState.boardID,
                 boardsDirectoryURL: boardsDirectoryURL
             )
             let assetsDirectoryURL = boardDirectoryURL.appendingPathComponent(
@@ -101,19 +104,27 @@ enum BoardStore {
             try CoordinatedFileIO.ensureDirectory(at: boardDirectoryURL)
             try CoordinatedFileIO.ensureDirectory(at: assetsDirectoryURL)
 
-            var persistedState = runtimeState
+            var persistedState = snapshot.runtimeState
             persistedState.updatedAt = Date()
+            let persistedSnapshot = BoardSaveSnapshot(
+                runtimeState: persistedState,
+                transientImageAssetPayloads: snapshot.transientImageAssetPayloads
+            )
             let document = BoardDocumentMapper.makeDocument(from: persistedState)
 
+            var writtenAssetFilenames: Set<String> = []
             for item in persistedState.imageItems {
-                let assetURL = assetsDirectoryURL.appendingPathComponent(
-                    "\(item.id.uuidString).png"
+                let assetFilename = item.assetReference.stableAssetFilename
+                guard writtenAssetFilenames.insert(assetFilename).inserted else {
+                    continue
+                }
+
+                let assetURL = assetsDirectoryURL.appendingPathComponent(assetFilename)
+                try persistImageAssetIfNeeded(
+                    for: item,
+                    snapshot: persistedSnapshot,
+                    to: assetURL
                 )
-                let pngData = try makePNGData(
-                    for: item.posterCGImage,
-                    itemID: item.id
-                )
-                try CoordinatedFileIO.writeData(pngData, to: assetURL)
             }
 
             try removeOrphanedAssets(
@@ -129,6 +140,16 @@ enum BoardStore {
                 boardDirectoryURL: boardDirectoryURL
             )
         }
+    }
+
+    static func saveBoard(
+        _ runtimeState: BoardRuntimeState,
+        userDefaults: UserDefaults = .standard
+    ) throws {
+        try saveBoard(
+            BoardSaveSnapshot(runtimeState: runtimeState),
+            userDefaults: userDefaults
+        )
     }
 
     static func renameBoard(
@@ -297,6 +318,34 @@ enum BoardStore {
         }
 
         return mutableData as Data
+    }
+
+    private static func persistImageAssetIfNeeded(
+        for item: CanvasImageItem,
+        snapshot: BoardSaveSnapshot,
+        to assetURL: URL
+    ) throws {
+        if FileManager.default.fileExists(atPath: assetURL.path) {
+            return
+        }
+
+        switch item.assetKind {
+        case .staticImage:
+            let pngData = try makePNGData(
+                for: item.posterCGImage,
+                itemID: item.id
+            )
+            try CoordinatedFileIO.writeData(pngData, to: assetURL)
+        case .animatedGIF:
+            guard
+                let assetData = snapshot.transientImageAssetPayload(
+                    for: item.assetReference
+                )?.source?.data
+            else {
+                throw BoardStoreError.missingAnimatedImageSource(itemID: item.id)
+            }
+            try CoordinatedFileIO.writeData(assetData, to: assetURL)
+        }
     }
 
     private static func removeOrphanedAssets(
