@@ -11,6 +11,33 @@ struct CanvasContextResolverMetrics {
 struct CanvasContextResolver {
     private let editOverlayHitTester = CanvasEditOverlayHitTester()
 
+    func resolvePointerTarget(
+        at viewportPoint: CGPoint,
+        scene: CanvasScene,
+        camera: CanvasCamera,
+        renderSnapshot: CanvasRenderSnapshot,
+        selectedItemID: CanvasItemID?,
+        isInlineEditModeActive: Bool,
+        interactionMetrics: CanvasContextResolverMetrics
+    ) -> CanvasPointerPressContext {
+        let invocationWorldPoint = camera.viewportToWorld(viewportPoint)
+        let resolution = resolveTarget(
+            at: viewportPoint,
+            invocationWorldPoint: invocationWorldPoint,
+            scene: scene,
+            renderSnapshot: renderSnapshot,
+            selectedItemID: selectedItemID,
+            isInlineEditModeActive: isInlineEditModeActive,
+            interactionMetrics: interactionMetrics
+        )
+
+        return makePointerPressContext(
+            viewportPoint: viewportPoint,
+            worldPoint: invocationWorldPoint,
+            resolvedTarget: resolution.resolvedTarget
+        )
+    }
+
     func resolveContext(
         at viewportPoint: CGPoint,
         scene: CanvasScene,
@@ -23,68 +50,81 @@ struct CanvasContextResolver {
     ) -> CanvasContextMenuContext {
         let invocationWorldPoint = camera.viewportToWorld(viewportPoint)
         let editOverlayDescription = describeContextResolverOverlay(renderSnapshot.editOverlay)
+        let resolution = resolveTarget(
+            at: viewportPoint,
+            invocationWorldPoint: invocationWorldPoint,
+            scene: scene,
+            renderSnapshot: renderSnapshot,
+            selectedItemID: selectedItemID,
+            isInlineEditModeActive: isInlineEditModeActive,
+            interactionMetrics: interactionMetrics
+        )
 
-        func finalize(
-            branch: String,
-            resolvedTarget: ResolvedTarget,
-            sceneHitItemID: CanvasItemID? = nil
-        ) -> CanvasContextMenuContext {
-            let context = makeContext(
-                viewportPoint: viewportPoint,
-                worldPoint: invocationWorldPoint,
-                resolvedTarget: resolvedTarget,
-                selectedItemID: selectedItemID,
-                isInlineEditModeActive: isInlineEditModeActive,
-                isInlineCropModeActive: isInlineCropModeActive
-            )
-            print(
-                "[Canvas Shared][ContextResolve] " +
-                "branch=\(branch) " +
-                "viewportPoint=\(describeContextResolverPoint(viewportPoint)) " +
-                "worldPoint=\(describeContextResolverPoint(invocationWorldPoint)) " +
-                "viewportBounds=\(describeContextResolverRect(renderSnapshot.viewportBounds)) " +
-                "visibleWorldRect=\(describeContextResolverRect(renderSnapshot.visibleWorldRect)) " +
-                "selectedItemID=\(describeContextResolverItemID(selectedItemID)) " +
-                "sceneHitItemID=\(describeContextResolverItemID(sceneHitItemID)) " +
-                "renderItems=\(renderSnapshot.items.count) " +
-                "editOverlay=\(editOverlayDescription) " +
-                context.debugSummary
-            )
-            return context
-        }
+        let context = makeContext(
+            viewportPoint: viewportPoint,
+            worldPoint: invocationWorldPoint,
+            resolvedTarget: resolution.resolvedTarget,
+            selectedItemID: selectedItemID,
+            isInlineEditModeActive: isInlineEditModeActive,
+            isInlineCropModeActive: isInlineCropModeActive
+        )
+        print(
+            "[Canvas Shared][ContextResolve] " +
+            "branch=\(resolution.branch) " +
+            "viewportPoint=\(describeContextResolverPoint(viewportPoint)) " +
+            "worldPoint=\(describeContextResolverPoint(invocationWorldPoint)) " +
+            "viewportBounds=\(describeContextResolverRect(renderSnapshot.viewportBounds)) " +
+            "visibleWorldRect=\(describeContextResolverRect(renderSnapshot.visibleWorldRect)) " +
+            "selectedItemID=\(describeContextResolverItemID(selectedItemID)) " +
+            "sceneHitItemID=\(describeContextResolverItemID(resolution.sceneHitItemID)) " +
+            "renderItems=\(renderSnapshot.items.count) " +
+            "editOverlay=\(editOverlayDescription) " +
+            context.debugSummary
+        )
+        return context
+    }
 
+    private func resolveTarget(
+        at viewportPoint: CGPoint,
+        invocationWorldPoint: CGPoint,
+        scene: CanvasScene,
+        renderSnapshot: CanvasRenderSnapshot,
+        selectedItemID: CanvasItemID?,
+        isInlineEditModeActive: Bool,
+        interactionMetrics: CanvasContextResolverMetrics
+    ) -> ResolutionResult {
         if let editOverlayHitTarget = editOverlayHitTester.resolve(
             at: viewportPoint,
             renderSnapshot: renderSnapshot,
             metrics: interactionMetrics
         ) {
-            return finalize(
+            return ResolutionResult(
                 branch: contextResolverBranch(for: editOverlayHitTarget),
                 resolvedTarget: resolvedTarget(from: editOverlayHitTarget)
             )
         }
 
         if isInlineEditModeActive {
-            return finalize(
+            return ResolutionResult(
                 branch: "inlineEditBlank",
-                resolvedTarget: ResolvedTarget(targetKind: .blank)
+                resolvedTarget: ResolvedTarget(pointerTargetKind: .blank)
             )
         }
 
         guard let itemID = scene.topmostBoardItemID(containing: invocationWorldPoint) else {
-            return finalize(
+            return ResolutionResult(
                 branch: "blank",
-                resolvedTarget: ResolvedTarget(targetKind: .blank)
+                resolvedTarget: ResolvedTarget(pointerTargetKind: .blank)
             )
         }
 
-        let targetKind: CanvasContextMenuTargetKind =
+        let targetKind: CanvasPointerTargetKind =
             itemID == selectedItemID ? .selectedItemBody : .unselectedItemBody
 
-        return finalize(
+        return ResolutionResult(
             branch: "itemBody",
             resolvedTarget: ResolvedTarget(
-                targetKind: targetKind,
+                pointerTargetKind: targetKind,
                 targetItemID: itemID,
                 anchorRect: itemAnchorRect(
                     for: itemID,
@@ -109,23 +149,20 @@ struct CanvasContextResolver {
     private func resolvedTarget(
         from hitTarget: CanvasEditOverlayHitTarget
     ) -> ResolvedTarget {
-        let targetKind: CanvasContextMenuTargetKind
+        let pointerTargetKind: CanvasPointerTargetKind
         switch hitTarget.kind {
         case .rotateHandle:
-            targetKind = .rotateHandle
+            pointerTargetKind = .rotateHandle
         case let .selectionHandle(role):
-            targetKind = .selectionHandle(role: role)
+            pointerTargetKind = .selectionHandle(role: role)
         case let .cropHandle(role):
-            targetKind = .cropHandle(role: role)
+            pointerTargetKind = .cropHandle(role: role)
         case .cropTranslationArea:
-            // Phase 3 expands the shared translation area, but the outward
-            // context still reports .cropOutline until controller/menu paths
-            // are fully migrated in later stages.
-            targetKind = .cropOutline
+            pointerTargetKind = .cropTranslationArea
         }
 
         return ResolvedTarget(
-            targetKind: targetKind,
+            pointerTargetKind: pointerTargetKind,
             editOverlayHitTargetKind: hitTarget.kind,
             targetItemID: hitTarget.itemID,
             anchorRect: hitTarget.anchorRect
@@ -160,7 +197,9 @@ struct CanvasContextResolver {
         CanvasContextMenuContext(
             invocationViewportPoint: viewportPoint,
             invocationWorldPoint: worldPoint,
-            targetKind: resolvedTarget.targetKind,
+            targetKind: contextMenuTargetKind(
+                for: resolvedTarget.pointerTargetKind
+            ),
             editOverlayHitTargetKind: resolvedTarget.editOverlayHitTargetKind,
             targetItemID: resolvedTarget.targetItemID,
             anchorRect: resolvedTarget.anchorRect,
@@ -170,11 +209,52 @@ struct CanvasContextResolver {
         )
     }
 
+    private func makePointerPressContext(
+        viewportPoint: CGPoint,
+        worldPoint: CGPoint,
+        resolvedTarget: ResolvedTarget
+    ) -> CanvasPointerPressContext {
+        CanvasPointerPressContext(
+            invocationViewportPoint: viewportPoint,
+            invocationWorldPoint: worldPoint,
+            targetKind: resolvedTarget.pointerTargetKind,
+            targetItemID: resolvedTarget.targetItemID,
+            anchorRect: resolvedTarget.anchorRect
+        )
+    }
+
+    private func contextMenuTargetKind(
+        for pointerTargetKind: CanvasPointerTargetKind
+    ) -> CanvasContextMenuTargetKind {
+        switch pointerTargetKind {
+        case .rotateHandle:
+            return .rotateHandle
+        case let .cropHandle(role):
+            return .cropHandle(role: role)
+        case .cropTranslationArea:
+            return .cropOutline
+        case let .selectionHandle(role):
+            return .selectionHandle(role: role)
+        case .selectedItemBody:
+            return .selectedItemBody
+        case .unselectedItemBody:
+            return .unselectedItemBody
+        case .blank:
+            return .blank
+        }
+    }
+
     private struct ResolvedTarget {
-        let targetKind: CanvasContextMenuTargetKind
+        let pointerTargetKind: CanvasPointerTargetKind
         var editOverlayHitTargetKind: CanvasEditOverlayHitTargetKind? = nil
         var targetItemID: CanvasItemID? = nil
         var anchorRect: CGRect? = nil
+    }
+
+    private struct ResolutionResult {
+        let branch: String
+        let resolvedTarget: ResolvedTarget
+        var sceneHitItemID: CanvasItemID? = nil
     }
 }
 

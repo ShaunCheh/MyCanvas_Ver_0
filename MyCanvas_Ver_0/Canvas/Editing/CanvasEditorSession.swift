@@ -187,6 +187,21 @@ final class CanvasEditorSession {
         )
     }
 
+    func resolvePointerTarget(
+        at viewportPoint: CGPoint,
+        interactionMetrics: CanvasContextResolverMetrics
+    ) -> CanvasPointerPressContext {
+        contextResolver.resolvePointerTarget(
+            at: viewportPoint,
+            scene: scene,
+            camera: camera,
+            renderSnapshot: lastRenderSnapshot,
+            selectedItemID: interactionState.selectedItemID,
+            isInlineEditModeActive: isInlineEditModeActive,
+            interactionMetrics: interactionMetrics
+        )
+    }
+
     func expandBoardIfNeeded(toInclude worldFrame: CGRect) {
         guard var boardState else {
             return

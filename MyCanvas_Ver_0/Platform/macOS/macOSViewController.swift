@@ -46,7 +46,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         case idle
         case pressed(
             pressedLocation: CGPoint,
-            pressContext: CanvasContextMenuContext
+            pressContext: CanvasPointerPressContext
         )
         case croppingSelectedItem(PointerCropState)
         case movingCropFrame(PointerCropTranslationState)
@@ -54,16 +54,6 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         case draggingSelectedItem(itemID: CanvasItemID)
         case resizingSelectedItem(PointerResizeState)
         case draggingCanvas
-    }
-
-    private enum PointerPressTargetKind {
-        case rotateHandle
-        case cropHandle(CanvasCropHandleRole)
-        case cropTranslationArea
-        case selectionHandle(CanvasSelectionHandleRole)
-        case selectedItemBody
-        case unselectedItemBody
-        case blank
     }
 
     private static let pointerDragActivationDistance: CGFloat = 4
@@ -251,40 +241,13 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         )
     }
 
-    // Phase 4 keeps consuming CanvasContextMenuContext, but translates it into
-    // pointer-specific semantics before the state machine branches on it.
-    private func pointerPressTargetKind(
-        for pressContext: CanvasContextMenuContext
-    ) -> PointerPressTargetKind {
-        if let editOverlayHitTargetKind = pressContext.editOverlayHitTargetKind {
-            switch editOverlayHitTargetKind {
-            case .rotateHandle:
-                return .rotateHandle
-            case let .selectionHandle(role):
-                return .selectionHandle(role)
-            case let .cropHandle(role):
-                return .cropHandle(role)
-            case .cropTranslationArea:
-                return .cropTranslationArea
-            }
-        }
-
-        switch pressContext.targetKind {
-        case .rotateHandle:
-            return .rotateHandle
-        case let .cropHandle(role):
-            return .cropHandle(role)
-        case .cropOutline:
-            return .cropTranslationArea
-        case let .selectionHandle(role):
-            return .selectionHandle(role)
-        case .selectedItemBody:
-            return .selectedItemBody
-        case .unselectedItemBody:
-            return .unselectedItemBody
-        case .blank:
-            return .blank
-        }
+    private func resolvePointerPressContext(
+        at viewportLocation: CGPoint
+    ) -> CanvasPointerPressContext {
+        editorSession.resolvePointerTarget(
+            at: viewportLocation,
+            interactionMetrics: contextResolverMetrics
+        )
     }
 
     private func frozenContextMenuCommandStates(
@@ -1091,7 +1054,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             return
         }
 
-        let pressContext = resolveContext(at: location)
+        let pressContext = resolvePointerPressContext(at: location)
         pointerDragState = .pressed(
             pressedLocation: location,
             pressContext: pressContext
@@ -1173,7 +1136,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
                 return
             }
 
-            switch pointerPressTargetKind(for: pressContext) {
+            switch pressContext.targetKind {
             case .rotateHandle:
                 guard let itemID = pressContext.targetItemID else {
                     editorSession.cancelPendingHistoryTransaction()
@@ -1281,14 +1244,14 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             }
 
             let pressedItemID = pressContext.targetItemID
-            let releasedContext = resolveContext(at: location)
+            let releasedContext = resolvePointerPressContext(at: location)
             let releasedItemID = releasedContext.targetItemID
             let previousSelectedItemID = interactionState.selectedItemID
             var clickTarget = "blank"
             var clickResult = "selection_unchanged"
             var affectedItemID: CanvasItemID?
 
-            switch pointerPressTargetKind(for: pressContext) {
+            switch pressContext.targetKind {
             case .rotateHandle:
                 clickTarget = "rotate_handle"
                 affectedItemID = pressContext.targetItemID
@@ -1314,7 +1277,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
                     if previousSelectedItemID != itemID {
                         clickResult = "item_selected"
                     } else {
-                        if case .selectedItemBody = pointerPressTargetKind(for: pressContext),
+                        if case .selectedItemBody = pressContext.targetKind,
                            beginTextEditIfPossible(for: itemID)
                         {
                             clickResult = "text_edit_began"
@@ -2652,10 +2615,10 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     }
 
     private func beginPointerHistoryTransactionIfNeeded(
-        for pressContext: CanvasContextMenuContext
+        for pressContext: CanvasPointerPressContext
     ) {
         let reason: String
-        switch pointerPressTargetKind(for: pressContext) {
+        switch pressContext.targetKind {
         case .rotateHandle:
             reason = "rotate item"
         case .cropHandle, .cropTranslationArea:
