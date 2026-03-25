@@ -643,7 +643,12 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     ) -> CGRect {
         let resolvedFrame = toolbarPlacementSolver.resolveFrame(
             in: layoutContext
-        )?.integral ?? .zero
+        ).flatMap { frame in
+            CanvasChromeLayoutGeometry.pixelAlignedRectPreservingSize(
+                frame,
+                scale: toolbarPlacementBackingScale()
+            )
+        } ?? .zero
 
         if toolbarHostView.frame != resolvedFrame {
             toolbarHostView.frame = resolvedFrame
@@ -783,12 +788,17 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     }
 
     private func measuredToolbarHostSize() -> CGSize {
-        let measuredSize = toolbarHostView.fittingSize
-        let fallbackSize = toolbarHostView.bounds.size
-        let candidateSize = measuredSize == .zero
-            ? fallbackSize
-            : measuredSize
-        return CanvasChromeLayoutGeometry.sanitizedSize(candidateSize)
+        CanvasChromeLayoutGeometry.sanitizedSize(
+            toolbarHostView.measuredContentSize()
+        )
+    }
+
+    private func toolbarPlacementBackingScale() -> CGFloat {
+        let scale = chromeOverlayView.window?.backingScaleFactor
+            ?? view.window?.backingScaleFactor
+            ?? NSScreen.main?.backingScaleFactor
+            ?? 2
+        return scale.isFinite && scale > 0 ? scale : 1
     }
 
     private func contextMenuLayoutAnchorPoint(

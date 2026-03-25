@@ -39,6 +39,33 @@ enum CanvasChromeLayoutGeometry {
         return standardizedRect
     }
 
+    static func pixelAlignedRectPreservingSize(
+        _ rect: CGRect,
+        scale: CGFloat
+    ) -> CGRect? {
+        guard let sanitizedRect = sanitizedRect(rect) else {
+            return nil
+        }
+
+        let sanitizedScale: CGFloat
+        if scale.isFinite, scale > 0 {
+            sanitizedScale = scale
+        } else {
+            sanitizedScale = 1
+        }
+
+        func alignToPixel(_ value: CGFloat) -> CGFloat {
+            (value * sanitizedScale).rounded() / sanitizedScale
+        }
+
+        return CGRect(
+            x: alignToPixel(sanitizedRect.minX),
+            y: alignToPixel(sanitizedRect.minY),
+            width: sanitizedRect.width,
+            height: sanitizedRect.height
+        ).standardized
+    }
+
     static func sanitizedSize(_ size: CGSize) -> CGSize {
         guard
             size.width.isFinite,

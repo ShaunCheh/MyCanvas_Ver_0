@@ -548,7 +548,12 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     ) -> CGRect {
         let resolvedFrame = toolbarPlacementSolver.resolveFrame(
             in: layoutContext
-        )?.integral ?? .zero
+        ).flatMap { frame in
+            CanvasChromeLayoutGeometry.pixelAlignedRectPreservingSize(
+                frame,
+                scale: toolbarPlacementScale()
+            )
+        } ?? .zero
 
         if toolbarHostView.frame != resolvedFrame {
             toolbarHostView.frame = resolvedFrame
@@ -682,14 +687,16 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     }
 
     private func measuredToolbarHostSize() -> CGSize {
-        let measuredSize = toolbarHostView.systemLayoutSizeFitting(
-            UIView.layoutFittingCompressedSize
+        CanvasChromeLayoutGeometry.sanitizedSize(
+            toolbarHostView.measuredContentSize()
         )
-        let fallbackSize = toolbarHostView.bounds.size
-        let candidateSize = measuredSize == .zero
-            ? fallbackSize
-            : measuredSize
-        return CanvasChromeLayoutGeometry.sanitizedSize(candidateSize)
+    }
+
+    private func toolbarPlacementScale() -> CGFloat {
+        let scale = chromeOverlayView.window?.screen.scale
+            ?? view.window?.screen.scale
+            ?? UIScreen.main.scale
+        return scale.isFinite && scale > 0 ? scale : 1
     }
 
     private func contextMenuLayoutAnchorPoint(

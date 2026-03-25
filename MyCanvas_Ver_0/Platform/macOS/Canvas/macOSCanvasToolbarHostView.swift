@@ -84,6 +84,20 @@ final class macOSCanvasToolbarHostView: NSView {
         syncButtons(with: state.items)
     }
 
+    func measuredContentSize() -> CGSize {
+        guard buttonsStackView.arrangedSubviews.isEmpty == false else {
+            return .zero
+        }
+
+        let stackSize = buttonsStackView.fittingSize
+        return CanvasChromeLayoutGeometry.sanitizedSize(
+            CGSize(
+                width: stackSize.width + (Layout.horizontalInset * 2),
+                height: stackSize.height + (Layout.verticalInset * 2)
+            )
+        )
+    }
+
     override func hitTest(_ point: NSPoint) -> NSView? {
         let hitView = super.hitTest(point)
         return hitView === self ? nil : hitView
