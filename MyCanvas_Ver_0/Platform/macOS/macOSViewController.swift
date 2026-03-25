@@ -646,7 +646,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         ).flatMap { frame in
             CanvasChromeLayoutGeometry.pixelAlignedRectPreservingSize(
                 frame,
-                scale: toolbarPlacementBackingScale()
+                scale: toolbarPlacementScale()
             )
         } ?? .zero
 
@@ -793,7 +793,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         )
     }
 
-    private func toolbarPlacementBackingScale() -> CGFloat {
+    private func toolbarPlacementScale() -> CGFloat {
         let scale = chromeOverlayView.window?.backingScaleFactor
             ?? view.window?.backingScaleFactor
             ?? NSScreen.main?.backingScaleFactor

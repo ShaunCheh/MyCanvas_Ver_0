@@ -3,10 +3,6 @@ import UIKit
 
 final class iOSCanvasToolbarHostView: UIView {
     private enum Layout {
-        static let spacing: CGFloat = 12
-        static let horizontalInset: CGFloat = 12
-        static let verticalInset: CGFloat = 12
-        static let buttonEdge: CGFloat = 44
         static let cornerRadius: CGFloat = 18
         static let shadowOpacity: Float = 0.12
         static let shadowRadius: CGFloat = 10
@@ -34,7 +30,7 @@ final class iOSCanvasToolbarHostView: UIView {
         stackView.axis = .vertical
         stackView.alignment = .trailing
         stackView.distribution = .fill
-        stackView.spacing = Layout.spacing
+        stackView.spacing = CanvasToolbarChromeMetrics.spacing
         return stackView
     }()
 
@@ -57,10 +53,10 @@ final class iOSCanvasToolbarHostView: UIView {
             backgroundView.leadingAnchor.constraint(equalTo: leadingAnchor),
             backgroundView.trailingAnchor.constraint(equalTo: trailingAnchor),
             backgroundView.bottomAnchor.constraint(equalTo: bottomAnchor),
-            buttonsStackView.topAnchor.constraint(equalTo: topAnchor, constant: Layout.verticalInset),
-            buttonsStackView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Layout.horizontalInset),
-            buttonsStackView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -Layout.horizontalInset),
-            buttonsStackView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -Layout.verticalInset)
+            buttonsStackView.topAnchor.constraint(equalTo: topAnchor, constant: CanvasToolbarChromeMetrics.verticalInset),
+            buttonsStackView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: CanvasToolbarChromeMetrics.horizontalInset),
+            buttonsStackView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -CanvasToolbarChromeMetrics.horizontalInset),
+            buttonsStackView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -CanvasToolbarChromeMetrics.verticalInset)
         ])
         updateDockEdgeLayout()
     }
@@ -95,8 +91,8 @@ final class iOSCanvasToolbarHostView: UIView {
         )
         return CanvasChromeLayoutGeometry.sanitizedSize(
             CGSize(
-                width: stackSize.width + (Layout.horizontalInset * 2),
-                height: stackSize.height + (Layout.verticalInset * 2)
+                width: stackSize.width + (CanvasToolbarChromeMetrics.horizontalInset * 2),
+                height: stackSize.height + (CanvasToolbarChromeMetrics.verticalInset * 2)
             )
         )
     }
@@ -194,13 +190,13 @@ final class iOSCanvasToolbarHostView: UIView {
 
     private func ensureSquareSize(for button: UIButton) {
         if button.constraints.contains(where: { $0.identifier == "canvasToolbarHost.buttonWidth" }) == false {
-            let widthConstraint = button.widthAnchor.constraint(equalToConstant: Layout.buttonEdge)
+            let widthConstraint = button.widthAnchor.constraint(equalToConstant: CanvasToolbarChromeMetrics.buttonEdge)
             widthConstraint.identifier = "canvasToolbarHost.buttonWidth"
             widthConstraint.isActive = true
         }
 
         if button.constraints.contains(where: { $0.identifier == "canvasToolbarHost.buttonHeight" }) == false {
-            let heightConstraint = button.heightAnchor.constraint(equalToConstant: Layout.buttonEdge)
+            let heightConstraint = button.heightAnchor.constraint(equalToConstant: CanvasToolbarChromeMetrics.buttonEdge)
             heightConstraint.identifier = "canvasToolbarHost.buttonHeight"
             heightConstraint.isActive = true
         }
