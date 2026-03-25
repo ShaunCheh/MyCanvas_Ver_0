@@ -89,11 +89,8 @@ final class iOSCanvasToolbarHostView: UIView {
         let stackSize = buttonsStackView.systemLayoutSizeFitting(
             UIView.layoutFittingCompressedSize
         )
-        return CanvasChromeLayoutGeometry.sanitizedSize(
-            CGSize(
-                width: stackSize.width + (CanvasToolbarChromeMetrics.horizontalInset * 2),
-                height: stackSize.height + (CanvasToolbarChromeMetrics.verticalInset * 2)
-            )
+        return CanvasToolbarMeasurement.measuredContentSize(
+            forMeasuredStackSize: stackSize
         )
     }
 
