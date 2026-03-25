@@ -524,42 +524,40 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     }
 
     private func performOverlayLayoutPass() -> CanvasChromeLayoutContext {
-        let toolbarPlacementContext = makeChromeLayoutContext(
-            toolbarFrame: nil
+        var baseChromeBlockers: [CanvasChromeBlocker] = []
+        appendChromeBlocker(
+            kind: .backButton,
+            for: backButton,
+            to: &baseChromeBlockers
         )
-        let toolbarFrame = applyToolbarPlacement(
-            using: toolbarPlacementContext
+        appendChromeBlocker(
+            kind: .historyButtons,
+            for: historyButtonsStackView,
+            to: &baseChromeBlockers
         )
-        let chromeLayoutContext = makeChromeLayoutContext(
-            toolbarFrame: toolbarFrame
+        let toolbarPlacementResult = CanvasToolbarPlacementPass.resolve(
+            safeBounds: chromeOverlayView.safeAreaLayoutGuide.layoutFrame,
+            toolbarPreferredPlacement: toolbarPreferredPlacement(),
+            toolbarMeasuredSize: measuredToolbarHostSize(),
+            baseChromeBlockers: baseChromeBlockers,
+            scale: toolbarPlacementScale(),
+            solver: toolbarPlacementSolver
         )
+        applyToolbarFrame(toolbarPlacementResult.toolbarFrame)
         let miniMapFrame = resolveMiniMapFrame(
-            in: chromeLayoutContext
+            in: toolbarPlacementResult.chromeLayoutContext
         )
         applyMiniMapFrame(miniMapFrame)
         return makeContextMenuLayoutContext(
-            chromeLayoutContext: chromeLayoutContext,
+            chromeLayoutContext: toolbarPlacementResult.chromeLayoutContext,
             miniMapFrame: miniMapFrame
         )
     }
 
-    private func applyToolbarPlacement(
-        using layoutContext: CanvasChromeLayoutContext
-    ) -> CGRect {
-        let resolvedFrame = toolbarPlacementSolver.resolveFrame(
-            in: layoutContext
-        ).flatMap { frame in
-            CanvasChromeLayoutGeometry.pixelAlignedRectPreservingSize(
-                frame,
-                scale: toolbarPlacementScale()
-            )
-        } ?? .zero
-
-        if toolbarHostView.frame != resolvedFrame {
-            toolbarHostView.frame = resolvedFrame
+    private func applyToolbarFrame(_ toolbarFrame: CGRect) {
+        if toolbarHostView.frame != toolbarFrame {
+            toolbarHostView.frame = toolbarFrame
         }
-
-        return resolvedFrame
     }
 
     private func resolveMiniMapFrame(
@@ -580,36 +578,6 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         if miniMapView.frame != miniMapMountView.bounds {
             miniMapView.frame = miniMapMountView.bounds
         }
-    }
-
-    private func makeChromeLayoutContext(
-        toolbarFrame: CGRect?
-    ) -> CanvasChromeLayoutContext {
-        var chromeBlockers: [CanvasChromeBlocker] = []
-        appendChromeBlocker(
-            kind: .backButton,
-            for: backButton,
-            to: &chromeBlockers
-        )
-        appendChromeBlocker(
-            kind: .historyButtons,
-            for: historyButtonsStackView,
-            to: &chromeBlockers
-        )
-        if let toolbarFrame {
-            appendChromeBlocker(
-                kind: .toolbar,
-                rect: toolbarFrame,
-                to: &chromeBlockers
-            )
-        }
-
-        return CanvasChromeLayoutContext(
-            safeBounds: chromeOverlayView.safeAreaLayoutGuide.layoutFrame,
-            toolbarPreferredPlacement: toolbarPreferredPlacement(),
-            toolbarMeasuredSize: measuredToolbarHostSize(),
-            chromeBlockers: chromeBlockers
-        )
     }
 
     private func makeContextMenuLayoutContext(

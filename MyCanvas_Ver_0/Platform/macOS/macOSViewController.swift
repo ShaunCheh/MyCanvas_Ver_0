@@ -619,42 +619,46 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     }
 
     private func performOverlayLayoutPass() -> CanvasChromeLayoutContext {
-        let toolbarPlacementContext = makeChromeLayoutContext(
-            toolbarFrame: nil
+        var baseChromeBlockers: [CanvasChromeBlocker] = []
+        appendChromeBlocker(
+            kind: .backButton,
+            for: backButton,
+            to: &baseChromeBlockers
         )
-        let toolbarFrame = applyToolbarPlacement(
-            using: toolbarPlacementContext
+        let toolbarPlacementResult = CanvasToolbarPlacementPass.resolve(
+            safeBounds: CGRect(
+                x: view.bounds.minX + view.safeAreaInsets.left,
+                y: view.bounds.minY + view.safeAreaInsets.top,
+                width: max(
+                    view.bounds.width - view.safeAreaInsets.left - view.safeAreaInsets.right,
+                    0
+                ),
+                height: max(
+                    view.bounds.height - view.safeAreaInsets.top - view.safeAreaInsets.bottom,
+                    0
+                )
+            ).standardized,
+            toolbarPreferredPlacement: toolbarPreferredPlacement(),
+            toolbarMeasuredSize: measuredToolbarHostSize(),
+            baseChromeBlockers: baseChromeBlockers,
+            scale: toolbarPlacementScale(),
+            solver: toolbarPlacementSolver
         )
-        let chromeLayoutContext = makeChromeLayoutContext(
-            toolbarFrame: toolbarFrame
-        )
+        applyToolbarFrame(toolbarPlacementResult.toolbarFrame)
         let miniMapFrame = resolveMiniMapFrame(
-            in: chromeLayoutContext
+            in: toolbarPlacementResult.chromeLayoutContext
         )
         applyMiniMapFrame(miniMapFrame)
         return makeContextMenuLayoutContext(
-            chromeLayoutContext: chromeLayoutContext,
+            chromeLayoutContext: toolbarPlacementResult.chromeLayoutContext,
             miniMapFrame: miniMapFrame
         )
     }
 
-    private func applyToolbarPlacement(
-        using layoutContext: CanvasChromeLayoutContext
-    ) -> CGRect {
-        let resolvedFrame = toolbarPlacementSolver.resolveFrame(
-            in: layoutContext
-        ).flatMap { frame in
-            CanvasChromeLayoutGeometry.pixelAlignedRectPreservingSize(
-                frame,
-                scale: toolbarPlacementScale()
-            )
-        } ?? .zero
-
-        if toolbarHostView.frame != resolvedFrame {
-            toolbarHostView.frame = resolvedFrame
+    private func applyToolbarFrame(_ toolbarFrame: CGRect) {
+        if toolbarHostView.frame != toolbarFrame {
+            toolbarHostView.frame = toolbarFrame
         }
-
-        return resolvedFrame
     }
 
     private func resolveMiniMapFrame(
@@ -675,42 +679,6 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         if miniMapView.frame != miniMapMountView.bounds {
             miniMapView.frame = miniMapMountView.bounds
         }
-    }
-
-    private func makeChromeLayoutContext(
-        toolbarFrame: CGRect?
-    ) -> CanvasChromeLayoutContext {
-        var chromeBlockers: [CanvasChromeBlocker] = []
-        appendChromeBlocker(
-            kind: .backButton,
-            for: backButton,
-            to: &chromeBlockers
-        )
-        if let toolbarFrame {
-            appendChromeBlocker(
-                kind: .toolbar,
-                rect: toolbarFrame,
-                to: &chromeBlockers
-            )
-        }
-
-        return CanvasChromeLayoutContext(
-            safeBounds: CGRect(
-                x: view.bounds.minX + view.safeAreaInsets.left,
-                y: view.bounds.minY + view.safeAreaInsets.top,
-                width: max(
-                    view.bounds.width - view.safeAreaInsets.left - view.safeAreaInsets.right,
-                    0
-                ),
-                height: max(
-                    view.bounds.height - view.safeAreaInsets.top - view.safeAreaInsets.bottom,
-                    0
-                )
-            ).standardized,
-            toolbarPreferredPlacement: toolbarPreferredPlacement(),
-            toolbarMeasuredSize: measuredToolbarHostSize(),
-            chromeBlockers: chromeBlockers
-        )
     }
 
     private func makeContextMenuLayoutContext(
