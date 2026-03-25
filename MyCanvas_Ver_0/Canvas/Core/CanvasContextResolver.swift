@@ -9,6 +9,8 @@ struct CanvasContextResolverMetrics {
 }
 
 struct CanvasContextResolver {
+    private let editOverlayHitTester = CanvasEditOverlayHitTester()
+
     func resolveContext(
         at viewportPoint: CGPoint,
         scene: CanvasScene,
@@ -51,25 +53,14 @@ struct CanvasContextResolver {
             return context
         }
 
-        if let resolvedTarget = resolveEditHandleTarget(
+        if let editOverlayHitTarget = editOverlayHitTester.resolve(
             at: viewportPoint,
             renderSnapshot: renderSnapshot,
-            interactionMetrics: interactionMetrics
+            metrics: interactionMetrics
         ) {
             return finalize(
-                branch: "editHandle",
-                resolvedTarget: resolvedTarget
-            )
-        }
-
-        if let resolvedTarget = resolveCropOutlineTarget(
-            at: viewportPoint,
-            renderSnapshot: renderSnapshot,
-            interactionMetrics: interactionMetrics
-        ) {
-            return finalize(
-                branch: "cropOutline",
-                resolvedTarget: resolvedTarget
+                branch: contextResolverBranch(for: editOverlayHitTarget),
+                resolvedTarget: resolvedTarget(from: editOverlayHitTarget)
             )
         }
 
@@ -104,100 +95,41 @@ struct CanvasContextResolver {
         )
     }
 
-    private func resolveEditHandleTarget(
-        at viewportPoint: CGPoint,
-        renderSnapshot: CanvasRenderSnapshot,
-        interactionMetrics: CanvasContextResolverMetrics
-    ) -> ResolvedTarget? {
-        guard let editOverlay = renderSnapshot.editOverlay else {
-            return nil
+    private func contextResolverBranch(
+        for hitTarget: CanvasEditOverlayHitTarget
+    ) -> String {
+        switch hitTarget.kind {
+        case .rotateHandle, .selectionHandle, .cropHandle:
+            return "editHandle"
+        case .cropTranslationArea:
+            // Phase 2 keeps the external branch/context behavior unchanged while
+            // the shared hit tester adopts the future input vocabulary.
+            return "cropOutline"
         }
-
-        switch editOverlay.kind {
-        case .crop:
-            for handle in editOverlay.handles {
-                guard let role = handle.role.cropHandleRole else {
-                    continue
-                }
-
-                let hitRect = rect(
-                    centeredAt: handle.screenCenter,
-                    size: interactionMetrics.cropHandleHitTargetSize
-                )
-                if hitRect.contains(viewportPoint) {
-                    return ResolvedTarget(
-                        targetKind: .cropHandle(role: role),
-                        targetItemID: editOverlay.itemID,
-                        anchorRect: hitRect
-                    )
-                }
-            }
-        case .selection:
-            guard case let .selection(payload) = editOverlay.payload else {
-                return nil
-            }
-
-            let rotateHitRect = rect(
-                centeredAt: payload.rotateAffordance.handle.screenCenter,
-                size: interactionMetrics.rotateHandleHitTargetSize
-            )
-            if rotateHitRect.contains(viewportPoint) {
-                return ResolvedTarget(
-                    targetKind: .rotateHandle,
-                    targetItemID: editOverlay.itemID,
-                    anchorRect: rotateHitRect
-                )
-            }
-
-            for handle in editOverlay.handles {
-                guard let role = handle.role.selectionHandleRole else {
-                    continue
-                }
-
-                let hitRect = rect(
-                    centeredAt: handle.screenCenter,
-                    size: interactionMetrics.selectionHandleHitTargetSize
-                )
-                if hitRect.contains(viewportPoint) {
-                    return ResolvedTarget(
-                        targetKind: .selectionHandle(role: role),
-                        targetItemID: editOverlay.itemID,
-                        anchorRect: hitRect
-                    )
-                }
-            }
-        }
-
-        return nil
     }
 
-    private func resolveCropOutlineTarget(
-        at viewportPoint: CGPoint,
-        renderSnapshot: CanvasRenderSnapshot,
-        interactionMetrics: CanvasContextResolverMetrics
-    ) -> ResolvedTarget? {
-        guard
-            let editOverlay = renderSnapshot.editOverlay,
-            case let .crop(payload) = editOverlay.payload
-        else {
-            return nil
+    private func resolvedTarget(
+        from hitTarget: CanvasEditOverlayHitTarget
+    ) -> ResolvedTarget {
+        let targetKind: CanvasContextMenuTargetKind
+        switch hitTarget.kind {
+        case .rotateHandle:
+            targetKind = .rotateHandle
+        case let .selectionHandle(role):
+            targetKind = .selectionHandle(role: role)
+        case let .cropHandle(role):
+            targetKind = .cropHandle(role: role)
+        case .cropTranslationArea:
+            // Phase 2 still reports crop edge drags as .cropOutline so all
+            // controller/menu behavior remains identical to today's build.
+            targetKind = .cropOutline
         }
 
-        for (start, end) in quadEdges(for: payload.cropScreenQuad) {
-            if distance(
-                from: viewportPoint,
-                toSegmentStart: start,
-                segmentEnd: end
-            ) <= (interactionMetrics.cropOutlineHitTargetWidth / 2) {
-                return ResolvedTarget(
-                    targetKind: .cropOutline,
-                    targetItemID: editOverlay.itemID,
-                    anchorRect: payload.cropScreenQuad.boundingRect.standardized
-                )
-            }
-        }
-
-        return nil
+        return ResolvedTarget(
+            targetKind: targetKind,
+            targetItemID: hitTarget.itemID,
+            anchorRect: hitTarget.anchorRect
+        )
     }
 
     private func itemAnchorRect(
@@ -235,50 +167,6 @@ struct CanvasContextResolver {
             isInlineEditModeActive: isInlineEditModeActive,
             isInlineCropModeActive: isInlineCropModeActive
         )
-    }
-
-    private func rect(
-        centeredAt center: CGPoint,
-        size: CGFloat
-    ) -> CGRect {
-        CGRect(
-            x: center.x - size / 2,
-            y: center.y - size / 2,
-            width: size,
-            height: size
-        ).standardized
-    }
-
-    private func quadEdges(
-        for quad: CanvasQuad
-    ) -> [(start: CGPoint, end: CGPoint)] {
-        [
-            (quad.topLeading, quad.topTrailing),
-            (quad.topTrailing, quad.bottomTrailing),
-            (quad.bottomTrailing, quad.bottomLeading),
-            (quad.bottomLeading, quad.topLeading)
-        ]
-    }
-
-    private func distance(
-        from point: CGPoint,
-        toSegmentStart start: CGPoint,
-        segmentEnd end: CGPoint
-    ) -> CGFloat {
-        let dx = end.x - start.x
-        let dy = end.y - start.y
-        let lengthSquared = (dx * dx) + (dy * dy)
-        guard lengthSquared > 0 else {
-            return hypot(point.x - start.x, point.y - start.y)
-        }
-
-        let projection = ((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSquared
-        let clampedProjection = min(max(projection, 0), 1)
-        let closestPoint = CGPoint(
-            x: start.x + (clampedProjection * dx),
-            y: start.y + (clampedProjection * dy)
-        )
-        return hypot(point.x - closestPoint.x, point.y - closestPoint.y)
     }
 
     private struct ResolvedTarget {
