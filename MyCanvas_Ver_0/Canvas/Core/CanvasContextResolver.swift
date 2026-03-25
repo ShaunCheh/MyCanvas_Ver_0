@@ -102,9 +102,7 @@ struct CanvasContextResolver {
         case .rotateHandle, .selectionHandle, .cropHandle:
             return "editHandle"
         case .cropTranslationArea:
-            // Phase 2 keeps the external branch/context behavior unchanged while
-            // the shared hit tester adopts the future input vocabulary.
-            return "cropOutline"
+            return hitTarget.kind.debugName
         }
     }
 
@@ -120,13 +118,15 @@ struct CanvasContextResolver {
         case let .cropHandle(role):
             targetKind = .cropHandle(role: role)
         case .cropTranslationArea:
-            // Phase 2 still reports crop edge drags as .cropOutline so all
-            // controller/menu behavior remains identical to today's build.
+            // Phase 3 expands the shared translation area, but the outward
+            // context still reports .cropOutline until controller/menu paths
+            // are fully migrated in later stages.
             targetKind = .cropOutline
         }
 
         return ResolvedTarget(
             targetKind: targetKind,
+            editOverlayHitTargetKind: hitTarget.kind,
             targetItemID: hitTarget.itemID,
             anchorRect: hitTarget.anchorRect
         )
@@ -161,6 +161,7 @@ struct CanvasContextResolver {
             invocationViewportPoint: viewportPoint,
             invocationWorldPoint: worldPoint,
             targetKind: resolvedTarget.targetKind,
+            editOverlayHitTargetKind: resolvedTarget.editOverlayHitTargetKind,
             targetItemID: resolvedTarget.targetItemID,
             anchorRect: resolvedTarget.anchorRect,
             selectedItemID: selectedItemID,
@@ -171,6 +172,7 @@ struct CanvasContextResolver {
 
     private struct ResolvedTarget {
         let targetKind: CanvasContextMenuTargetKind
+        var editOverlayHitTargetKind: CanvasEditOverlayHitTargetKind? = nil
         var targetItemID: CanvasItemID? = nil
         var anchorRect: CGRect? = nil
     }

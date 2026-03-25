@@ -5,9 +5,22 @@ enum CanvasEditOverlayHitTargetKind {
     case rotateHandle
     case selectionHandle(role: CanvasSelectionHandleRole)
     case cropHandle(role: CanvasCropHandleRole)
-    // Phase 2 freezes the future input vocabulary while keeping the old
-    // edge-only crop movement behavior unchanged.
+    // Crop translation now covers both the visible crop interior and the edge
+    // hit slop so controllers can treat the whole movable area uniformly.
     case cropTranslationArea
+
+    var debugName: String {
+        switch self {
+        case .rotateHandle:
+            return "rotateHandle"
+        case let .selectionHandle(role):
+            return "selectionHandle(\(String(describing: role)))"
+        case let .cropHandle(role):
+            return "cropHandle(\(String(describing: role)))"
+        case .cropTranslationArea:
+            return "cropTranslationArea"
+        }
+    }
 }
 
 struct CanvasEditOverlayHitTarget {
@@ -69,18 +82,16 @@ struct CanvasEditOverlayHitTester {
             }
         }
 
-        for edge in payload.cropScreenQuad.edges {
-            if canvasDistance(
-                from: viewportPoint,
-                toSegmentStart: edge.start,
-                segmentEnd: edge.end
-            ) <= (metrics.cropOutlineHitTargetWidth / 2) {
-                return CanvasEditOverlayHitTarget(
-                    kind: .cropTranslationArea,
-                    itemID: editOverlay.itemID,
-                    anchorRect: payload.cropScreenQuad.boundingRect.standardized
-                )
-            }
+        if isWithinCropTranslationArea(
+            viewportPoint,
+            cropScreenQuad: payload.cropScreenQuad,
+            hitSlopWidth: metrics.cropOutlineHitTargetWidth
+        ) {
+            return CanvasEditOverlayHitTarget(
+                kind: .cropTranslationArea,
+                itemID: editOverlay.itemID,
+                anchorRect: payload.cropScreenQuad.boundingRect.standardized
+            )
         }
 
         return nil
@@ -138,5 +149,28 @@ struct CanvasEditOverlayHitTester {
             width: size,
             height: size
         ).standardized
+    }
+
+    private func isWithinCropTranslationArea(
+        _ viewportPoint: CGPoint,
+        cropScreenQuad: CanvasQuad,
+        hitSlopWidth: CGFloat
+    ) -> Bool {
+        if cropScreenQuad.contains(viewportPoint) {
+            return true
+        }
+
+        let halfHitSlopWidth = max(hitSlopWidth, 0) / 2
+        guard halfHitSlopWidth > 0 else {
+            return false
+        }
+
+        return cropScreenQuad.edges.contains { edge in
+            canvasDistance(
+                from: viewportPoint,
+                toSegmentStart: edge.start,
+                segmentEnd: edge.end
+            ) <= halfHitSlopWidth
+        }
     }
 }

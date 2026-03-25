@@ -43,6 +43,7 @@ struct CanvasContextMenuContext {
     let invocationViewportPoint: CGPoint
     let invocationWorldPoint: CGPoint
     let targetKind: CanvasContextMenuTargetKind
+    let editOverlayHitTargetKind: CanvasEditOverlayHitTargetKind?
     let targetItemID: CanvasItemID?
     let anchorRect: CGRect?
     let selectedItemID: CanvasItemID?
@@ -70,6 +71,7 @@ struct CanvasContextMenuContext {
     var debugSummary: String {
         [
             "target=\(targetKind.debugName)",
+            "overlayTarget=\(editOverlayHitTargetKind?.debugName ?? "nil")",
             "invocationViewportPoint=\(contextMenuDescribe(invocationViewportPoint))",
             "invocationWorldPoint=\(contextMenuDescribe(invocationWorldPoint))",
             "anchorRect=\(anchorRect.map(contextMenuDescribe) ?? "nil")",
