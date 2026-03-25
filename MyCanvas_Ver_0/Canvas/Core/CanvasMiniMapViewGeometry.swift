@@ -122,15 +122,3 @@ struct CanvasMiniMapViewGeometry {
         return standardizedRect
     }
 }
-
-extension CanvasQuad {
-    var cgPath: CGPath {
-        let path = CGMutablePath()
-        path.move(to: topLeading)
-        path.addLine(to: topTrailing)
-        path.addLine(to: bottomTrailing)
-        path.addLine(to: bottomLeading)
-        path.closeSubpath()
-        return path
-    }
-}

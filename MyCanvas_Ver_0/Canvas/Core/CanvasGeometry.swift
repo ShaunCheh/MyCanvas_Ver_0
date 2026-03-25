@@ -38,6 +38,15 @@ struct CanvasQuad: Equatable {
         ]
     }
 
+    var edges: [(start: CGPoint, end: CGPoint)] {
+        [
+            (topLeading, topTrailing),
+            (topTrailing, bottomTrailing),
+            (bottomTrailing, bottomLeading),
+            (bottomLeading, topLeading)
+        ]
+    }
+
     var center: CGPoint {
         CGPoint(
             x: (topLeading.x + topTrailing.x + bottomLeading.x + bottomTrailing.x) / 4,
@@ -59,6 +68,16 @@ struct CanvasQuad: Equatable {
 
     var trailingMidpoint: CGPoint {
         midpoint(between: topTrailing, and: bottomTrailing)
+    }
+
+    var cgPath: CGPath {
+        let path = CGMutablePath()
+        path.move(to: topLeading)
+        path.addLine(to: topTrailing)
+        path.addLine(to: bottomTrailing)
+        path.addLine(to: bottomLeading)
+        path.closeSubpath()
+        return path
     }
 
     var boundingRect: CGRect {
@@ -91,6 +110,24 @@ struct CanvasQuad: Equatable {
         )
     }
 
+    func contains(_ point: CGPoint) -> Bool {
+        if cgPath.contains(
+            point,
+            using: .winding,
+            transform: .identity
+        ) {
+            return true
+        }
+
+        return edges.contains { edge in
+            canvasDistance(
+                from: point,
+                toSegmentStart: edge.start,
+                segmentEnd: edge.end
+            ) <= canvasQuadContainmentEpsilon
+        }
+    }
+
     private func midpoint(
         between lhs: CGPoint,
         and rhs: CGPoint
@@ -100,6 +137,29 @@ struct CanvasQuad: Equatable {
             y: (lhs.y + rhs.y) / 2
         )
     }
+}
+
+private let canvasQuadContainmentEpsilon: CGFloat = 0.0001
+
+func canvasDistance(
+    from point: CGPoint,
+    toSegmentStart start: CGPoint,
+    segmentEnd end: CGPoint
+) -> CGFloat {
+    let dx = end.x - start.x
+    let dy = end.y - start.y
+    let lengthSquared = (dx * dx) + (dy * dy)
+    guard lengthSquared > 0 else {
+        return hypot(point.x - start.x, point.y - start.y)
+    }
+
+    let projection = ((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSquared
+    let clampedProjection = min(max(projection, 0), 1)
+    let closestPoint = CGPoint(
+        x: start.x + (clampedProjection * dx),
+        y: start.y + (clampedProjection * dy)
+    )
+    return hypot(point.x - closestPoint.x, point.y - closestPoint.y)
 }
 
 func normalizedCanvasAngle(_ radians: CGFloat) -> CGFloat {
