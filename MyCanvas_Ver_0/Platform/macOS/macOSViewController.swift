@@ -619,28 +619,11 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     }
 
     private func performOverlayLayoutPass() -> CanvasChromeLayoutContext {
-        var baseChromeBlockers: [CanvasChromeBlocker] = []
-        appendChromeBlocker(
-            kind: .backButton,
-            for: backButton,
-            to: &baseChromeBlockers
-        )
         let toolbarPlacementResult = CanvasToolbarPlacementPass.resolve(
-            safeBounds: CGRect(
-                x: view.bounds.minX + view.safeAreaInsets.left,
-                y: view.bounds.minY + view.safeAreaInsets.top,
-                width: max(
-                    view.bounds.width - view.safeAreaInsets.left - view.safeAreaInsets.right,
-                    0
-                ),
-                height: max(
-                    view.bounds.height - view.safeAreaInsets.top - view.safeAreaInsets.bottom,
-                    0
-                )
-            ).standardized,
+            safeBounds: toolbarLayoutSafeBounds(),
             toolbarPreferredPlacement: toolbarPreferredPlacement(),
             toolbarMeasuredSize: measuredToolbarHostSize(),
-            baseChromeBlockers: baseChromeBlockers,
+            baseChromeBlockers: baseChromeBlockersForToolbarLayout(),
             scale: toolbarPlacementScale(),
             solver: toolbarPlacementSolver
         )
@@ -659,6 +642,31 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         if toolbarHostView.frame != toolbarFrame {
             toolbarHostView.frame = toolbarFrame
         }
+    }
+
+    private func toolbarLayoutSafeBounds() -> CGRect {
+        CGRect(
+            x: view.bounds.minX + view.safeAreaInsets.left,
+            y: view.bounds.minY + view.safeAreaInsets.top,
+            width: max(
+                view.bounds.width - view.safeAreaInsets.left - view.safeAreaInsets.right,
+                0
+            ),
+            height: max(
+                view.bounds.height - view.safeAreaInsets.top - view.safeAreaInsets.bottom,
+                0
+            )
+        ).standardized
+    }
+
+    private func baseChromeBlockersForToolbarLayout() -> [CanvasChromeBlocker] {
+        var chromeBlockers: [CanvasChromeBlocker] = []
+        appendChromeBlocker(
+            kind: .backButton,
+            for: backButton,
+            to: &chromeBlockers
+        )
+        return chromeBlockers
     }
 
     private func resolveMiniMapFrame(

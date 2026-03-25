@@ -524,22 +524,11 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     }
 
     private func performOverlayLayoutPass() -> CanvasChromeLayoutContext {
-        var baseChromeBlockers: [CanvasChromeBlocker] = []
-        appendChromeBlocker(
-            kind: .backButton,
-            for: backButton,
-            to: &baseChromeBlockers
-        )
-        appendChromeBlocker(
-            kind: .historyButtons,
-            for: historyButtonsStackView,
-            to: &baseChromeBlockers
-        )
         let toolbarPlacementResult = CanvasToolbarPlacementPass.resolve(
-            safeBounds: chromeOverlayView.safeAreaLayoutGuide.layoutFrame,
+            safeBounds: toolbarLayoutSafeBounds(),
             toolbarPreferredPlacement: toolbarPreferredPlacement(),
             toolbarMeasuredSize: measuredToolbarHostSize(),
-            baseChromeBlockers: baseChromeBlockers,
+            baseChromeBlockers: baseChromeBlockersForToolbarLayout(),
             scale: toolbarPlacementScale(),
             solver: toolbarPlacementSolver
         )
@@ -558,6 +547,25 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         if toolbarHostView.frame != toolbarFrame {
             toolbarHostView.frame = toolbarFrame
         }
+    }
+
+    private func toolbarLayoutSafeBounds() -> CGRect {
+        chromeOverlayView.safeAreaLayoutGuide.layoutFrame
+    }
+
+    private func baseChromeBlockersForToolbarLayout() -> [CanvasChromeBlocker] {
+        var chromeBlockers: [CanvasChromeBlocker] = []
+        appendChromeBlocker(
+            kind: .backButton,
+            for: backButton,
+            to: &chromeBlockers
+        )
+        appendChromeBlocker(
+            kind: .historyButtons,
+            for: historyButtonsStackView,
+            to: &chromeBlockers
+        )
+        return chromeBlockers
     }
 
     private func resolveMiniMapFrame(
