@@ -18,6 +18,7 @@ struct CanvasContextResolver {
         renderSnapshot: CanvasRenderSnapshot,
         selectedItemID: CanvasItemID?,
         isInlineEditModeActive: Bool,
+        isReadingModeActive: Bool,
         interactionMetrics: CanvasContextResolverMetrics
     ) -> CanvasPointerPressContext {
         let invocationWorldPoint = camera.viewportToWorld(viewportPoint)
@@ -28,6 +29,7 @@ struct CanvasContextResolver {
             renderSnapshot: renderSnapshot,
             selectedItemID: selectedItemID,
             isInlineEditModeActive: isInlineEditModeActive,
+            isReadingModeActive: isReadingModeActive,
             interactionMetrics: interactionMetrics
         )
 
@@ -46,6 +48,7 @@ struct CanvasContextResolver {
         selectedItemID: CanvasItemID?,
         isInlineEditModeActive: Bool,
         isInlineCropModeActive: Bool,
+        isReadingModeActive: Bool,
         interactionMetrics: CanvasContextResolverMetrics
     ) -> CanvasContextMenuContext {
         let invocationWorldPoint = camera.viewportToWorld(viewportPoint)
@@ -57,6 +60,7 @@ struct CanvasContextResolver {
             renderSnapshot: renderSnapshot,
             selectedItemID: selectedItemID,
             isInlineEditModeActive: isInlineEditModeActive,
+            isReadingModeActive: isReadingModeActive,
             interactionMetrics: interactionMetrics
         )
 
@@ -91,8 +95,22 @@ struct CanvasContextResolver {
         renderSnapshot: CanvasRenderSnapshot,
         selectedItemID: CanvasItemID?,
         isInlineEditModeActive: Bool,
+        isReadingModeActive: Bool,
         interactionMetrics: CanvasContextResolverMetrics
     ) -> ResolutionResult {
+        if isReadingModeActive {
+            let sceneHitItemID = scene.topmostBoardItemID(
+                containing: invocationWorldPoint
+            )
+            return ResolutionResult(
+                branch: sceneHitItemID == nil
+                    ? "readingModeBlank"
+                    : "readingModeItemSuppressed",
+                resolvedTarget: ResolvedTarget(pointerTargetKind: .blank),
+                sceneHitItemID: sceneHitItemID
+            )
+        }
+
         if let editOverlayHitTarget = editOverlayHitTester.resolve(
             at: viewportPoint,
             renderSnapshot: renderSnapshot,

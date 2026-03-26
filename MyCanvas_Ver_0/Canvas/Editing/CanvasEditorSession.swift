@@ -212,6 +212,7 @@ final class CanvasEditorSession {
             selectedItemID: interactionState.selectedItemID,
             isInlineEditModeActive: isInlineEditModeActive,
             isInlineCropModeActive: isInlineCropModeActive,
+            isReadingModeActive: isReadingModeActive,
             interactionMetrics: interactionMetrics
         )
     }
@@ -227,6 +228,7 @@ final class CanvasEditorSession {
             renderSnapshot: lastRenderSnapshot,
             selectedItemID: interactionState.selectedItemID,
             isInlineEditModeActive: isInlineEditModeActive,
+            isReadingModeActive: isReadingModeActive,
             interactionMetrics: interactionMetrics
         )
     }

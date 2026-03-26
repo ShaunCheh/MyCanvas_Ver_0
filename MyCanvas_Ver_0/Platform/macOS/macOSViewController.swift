@@ -1084,7 +1084,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             "snapshotViewportBounds=\(describe(rect: lastRenderSnapshot.viewportBounds)) " +
             "snapshotEditOverlay=\(describe(editOverlay: lastRenderSnapshot.editOverlay))"
         )
-        if commitActiveTextEditIfNeeded() {
+        if workspaceMode == .editing, commitActiveTextEditIfNeeded() {
             return
         }
         if contextMenuState != nil {
@@ -1101,6 +1101,11 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     }
 
     private func handleSecondaryClick(at location: CGPoint) {
+        guard isReadingModeActive == false else {
+            dismissContextMenu()
+            return
+        }
+
         if commitActiveTextEditIfNeeded() {
             return
         }
@@ -1469,6 +1474,10 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
 
     @objc
     private func handleImportButtonClick() {
+        guard isReadingModeActive == false else {
+            return
+        }
+
         commitActiveTextEditIfNeeded()
         guard let window = view.window else {
             return
@@ -1485,6 +1494,10 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
                 response == .OK,
                 let self
             else {
+                return
+            }
+
+            guard self.isReadingModeActive == false else {
                 return
             }
 
@@ -1560,10 +1573,15 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     }
 
     private func canTransferContent(from pasteboard: NSPasteboard) -> Bool {
-        macOSCanvasImportAdapter.canResolveTransfer(from: pasteboard)
+        isReadingModeActive == false &&
+            macOSCanvasImportAdapter.canResolveTransfer(from: pasteboard)
     }
 
     private func handlePasteRequest() {
+        guard isReadingModeActive == false else {
+            return
+        }
+
         guard let transferRequest = macOSCanvasImportAdapter.transferRequest(
             from: .general,
             sourceDescription: "pasteboard"
@@ -1581,6 +1599,10 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     private func handleImportDrop(
         pasteboard: NSPasteboard
     ) -> Bool {
+        guard isReadingModeActive == false else {
+            return false
+        }
+
         guard let transferRequest = macOSCanvasImportAdapter.transferRequest(
             from: pasteboard,
             sourceDescription: "drag and drop"
@@ -1600,6 +1622,10 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     private func performTransferRequest(
         _ request: CanvasTransferRequest
     ) -> Bool {
+        guard isReadingModeActive == false else {
+            return false
+        }
+
         guard let command = CanvasTransferCommandLowerer.loweredCommand(
             for: request
         ) else {
@@ -2723,6 +2749,10 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         editorSession.presentationInlineEditState
     }
 
+    private var isReadingModeActive: Bool {
+        editorSession.isReadingModeActive
+    }
+
     private var isInlineTextModeActive: Bool {
         editorSession.isInlineTextModeActive
     }
@@ -2773,6 +2803,10 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     }
 
     private func beginTextEditIfPossible(for itemID: CanvasItemID) -> Bool {
+        guard isReadingModeActive == false else {
+            return false
+        }
+
         guard scene.textItem(withID: itemID) != nil else {
             return false
         }

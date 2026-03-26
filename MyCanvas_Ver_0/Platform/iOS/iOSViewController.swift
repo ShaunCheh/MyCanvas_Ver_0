@@ -891,7 +891,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             return
         }
 
-        if commitActiveTextEditIfNeeded() {
+        if workspaceMode == .editing, commitActiveTextEditIfNeeded() {
             return
         }
 
@@ -912,6 +912,11 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         syncCameraViewportSizeFromCurrentBoundsIfPossible()
         guard hasRenderableViewportSize else {
             logIgnoredCanvasInput("long press \(describe(point: location))")
+            return
+        }
+
+        guard isReadingModeActive == false else {
+            dismissContextMenu()
             return
         }
 
@@ -1260,6 +1265,10 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
 
     @objc
     private func handleImportButtonTap() {
+        guard isReadingModeActive == false else {
+            return
+        }
+
         commitActiveTextEditIfNeeded()
         var configuration = PHPickerConfiguration(photoLibrary: .shared())
         configuration.filter = .images
@@ -1349,14 +1358,17 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         _ interaction: UIDropInteraction,
         canHandle session: UIDropSession
     ) -> Bool {
-        iOSCanvasImportAdapter.canResolveTransfer(from: session)
+        isReadingModeActive == false &&
+            iOSCanvasImportAdapter.canResolveTransfer(from: session)
     }
 
     func dropInteraction(
         _ interaction: UIDropInteraction,
         sessionDidUpdate session: UIDropSession
     ) -> UIDropProposal {
-        if iOSCanvasImportAdapter.canResolveTransfer(from: session) {
+        if isReadingModeActive == false,
+           iOSCanvasImportAdapter.canResolveTransfer(from: session)
+        {
             return UIDropProposal(operation: .copy)
         }
 
@@ -1369,6 +1381,10 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     ) {
         Task { @MainActor [weak self] in
             guard let self else {
+                return
+            }
+
+            guard self.isReadingModeActive == false else {
                 return
             }
 
@@ -1387,7 +1403,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
         picker.dismiss(animated: true)
 
-        guard results.isEmpty == false else {
+        guard results.isEmpty == false, isReadingModeActive == false else {
             return
         }
 
@@ -1421,7 +1437,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     }
 
     private func canTransferContent(from pasteboard: UIPasteboard) -> Bool {
-        iOSCanvasImportAdapter.canResolveTransfer(from: pasteboard)
+        isReadingModeActive == false &&
+            iOSCanvasImportAdapter.canResolveTransfer(from: pasteboard)
     }
 
     private func handlePasteRequest() {
@@ -1450,6 +1467,10 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     private func performTransferRequest(
         _ request: CanvasTransferRequest
     ) -> Bool {
+        guard isReadingModeActive == false else {
+            return false
+        }
+
         guard let command = CanvasTransferCommandLowerer.loweredCommand(
             for: request
         ) else {
@@ -2559,6 +2580,10 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     }
 
     private func beginTextEditIfPossible(for itemID: CanvasItemID) -> Bool {
+        guard isReadingModeActive == false else {
+            return false
+        }
+
         guard scene.textItem(withID: itemID) != nil else {
             return false
         }
