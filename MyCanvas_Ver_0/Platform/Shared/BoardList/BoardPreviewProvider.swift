@@ -45,6 +45,12 @@ final class BoardPreviewProvider {
                 targetPixelSize: targetPixelSize,
                 source: "cache-hit"
             )
+            logBoardPreviewProviderCacheHit(
+                phase: "immediatePreview-cache-hit",
+                item: item,
+                targetPixelSize: targetPixelSize,
+                cachedImage: cachedImage
+            )
             return .thumbnail(cachedImage, item.previewSeed)
         }
 
@@ -105,6 +111,12 @@ final class BoardPreviewProvider {
                 revisionToken: item.revisionToken,
                 targetPixelSize: targetPixelSize,
                 source: "cache-hit"
+            )
+            logBoardPreviewProviderCacheHit(
+                phase: "requestThumbnail-cache-hit",
+                item: item,
+                targetPixelSize: targetPixelSize,
+                cachedImage: cachedImage
             )
             callbackQueue.async { [weak requestToken] in
                 guard let requestToken, requestToken.isCancelled == false else {
@@ -277,6 +289,91 @@ final class BoardPreviewProvider {
             targetPixelSize: cacheKey.pixelSize,
             cancellationCheck: cancellationCheck
         )
+    }
+}
+
+private func logBoardPreviewProviderCacheHit(
+    phase: String,
+    item: BoardCatalogItem,
+    targetPixelSize: CGSize,
+    cachedImage: CGImage
+) {
+    logBoardThumbnailTraceImageRegions(
+        phase: phase,
+        mode: "provider-cache-hit",
+        boardID: item.boardID,
+        previewSeed: item.previewSeed,
+        targetPixelSize: targetPixelSize,
+        contentInset: 10,
+        image: cachedImage
+    )
+    logBoardPreviewProviderSourceImagesIfNeeded(
+        phase: phase,
+        item: item
+    )
+}
+
+private func logBoardPreviewProviderSourceImagesIfNeeded(
+    phase: String,
+    item: BoardCatalogItem,
+    maxImageCount: Int = 8,
+    maxPixelSize: Int = 128
+) {
+    let imageItemRecords = item.document.imageItemRecords
+    guard imageItemRecords.count <= maxImageCount else {
+        print(
+            "[BoardList][ThumbnailTrace][SourceImage] " +
+                "phase=\(phase) " +
+                "boardID=\(item.boardID.uuidString) " +
+                "status=skipped " +
+                "reason=image-count-exceeds-limit " +
+                "imageCount=\(imageItemRecords.count)"
+        )
+        return
+    }
+
+    for imageItemRecord in imageItemRecords {
+        let assetURL = item.assetsDirectoryURL.appendingPathComponent(
+            imageItemRecord.assetFilename
+        )
+        do {
+            let assetData = try CoordinatedFileIO.readData(at: assetURL)
+            guard
+                let image = CanvasImagePosterFrameDecoder.decodePosterFrame(
+                    from: assetData,
+                    maxPixelSize: maxPixelSize
+                )
+            else {
+                print(
+                    "[BoardList][ThumbnailTrace][SourceImage] " +
+                        "phase=\(phase) " +
+                        "boardID=\(item.boardID.uuidString) " +
+                        "itemID=\(imageItemRecord.id.uuidString) " +
+                        "assetFilename=\(imageItemRecord.assetFilename) " +
+                        "status=decode-failed"
+                )
+                continue
+            }
+
+            print(
+                "[BoardList][ThumbnailTrace][SourceImage] " +
+                    "phase=\(phase) " +
+                    "boardID=\(item.boardID.uuidString) " +
+                    "itemID=\(imageItemRecord.id.uuidString) " +
+                    "assetFilename=\(imageItemRecord.assetFilename) " +
+                    "signature=\(BoardThumbnailImageSignature.describe(image))"
+            )
+        } catch {
+            print(
+                "[BoardList][ThumbnailTrace][SourceImage] " +
+                    "phase=\(phase) " +
+                    "boardID=\(item.boardID.uuidString) " +
+                    "itemID=\(imageItemRecord.id.uuidString) " +
+                    "assetFilename=\(imageItemRecord.assetFilename) " +
+                    "status=read-failed " +
+                    "error=\(error)"
+            )
+        }
     }
 }
 

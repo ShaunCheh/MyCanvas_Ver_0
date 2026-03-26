@@ -183,6 +183,19 @@ final class BoardThumbnailRenderer {
             fromPreviewRect: geometry.contentRect,
             pixelSize: normalizedTargetPixelSize
         )
+        if let persistedThumbnailGeometry = imageGeometry(
+            for: persistedThumbnail,
+            displayWorldRect: snapshot.displayWorldRect,
+            contentInset: 0
+        ) {
+            logNodeRegionSamples(
+                phase: "persisted-replay-input",
+                traceContext: traceContext,
+                nodes: previewSeed.nodes,
+                geometry: persistedThumbnailGeometry,
+                image: persistedThumbnail
+            )
+        }
         logRenderSurface(
             traceContext: traceContext,
             previewSeed: previewSeed,
@@ -203,6 +216,13 @@ final class BoardThumbnailRenderer {
         try cancellationCheck()
         let renderedImage = context.makeImage()
         if let renderedImage {
+            logNodeRegionSamples(
+                phase: "persisted-replay-output",
+                traceContext: traceContext,
+                nodes: previewSeed.nodes,
+                geometry: geometry,
+                image: renderedImage
+            )
             logRenderedImage(
                 traceContext: traceContext,
                 image: renderedImage
@@ -498,6 +518,16 @@ final class BoardThumbnailRenderer {
         context.clip(to: visibleRect)
         context.draw(image, in: fullImageRect)
         context.restoreGState()
+        if let renderedImage = context.makeImage() {
+            logImageRenderedRegion(
+                traceContext: traceContext,
+                itemID: itemRecord.id,
+                documentOrder: documentOrder,
+                renderOrder: renderOrder,
+                previewVisibleRect: previewVisibleRect,
+                renderedImage: renderedImage
+            )
+        }
     }
 
     private func drawTextItem(
@@ -848,6 +878,24 @@ final class BoardThumbnailRenderer {
             height: standardizedPreviewRect.height
         ).standardized
     }
+
+    private func imageGeometry(
+        for image: CGImage,
+        displayWorldRect: CGRect,
+        contentInset: CGFloat
+    ) -> CanvasMiniMapViewGeometry? {
+        CanvasMiniMapViewGeometry(
+            displayWorldRect: displayWorldRect,
+            viewBounds: CGRect(
+                origin: .zero,
+                size: CGSize(
+                    width: CGFloat(image.width),
+                    height: CGFloat(image.height)
+                )
+            ),
+            contentInset: contentInset
+        )
+    }
 }
 
 private func makeTraceContext(
@@ -863,6 +911,57 @@ private func makeTraceContext(
                 (item.id, documentOrder)
             }
         )
+    )
+}
+
+func logBoardThumbnailTraceImageRegions(
+    phase: String,
+    mode: String,
+    boardID: UUID?,
+    previewSeed: BoardPreviewSeed,
+    targetPixelSize: CGSize,
+    contentInset: CGFloat,
+    image: CGImage
+) {
+    let normalizedTargetPixelSize = CGSize(
+        width: max(targetPixelSize.width.rounded(.up), 1),
+        height: max(targetPixelSize.height.rounded(.up), 1)
+    )
+    let snapshot = BoardGeometryPreviewBuilder().makeSnapshot(from: previewSeed)
+    guard
+        let geometry = CanvasMiniMapViewGeometry(
+            displayWorldRect: snapshot.displayWorldRect,
+            viewBounds: CGRect(origin: .zero, size: normalizedTargetPixelSize),
+            contentInset: contentInset
+        )
+    else {
+        return
+    }
+
+    let traceContext = BoardThumbnailTraceContext(
+        mode: mode,
+        boardID: boardID,
+        documentOrderByID: Dictionary(
+            uniqueKeysWithValues: previewSeed.nodes.enumerated().map { index, node in
+                (node.id, index)
+            }
+        )
+    )
+    print(
+        "[BoardList][ThumbnailTrace][ImageSnapshot] " +
+            "phase=\(phase) " +
+            "mode=\(mode) " +
+            "boardID=\(boardID?.uuidString ?? "nil") " +
+            "targetPixelSize=\(describeBoardThumbnailSize(normalizedTargetPixelSize)) " +
+            "contentInset=\(formatBoardThumbnailValue(contentInset)) " +
+            "signature=\(BoardThumbnailImageSignature.describe(image))"
+    )
+    logNodeRegionSamples(
+        phase: phase,
+        traceContext: traceContext,
+        nodes: previewSeed.nodes,
+        geometry: geometry,
+        image: image
     )
 }
 
@@ -942,6 +1041,57 @@ private func logImageDraw(
     )
 }
 
+private func logImageRenderedRegion(
+    traceContext: BoardThumbnailTraceContext,
+    itemID: UUID,
+    documentOrder: Int?,
+    renderOrder: Int,
+    previewVisibleRect: CGRect,
+    renderedImage: CGImage
+) {
+    let bitmapVisibleRect = bitmapRectForRenderedPreview(
+        previewRect: previewVisibleRect,
+        image: renderedImage
+    )
+    print(
+        "[BoardList][ThumbnailTrace][ImageDrawResult] " +
+            "mode=\(traceContext.mode) " +
+            "boardID=\(traceContext.boardID?.uuidString ?? "nil") " +
+            "itemID=\(itemID.uuidString) " +
+            "documentOrder=\(documentOrder.map(String.init) ?? "nil") " +
+            "renderOrder=\(renderOrder) " +
+            "previewVisibleRect=\(describeBoardThumbnailRect(previewVisibleRect)) " +
+            "renderedRegionSignature=\(describeBoardThumbnailRegionSignature(renderedImage, bitmapRect: bitmapVisibleRect))"
+    )
+}
+
+private func logNodeRegionSamples(
+    phase: String,
+    traceContext: BoardThumbnailTraceContext,
+    nodes: [CanvasMiniMapNode],
+    geometry: CanvasMiniMapViewGeometry,
+    image: CGImage
+) {
+    for node in nodes where node.kind == .image {
+        let previewRect = geometry.worldToMiniMap(node.worldQuad)
+            .boundingRect
+            .standardized
+        let bitmapRect = bitmapRectForRenderedPreview(
+            previewRect: previewRect,
+            image: image
+        )
+        print(
+            "[BoardList][ThumbnailTrace][NodeRegion] " +
+                "phase=\(phase) " +
+                "mode=\(traceContext.mode) " +
+                "boardID=\(traceContext.boardID?.uuidString ?? "nil") " +
+                "itemID=\(node.id.uuidString) " +
+                "previewRect=\(describeBoardThumbnailRect(previewRect)) " +
+                "regionSignature=\(describeBoardThumbnailRegionSignature(image, bitmapRect: bitmapRect))"
+        )
+    }
+}
+
 private func logTextDraw(
     traceContext: BoardThumbnailTraceContext,
     itemID: UUID,
@@ -982,6 +1132,99 @@ private func logRenderedImage(
             "boardID=\(traceContext.boardID?.uuidString ?? "nil") " +
             "signature=\(BoardThumbnailImageSignature.describe(image))"
     )
+}
+
+private func bitmapRectForRenderedPreview(
+    previewRect: CGRect,
+    image: CGImage
+) -> CGRect {
+    let standardizedPreviewRect = previewRect.standardized
+    return CGRect(
+        x: standardizedPreviewRect.minX,
+        y: CGFloat(image.height) - standardizedPreviewRect.maxY,
+        width: standardizedPreviewRect.width,
+        height: standardizedPreviewRect.height
+    ).standardized
+}
+
+private func describeBoardThumbnailRegionSignature(
+    _ image: CGImage,
+    bitmapRect: CGRect
+) -> String {
+    let imageBounds = CGRect(
+        x: 0,
+        y: 0,
+        width: CGFloat(image.width),
+        height: CGFloat(image.height)
+    )
+    let clampedBitmapRect = bitmapRect.standardized.intersection(imageBounds)
+    guard
+        clampedBitmapRect.width > 0,
+        clampedBitmapRect.height > 0
+    else {
+        return
+            "bitmapRect=\(describeBoardThumbnailRect(bitmapRect.standardized)) " +
+            "sampleGrid=empty"
+    }
+
+    guard
+        let normalizedRegionImage = makeNormalizedRegionImage(
+            from: image,
+            bitmapRect: clampedBitmapRect
+        )
+    else {
+        return
+            "bitmapRect=\(describeBoardThumbnailRect(clampedBitmapRect)) " +
+            "sampleGrid=unavailable"
+    }
+
+    return
+        "bitmapRect=\(describeBoardThumbnailRect(clampedBitmapRect)) " +
+        BoardThumbnailImageSignature.describe(normalizedRegionImage)
+}
+
+private func makeNormalizedRegionImage(
+    from image: CGImage,
+    bitmapRect: CGRect,
+    samplePixelSize: CGSize = CGSize(width: 24, height: 24)
+) -> CGImage? {
+    let width = max(Int(samplePixelSize.width), 1)
+    let height = max(Int(samplePixelSize.height), 1)
+    guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) else {
+        return nil
+    }
+
+    let bitmapInfo =
+        CGImageAlphaInfo.premultipliedLast.rawValue
+        | CGBitmapInfo.byteOrder32Big.rawValue
+    guard
+        let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: colorSpace,
+            bitmapInfo: bitmapInfo
+        )
+    else {
+        return nil
+    }
+
+    context.interpolationQuality = .high
+    let scaleX = samplePixelSize.width / bitmapRect.width
+    let scaleY = samplePixelSize.height / bitmapRect.height
+    context.scaleBy(x: scaleX, y: scaleY)
+    context.draw(
+        image,
+        in: CGRect(
+            x: -bitmapRect.minX,
+            y: -bitmapRect.minY,
+            width: CGFloat(image.width),
+            height: CGFloat(image.height)
+        )
+    )
+    return context.makeImage()
 }
 
 private func describeBoardThumbnailTransform(_ transform: CGAffineTransform) -> String {
