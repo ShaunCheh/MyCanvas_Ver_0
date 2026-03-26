@@ -38,6 +38,13 @@ final class BoardPreviewProvider {
         }
 
         if let cachedImage = thumbnailCache.image(for: cacheKey) {
+            logBoardPreviewProviderDecision(
+                phase: "immediatePreview",
+                boardID: item.boardID,
+                revisionToken: item.revisionToken,
+                targetPixelSize: targetPixelSize,
+                source: "cache-hit"
+            )
             return .thumbnail(cachedImage, item.previewSeed)
         }
 
@@ -46,6 +53,13 @@ final class BoardPreviewProvider {
                 for: item,
                 cacheKey: cacheKey
             ) {
+                logBoardPreviewProviderDecision(
+                    phase: "immediatePreview",
+                    boardID: item.boardID,
+                    revisionToken: item.revisionToken,
+                    targetPixelSize: targetPixelSize,
+                    source: "persisted-replay"
+                )
                 thumbnailCache.insert(persistedThumbnail, for: cacheKey)
                 return .thumbnail(persistedThumbnail, item.previewSeed)
             }
@@ -58,6 +72,13 @@ final class BoardPreviewProvider {
             )
         }
 
+        logBoardPreviewProviderDecision(
+            phase: "immediatePreview",
+            boardID: item.boardID,
+            revisionToken: item.revisionToken,
+            targetPixelSize: targetPixelSize,
+            source: "geometry-fallback"
+        )
         return .geometry(item.previewSeed)
     }
 
@@ -78,6 +99,13 @@ final class BoardPreviewProvider {
         }
 
         if let cachedImage = thumbnailCache.image(for: cacheKey) {
+            logBoardPreviewProviderDecision(
+                phase: "requestThumbnail",
+                boardID: item.boardID,
+                revisionToken: item.revisionToken,
+                targetPixelSize: targetPixelSize,
+                source: "cache-hit"
+            )
             callbackQueue.async { [weak requestToken] in
                 guard let requestToken, requestToken.isCancelled == false else {
                     return
@@ -156,6 +184,13 @@ final class BoardPreviewProvider {
                 cacheKey: cacheKey,
                 cancellationCheck: cancellationCheck
             ) {
+                logBoardPreviewProviderDecision(
+                    phase: "loadBestAvailableThumbnail",
+                    boardID: item.boardID,
+                    revisionToken: item.revisionToken,
+                    targetPixelSize: cacheKey.pixelSize,
+                    source: "persisted-replay"
+                )
                 return persistedThumbnail
             }
         } catch BoardThumbnailRendererError.cancelled {
@@ -170,6 +205,13 @@ final class BoardPreviewProvider {
         }
 
         try cancellationCheck()
+        logBoardPreviewProviderDecision(
+            phase: "loadBestAvailableThumbnail",
+            boardID: item.boardID,
+            revisionToken: item.revisionToken,
+            targetPixelSize: cacheKey.pixelSize,
+            source: "fresh-render"
+        )
         return try thumbnailRenderer.renderThumbnail(
             for: item,
             targetPixelSize: cacheKey.pixelSize,
@@ -186,6 +228,14 @@ final class BoardPreviewProvider {
         // Older persisted thumbnails may predate text rendering support, so mixed
         // and text-only boards should be regenerated from the current document.
         guard item.document.textItemRecords.isEmpty else {
+            logBoardPreviewProviderDecision(
+                phase: "loadPersistedThumbnailPreview",
+                boardID: item.boardID,
+                revisionToken: item.revisionToken,
+                targetPixelSize: cacheKey.pixelSize,
+                source: "skip-persisted",
+                reason: "contains-text-items"
+            )
             return nil
         }
 
@@ -197,18 +247,64 @@ final class BoardPreviewProvider {
             let persistedThumbnail = try BoardPersistedThumbnailStore.loadThumbnailIfFresh(
                 at: item.persistedThumbnailURL,
                 updatedAt: item.updatedAt,
+                boardID: item.boardID,
                 maxPixelSize: decodeMaxPixelSize
             )
         else {
+            logBoardPreviewProviderDecision(
+                phase: "loadPersistedThumbnailPreview",
+                boardID: item.boardID,
+                revisionToken: item.revisionToken,
+                targetPixelSize: cacheKey.pixelSize,
+                source: "persisted-miss",
+                reason: "missing-or-stale"
+            )
             return nil
         }
 
         try cancellationCheck()
+        logBoardPreviewProviderDecision(
+            phase: "loadPersistedThumbnailPreview",
+            boardID: item.boardID,
+            revisionToken: item.revisionToken,
+            targetPixelSize: cacheKey.pixelSize,
+            source: "persisted-hit"
+        )
         return try thumbnailRenderer.renderThumbnail(
             fromPersistedThumbnail: persistedThumbnail,
             previewSeed: item.previewSeed,
+            boardID: item.boardID,
             targetPixelSize: cacheKey.pixelSize,
             cancellationCheck: cancellationCheck
         )
     }
+}
+
+private func logBoardPreviewProviderDecision(
+    phase: String,
+    boardID: UUID,
+    revisionToken: String,
+    targetPixelSize: CGSize,
+    source: String,
+    reason: String? = nil
+) {
+    var message =
+        "[BoardList][ThumbnailTrace][Provider] " +
+        "phase=\(phase) " +
+        "boardID=\(boardID.uuidString) " +
+        "revision=\(revisionToken) " +
+        "targetPixelSize=\(describeBoardPreviewProviderSize(targetPixelSize)) " +
+        "source=\(source)"
+    if let reason {
+        message += " reason=\(reason)"
+    }
+    print(message)
+}
+
+private func describeBoardPreviewProviderSize(_ size: CGSize) -> String {
+    "{\(formatBoardPreviewProviderValue(size.width)), \(formatBoardPreviewProviderValue(size.height))}"
+}
+
+private func formatBoardPreviewProviderValue(_ value: CGFloat) -> String {
+    String(format: "%.2f", Double(value))
 }

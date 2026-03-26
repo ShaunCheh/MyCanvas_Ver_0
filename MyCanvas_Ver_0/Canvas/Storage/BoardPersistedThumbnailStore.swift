@@ -65,6 +65,7 @@ enum BoardPersistedThumbnailStore {
     static func loadThumbnailIfFresh(
         at thumbnailURL: URL,
         updatedAt: Date,
+        boardID: UUID? = nil,
         maxPixelSize: Int
     ) throws -> CGImage? {
         guard
@@ -87,13 +88,25 @@ enum BoardPersistedThumbnailStore {
             throw BoardPersistedThumbnailStoreError.invalidPersistedThumbnail
         }
 
+        logPersistedThumbnailImage(
+            phase: "load-output",
+            boardID: boardID,
+            image: image,
+            maxPixelSize: maxPixelSize
+        )
         return image
     }
 
     static func writeThumbnail(
         _ image: CGImage,
-        to boardDirectoryURL: URL
+        to boardDirectoryURL: URL,
+        boardID: UUID? = nil
     ) throws {
+        logPersistedThumbnailImage(
+            phase: "write-input",
+            boardID: boardID,
+            image: image
+        )
         let encodedImage = try makePNGData(for: image)
         try CoordinatedFileIO.writeData(
             encodedImage,
@@ -145,5 +158,109 @@ enum BoardPersistedThumbnailStore {
         }
 
         return mutableData as Data
+    }
+
+    private static func logPersistedThumbnailImage(
+        phase: String,
+        boardID: UUID?,
+        image: CGImage,
+        maxPixelSize: Int? = nil
+    ) {
+        var message =
+            "[BoardList][ThumbnailTrace][PersistedImage] " +
+            "phase=\(phase) " +
+            "boardID=\(boardID?.uuidString ?? "nil") " +
+            "signature=\(BoardThumbnailImageSignature.describe(image))"
+        if let maxPixelSize {
+            message += " maxPixelSize=\(maxPixelSize)"
+        }
+        print(message)
+    }
+}
+
+enum BoardThumbnailImageSignature {
+    static func describe(_ image: CGImage) -> String {
+        let sampleGridSize = CGSize(width: 3, height: 3)
+        guard let pixels = makeNormalizedPixels(for: image, sampleGridSize: sampleGridSize)
+        else {
+            return "pixels={\(image.width), \(image.height)} sampleGrid=unavailable"
+        }
+
+        let width = Int(sampleGridSize.width)
+        let topRow = describeRow(at: 0, width: width, pixels: pixels)
+        let middleRow = describeRow(at: 1, width: width, pixels: pixels)
+        let bottomRow = describeRow(at: 2, width: width, pixels: pixels)
+        return
+            "pixels={\(image.width), \(image.height)} " +
+            "sampleGrid={top:[\(topRow)],mid:[\(middleRow)],bottom:[\(bottomRow)]}"
+    }
+
+    private static func makeNormalizedPixels(
+        for image: CGImage,
+        sampleGridSize: CGSize
+    ) -> [UInt8]? {
+        let width = max(Int(sampleGridSize.width), 1)
+        let height = max(Int(sampleGridSize.height), 1)
+        let bytesPerPixel = 4
+        let bytesPerRow = width * bytesPerPixel
+        guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) else {
+            return nil
+        }
+
+        var pixels = [UInt8](repeating: 0, count: height * bytesPerRow)
+        let bitmapInfo =
+            CGImageAlphaInfo.premultipliedLast.rawValue
+            | CGBitmapInfo.byteOrder32Big.rawValue
+        let didRender = pixels.withUnsafeMutableBytes { rawBuffer -> Bool in
+            guard
+                let baseAddress = rawBuffer.baseAddress,
+                let context = CGContext(
+                    data: baseAddress,
+                    width: width,
+                    height: height,
+                    bitsPerComponent: 8,
+                    bytesPerRow: bytesPerRow,
+                    space: colorSpace,
+                    bitmapInfo: bitmapInfo
+                )
+            else {
+                return false
+            }
+
+            context.interpolationQuality = .none
+            context.draw(
+                image,
+                in: CGRect(
+                    x: 0,
+                    y: 0,
+                    width: width,
+                    height: height
+                )
+            )
+            return true
+        }
+        guard didRender else {
+            return nil
+        }
+        return pixels
+    }
+
+    private static func describeRow(
+        at row: Int,
+        width: Int,
+        pixels: [UInt8]
+    ) -> String {
+        let bytesPerPixel = 4
+        let bytesPerRow = width * bytesPerPixel
+        return (0..<width).map { column in
+            let offset = row * bytesPerRow + column * bytesPerPixel
+            return String(
+                format: "%02X%02X%02X%02X",
+                pixels[offset],
+                pixels[offset + 1],
+                pixels[offset + 2],
+                pixels[offset + 3]
+            )
+        }.joined(separator: ",")
     }
 }

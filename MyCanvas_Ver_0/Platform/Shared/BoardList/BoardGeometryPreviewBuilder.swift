@@ -3,10 +3,19 @@ import Foundation
 
 struct BoardGeometryPreviewBuilder {
     func makeSeed(from document: BoardDocument) -> BoardPreviewSeed {
-        let nodes = makeNodes(from: document.items)
+        let nodes = makeNodes(
+            from: document.items,
+            boardID: document.boardID
+        )
         let boardWorldRect = resolveBoardWorldRect(
             documentBoardRect: document.boardRect?.cgRect,
             nodes: nodes
+        )
+        logBoardPreviewSeedSummary(
+            boardID: document.boardID,
+            itemCount: document.items.count,
+            nodeCount: nodes.count,
+            boardWorldRect: boardWorldRect
         )
         return BoardPreviewSeed(
             boardWorldRect: boardWorldRect,
@@ -27,10 +36,18 @@ struct BoardGeometryPreviewBuilder {
     }
 
     private func makeNodes(
-        from itemRecords: [BoardItemRecord]
+        from itemRecords: [BoardItemRecord],
+        boardID: UUID? = nil
     ) -> [CanvasMiniMapNode] {
         itemRecords
-            .compactMap(makeNode)
+            .enumerated()
+            .compactMap { documentOrder, itemRecord in
+                makeNode(
+                    from: itemRecord,
+                    boardID: boardID,
+                    documentOrder: documentOrder
+                )
+            }
             .sorted { lhs, rhs in
                 if lhs.zIndex == rhs.zIndex {
                     return lhs.id.uuidString < rhs.id.uuidString
@@ -41,11 +58,15 @@ struct BoardGeometryPreviewBuilder {
     }
 
     private func makeNode(
-        from itemRecord: BoardItemRecord
+        from itemRecord: BoardItemRecord,
+        boardID: UUID? = nil,
+        documentOrder: Int
     ) -> CanvasMiniMapNode? {
         switch itemRecord {
         case let .image(imageRecord):
             return makeNode(
+                boardID: boardID,
+                documentOrder: documentOrder,
                 id: imageRecord.id,
                 kind: .image,
                 center: imageRecord.center,
@@ -55,6 +76,8 @@ struct BoardGeometryPreviewBuilder {
             )
         case let .text(textRecord):
             return makeNode(
+                boardID: boardID,
+                documentOrder: documentOrder,
                 id: textRecord.id,
                 kind: .text,
                 center: textRecord.center,
@@ -66,6 +89,8 @@ struct BoardGeometryPreviewBuilder {
     }
 
     private func makeNode(
+        boardID: UUID?,
+        documentOrder: Int,
         id: UUID,
         kind: CanvasMiniMapNodeKind,
         center: BoardPointRecord,
@@ -78,14 +103,29 @@ struct BoardGeometryPreviewBuilder {
             return nil
         }
 
+        let worldQuad = makeVisibleWorldQuad(
+            center: center,
+            size: size,
+            rotationRadians: rotationRadians
+        )
+        logBoardPreviewSeedNode(
+            boardID: boardID,
+            documentOrder: documentOrder,
+            itemID: id,
+            kind: kind,
+            worldCenter: center.cgPoint,
+            worldSize: resolvedSize,
+            zIndex: CGFloat(zIndex),
+            rotationRadians: normalizedCanvasAngle(
+                CGFloat(rotationRadians ?? 0)
+            ),
+            worldQuad: worldQuad
+        )
+
         return CanvasMiniMapNode(
             id: id,
             kind: kind,
-            worldQuad: makeVisibleWorldQuad(
-                center: center,
-                size: size,
-                rotationRadians: rotationRadians
-            ),
+            worldQuad: worldQuad,
             zIndex: CGFloat(zIndex),
             isPreviewActive: false
         )
@@ -204,4 +244,81 @@ struct BoardGeometryPreviewBuilder {
             y: point.x * sine + point.y * cosine
         )
     }
+}
+
+private func logBoardPreviewSeedSummary(
+    boardID: UUID,
+    itemCount: Int,
+    nodeCount: Int,
+    boardWorldRect: CGRect
+) {
+    print(
+        "[BoardList][ThumbnailTrace][Seed] " +
+            "boardID=\(boardID.uuidString) " +
+            "itemCount=\(itemCount) " +
+            "nodeCount=\(nodeCount) " +
+            "boardWorldRect=\(describeBoardPreviewRect(boardWorldRect))"
+    )
+}
+
+private func logBoardPreviewSeedNode(
+    boardID: UUID?,
+    documentOrder: Int,
+    itemID: UUID,
+    kind: CanvasMiniMapNodeKind,
+    worldCenter: CGPoint,
+    worldSize: CGSize,
+    zIndex: CGFloat,
+    rotationRadians: CGFloat,
+    worldQuad: CanvasQuad
+) {
+    print(
+        "[BoardList][ThumbnailTrace][SeedNode] " +
+            "boardID=\(boardID?.uuidString ?? "nil") " +
+            "documentOrder=\(documentOrder) " +
+            "itemID=\(itemID.uuidString) " +
+            "kind=\(describeBoardPreviewNodeKind(kind)) " +
+            "worldCenter=\(describeBoardPreviewPoint(worldCenter)) " +
+            "worldCenterY=\(formatBoardPreviewValue(worldCenter.y)) " +
+            "worldSize=\(describeBoardPreviewSize(worldSize)) " +
+            "zIndex=\(formatBoardPreviewValue(zIndex)) " +
+            "rotationDeg=\(formatBoardPreviewValue(rotationRadians * 180 / .pi)) " +
+            "worldQuad=\(describeBoardPreviewQuad(worldQuad))"
+    )
+}
+
+private func describeBoardPreviewNodeKind(_ kind: CanvasMiniMapNodeKind) -> String {
+    switch kind {
+    case .image:
+        return "image"
+    case .text:
+        return "text"
+    case .sticker:
+        return "sticker"
+    case .shape:
+        return "shape"
+    }
+}
+
+private func describeBoardPreviewQuad(_ quad: CanvasQuad) -> String {
+    "tl=\(describeBoardPreviewPoint(quad.topLeading)) " +
+        "tr=\(describeBoardPreviewPoint(quad.topTrailing)) " +
+        "bl=\(describeBoardPreviewPoint(quad.bottomLeading)) " +
+        "br=\(describeBoardPreviewPoint(quad.bottomTrailing))"
+}
+
+private func describeBoardPreviewRect(_ rect: CGRect) -> String {
+    "{{\(formatBoardPreviewValue(rect.minX)), \(formatBoardPreviewValue(rect.minY))}, {\(formatBoardPreviewValue(rect.width)), \(formatBoardPreviewValue(rect.height))}}"
+}
+
+private func describeBoardPreviewPoint(_ point: CGPoint) -> String {
+    "{\(formatBoardPreviewValue(point.x)), \(formatBoardPreviewValue(point.y))}"
+}
+
+private func describeBoardPreviewSize(_ size: CGSize) -> String {
+    "{\(formatBoardPreviewValue(size.width)), \(formatBoardPreviewValue(size.height))}"
+}
+
+private func formatBoardPreviewValue(_ value: CGFloat) -> String {
+    String(format: "%.2f", Double(value))
 }

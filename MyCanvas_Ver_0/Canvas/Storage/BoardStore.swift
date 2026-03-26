@@ -391,7 +391,8 @@ enum BoardStore {
             ) {
                 try BoardPersistedThumbnailStore.writeThumbnail(
                     thumbnailImage,
-                    to: boardDirectoryURL
+                    to: boardDirectoryURL,
+                    boardID: runtimeState.boardID
                 )
             } else {
                 try BoardPersistedThumbnailStore.removeThumbnail(

@@ -2,6 +2,12 @@ import CoreGraphics
 import CoreText
 import Foundation
 
+private struct BoardThumbnailTraceContext {
+    let mode: String
+    let boardID: UUID?
+    let documentOrderByID: [UUID: Int]
+}
+
 enum BoardThumbnailRendererError: LocalizedError {
     case invalidBitmapContext
     case invalidBoardImageAsset(filename: String)
@@ -41,12 +47,18 @@ final class BoardThumbnailRenderer {
     ) throws -> CGImage? {
         var cachedImagesByFilename: [String: CGImage] = [:]
         var decodeMaxPixelSizesByFilename: [String: Int] = [:]
+        let traceContext = makeTraceContext(
+            mode: "catalog-fresh",
+            boardID: item.boardID,
+            itemRecords: item.document.items
+        )
         return try renderThumbnail(
             itemRecords: item.document.items,
             previewSeed: item.previewSeed,
             targetPixelSize: targetPixelSize,
             contentInset: contentInset,
-            cancellationCheck: cancellationCheck
+            cancellationCheck: cancellationCheck,
+            traceContext: traceContext
         ) { itemRecord, geometry, itemRecords in
             if decodeMaxPixelSizesByFilename.isEmpty {
                 decodeMaxPixelSizesByFilename = self.decodeMaxPixelSizesByFilename(
@@ -100,12 +112,18 @@ final class BoardThumbnailRenderer {
         let runtimeItemsByID = Dictionary(
             uniqueKeysWithValues: runtimeState.imageItems.map { ($0.id, $0) }
         )
+        let traceContext = makeTraceContext(
+            mode: "persist-write",
+            boardID: runtimeState.boardID,
+            itemRecords: document.items
+        )
         return try renderThumbnail(
             itemRecords: document.items,
             previewSeed: previewSeed,
             targetPixelSize: targetPixelSize,
             contentInset: 0,
-            cancellationCheck: cancellationCheck
+            cancellationCheck: cancellationCheck,
+            traceContext: traceContext
         ) { itemRecord, _, _ in
             guard let runtimeItem = runtimeItemsByID[itemRecord.id] else {
                 throw BoardThumbnailRendererError.invalidRuntimeImageAsset(
@@ -125,6 +143,7 @@ final class BoardThumbnailRenderer {
     func renderThumbnail(
         fromPersistedThumbnail persistedThumbnail: CGImage,
         previewSeed: BoardPreviewSeed,
+        boardID: UUID? = nil,
         targetPixelSize: CGSize,
         contentInset: CGFloat = 10,
         cancellationCheck: () throws -> Void = {}
@@ -136,6 +155,11 @@ final class BoardThumbnailRenderer {
         else {
             return nil
         }
+        let traceContext = BoardThumbnailTraceContext(
+            mode: "persisted-replay",
+            boardID: boardID,
+            documentOrderByID: [:]
+        )
 
         let snapshot = geometryPreviewBuilder.makeSnapshot(from: previewSeed)
         guard
@@ -153,10 +177,31 @@ final class BoardThumbnailRenderer {
             context,
             pixelSize: normalizedTargetPixelSize
         )
+        logRenderSurface(
+            traceContext: traceContext,
+            previewSeed: previewSeed,
+            targetPixelSize: targetPixelSize,
+            contentInset: contentInset,
+            geometry: geometry,
+            context: context
+        )
         try cancellationCheck()
+        logPersistedReplayDraw(
+            traceContext: traceContext,
+            previewRect: geometry.contentRect,
+            persistedThumbnail: persistedThumbnail,
+            context: context
+        )
         context.draw(persistedThumbnail, in: geometry.contentRect)
         try cancellationCheck()
-        return context.makeImage()
+        let renderedImage = context.makeImage()
+        if let renderedImage {
+            logRenderedImage(
+                traceContext: traceContext,
+                image: renderedImage
+            )
+        }
+        return renderedImage
     }
 
     private func renderThumbnail(
@@ -165,6 +210,7 @@ final class BoardThumbnailRenderer {
         targetPixelSize: CGSize,
         contentInset: CGFloat,
         cancellationCheck: () throws -> Void,
+        traceContext: BoardThumbnailTraceContext,
         imageProvider: (
             BoardImageItemRecord,
             CanvasMiniMapViewGeometry,
@@ -199,8 +245,18 @@ final class BoardThumbnailRenderer {
             context,
             pixelSize: normalizedTargetPixelSize
         )
+        logRenderSurface(
+            traceContext: traceContext,
+            previewSeed: previewSeed,
+            targetPixelSize: targetPixelSize,
+            contentInset: contentInset,
+            geometry: geometry,
+            context: context
+        )
 
-        for itemRecord in orderedItemRecords(from: itemRecords) {
+        for (renderOrder, itemRecord) in orderedItemRecords(from: itemRecords)
+            .enumerated()
+        {
             try cancellationCheck()
             switch itemRecord {
             case let .image(imageItemRecord):
@@ -214,19 +270,36 @@ final class BoardThumbnailRenderer {
                     image,
                     for: imageItemRecord,
                     geometry: geometry,
-                    in: context
+                    in: context,
+                    traceContext: traceContext,
+                    documentOrder: traceContext.documentOrderByID[
+                        imageItemRecord.id
+                    ],
+                    renderOrder: renderOrder
                 )
             case let .text(textItemRecord):
                 drawTextItem(
                     textItemRecord,
                     geometry: geometry,
-                    in: context
+                    in: context,
+                    traceContext: traceContext,
+                    documentOrder: traceContext.documentOrderByID[
+                        textItemRecord.id
+                    ],
+                    renderOrder: renderOrder
                 )
             }
         }
 
         try cancellationCheck()
-        return context.makeImage()
+        let renderedImage = context.makeImage()
+        if let renderedImage {
+            logRenderedImage(
+                traceContext: traceContext,
+                image: renderedImage
+            )
+        }
+        return renderedImage
     }
 
     private func makeBitmapContext(
@@ -323,7 +396,10 @@ final class BoardThumbnailRenderer {
         _ image: CGImage,
         for itemRecord: BoardImageItemRecord,
         geometry: CanvasMiniMapViewGeometry,
-        in context: CGContext
+        in context: CGContext,
+        traceContext: BoardThumbnailTraceContext,
+        documentOrder: Int?,
+        renderOrder: Int
     ) {
         let visibleSize = itemRecord.size.cgSize
         guard visibleSize.width > 0, visibleSize.height > 0 else {
@@ -364,6 +440,30 @@ final class BoardThumbnailRenderer {
         let rotationRadians = normalizedCanvasAngle(
             CGFloat(itemRecord.rotationRadians ?? 0)
         )
+        let previewVisibleRect = visibleRect.offsetBy(
+            dx: mappedCenter.x,
+            dy: mappedCenter.y
+        )
+        let previewFullImageRect = fullImageRect.offsetBy(
+            dx: mappedCenter.x,
+            dy: mappedCenter.y
+        )
+
+        logImageDraw(
+            traceContext: traceContext,
+            itemID: itemRecord.id,
+            documentOrder: documentOrder,
+            renderOrder: renderOrder,
+            worldCenter: itemRecord.center.cgPoint,
+            mappedCenter: mappedCenter,
+            visibleSize: visibleSize,
+            cropRect: cropCGRect,
+            previewVisibleRect: previewVisibleRect,
+            previewFullImageRect: previewFullImageRect,
+            image: image,
+            rotationRadians: rotationRadians,
+            context: context
+        )
 
         context.saveGState()
         context.translateBy(x: mappedCenter.x, y: mappedCenter.y)
@@ -376,7 +476,10 @@ final class BoardThumbnailRenderer {
     private func drawTextItem(
         _ itemRecord: BoardTextItemRecord,
         geometry: CanvasMiniMapViewGeometry,
-        in context: CGContext
+        in context: CGContext,
+        traceContext: BoardThumbnailTraceContext,
+        documentOrder: Int?,
+        renderOrder: Int
     ) {
         guard itemRecord.text.isEmpty == false else {
             return
@@ -404,6 +507,23 @@ final class BoardThumbnailRenderer {
         ).standardized
         let rotationRadians = normalizedCanvasAngle(
             CGFloat(itemRecord.rotationRadians ?? 0)
+        )
+        let previewTextRect = textRect.offsetBy(
+            dx: mappedCenter.x,
+            dy: mappedCenter.y
+        )
+
+        logTextDraw(
+            traceContext: traceContext,
+            itemID: itemRecord.id,
+            documentOrder: documentOrder,
+            renderOrder: renderOrder,
+            worldCenter: itemRecord.center.cgPoint,
+            mappedCenter: mappedCenter,
+            visibleSize: visibleSize,
+            previewTextRect: previewTextRect,
+            rotationRadians: rotationRadians,
+            context: context
         )
 
         context.saveGState()
@@ -688,4 +808,161 @@ final class BoardThumbnailRenderer {
             return lhs.zIndex < rhs.zIndex
         }
     }
+}
+
+private func makeTraceContext(
+    mode: String,
+    boardID: UUID?,
+    itemRecords: [BoardItemRecord]
+) -> BoardThumbnailTraceContext {
+    BoardThumbnailTraceContext(
+        mode: mode,
+        boardID: boardID,
+        documentOrderByID: Dictionary(
+            uniqueKeysWithValues: itemRecords.enumerated().map { documentOrder, item in
+                (item.id, documentOrder)
+            }
+        )
+    )
+}
+
+private func logRenderSurface(
+    traceContext: BoardThumbnailTraceContext,
+    previewSeed: BoardPreviewSeed,
+    targetPixelSize: CGSize,
+    contentInset: CGFloat,
+    geometry: CanvasMiniMapViewGeometry,
+    context: CGContext
+) {
+    print(
+        "[BoardList][ThumbnailTrace][RenderSurface] " +
+            "mode=\(traceContext.mode) " +
+            "boardID=\(traceContext.boardID?.uuidString ?? "nil") " +
+            "targetPixelSize=\(describeBoardThumbnailSize(targetPixelSize)) " +
+            "contentInset=\(formatBoardThumbnailValue(contentInset)) " +
+            "boardWorldRect=\(describeBoardThumbnailRect(previewSeed.boardWorldRect)) " +
+            "displayWorldRect=\(describeBoardThumbnailRect(geometry.displayWorldRect)) " +
+            "contentRect=\(describeBoardThumbnailRect(geometry.contentRect)) " +
+            "scale=\(formatBoardThumbnailValue(geometry.scale)) " +
+            "contextCTM=\(describeBoardThumbnailTransform(context.ctm))"
+    )
+}
+
+private func logPersistedReplayDraw(
+    traceContext: BoardThumbnailTraceContext,
+    previewRect: CGRect,
+    persistedThumbnail: CGImage,
+    context: CGContext
+) {
+    print(
+        "[BoardList][ThumbnailTrace][PersistedReplayDraw] " +
+            "mode=\(traceContext.mode) " +
+            "boardID=\(traceContext.boardID?.uuidString ?? "nil") " +
+            "previewRect=\(describeBoardThumbnailRect(previewRect)) " +
+            "persistedSignature=\(BoardThumbnailImageSignature.describe(persistedThumbnail)) " +
+            "contextCTM=\(describeBoardThumbnailTransform(context.ctm))"
+    )
+}
+
+private func logImageDraw(
+    traceContext: BoardThumbnailTraceContext,
+    itemID: UUID,
+    documentOrder: Int?,
+    renderOrder: Int,
+    worldCenter: CGPoint,
+    mappedCenter: CGPoint,
+    visibleSize: CGSize,
+    cropRect: CGRect,
+    previewVisibleRect: CGRect,
+    previewFullImageRect: CGRect,
+    image: CGImage,
+    rotationRadians: CGFloat,
+    context: CGContext
+) {
+    print(
+        "[BoardList][ThumbnailTrace][ImageDraw] " +
+            "mode=\(traceContext.mode) " +
+            "boardID=\(traceContext.boardID?.uuidString ?? "nil") " +
+            "itemID=\(itemID.uuidString) " +
+            "documentOrder=\(documentOrder.map(String.init) ?? "nil") " +
+            "renderOrder=\(renderOrder) " +
+            "worldCenter=\(describeBoardThumbnailPoint(worldCenter)) " +
+            "worldCenterY=\(formatBoardThumbnailValue(worldCenter.y)) " +
+            "mappedCenter=\(describeBoardThumbnailPoint(mappedCenter)) " +
+            "mappedCenterY=\(formatBoardThumbnailValue(mappedCenter.y)) " +
+            "visibleSize=\(describeBoardThumbnailSize(visibleSize)) " +
+            "cropRect=\(describeBoardThumbnailRect(cropRect)) " +
+            "previewVisibleRect=\(describeBoardThumbnailRect(previewVisibleRect)) " +
+            "previewFullImageRect=\(describeBoardThumbnailRect(previewFullImageRect)) " +
+            "rotationDeg=\(formatBoardThumbnailValue(rotationRadians * 180 / .pi)) " +
+            "imageSignature=\(BoardThumbnailImageSignature.describe(image)) " +
+            "contextCTM=\(describeBoardThumbnailTransform(context.ctm))"
+    )
+}
+
+private func logTextDraw(
+    traceContext: BoardThumbnailTraceContext,
+    itemID: UUID,
+    documentOrder: Int?,
+    renderOrder: Int,
+    worldCenter: CGPoint,
+    mappedCenter: CGPoint,
+    visibleSize: CGSize,
+    previewTextRect: CGRect,
+    rotationRadians: CGFloat,
+    context: CGContext
+) {
+    print(
+        "[BoardList][ThumbnailTrace][TextDraw] " +
+            "mode=\(traceContext.mode) " +
+            "boardID=\(traceContext.boardID?.uuidString ?? "nil") " +
+            "itemID=\(itemID.uuidString) " +
+            "documentOrder=\(documentOrder.map(String.init) ?? "nil") " +
+            "renderOrder=\(renderOrder) " +
+            "worldCenter=\(describeBoardThumbnailPoint(worldCenter)) " +
+            "worldCenterY=\(formatBoardThumbnailValue(worldCenter.y)) " +
+            "mappedCenter=\(describeBoardThumbnailPoint(mappedCenter)) " +
+            "mappedCenterY=\(formatBoardThumbnailValue(mappedCenter.y)) " +
+            "visibleSize=\(describeBoardThumbnailSize(visibleSize)) " +
+            "previewTextRect=\(describeBoardThumbnailRect(previewTextRect)) " +
+            "rotationDeg=\(formatBoardThumbnailValue(rotationRadians * 180 / .pi)) " +
+            "contextCTM=\(describeBoardThumbnailTransform(context.ctm))"
+    )
+}
+
+private func logRenderedImage(
+    traceContext: BoardThumbnailTraceContext,
+    image: CGImage
+) {
+    print(
+        "[BoardList][ThumbnailTrace][RenderedImage] " +
+            "mode=\(traceContext.mode) " +
+            "boardID=\(traceContext.boardID?.uuidString ?? "nil") " +
+            "signature=\(BoardThumbnailImageSignature.describe(image))"
+    )
+}
+
+private func describeBoardThumbnailTransform(_ transform: CGAffineTransform) -> String {
+    "[a=\(formatBoardThumbnailValue(transform.a)), " +
+        "b=\(formatBoardThumbnailValue(transform.b)), " +
+        "c=\(formatBoardThumbnailValue(transform.c)), " +
+        "d=\(formatBoardThumbnailValue(transform.d)), " +
+        "tx=\(formatBoardThumbnailValue(transform.tx)), " +
+        "ty=\(formatBoardThumbnailValue(transform.ty))]"
+}
+
+private func describeBoardThumbnailRect(_ rect: CGRect) -> String {
+    "{{\(formatBoardThumbnailValue(rect.minX)), \(formatBoardThumbnailValue(rect.minY))}, {\(formatBoardThumbnailValue(rect.width)), \(formatBoardThumbnailValue(rect.height))}}"
+}
+
+private func describeBoardThumbnailPoint(_ point: CGPoint) -> String {
+    "{\(formatBoardThumbnailValue(point.x)), \(formatBoardThumbnailValue(point.y))}"
+}
+
+private func describeBoardThumbnailSize(_ size: CGSize) -> String {
+    "{\(formatBoardThumbnailValue(size.width)), \(formatBoardThumbnailValue(size.height))}"
+}
+
+private func formatBoardThumbnailValue(_ value: CGFloat) -> String {
+    String(format: "%.2f", Double(value))
 }
