@@ -4,6 +4,7 @@ import Foundation
 struct BoardThumbnailCacheKey {
     let boardID: UUID
     let revisionToken: String
+    let thumbnailFormatVersion: Int
     let pixelWidth: Int
     let pixelHeight: Int
 
@@ -18,6 +19,7 @@ struct BoardThumbnailCacheKey {
 
         boardID = item.boardID
         revisionToken = item.revisionToken
+        thumbnailFormatVersion = BoardPersistedThumbnailStore.formatVersion
         pixelWidth = Int(normalizedPixelSize.width)
         pixelHeight = Int(normalizedPixelSize.height)
     }
@@ -30,7 +32,7 @@ struct BoardThumbnailCacheKey {
     }
 
     var cacheKey: NSString {
-        "\(boardID.uuidString)-\(revisionToken)-\(pixelWidth)x\(pixelHeight)" as NSString
+        "\(boardID.uuidString)-\(revisionToken)-v\(thumbnailFormatVersion)-\(pixelWidth)x\(pixelHeight)" as NSString
     }
 }
 
