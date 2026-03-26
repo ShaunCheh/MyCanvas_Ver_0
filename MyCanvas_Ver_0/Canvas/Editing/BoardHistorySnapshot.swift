@@ -77,7 +77,8 @@ extension BoardRuntimeState {
             items: snapshot.items,
             boardState: snapshot.boardState,
             camera: camera,
-            interactionState: snapshot.interactionState
+            interactionState: snapshot.interactionState,
+            workspaceMode: workspaceMode
         )
     }
 }

@@ -14,6 +14,7 @@ enum BoardDocumentMapper {
             cameraCenter: BoardPointRecord(runtimeState.camera.center),
             cameraZoomScale: Double(runtimeState.camera.zoomScale),
             selectedItemID: runtimeState.interactionState.selectedItemID,
+            workspaceMode: runtimeState.workspaceMode,
             items: runtimeState.items.map(makeItemRecord)
         )
     }
@@ -72,7 +73,8 @@ enum BoardDocumentMapper {
             ),
             interactionState: CanvasInteractionState(
                 selectedItemID: document.selectedItemID
-            )
+            ),
+            workspaceMode: document.workspaceMode ?? .editing
         )
         print(
             "[BoardStore][Mapper] " +

@@ -12,6 +12,7 @@ final class CanvasEditorSession {
     var camera = CanvasCamera()
     var boardState: CanvasBoardState?
     var interactionState = CanvasInteractionState()
+    var workspaceMode: CanvasWorkspaceMode = .editing
     var inlineEditState: CanvasInlineEditState?
     var rotationPreviewState: CanvasRotationPreviewState?
     var rotationInteractionState: CanvasRotationInteractionState?
@@ -131,6 +132,14 @@ final class CanvasEditorSession {
 
     var isInlineTextModeActive: Bool {
         inlineEditState?.mode == .text
+    }
+
+    var isReadingModeActive: Bool {
+        workspaceMode == .reading
+    }
+
+    var isEditingModeActive: Bool {
+        workspaceMode == .editing
     }
 
     var selectedBoardItem: CanvasBoardItem? {
@@ -301,6 +310,7 @@ final class CanvasEditorSession {
         boardState = runtimeState.boardState
         camera = runtimeState.camera
         interactionState = runtimeState.interactionState
+        workspaceMode = runtimeState.workspaceMode
         inlineEditState = nil
         rotationPreviewState = nil
         rotationInteractionState = nil
@@ -901,7 +911,8 @@ final class CanvasEditorSession {
             items: scene.orderedBoardItems(),
             boardState: boardState,
             camera: camera,
-            interactionState: interactionState
+            interactionState: interactionState,
+            workspaceMode: workspaceMode
         )
     }
 

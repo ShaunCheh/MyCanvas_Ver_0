@@ -17,6 +17,7 @@ struct BoardRuntimeState {
     var boardState: CanvasBoardState?
     var camera: CanvasCamera
     var interactionState: CanvasInteractionState
+    var workspaceMode: CanvasWorkspaceMode
 
     static func makeEmpty(
         boardID: UUID = UUID(),
@@ -31,7 +32,8 @@ struct BoardRuntimeState {
             items: [],
             boardState: nil,
             camera: CanvasCamera(),
-            interactionState: CanvasInteractionState()
+            interactionState: CanvasInteractionState(),
+            workspaceMode: .editing
         )
     }
 
@@ -71,6 +73,7 @@ struct BoardDocument: Codable {
     var cameraCenter: BoardPointRecord
     var cameraZoomScale: Double
     var selectedItemID: UUID?
+    var workspaceMode: CanvasWorkspaceMode?
     var items: [BoardItemRecord]
 
     var summary: BoardSummary {
