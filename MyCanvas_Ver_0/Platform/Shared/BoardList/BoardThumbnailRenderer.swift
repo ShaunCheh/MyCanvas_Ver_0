@@ -173,8 +173,14 @@ final class BoardThumbnailRenderer {
             return nil
         }
 
-        prepareContext(
+        // Persisted thumbnails are already rasterized in the preview's final
+        // orientation, so replay them in bitmap-space instead of flipping again.
+        prepareBitmapReplayContext(
             context,
+            pixelSize: normalizedTargetPixelSize
+        )
+        let bitmapReplayRect = bitmapReplayRect(
+            fromPreviewRect: geometry.contentRect,
             pixelSize: normalizedTargetPixelSize
         )
         logRenderSurface(
@@ -189,10 +195,11 @@ final class BoardThumbnailRenderer {
         logPersistedReplayDraw(
             traceContext: traceContext,
             previewRect: geometry.contentRect,
+            bitmapReplayRect: bitmapReplayRect,
             persistedThumbnail: persistedThumbnail,
             context: context
         )
-        context.draw(persistedThumbnail, in: geometry.contentRect)
+        context.draw(persistedThumbnail, in: bitmapReplayRect)
         try cancellationCheck()
         let renderedImage = context.makeImage()
         if let renderedImage {
@@ -241,7 +248,7 @@ final class BoardThumbnailRenderer {
             return nil
         }
 
-        prepareContext(
+        prepareVectorRenderContext(
             context,
             pixelSize: normalizedTargetPixelSize
         )
@@ -326,7 +333,32 @@ final class BoardThumbnailRenderer {
         return context
     }
 
-    private func prepareContext(
+    private func prepareVectorRenderContext(
+        _ context: CGContext,
+        pixelSize: CGSize
+    ) {
+        prepareBaseContext(
+            context,
+            pixelSize: pixelSize
+        )
+
+        // Flip into a top-left coordinate space so thumbnail drawing matches the
+        // preview view and the canvas layer pipeline.
+        context.translateBy(x: 0, y: pixelSize.height)
+        context.scaleBy(x: 1, y: -1)
+    }
+
+    private func prepareBitmapReplayContext(
+        _ context: CGContext,
+        pixelSize: CGSize
+    ) {
+        prepareBaseContext(
+            context,
+            pixelSize: pixelSize
+        )
+    }
+
+    private func prepareBaseContext(
         _ context: CGContext,
         pixelSize: CGSize
     ) {
@@ -340,11 +372,6 @@ final class BoardThumbnailRenderer {
                 height: pixelSize.height
             )
         )
-
-        // Flip into a top-left coordinate space so thumbnail drawing matches the
-        // preview view and the canvas layer pipeline.
-        context.translateBy(x: 0, y: pixelSize.height)
-        context.scaleBy(x: 1, y: -1)
     }
 
     private func normalizedPixelSize(
@@ -808,6 +835,19 @@ final class BoardThumbnailRenderer {
             return lhs.zIndex < rhs.zIndex
         }
     }
+
+    private func bitmapReplayRect(
+        fromPreviewRect previewRect: CGRect,
+        pixelSize: CGSize
+    ) -> CGRect {
+        let standardizedPreviewRect = previewRect.standardized
+        return CGRect(
+            x: standardizedPreviewRect.minX,
+            y: pixelSize.height - standardizedPreviewRect.maxY,
+            width: standardizedPreviewRect.width,
+            height: standardizedPreviewRect.height
+        ).standardized
+    }
 }
 
 private func makeTraceContext(
@@ -851,6 +891,7 @@ private func logRenderSurface(
 private func logPersistedReplayDraw(
     traceContext: BoardThumbnailTraceContext,
     previewRect: CGRect,
+    bitmapReplayRect: CGRect,
     persistedThumbnail: CGImage,
     context: CGContext
 ) {
@@ -859,6 +900,7 @@ private func logPersistedReplayDraw(
             "mode=\(traceContext.mode) " +
             "boardID=\(traceContext.boardID?.uuidString ?? "nil") " +
             "previewRect=\(describeBoardThumbnailRect(previewRect)) " +
+            "bitmapReplayRect=\(describeBoardThumbnailRect(bitmapReplayRect)) " +
             "persistedSignature=\(BoardThumbnailImageSignature.describe(persistedThumbnail)) " +
             "contextCTM=\(describeBoardThumbnailTransform(context.ctm))"
     )
