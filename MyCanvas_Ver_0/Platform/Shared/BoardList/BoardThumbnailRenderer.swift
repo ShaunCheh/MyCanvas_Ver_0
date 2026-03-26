@@ -45,10 +45,53 @@ final class BoardThumbnailRenderer {
         contentInset: CGFloat = 10,
         cancellationCheck: () throws -> Void = {}
     ) throws -> CGImage? {
+        try renderCatalogItemThumbnail(
+            item,
+            targetPixelSize: targetPixelSize,
+            animatedImagePreviewMode: animatedImagePreviewMode,
+            contentInset: contentInset,
+            traceMode: "catalog-fresh",
+            cancellationCheck: cancellationCheck
+        )
+    }
+
+    func renderPersistedThumbnail(
+        for item: BoardCatalogItem,
+        animatedImagePreviewMode: CanvasAnimatedImagePreviewMode =
+            BoardPersistedThumbnailStore.animatedImagePreviewMode,
+        maximumLongestSide: CGFloat = BoardPersistedThumbnailStore.maximumLongestSide,
+        cancellationCheck: () throws -> Void = {}
+    ) throws -> CGImage? {
+        let targetPixelSize = persistedTargetPixelSize(
+            for: item.previewSeed,
+            maximumLongestSide: maximumLongestSide
+        )
+        guard targetPixelSize.width > 0, targetPixelSize.height > 0 else {
+            return nil
+        }
+
+        return try renderCatalogItemThumbnail(
+            item,
+            targetPixelSize: targetPixelSize,
+            animatedImagePreviewMode: animatedImagePreviewMode,
+            contentInset: 0,
+            traceMode: "persist-rebuild",
+            cancellationCheck: cancellationCheck
+        )
+    }
+
+    private func renderCatalogItemThumbnail(
+        _ item: BoardCatalogItem,
+        targetPixelSize: CGSize,
+        animatedImagePreviewMode: CanvasAnimatedImagePreviewMode,
+        contentInset: CGFloat,
+        traceMode: String,
+        cancellationCheck: () throws -> Void
+    ) throws -> CGImage? {
         var cachedImagesByFilename: [String: CGImage] = [:]
         var decodeMaxPixelSizesByFilename: [String: Int] = [:]
         let traceContext = makeTraceContext(
-            mode: "catalog-fresh",
+            mode: traceMode,
             boardID: item.boardID,
             itemRecords: item.document.items
         )
@@ -100,9 +143,8 @@ final class BoardThumbnailRenderer {
 
         let document = BoardDocumentMapper.makeDocument(from: runtimeState)
         let previewSeed = geometryPreviewBuilder.makeSeed(from: document)
-        let snapshot = geometryPreviewBuilder.makeSnapshot(from: previewSeed)
-        let targetPixelSize = BoardPersistedThumbnailStore.pixelSize(
-            forDisplayWorldRect: snapshot.displayWorldRect,
+        let targetPixelSize = persistedTargetPixelSize(
+            for: previewSeed,
             maximumLongestSide: maximumLongestSide
         )
         guard targetPixelSize.width > 0, targetPixelSize.height > 0 else {
@@ -409,6 +451,17 @@ final class BoardThumbnailRenderer {
         return CGSize(
             width: max(targetPixelSize.width.rounded(.up), 1),
             height: max(targetPixelSize.height.rounded(.up), 1)
+        )
+    }
+
+    private func persistedTargetPixelSize(
+        for previewSeed: BoardPreviewSeed,
+        maximumLongestSide: CGFloat
+    ) -> CGSize {
+        let snapshot = geometryPreviewBuilder.makeSnapshot(from: previewSeed)
+        return BoardPersistedThumbnailStore.pixelSize(
+            forDisplayWorldRect: snapshot.displayWorldRect,
+            maximumLongestSide: maximumLongestSide
         )
     }
 
