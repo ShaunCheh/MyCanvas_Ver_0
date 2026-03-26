@@ -516,7 +516,16 @@ final class BoardThumbnailRenderer {
         context.translateBy(x: mappedCenter.x, y: mappedCenter.y)
         context.rotate(by: rotationRadians)
         context.clip(to: visibleRect)
-        context.draw(image, in: fullImageRect)
+        context.saveGState()
+        // `CGImage` drawing still uses Quartz's native y-up sampling, so compensate
+        // locally after the thumbnail surface has already been flipped into y-down.
+        context.translateBy(x: fullImageRect.minX, y: fullImageRect.maxY)
+        context.scaleBy(x: 1, y: -1)
+        context.draw(
+            image,
+            in: CGRect(origin: .zero, size: fullImageRect.size)
+        )
+        context.restoreGState()
         context.restoreGState()
         if let renderedImage = context.makeImage() {
             logImageRenderedRegion(
