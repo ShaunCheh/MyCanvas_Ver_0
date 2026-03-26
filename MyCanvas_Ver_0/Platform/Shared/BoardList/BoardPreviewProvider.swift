@@ -255,14 +255,17 @@ final class BoardPreviewProvider {
             cacheKey.pixelWidth,
             cacheKey.pixelHeight
         )
-        guard
-            let persistedThumbnail = try BoardPersistedThumbnailStore.loadThumbnailIfFresh(
-                at: item.persistedThumbnailURL,
-                updatedAt: item.updatedAt,
-                boardID: item.boardID,
-                maxPixelSize: decodeMaxPixelSize
-            )
-        else {
+        let persistedThumbnailResult = try BoardPersistedThumbnailStore.loadThumbnailIfFresh(
+            at: item.persistedThumbnailURL,
+            updatedAt: item.updatedAt,
+            boardID: item.boardID,
+            maxPixelSize: decodeMaxPixelSize
+        )
+        let persistedThumbnail: CGImage
+        switch persistedThumbnailResult {
+        case .image(let loadedThumbnail):
+            persistedThumbnail = loadedThumbnail
+        case .missingOrStale:
             logBoardPreviewProviderDecision(
                 phase: "loadPersistedThumbnailPreview",
                 boardID: item.boardID,
@@ -270,6 +273,16 @@ final class BoardPreviewProvider {
                 targetPixelSize: cacheKey.pixelSize,
                 source: "persisted-miss",
                 reason: "missing-or-stale"
+            )
+            return nil
+        case .formatVersionMismatch:
+            logBoardPreviewProviderDecision(
+                phase: "loadPersistedThumbnailPreview",
+                boardID: item.boardID,
+                revisionToken: item.revisionToken,
+                targetPixelSize: cacheKey.pixelSize,
+                source: "persisted-miss",
+                reason: "format-version-mismatch"
             )
             return nil
         }

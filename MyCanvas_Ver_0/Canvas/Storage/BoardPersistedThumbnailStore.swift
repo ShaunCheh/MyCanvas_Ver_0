@@ -17,13 +17,21 @@ enum BoardPersistedThumbnailStoreError: LocalizedError {
     }
 }
 
+enum BoardPersistedThumbnailStoreLoadResult {
+    case image(CGImage)
+    case missingOrStale
+    case formatVersionMismatch
+}
+
 enum BoardPersistedThumbnailStore {
     static let filename = "thumbnail.png"
     // Bump this when thumbnail pixels should be regenerated even if the board
     // document itself did not change.
-    static let formatVersion = 1
+    static let formatVersion = 2
     static let maximumLongestSide: CGFloat = 1024
     private static let freshnessTolerance: TimeInterval = 1
+    private static let formatVersionMetadataPrefix =
+        "mycanvas.board-thumbnail.format-version="
     static let animatedImagePreviewSurface: CanvasAnimatedImagePreviewSurface = .persistedThumbnail
 
     static var animatedImagePreviewMode: CanvasAnimatedImagePreviewMode {
@@ -70,21 +78,28 @@ enum BoardPersistedThumbnailStore {
         updatedAt: Date,
         boardID: UUID? = nil,
         maxPixelSize: Int
-    ) throws -> CGImage? {
+    ) throws -> BoardPersistedThumbnailStoreLoadResult {
         guard
             try isFreshThumbnail(
                 at: thumbnailURL,
                 updatedAt: updatedAt
             )
         else {
-            return nil
+            return .missingOrStale
         }
 
         let thumbnailData = try CoordinatedFileIO.readData(at: thumbnailURL)
+        guard let imageSource = CGImageSourceCreateWithData(thumbnailData as CFData, nil)
+        else {
+            throw BoardPersistedThumbnailStoreError.invalidPersistedThumbnail
+        }
+        guard persistedThumbnailFormatVersion(from: imageSource) == formatVersion else {
+            return .formatVersionMismatch
+        }
         guard
             usesPosterFrameForAnimatedImages,
             let image = CanvasImagePosterFrameDecoder.decodePosterFrame(
-                from: thumbnailData,
+                from: imageSource,
                 maxPixelSize: maxPixelSize
             )
         else {
@@ -97,7 +112,7 @@ enum BoardPersistedThumbnailStore {
             image: image,
             maxPixelSize: maxPixelSize
         )
-        return image
+        return .image(image)
     }
 
     static func writeThumbnail(
@@ -155,12 +170,62 @@ enum BoardPersistedThumbnailStore {
             throw BoardPersistedThumbnailStoreError.failedToEncodeThumbnail
         }
 
-        CGImageDestinationAddImage(imageDestination, image, nil)
+        CGImageDestinationAddImage(
+            imageDestination,
+            image,
+            pngMetadataProperties() as CFDictionary
+        )
         guard CGImageDestinationFinalize(imageDestination) else {
             throw BoardPersistedThumbnailStoreError.failedToEncodeThumbnail
         }
 
         return mutableData as Data
+    }
+
+    private static func pngMetadataProperties() -> [CFString: Any] {
+        [
+            kCGImagePropertyPNGDictionary: [
+                kCGImagePropertyPNGDescription: formatVersionMetadataValue()
+            ]
+        ]
+    }
+
+    private static func formatVersionMetadataValue(
+        version: Int = formatVersion
+    ) -> String {
+        "\(formatVersionMetadataPrefix)\(version)"
+    }
+
+    private static func persistedThumbnailFormatVersion(
+        from imageSource: CGImageSource
+    ) -> Int? {
+        guard
+            let properties = CGImageSourceCopyPropertiesAtIndex(
+                imageSource,
+                0,
+                nil
+            ) as? [AnyHashable: Any],
+            let pngProperties = properties[kCGImagePropertyPNGDictionary]
+                as? [AnyHashable: Any],
+            let metadataValue = pngProperties[kCGImagePropertyPNGDescription] as? String
+        else {
+            return nil
+        }
+
+        return parsePersistedThumbnailFormatVersion(from: metadataValue)
+    }
+
+    private static func parsePersistedThumbnailFormatVersion(
+        from metadataValue: String
+    ) -> Int? {
+        guard metadataValue.hasPrefix(formatVersionMetadataPrefix) else {
+            return nil
+        }
+
+        let versionText = String(
+            metadataValue.dropFirst(formatVersionMetadataPrefix.count)
+        )
+        return Int(versionText)
     }
 
     private static func logPersistedThumbnailImage(
@@ -173,6 +238,7 @@ enum BoardPersistedThumbnailStore {
             "[BoardList][ThumbnailTrace][PersistedImage] " +
             "phase=\(phase) " +
             "boardID=\(boardID?.uuidString ?? "nil") " +
+            "formatVersion=\(formatVersion) " +
             "signature=\(BoardThumbnailImageSignature.describe(image))"
         if let maxPixelSize {
             message += " maxPixelSize=\(maxPixelSize)"
