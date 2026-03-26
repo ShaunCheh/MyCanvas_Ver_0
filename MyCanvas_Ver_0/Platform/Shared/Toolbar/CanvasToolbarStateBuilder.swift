@@ -10,6 +10,14 @@ struct CanvasToolbarStateBuilder {
         isImportEnabled: Bool = true,
         showsBackground: Bool = true
     ) -> CanvasToolbarState {
+        guard session.isReadingModeActive == false else {
+            return CanvasToolbarState(
+                placement: placement,
+                items: [],
+                showsBackground: showsBackground
+            )
+        }
+
         var itemStates: [CanvasToolbarItemState] = []
         if shouldShowCropItem(session: session) {
             itemStates.append(cropItemState(session: session))

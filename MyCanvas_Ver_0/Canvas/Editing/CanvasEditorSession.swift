@@ -142,6 +142,26 @@ final class CanvasEditorSession {
         workspaceMode == .editing
     }
 
+    var presentationInteractionState: CanvasInteractionState {
+        guard isReadingModeActive else {
+            return interactionState
+        }
+
+        return CanvasInteractionState()
+    }
+
+    var presentationInlineEditState: CanvasInlineEditState? {
+        isReadingModeActive ? nil : inlineEditState
+    }
+
+    var presentationRotationPreviewState: CanvasRotationPreviewState? {
+        isReadingModeActive ? nil : rotationPreviewState
+    }
+
+    var presentationRotationInteractionState: CanvasRotationInteractionState? {
+        isReadingModeActive ? nil : rotationInteractionState
+    }
+
     var selectedBoardItem: CanvasBoardItem? {
         guard let selectedItemID = interactionState.selectedItemID else {
             return nil
@@ -159,10 +179,10 @@ final class CanvasEditorSession {
             scene: scene,
             boardState: boardState,
             camera: camera,
-            interactionState: interactionState,
-            inlineEditState: inlineEditState,
-            rotationPreviewState: rotationPreviewState,
-            rotationInteractionState: rotationInteractionState
+            interactionState: presentationInteractionState,
+            inlineEditState: presentationInlineEditState,
+            rotationPreviewState: presentationRotationPreviewState,
+            rotationInteractionState: presentationRotationInteractionState
         )
         lastRenderSnapshot = snapshot
         return snapshot
@@ -174,8 +194,8 @@ final class CanvasEditorSession {
                 scene: scene,
                 boardState: boardState,
                 camera: camera,
-                inlineEditState: inlineEditState,
-                rotationPreviewState: rotationPreviewState
+                inlineEditState: presentationInlineEditState,
+                rotationPreviewState: presentationRotationPreviewState
             )
         )
     }

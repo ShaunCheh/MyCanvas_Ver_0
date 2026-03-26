@@ -1550,7 +1550,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     private func handleWorkspaceModeButtonClick() {
         workspaceMode = workspaceMode.toggled
         updateWorkspaceModeButtonAppearance()
-        updatePreparedToolbarPlacement()
+        updateInlineEditButtonsAppearance()
+        refreshCanvas(reason: "toggle workspace mode")
         scheduleAutosave(reason: "toggle workspace mode")
     }
 
@@ -2579,8 +2580,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
                 "error=\(error)"
             )
         }
-        updateInlineEditButtonsAppearance()
         updateWorkspaceModeButtonAppearance()
+        updateInlineEditButtonsAppearance()
         print(
             "[Canvas macOS][RuntimeRestore] " +
             "action=controllerLoadBoard.end " +
@@ -2601,8 +2602,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             "selectedItemID=\(describe(itemID: interactionState.selectedItemID))"
         )
         editorSession.startNewBoard()
-        updateInlineEditButtonsAppearance()
         updateWorkspaceModeButtonAppearance()
+        updateInlineEditButtonsAppearance()
         print(
             "[Canvas macOS][RuntimeRestore] " +
             "action=controllerStartNewBoard.end " +
@@ -2622,8 +2623,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             "selectedItemID=\(describe(itemID: interactionState.selectedItemID))"
         )
         editorSession.restorePersistedBoardIfPossible()
-        updateInlineEditButtonsAppearance()
         updateWorkspaceModeButtonAppearance()
+        updateInlineEditButtonsAppearance()
         print(
             "[Canvas macOS][RuntimeRestore] " +
             "action=controllerRestore.end " +
@@ -2645,8 +2646,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             "runtimeSelectedItemID=\(describe(itemID: runtimeState.interactionState.selectedItemID))"
         )
         editorSession.applyBoardRuntimeState(runtimeState)
-        updateInlineEditButtonsAppearance()
         updateWorkspaceModeButtonAppearance()
+        updateInlineEditButtonsAppearance()
         print(
             "[Canvas macOS][RuntimeRestore] " +
             "action=controllerApplyRuntimeState.end " +
@@ -2714,6 +2715,10 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         set { editorSession.workspaceMode = newValue }
     }
 
+    private var presentationInlineEditState: CanvasInlineEditState? {
+        editorSession.presentationInlineEditState
+    }
+
     private var isInlineTextModeActive: Bool {
         editorSession.isInlineTextModeActive
     }
@@ -2778,7 +2783,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         }
 
         guard
-            let inlineEditState,
+            let inlineEditState = presentationInlineEditState,
             inlineEditState.mode == .text
         else {
             if view.window?.firstResponder === textEditorOverlayView.textView {

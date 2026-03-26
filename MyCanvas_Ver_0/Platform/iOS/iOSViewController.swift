@@ -1331,7 +1331,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     private func handleWorkspaceModeButtonTap() {
         workspaceMode = workspaceMode.toggled
         updateWorkspaceModeButtonAppearance()
-        updatePreparedToolbarPlacement()
+        updateInlineEditButtonsAppearance()
+        requestCanvasRefresh(reason: "toggle workspace mode")
         scheduleAutosave(reason: "toggle workspace mode")
     }
 
@@ -2414,27 +2415,27 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
                 "error=\(error)"
             )
         }
-        updateInlineEditButtonsAppearance()
         updateWorkspaceModeButtonAppearance()
+        updateInlineEditButtonsAppearance()
     }
 
     private func startNewBoard() {
         editorSession.startNewBoard()
-        updateInlineEditButtonsAppearance()
         updateWorkspaceModeButtonAppearance()
+        updateInlineEditButtonsAppearance()
     }
 
     private func restorePersistedBoardIfPossible() {
         editorSession.restorePersistedBoardIfPossible()
-        updateInlineEditButtonsAppearance()
         updateWorkspaceModeButtonAppearance()
+        updateInlineEditButtonsAppearance()
     }
 
     private func applyBoardRuntimeState(_ runtimeState: BoardRuntimeState) {
         cancelRotationInteractionIfNeeded(resetPointerDragState: true)
         editorSession.applyBoardRuntimeState(runtimeState)
-        updateInlineEditButtonsAppearance()
         updateWorkspaceModeButtonAppearance()
+        updateInlineEditButtonsAppearance()
     }
 
     private func currentBoardHistorySnapshot() -> BoardHistorySnapshot {
@@ -2494,6 +2495,14 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     private var workspaceMode: CanvasWorkspaceMode {
         get { editorSession.workspaceMode }
         set { editorSession.workspaceMode = newValue }
+    }
+
+    private var presentationInlineEditState: CanvasInlineEditState? {
+        editorSession.presentationInlineEditState
+    }
+
+    private var isReadingModeActive: Bool {
+        editorSession.isReadingModeActive
     }
 
     private var isInlineTextModeActive: Bool {
@@ -2560,7 +2569,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         }
 
         guard
-            let inlineEditState,
+            let inlineEditState = presentationInlineEditState,
             inlineEditState.mode == .text
         else {
             if textEditorOverlayView.textView.isFirstResponder {
@@ -2615,12 +2624,13 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     }
 
     private func updateInlineEditButtonsAppearance() {
-        updatePreparedToolbarPlacement()
         updateHistoryButtonsAppearance()
+        updatePreparedToolbarPlacement()
         syncTextEditorPresentation()
     }
 
     private func updateHistoryButtonsAppearance() {
+        historyButtonsStackView.isHidden = isReadingModeActive
         updateUndoButtonAppearance()
         updateRedoButtonAppearance()
     }
