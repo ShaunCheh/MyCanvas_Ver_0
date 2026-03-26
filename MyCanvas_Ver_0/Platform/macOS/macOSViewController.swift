@@ -112,6 +112,27 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         }
         return button
     }()
+    private let workspaceModeButton: NSButton = {
+        let button = NSButton()
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.isBordered = false
+        button.title = ""
+        button.wantsLayer = true
+        button.layer?.cornerRadius = 22
+        button.layer?.masksToBounds = true
+        button.layer?.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.92).cgColor
+        button.layer?.borderWidth = 1
+        button.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.35).cgColor
+        button.contentTintColor = .labelColor
+        if let image = NSImage(
+            systemSymbolName: CanvasWorkspaceMode.editing.systemImageName,
+            accessibilityDescription: CanvasWorkspaceMode.editing.accessibilityValue
+        ) {
+            button.image = image
+            button.imagePosition = .imageOnly
+        }
+        return button
+    }()
     // Keep placement transient until persistence is designed; future NSPanGestureRecognizer
     // bridge code should write drag results back into this value.
     private var transientToolbarPlacement = CanvasToolbarPlacement(
@@ -447,6 +468,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         setupCropButton()
         setupTextButton()
         setupBackButton()
+        setupWorkspaceModeButton()
         setupMiniMapView()
         setupContextMenuHostView()
         restoreInitialBoardState()
@@ -564,6 +586,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         chromeOverlayView.addSubview(textEditorOverlayView)
         chromeOverlayView.addSubview(contextMenuHostView)
         chromeOverlayView.addSubview(backButton)
+        chromeOverlayView.addSubview(workspaceModeButton)
         registerToolbarButtons()
     }
 
@@ -588,6 +611,10 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             backButton.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor, constant: 20),
             backButton.widthAnchor.constraint(equalToConstant: 44),
             backButton.heightAnchor.constraint(equalToConstant: 44),
+            workspaceModeButton.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -20),
+            workspaceModeButton.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor, constant: 20),
+            workspaceModeButton.widthAnchor.constraint(equalToConstant: 44),
+            workspaceModeButton.heightAnchor.constraint(equalToConstant: 44),
             textEditorOverlayView.centerXAnchor.constraint(equalTo: safeAreaLayoutGuide.centerXAnchor),
             textEditorOverlayView.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor, constant: 76),
             textEditorOverlayView.leadingAnchor.constraint(greaterThanOrEqualTo: safeAreaLayoutGuide.leadingAnchor, constant: 20),
@@ -664,6 +691,11 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         appendChromeBlocker(
             kind: .backButton,
             for: backButton,
+            to: &chromeBlockers
+        )
+        appendChromeBlocker(
+            kind: .modeToggle,
+            for: workspaceModeButton,
             to: &chromeBlockers
         )
         return chromeBlockers
@@ -838,6 +870,23 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     private func setupBackButton() {
         backButton.target = self
         backButton.action = #selector(handleBackButtonClick)
+    }
+
+    private func setupWorkspaceModeButton() {
+        workspaceModeButton.target = self
+        workspaceModeButton.action = #selector(handleWorkspaceModeButtonClick)
+        updateWorkspaceModeButtonAppearance()
+    }
+
+    private func updateWorkspaceModeButtonAppearance() {
+        workspaceModeButton.toolTip = "\(workspaceMode.accessibilityLabel): \(workspaceMode.accessibilityValue)"
+        if let image = NSImage(
+            systemSymbolName: workspaceMode.systemImageName,
+            accessibilityDescription: workspaceMode.accessibilityValue
+        ) {
+            workspaceModeButton.image = image
+            workspaceModeButton.imagePosition = .imageOnly
+        }
     }
 
     private func setupMiniMapView() {
@@ -1495,6 +1544,14 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         commitActiveTextEditIfNeeded()
         dismissContextMenu()
         onBackToBoardList?()
+    }
+
+    @objc
+    private func handleWorkspaceModeButtonClick() {
+        workspaceMode = workspaceMode.toggled
+        updateWorkspaceModeButtonAppearance()
+        updatePreparedToolbarPlacement()
+        scheduleAutosave(reason: "toggle workspace mode")
     }
 
     private func canTransferContent(from pasteboard: NSPasteboard) -> Bool {
@@ -2523,6 +2580,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             )
         }
         updateInlineEditButtonsAppearance()
+        updateWorkspaceModeButtonAppearance()
         print(
             "[Canvas macOS][RuntimeRestore] " +
             "action=controllerLoadBoard.end " +
@@ -2544,6 +2602,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         )
         editorSession.startNewBoard()
         updateInlineEditButtonsAppearance()
+        updateWorkspaceModeButtonAppearance()
         print(
             "[Canvas macOS][RuntimeRestore] " +
             "action=controllerStartNewBoard.end " +
@@ -2564,6 +2623,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         )
         editorSession.restorePersistedBoardIfPossible()
         updateInlineEditButtonsAppearance()
+        updateWorkspaceModeButtonAppearance()
         print(
             "[Canvas macOS][RuntimeRestore] " +
             "action=controllerRestore.end " +
@@ -2586,6 +2646,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         )
         editorSession.applyBoardRuntimeState(runtimeState)
         updateInlineEditButtonsAppearance()
+        updateWorkspaceModeButtonAppearance()
         print(
             "[Canvas macOS][RuntimeRestore] " +
             "action=controllerApplyRuntimeState.end " +
@@ -2646,6 +2707,11 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
 
     private var isInlineEditModeActive: Bool {
         editorSession.isInlineEditModeActive
+    }
+
+    private var workspaceMode: CanvasWorkspaceMode {
+        get { editorSession.workspaceMode }
+        set { editorSession.workspaceMode = newValue }
     }
 
     private var isInlineTextModeActive: Bool {

@@ -102,6 +102,24 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         button.accessibilityLabel = "Back to board list"
         return button
     }()
+    private let workspaceModeButton: UIButton = {
+        let button = UIButton(type: .system)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        var configuration = UIButton.Configuration.filled()
+        configuration.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
+            pointSize: 17,
+            weight: .semibold
+        )
+        configuration.image = UIImage(
+            systemName: CanvasWorkspaceMode.editing.systemImageName
+        )
+        configuration.baseBackgroundColor = .secondarySystemBackground
+        configuration.baseForegroundColor = .label
+        configuration.cornerStyle = .capsule
+        configuration.contentInsets = .zero
+        button.configuration = configuration
+        return button
+    }()
     // Keep placement transient until persistence is designed; future UIPanGestureRecognizer
     // bridge code should write drag results back into this value.
     private var transientToolbarPlacement = CanvasToolbarPlacement(
@@ -410,6 +428,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         setupUndoButton()
         setupRedoButton()
         setupBackButton()
+        setupWorkspaceModeButton()
         setupMiniMapView()
         setupContextMenuHostView()
         restoreInitialBoardState()
@@ -458,6 +477,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         chromeOverlayView.addSubview(textEditorOverlayView)
         chromeOverlayView.addSubview(contextMenuHostView)
         chromeOverlayView.addSubview(backButton)
+        chromeOverlayView.addSubview(workspaceModeButton)
         installHistoryButtons()
         registerToolbarButtons()
     }
@@ -483,6 +503,10 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             backButton.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor, constant: 20),
             backButton.widthAnchor.constraint(equalToConstant: 44),
             backButton.heightAnchor.constraint(equalToConstant: 44),
+            workspaceModeButton.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -20),
+            workspaceModeButton.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor, constant: 20),
+            workspaceModeButton.widthAnchor.constraint(equalToConstant: 44),
+            workspaceModeButton.heightAnchor.constraint(equalToConstant: 44),
             textEditorOverlayView.centerXAnchor.constraint(equalTo: safeAreaLayoutGuide.centerXAnchor),
             textEditorOverlayView.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor, constant: 76),
             textEditorOverlayView.leadingAnchor.constraint(greaterThanOrEqualTo: safeAreaLayoutGuide.leadingAnchor, constant: 20),
@@ -558,6 +582,11 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         appendChromeBlocker(
             kind: .backButton,
             for: backButton,
+            to: &chromeBlockers
+        )
+        appendChromeBlocker(
+            kind: .modeToggle,
+            for: workspaceModeButton,
             to: &chromeBlockers
         )
         appendChromeBlocker(
@@ -741,6 +770,23 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
 
     private func setupBackButton() {
         backButton.addTarget(self, action: #selector(handleBackButtonTap), for: .touchUpInside)
+    }
+
+    private func setupWorkspaceModeButton() {
+        workspaceModeButton.addTarget(
+            self,
+            action: #selector(handleWorkspaceModeButtonTap),
+            for: .touchUpInside
+        )
+        updateWorkspaceModeButtonAppearance()
+    }
+
+    private func updateWorkspaceModeButtonAppearance() {
+        var configuration = workspaceModeButton.configuration ?? UIButton.Configuration.filled()
+        configuration.image = UIImage(systemName: workspaceMode.systemImageName)
+        workspaceModeButton.configuration = configuration
+        workspaceModeButton.accessibilityLabel = workspaceMode.accessibilityLabel
+        workspaceModeButton.accessibilityValue = workspaceMode.accessibilityValue
     }
 
     private func setupMiniMapView() {
@@ -1279,6 +1325,14 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         commitActiveTextEditIfNeeded()
         dismissContextMenu()
         onBackToBoardList?()
+    }
+
+    @objc
+    private func handleWorkspaceModeButtonTap() {
+        workspaceMode = workspaceMode.toggled
+        updateWorkspaceModeButtonAppearance()
+        updatePreparedToolbarPlacement()
+        scheduleAutosave(reason: "toggle workspace mode")
     }
 
     @objc
@@ -2361,22 +2415,26 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             )
         }
         updateInlineEditButtonsAppearance()
+        updateWorkspaceModeButtonAppearance()
     }
 
     private func startNewBoard() {
         editorSession.startNewBoard()
         updateInlineEditButtonsAppearance()
+        updateWorkspaceModeButtonAppearance()
     }
 
     private func restorePersistedBoardIfPossible() {
         editorSession.restorePersistedBoardIfPossible()
         updateInlineEditButtonsAppearance()
+        updateWorkspaceModeButtonAppearance()
     }
 
     private func applyBoardRuntimeState(_ runtimeState: BoardRuntimeState) {
         cancelRotationInteractionIfNeeded(resetPointerDragState: true)
         editorSession.applyBoardRuntimeState(runtimeState)
         updateInlineEditButtonsAppearance()
+        updateWorkspaceModeButtonAppearance()
     }
 
     private func currentBoardHistorySnapshot() -> BoardHistorySnapshot {
@@ -2431,6 +2489,11 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
 
     private var isInlineEditModeActive: Bool {
         editorSession.isInlineEditModeActive
+    }
+
+    private var workspaceMode: CanvasWorkspaceMode {
+        get { editorSession.workspaceMode }
+        set { editorSession.workspaceMode = newValue }
     }
 
     private var isInlineTextModeActive: Bool {
