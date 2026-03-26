@@ -307,7 +307,10 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     }
 
     private func performCommand(_ command: CanvasCommand) {
-        if command.id != .commitTextEdit, isInlineTextModeActive {
+        if command.id != .commitTextEdit,
+           isInlineTextModeActive,
+           workspaceMode == .editing
+        {
             performCommand(.commitTextEdit)
         }
 
@@ -1330,6 +1333,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     @objc
     private func handleWorkspaceModeButtonTap() {
         workspaceMode = workspaceMode.toggled
+        dismissContextMenu()
         updateWorkspaceModeButtonAppearance()
         updateInlineEditButtonsAppearance()
         requestCanvasRefresh(reason: "toggle workspace mode")

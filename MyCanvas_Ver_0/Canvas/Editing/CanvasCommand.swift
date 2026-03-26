@@ -16,6 +16,30 @@ enum CanvasCommandID: String {
     case sendItemBackward
     case bringItemToFront
     case sendItemToBack
+
+    // Current CanvasCommand set only covers document-mutating editing operations.
+    // Navigation stays at the controller/input layer, so reading mode blocks all
+    // of these commands until explicit read-safe commands are introduced.
+    var isAllowedInReadingMode: Bool {
+        switch self {
+        case .importImages,
+             .addTextItem,
+             .beginTextEdit,
+             .commitTextEdit,
+             .crop,
+             .undo,
+             .redo,
+             .selectItem,
+             .clearSelection,
+             .duplicateItem,
+             .deleteItem,
+             .bringItemForward,
+             .sendItemBackward,
+             .bringItemToFront,
+             .sendItemToBack:
+            return false
+        }
+    }
 }
 
 enum CanvasCommand {
@@ -68,6 +92,10 @@ enum CanvasCommand {
         case .sendItemToBack:
             return .sendItemToBack
         }
+    }
+
+    var isAllowedInReadingMode: Bool {
+        id.isAllowedInReadingMode
     }
 
     // Command execution can invalidate rotation preview / interaction state, so

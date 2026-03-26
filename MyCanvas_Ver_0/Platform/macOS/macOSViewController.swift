@@ -298,7 +298,10 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     }
 
     private func performCommand(_ command: CanvasCommand) {
-        if command.id != .commitTextEdit, isInlineTextModeActive {
+        if command.id != .commitTextEdit,
+           isInlineTextModeActive,
+           workspaceMode == .editing
+        {
             performCommand(.commitTextEdit)
         }
 
@@ -1549,6 +1552,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     @objc
     private func handleWorkspaceModeButtonClick() {
         workspaceMode = workspaceMode.toggled
+        dismissContextMenu()
         updateWorkspaceModeButtonAppearance()
         updateInlineEditButtonsAppearance()
         refreshCanvas(reason: "toggle workspace mode")

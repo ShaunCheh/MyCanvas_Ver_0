@@ -8,6 +8,10 @@ final class CanvasCommandExecutor {
     }
 
     func canExecute(_ command: CanvasCommand) -> Bool {
+        guard session.isReadingModeActive == false || command.isAllowedInReadingMode else {
+            return false
+        }
+
         switch command {
         case let .importImages(request):
             return request.isEmpty == false

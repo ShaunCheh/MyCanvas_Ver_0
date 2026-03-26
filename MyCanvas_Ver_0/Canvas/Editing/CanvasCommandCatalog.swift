@@ -6,9 +6,10 @@ struct CanvasCommandCatalog {
         session: CanvasEditorSession,
         context: CanvasContextMenuContext? = nil
     ) -> CanvasCommandDescriptor {
+        let descriptor: CanvasCommandDescriptor
         switch commandID {
         case .importImages:
-            return CanvasCommandDescriptor(
+            descriptor = CanvasCommandDescriptor(
                 id: .importImages,
                 title: "Import Images",
                 systemImageName: "photo.on.rectangle.angled",
@@ -16,7 +17,7 @@ struct CanvasCommandCatalog {
                 isActive: false
             )
         case .addTextItem:
-            return CanvasCommandDescriptor(
+            descriptor = CanvasCommandDescriptor(
                 id: .addTextItem,
                 title: "Add Text",
                 systemImageName: "textformat",
@@ -24,7 +25,7 @@ struct CanvasCommandCatalog {
                 isActive: false
             )
         case .beginTextEdit:
-            return CanvasCommandDescriptor(
+            descriptor = CanvasCommandDescriptor(
                 id: .beginTextEdit,
                 title: "Edit Text",
                 systemImageName: "pencil",
@@ -37,7 +38,7 @@ struct CanvasCommandCatalog {
                 isActive: false
             )
         case .commitTextEdit:
-            return CanvasCommandDescriptor(
+            descriptor = CanvasCommandDescriptor(
                 id: .commitTextEdit,
                 title: "Done",
                 systemImageName: "checkmark",
@@ -46,7 +47,7 @@ struct CanvasCommandCatalog {
             )
         case .crop:
             let isActive = session.isInlineCropModeActive
-            return CanvasCommandDescriptor(
+            descriptor = CanvasCommandDescriptor(
                 id: .crop,
                 title: isActive ? "Done" : "Crop",
                 systemImageName: isActive ? "checkmark" : "crop",
@@ -54,7 +55,7 @@ struct CanvasCommandCatalog {
                 isActive: isActive
             )
         case .undo:
-            return CanvasCommandDescriptor(
+            descriptor = CanvasCommandDescriptor(
                 id: .undo,
                 title: "Undo",
                 systemImageName: "arrow.uturn.backward",
@@ -62,7 +63,7 @@ struct CanvasCommandCatalog {
                 isActive: false
             )
         case .redo:
-            return CanvasCommandDescriptor(
+            descriptor = CanvasCommandDescriptor(
                 id: .redo,
                 title: "Redo",
                 systemImageName: "arrow.uturn.forward",
@@ -70,7 +71,7 @@ struct CanvasCommandCatalog {
                 isActive: false
             )
         case .selectItem:
-            return CanvasCommandDescriptor(
+            descriptor = CanvasCommandDescriptor(
                 id: .selectItem,
                 title: "Select",
                 systemImageName: "checkmark.circle",
@@ -80,7 +81,7 @@ struct CanvasCommandCatalog {
                 isActive: false
             )
         case .clearSelection:
-            return CanvasCommandDescriptor(
+            descriptor = CanvasCommandDescriptor(
                 id: .clearSelection,
                 title: "Deselect",
                 systemImageName: "xmark.circle",
@@ -88,7 +89,7 @@ struct CanvasCommandCatalog {
                 isActive: false
             )
         case .duplicateItem:
-            return CanvasCommandDescriptor(
+            descriptor = CanvasCommandDescriptor(
                 id: .duplicateItem,
                 title: "Duplicate",
                 systemImageName: "square.on.square",
@@ -98,7 +99,7 @@ struct CanvasCommandCatalog {
                 isActive: false
             )
         case .deleteItem:
-            return CanvasCommandDescriptor(
+            descriptor = CanvasCommandDescriptor(
                 id: .deleteItem,
                 title: "Delete",
                 systemImageName: "trash",
@@ -108,7 +109,7 @@ struct CanvasCommandCatalog {
                 isActive: false
             )
         case .bringItemForward:
-            return CanvasCommandDescriptor(
+            descriptor = CanvasCommandDescriptor(
                 id: .bringItemForward,
                 title: "Bring Forward",
                 systemImageName: "chevron.up",
@@ -118,7 +119,7 @@ struct CanvasCommandCatalog {
                 isActive: false
             )
         case .sendItemBackward:
-            return CanvasCommandDescriptor(
+            descriptor = CanvasCommandDescriptor(
                 id: .sendItemBackward,
                 title: "Send Backward",
                 systemImageName: "chevron.down",
@@ -128,7 +129,7 @@ struct CanvasCommandCatalog {
                 isActive: false
             )
         case .bringItemToFront:
-            return CanvasCommandDescriptor(
+            descriptor = CanvasCommandDescriptor(
                 id: .bringItemToFront,
                 title: "Bring To Front",
                 systemImageName: "chevron.up.2",
@@ -138,7 +139,7 @@ struct CanvasCommandCatalog {
                 isActive: false
             )
         case .sendItemToBack:
-            return CanvasCommandDescriptor(
+            descriptor = CanvasCommandDescriptor(
                 id: .sendItemToBack,
                 title: "Send To Back",
                 systemImageName: "chevron.down.2",
@@ -148,6 +149,11 @@ struct CanvasCommandCatalog {
                 isActive: false
             )
         }
+
+        return workspaceModeAdjustedDescriptor(
+            descriptor,
+            session: session
+        )
     }
 
     private func targetItemID(
@@ -155,5 +161,25 @@ struct CanvasCommandCatalog {
         session: CanvasEditorSession
     ) -> CanvasItemID? {
         context?.targetItemID ?? session.interactionState.selectedItemID
+    }
+
+    private func workspaceModeAdjustedDescriptor(
+        _ descriptor: CanvasCommandDescriptor,
+        session: CanvasEditorSession
+    ) -> CanvasCommandDescriptor {
+        guard
+            session.isReadingModeActive,
+            descriptor.id.isAllowedInReadingMode == false
+        else {
+            return descriptor
+        }
+
+        return CanvasCommandDescriptor(
+            id: descriptor.id,
+            title: descriptor.title,
+            systemImageName: descriptor.systemImageName,
+            isEnabled: false,
+            isActive: false
+        )
     }
 }

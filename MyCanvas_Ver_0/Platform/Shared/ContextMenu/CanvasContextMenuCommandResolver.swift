@@ -11,6 +11,18 @@ struct CanvasContextMenuCommandResolver {
             for: context,
             session: session
         )
+        if session.isReadingModeActive {
+            print(
+                "[Canvas Shared][ContextMenuCommands] " +
+                context.debugSummary + " " +
+                "candidateIDs=[\(describeContextMenuCommandIDs(candidateIDs))] " +
+                "enabledIDs=[] " +
+                "disabledIDs=[\(describeContextMenuCommandIDs(candidateIDs))] " +
+                "reason=readingMode"
+            )
+            return []
+        }
+
         let enabledIDs = candidateIDs.filter { commandID in
             commandCatalog.descriptor(
                 for: commandID,
