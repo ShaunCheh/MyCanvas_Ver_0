@@ -201,6 +201,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     private var pointerDragState: PointerDragState = .idle
     private var lastZoomDispatchTimestamp: TimeInterval?
     private var lastZoomRefreshTimestamp: TimeInterval?
+    private var didMutateCameraDuringZoomGesture = false
     private var saveButtonResetWorkItem: DispatchWorkItem?
     private var saveButtonState: CanvasSaveState = .idle {
         didSet {
@@ -840,6 +841,12 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         canvasViewportView.onZoom = { [weak self] scaleDelta, anchor in
             self?.handleZoom(scaleDelta, around: anchor)
         }
+        canvasViewportView.onZoomGestureBegan = { [weak self] in
+            self?.handleZoomGestureBegan()
+        }
+        canvasViewportView.onZoomGestureEnded = { [weak self] in
+            self?.handleZoomGestureEnded()
+        }
         canvasViewportView.onViewportSizeChange = { [weak self] viewportSize in
             self?.syncCameraViewportSizeIfNeeded(
                 viewportSize,
@@ -852,6 +859,19 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
 
         installCanvasContentView(canvasViewportView)
         requestCanvasRefresh(reason: "initial setup")
+    }
+
+    private func handleZoomGestureBegan() {
+        didMutateCameraDuringZoomGesture = false
+    }
+
+    private func handleZoomGestureEnded() {
+        guard didMutateCameraDuringZoomGesture else {
+            return
+        }
+
+        scheduleAutosave(reason: "zoom canvas")
+        didMutateCameraDuringZoomGesture = false
     }
 
     private func syncCameraViewportSizeIfNeeded(
@@ -1239,11 +1259,11 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             return
         }
 
+        didMutateCameraDuringZoomGesture = true
         let refreshReason = "zoom scaleDelta=\(String(format: "%.4f", scaleDelta)) anchor=\(describe(point: anchor))"
         requestCanvasRefresh(reason: refreshReason)
         let afterRefresh = ProcessInfo.processInfo.systemUptime
-        scheduleAutosave(reason: "zoom canvas")
-        let afterAutosave = ProcessInfo.processInfo.systemUptime
+        let afterAutosave = afterRefresh
 
         logZoomDispatch(
             eventTime: eventTime,

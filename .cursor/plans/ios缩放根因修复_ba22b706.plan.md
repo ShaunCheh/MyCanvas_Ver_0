@@ -16,7 +16,7 @@ todos:
     status: completed
   - id: autosave-on-end
     content: 把 continuous zoom 的 autosave 从每帧调度改为手势结束后调度，减少缩放期间缩略图生成干扰
-    status: pending
+    status: completed
   - id: ab-verify-logs
     content: 保留现有诊断日志做 A/B 验证，确认 PinchInput、ControllerZoom、RenderZoom 和 ThumbnailTrace 的形态收敛
     status: pending

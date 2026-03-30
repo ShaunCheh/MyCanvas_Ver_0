@@ -110,6 +110,8 @@ final class iOSCanvasViewportView: UIView {
     var onLongPress: ((CGPoint) -> Void)?
     var onPan: ((CGPoint) -> Void)?
     var onZoom: ((CGFloat, CGPoint) -> Void)?
+    var onZoomGestureBegan: (() -> Void)?
+    var onZoomGestureEnded: (() -> Void)?
     var onViewportSizeChange: ((CGSize) -> Void)?
     var resolveAnimatedImagePlaybackSource: ((CanvasImageAssetReference) -> CanvasAnimatedImagePlaybackSource?)?
     var shouldAutoplayAnimatedImages = true {
@@ -1332,6 +1334,7 @@ final class iOSCanvasViewportView: UIView {
                 lastTimestamp: ProcessInfo.processInfo.systemUptime,
                 lastAnchor: gestureRecognizer.location(in: self)
             )
+            onZoomGestureBegan?()
         case .changed:
             cancelPrimaryPointerIfNeeded()
             interactionState = .pinching
@@ -1351,6 +1354,7 @@ final class iOSCanvasViewportView: UIView {
                     lastTimestamp: now,
                     lastAnchor: anchor
                 )
+                onZoomGestureBegan?()
                 return
             }
 
@@ -1371,8 +1375,12 @@ final class iOSCanvasViewportView: UIView {
 
             onZoom?(scaleDelta, anchor)
         case .ended, .cancelled, .failed:
+            let hadActiveZoomGesture = pinchGestureSession != nil
             pinchGestureSession = nil
             reconcileTouchInteractionState()
+            if hadActiveZoomGesture {
+                onZoomGestureEnded?()
+            }
         default:
             break
         }
