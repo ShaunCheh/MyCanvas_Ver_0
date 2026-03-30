@@ -831,6 +831,9 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         canvasViewportView.onLongPress = { [weak self] location in
             self?.handleLongPress(at: location)
         }
+        canvasViewportView.onPan = { [weak self] translation in
+            self?.handleIndirectPan(translation)
+        }
         canvasViewportView.onZoom = { [weak self] scaleDelta, anchor in
             self?.handleZoom(scaleDelta, around: anchor)
         }
@@ -1185,6 +1188,13 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         let distanceSquared = (dx * dx) + (dy * dy)
         let thresholdSquared = Self.pointerDragActivationDistance * Self.pointerDragActivationDistance
         return distanceSquared >= thresholdSquared
+    }
+
+    private func handleIndirectPan(_ translation: CGPoint) {
+        applyCanvasPan(
+            translation,
+            refreshReason: "indirect pan \(describe(point: translation))"
+        )
     }
 
     private func handleZoom(_ scaleDelta: CGFloat, around anchor: CGPoint) {
@@ -2395,6 +2405,16 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             x: location.x - previousLocation.x,
             y: location.y - previousLocation.y
         )
+        applyCanvasPan(
+            translation,
+            refreshReason: "pan \(describe(point: translation))"
+        )
+    }
+
+    private func applyCanvasPan(
+        _ translation: CGPoint,
+        refreshReason: String
+    ) {
         guard translation != .zero else {
             return
         }
@@ -2406,7 +2426,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             cameraCenterBeforePan: cameraCenterBeforePan,
             cameraCenterAfterPan: camera.center
         )
-        requestCanvasRefresh(reason: "pan \(describe(point: translation))")
+        requestCanvasRefresh(reason: refreshReason)
         scheduleAutosave(reason: "pan canvas")
     }
 
