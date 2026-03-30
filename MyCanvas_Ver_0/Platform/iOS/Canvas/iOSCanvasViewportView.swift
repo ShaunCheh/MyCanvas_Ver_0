@@ -38,6 +38,7 @@ final class iOSCanvasViewportView: UIView {
     private static let rotationTextCornerRadius: CGFloat = 8
     private static let longPressMinimumDuration: TimeInterval = 0.5
     private static let longPressAllowableMovement: CGFloat = 4
+    private static let isPinchZoomDiagnosticLoggingEnabled = true
 
     private enum TouchInteractionState {
         case idle
@@ -77,6 +78,7 @@ final class iOSCanvasViewportView: UIView {
     private var snapshot: CanvasRenderSnapshot = .empty
     private var interactionState: TouchInteractionState = .idle
     private var activeTouchesByID: [ObjectIdentifier: UITouch] = [:]
+    private var lastPinchInputTimestamp: TimeInterval?
     private lazy var animatedPlaybackRegistry = CanvasGIFPlaybackRegistry { [weak self] assetReference in
         self?.resolveAnimatedImagePlaybackSource?(assetReference)
     }
@@ -1289,6 +1291,8 @@ final class iOSCanvasViewportView: UIView {
 
     @objc
     private func handlePinch(_ gestureRecognizer: UIPinchGestureRecognizer) {
+        logPinchInput(gestureRecognizer)
+
         if case .presentingContextMenu = interactionState {
             return
         }
@@ -1309,6 +1313,47 @@ final class iOSCanvasViewportView: UIView {
             reconcileTouchInteractionState()
         default:
             break
+        }
+    }
+
+    private func logPinchInput(_ gestureRecognizer: UIPinchGestureRecognizer) {
+        guard Self.isPinchZoomDiagnosticLoggingEnabled else {
+            return
+        }
+
+        let now = ProcessInfo.processInfo.systemUptime
+        let deltaMs = lastPinchInputTimestamp.map { (now - $0) * 1000 } ?? 0
+        lastPinchInputTimestamp = now
+
+        print(
+            "[Canvas iOS][PinchInput] " +
+            "t=\(String(format: "%.6f", now)) " +
+            "dtMs=\(String(format: "%.3f", deltaMs)) " +
+            "state=\(describe(gestureState: gestureRecognizer.state)) " +
+            "scale=\(String(format: "%.6f", gestureRecognizer.scale)) " +
+            "velocity=\(String(format: "%.6f", gestureRecognizer.velocity)) " +
+            "anchor=\(NSCoder.string(for: gestureRecognizer.location(in: self))) " +
+            "touches=\(gestureRecognizer.numberOfTouches) " +
+            "activeTouches=\(activeTouchCount)"
+        )
+    }
+
+    private func describe(gestureState: UIGestureRecognizer.State) -> String {
+        switch gestureState {
+        case .possible:
+            return "possible"
+        case .began:
+            return "began"
+        case .changed:
+            return "changed"
+        case .ended:
+            return "ended"
+        case .cancelled:
+            return "cancelled"
+        case .failed:
+            return "failed"
+        @unknown default:
+            return "unknown"
         }
     }
 

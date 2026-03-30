@@ -55,6 +55,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     }
 
     private static let isDiagnosticLoggingEnabled = false
+    private static let isPinchZoomDiagnosticLoggingEnabled = true
     private static let pointerDragActivationDistance: CGFloat = 4
     private static let selectionHandleHitTargetSize: CGFloat = 28
     private static let minimumResizeViewportDimension: CGFloat = 28
@@ -198,6 +199,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     private var canvasContentView: UIView?
     private var pendingRefreshReason: String?
     private var pointerDragState: PointerDragState = .idle
+    private var lastZoomDispatchTimestamp: TimeInterval?
+    private var lastZoomRefreshTimestamp: TimeInterval?
     private var saveButtonResetWorkItem: DispatchWorkItem?
     private var saveButtonState: CanvasSaveState = .idle {
         didSet {
@@ -1214,6 +1217,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     }
 
     private func handleZoom(_ scaleDelta: CGFloat, around anchor: CGPoint) {
+        let eventTime = ProcessInfo.processInfo.systemUptime
         syncCameraViewportSizeFromCurrentBoundsIfPossible()
         guard hasRenderableViewportSize else {
             logIgnoredCanvasInput(
@@ -1227,11 +1231,26 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             return
         }
 
+        let zoomBefore = camera.zoomScale
         camera.zoom(by: scaleDelta, around: anchor)
-        requestCanvasRefresh(
-            reason: "zoom scaleDelta=\(String(format: "%.4f", scaleDelta)) anchor=\(describe(point: anchor))"
-        )
+        let afterZoomApply = ProcessInfo.processInfo.systemUptime
+        let refreshReason = "zoom scaleDelta=\(String(format: "%.4f", scaleDelta)) anchor=\(describe(point: anchor))"
+        requestCanvasRefresh(reason: refreshReason)
+        let afterRefresh = ProcessInfo.processInfo.systemUptime
         scheduleAutosave(reason: "zoom canvas")
+        let afterAutosave = ProcessInfo.processInfo.systemUptime
+
+        logZoomDispatch(
+            eventTime: eventTime,
+            scaleDelta: scaleDelta,
+            anchor: anchor,
+            zoomBefore: zoomBefore,
+            zoomAfter: camera.zoomScale,
+            applyCostMs: (afterZoomApply - eventTime) * 1000,
+            refreshCostMs: (afterRefresh - afterZoomApply) * 1000,
+            autosaveCostMs: (afterAutosave - afterRefresh) * 1000,
+            totalCostMs: (afterAutosave - eventTime) * 1000
+        )
     }
 
     private func requestCanvasRefresh(reason: String) {
@@ -1263,9 +1282,22 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     }
 
     private func performCanvasRefresh(reason: String) {
+        let refreshStart = ProcessInfo.processInfo.systemUptime
         let snapshot = editorSession.makeCanvasSnapshot()
+        let afterSnapshotBuild = ProcessInfo.processInfo.systemUptime
         canvasViewportView.apply(snapshot)
+        let afterViewportApply = ProcessInfo.processInfo.systemUptime
         refreshMiniMap()
+        let afterMiniMapRefresh = ProcessInfo.processInfo.systemUptime
+
+        logZoomRefreshIfNeeded(
+            reason: reason,
+            refreshStart: refreshStart,
+            afterSnapshotBuild: afterSnapshotBuild,
+            afterViewportApply: afterViewportApply,
+            afterMiniMapRefresh: afterMiniMapRefresh,
+            visibleItemCount: snapshot.items.count
+        )
         logCanvasState(reason: reason, snapshot: snapshot)
     }
 
@@ -2845,6 +2877,73 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             "zoom=\(String(format: "%.4f", camera.zoomScale)) " +
             "cameraViewportSize=\(describe(size: camera.viewportSize)) " +
             "viewBoundsSize=\(describe(size: canvasViewportView.bounds.size))"
+        )
+    }
+
+    private func logZoomDispatch(
+        eventTime: TimeInterval,
+        scaleDelta: CGFloat,
+        anchor: CGPoint,
+        zoomBefore: CGFloat,
+        zoomAfter: CGFloat,
+        applyCostMs: TimeInterval,
+        refreshCostMs: TimeInterval,
+        autosaveCostMs: TimeInterval,
+        totalCostMs: TimeInterval
+    ) {
+        guard Self.isPinchZoomDiagnosticLoggingEnabled else {
+            return
+        }
+
+        let deltaSinceLastEventMs = lastZoomDispatchTimestamp.map { (eventTime - $0) * 1000 } ?? 0
+        lastZoomDispatchTimestamp = eventTime
+
+        print(
+            "[Canvas iOS][ControllerZoom] " +
+            "t=\(String(format: "%.6f", eventTime)) " +
+            "dtMs=\(String(format: "%.3f", deltaSinceLastEventMs)) " +
+            "scaleDelta=\(String(format: "%.6f", scaleDelta)) " +
+            "anchor=\(describe(point: anchor)) " +
+            "zoomBefore=\(String(format: "%.6f", zoomBefore)) " +
+            "zoomAfter=\(String(format: "%.6f", zoomAfter)) " +
+            "applyMs=\(String(format: "%.3f", applyCostMs)) " +
+            "refreshMs=\(String(format: "%.3f", refreshCostMs)) " +
+            "autosaveMs=\(String(format: "%.3f", autosaveCostMs)) " +
+            "totalMs=\(String(format: "%.3f", totalCostMs))"
+        )
+    }
+
+    private func logZoomRefreshIfNeeded(
+        reason: String,
+        refreshStart: TimeInterval,
+        afterSnapshotBuild: TimeInterval,
+        afterViewportApply: TimeInterval,
+        afterMiniMapRefresh: TimeInterval,
+        visibleItemCount: Int
+    ) {
+        guard
+            Self.isPinchZoomDiagnosticLoggingEnabled,
+            reason.hasPrefix("zoom scaleDelta=")
+        else {
+            return
+        }
+
+        let deltaSinceLastRefreshMs = lastZoomRefreshTimestamp.map {
+            (refreshStart - $0) * 1000
+        } ?? 0
+        lastZoomRefreshTimestamp = refreshStart
+
+        print(
+            "[Canvas iOS][RenderZoom] " +
+            "t=\(String(format: "%.6f", refreshStart)) " +
+            "dtMs=\(String(format: "%.3f", deltaSinceLastRefreshMs)) " +
+            "snapshotMs=\(String(format: "%.3f", (afterSnapshotBuild - refreshStart) * 1000)) " +
+            "applyMs=\(String(format: "%.3f", (afterViewportApply - afterSnapshotBuild) * 1000)) " +
+            "miniMapMs=\(String(format: "%.3f", (afterMiniMapRefresh - afterViewportApply) * 1000)) " +
+            "totalMs=\(String(format: "%.3f", (afterMiniMapRefresh - refreshStart) * 1000)) " +
+            "zoom=\(String(format: "%.6f", camera.zoomScale)) " +
+            "visibleItems=\(visibleItemCount) " +
+            "reason=\(reason)"
         )
     }
 
