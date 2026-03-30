@@ -39,6 +39,11 @@ final class iOSCanvasViewportView: UIView {
     private static let longPressMinimumDuration: TimeInterval = 0.5
     private static let longPressAllowableMovement: CGFloat = 4
     private static let isPinchZoomDiagnosticLoggingEnabled = true
+    private static let directTouchPinchNoiseDeadzone: CGFloat = 0.002
+    private static let indirectMirroringLikePinchNoiseDeadzone: CGFloat = 0.006
+    private static let indirectMirroringLikePinchClampRange: ClosedRange<CGFloat> = 0.97 ... 1.03
+    private static let indirectMirroringLikeLateEventThreshold: TimeInterval = 0.05
+    private static let indirectMirroringLikeLateEventAttenuation: CGFloat = 0.5
 
     private enum TouchInteractionState {
         case idle
@@ -1350,6 +1355,7 @@ final class iOSCanvasViewportView: UIView {
             }
 
             let rawScaleDelta = rawScale / max(session.lastRawScale, 0.0001)
+            let dt = max(now - session.lastTimestamp, 0)
             session.lastRawScale = rawScale
             session.lastTimestamp = now
             session.lastAnchor = anchor
@@ -1357,7 +1363,8 @@ final class iOSCanvasViewportView: UIView {
 
             guard let scaleDelta = normalizedPinchScaleDelta(
                 rawDelta: rawScaleDelta,
-                source: session.source
+                source: session.source,
+                dt: dt
             ) else {
                 return
             }
@@ -1382,7 +1389,8 @@ final class iOSCanvasViewportView: UIView {
 
     private func normalizedPinchScaleDelta(
         rawDelta: CGFloat,
-        source: PinchInputSource
+        source: PinchInputSource,
+        dt: TimeInterval
     ) -> CGFloat? {
         // Keep source-specific normalization entry points separate so later
         // tuning for Mirroring/indirect pinch does not perturb direct touch.
@@ -1390,7 +1398,10 @@ final class iOSCanvasViewportView: UIView {
         case .directTouch:
             return normalizedDirectTouchPinchScaleDelta(rawDelta)
         case .indirectMirroringLike:
-            return normalizedIndirectMirroringLikePinchScaleDelta(rawDelta)
+            return normalizedIndirectMirroringLikePinchScaleDelta(
+                rawDelta,
+                dt: dt
+            )
         }
     }
 
@@ -1398,14 +1409,31 @@ final class iOSCanvasViewportView: UIView {
         guard rawDelta.isFinite, rawDelta > 0 else {
             return nil
         }
-        return rawDelta
-    }
-
-    private func normalizedIndirectMirroringLikePinchScaleDelta(_ rawDelta: CGFloat) -> CGFloat? {
-        guard rawDelta.isFinite, rawDelta > 0 else {
+        if abs(rawDelta - 1) < Self.directTouchPinchNoiseDeadzone {
             return nil
         }
         return rawDelta
+    }
+
+    private func normalizedIndirectMirroringLikePinchScaleDelta(
+        _ rawDelta: CGFloat,
+        dt: TimeInterval
+    ) -> CGFloat? {
+        guard rawDelta.isFinite, rawDelta > 0 else {
+            return nil
+        }
+        if abs(rawDelta - 1) < Self.indirectMirroringLikePinchNoiseDeadzone {
+            return nil
+        }
+
+        let clampedDelta = min(
+            max(rawDelta, Self.indirectMirroringLikePinchClampRange.lowerBound),
+            Self.indirectMirroringLikePinchClampRange.upperBound
+        )
+        if dt > Self.indirectMirroringLikeLateEventThreshold {
+            return 1 + ((clampedDelta - 1) * Self.indirectMirroringLikeLateEventAttenuation)
+        }
+        return clampedDelta
     }
 
     private func logPinchInput(_ gestureRecognizer: UIPinchGestureRecognizer) {

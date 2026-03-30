@@ -4,13 +4,13 @@ overview: 围绕 iPhone Mirroring 下 iOS 画布 pinch 缩放不精确的问题�
 todos:
   - id: rewrite-pinch-adapter
     content: 重写 iOS 视图层 pinch 适配，改为基于 raw scale 相邻帧比值计算稳定 delta，并去掉 scale=1 重置
-    status: pending
+    status: completed
   - id: split-pinch-sources
     content: 将 direct touch pinch 与 Mirroring/间接 pinch 分流，并分别应用不同归一化策略
-    status: pending
+    status: completed
   - id: stabilize-indirect-pinch
     content: 为 indirect pinch 增加去噪、去重和迟到事件抑制，解决起步慢、停手后继续缩和大跳变
-    status: pending
+    status: completed
   - id: guard-noop-zoom
     content: 在 iOS 控制器中为无效 zoom 加保护，到达 min/max 后跳过 refresh 和 autosave
     status: pending
