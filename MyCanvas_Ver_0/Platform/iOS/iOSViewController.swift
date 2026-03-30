@@ -1191,6 +1191,22 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     }
 
     private func handleIndirectPan(_ translation: CGPoint) {
+        syncCameraViewportSizeFromCurrentBoundsIfPossible()
+        guard hasRenderableViewportSize else {
+            logIgnoredCanvasInput("indirect pan \(describe(point: translation))")
+            return
+        }
+
+        if contextMenuState != nil {
+            dismissContextMenu()
+            return
+        }
+
+        guard case .idle = pointerDragState else {
+            logIgnoredCanvasInput("indirect pan \(describe(point: translation)) while pointer interaction is active")
+            return
+        }
+
         applyCanvasPan(
             translation,
             refreshReason: "indirect pan \(describe(point: translation))"
