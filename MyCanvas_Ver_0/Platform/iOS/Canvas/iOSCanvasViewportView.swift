@@ -52,6 +52,18 @@ final class iOSCanvasViewportView: UIView {
         case presentingContextMenu(trackedTouch: UITouch)
     }
 
+    private enum PinchInputSource {
+        case directTouch
+        case indirectMirroringLike
+    }
+
+    private struct PinchGestureSession {
+        var source: PinchInputSource
+        var lastRawScale: CGFloat
+        var lastTimestamp: TimeInterval
+        var lastAnchor: CGPoint
+    }
+
     private let backgroundLayer = CALayer()
     private let workspaceGridLayer = CALayer()
     private let workspaceMinorGridLayer = CAShapeLayer()
@@ -78,6 +90,7 @@ final class iOSCanvasViewportView: UIView {
     private var snapshot: CanvasRenderSnapshot = .empty
     private var interactionState: TouchInteractionState = .idle
     private var activeTouchesByID: [ObjectIdentifier: UITouch] = [:]
+    private var pinchGestureSession: PinchGestureSession?
     private var lastPinchInputTimestamp: TimeInterval?
     private lazy var animatedPlaybackRegistry = CanvasGIFPlaybackRegistry { [weak self] assetReference in
         self?.resolveAnimatedImagePlaybackSource?(assetReference)
@@ -1298,22 +1311,68 @@ final class iOSCanvasViewportView: UIView {
         }
 
         switch gestureRecognizer.state {
-        case .began, .changed:
+        case .began:
             cancelPrimaryPointerIfNeeded()
             interactionState = .pinching
 
-            let scaleDelta = gestureRecognizer.scale
+            let rawScale = gestureRecognizer.scale
+            guard rawScale.isFinite, rawScale > 0 else {
+                return
+            }
+
+            pinchGestureSession = PinchGestureSession(
+                source: resolvePinchInputSource(for: gestureRecognizer),
+                lastRawScale: rawScale,
+                lastTimestamp: ProcessInfo.processInfo.systemUptime,
+                lastAnchor: gestureRecognizer.location(in: self)
+            )
+        case .changed:
+            cancelPrimaryPointerIfNeeded()
+            interactionState = .pinching
+
+            let rawScale = gestureRecognizer.scale
+            guard rawScale.isFinite, rawScale > 0 else {
+                return
+            }
+
+            let now = ProcessInfo.processInfo.systemUptime
+            let anchor = gestureRecognizer.location(in: self)
+            guard var session = pinchGestureSession else {
+                pinchGestureSession = PinchGestureSession(
+                    source: resolvePinchInputSource(for: gestureRecognizer),
+                    lastRawScale: rawScale,
+                    lastTimestamp: now,
+                    lastAnchor: anchor
+                )
+                return
+            }
+
+            let scaleDelta = rawScale / max(session.lastRawScale, 0.0001)
+            session.lastRawScale = rawScale
+            session.lastTimestamp = now
+            session.lastAnchor = anchor
+            pinchGestureSession = session
+
             guard scaleDelta.isFinite, scaleDelta > 0 else {
                 return
             }
 
-            onZoom?(scaleDelta, gestureRecognizer.location(in: self))
-            gestureRecognizer.scale = 1
+            onZoom?(scaleDelta, anchor)
         case .ended, .cancelled, .failed:
+            pinchGestureSession = nil
             reconcileTouchInteractionState()
         default:
             break
         }
+    }
+
+    private func resolvePinchInputSource(
+        for gestureRecognizer: UIPinchGestureRecognizer
+    ) -> PinchInputSource {
+        if gestureRecognizer.numberOfTouches == 0, activeTouchCount == 0 {
+            return .indirectMirroringLike
+        }
+        return .directTouch
     }
 
     private func logPinchInput(_ gestureRecognizer: UIPinchGestureRecognizer) {
