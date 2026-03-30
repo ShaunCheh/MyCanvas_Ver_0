@@ -1320,8 +1320,9 @@ final class iOSCanvasViewportView: UIView {
                 return
             }
 
+            let source = resolvePinchInputSource(for: gestureRecognizer)
             pinchGestureSession = PinchGestureSession(
-                source: resolvePinchInputSource(for: gestureRecognizer),
+                source: source,
                 lastRawScale: rawScale,
                 lastTimestamp: ProcessInfo.processInfo.systemUptime,
                 lastAnchor: gestureRecognizer.location(in: self)
@@ -1337,9 +1338,10 @@ final class iOSCanvasViewportView: UIView {
 
             let now = ProcessInfo.processInfo.systemUptime
             let anchor = gestureRecognizer.location(in: self)
+            let source = resolvePinchInputSource(for: gestureRecognizer)
             guard var session = pinchGestureSession else {
                 pinchGestureSession = PinchGestureSession(
-                    source: resolvePinchInputSource(for: gestureRecognizer),
+                    source: source,
                     lastRawScale: rawScale,
                     lastTimestamp: now,
                     lastAnchor: anchor
@@ -1347,13 +1349,16 @@ final class iOSCanvasViewportView: UIView {
                 return
             }
 
-            let scaleDelta = rawScale / max(session.lastRawScale, 0.0001)
+            let rawScaleDelta = rawScale / max(session.lastRawScale, 0.0001)
             session.lastRawScale = rawScale
             session.lastTimestamp = now
             session.lastAnchor = anchor
             pinchGestureSession = session
 
-            guard scaleDelta.isFinite, scaleDelta > 0 else {
+            guard let scaleDelta = normalizedPinchScaleDelta(
+                rawDelta: rawScaleDelta,
+                source: session.source
+            ) else {
                 return
             }
 
@@ -1375,6 +1380,34 @@ final class iOSCanvasViewportView: UIView {
         return .directTouch
     }
 
+    private func normalizedPinchScaleDelta(
+        rawDelta: CGFloat,
+        source: PinchInputSource
+    ) -> CGFloat? {
+        // Keep source-specific normalization entry points separate so later
+        // tuning for Mirroring/indirect pinch does not perturb direct touch.
+        switch source {
+        case .directTouch:
+            return normalizedDirectTouchPinchScaleDelta(rawDelta)
+        case .indirectMirroringLike:
+            return normalizedIndirectMirroringLikePinchScaleDelta(rawDelta)
+        }
+    }
+
+    private func normalizedDirectTouchPinchScaleDelta(_ rawDelta: CGFloat) -> CGFloat? {
+        guard rawDelta.isFinite, rawDelta > 0 else {
+            return nil
+        }
+        return rawDelta
+    }
+
+    private func normalizedIndirectMirroringLikePinchScaleDelta(_ rawDelta: CGFloat) -> CGFloat? {
+        guard rawDelta.isFinite, rawDelta > 0 else {
+            return nil
+        }
+        return rawDelta
+    }
+
     private func logPinchInput(_ gestureRecognizer: UIPinchGestureRecognizer) {
         guard Self.isPinchZoomDiagnosticLoggingEnabled else {
             return
@@ -1383,12 +1416,14 @@ final class iOSCanvasViewportView: UIView {
         let now = ProcessInfo.processInfo.systemUptime
         let deltaMs = lastPinchInputTimestamp.map { (now - $0) * 1000 } ?? 0
         lastPinchInputTimestamp = now
+        let source = pinchGestureSession?.source ?? resolvePinchInputSource(for: gestureRecognizer)
 
         print(
             "[Canvas iOS][PinchInput] " +
             "t=\(String(format: "%.6f", now)) " +
             "dtMs=\(String(format: "%.3f", deltaMs)) " +
             "state=\(describe(gestureState: gestureRecognizer.state)) " +
+            "source=\(describe(pinchInputSource: source)) " +
             "scale=\(String(format: "%.6f", gestureRecognizer.scale)) " +
             "velocity=\(String(format: "%.6f", gestureRecognizer.velocity)) " +
             "anchor=\(NSCoder.string(for: gestureRecognizer.location(in: self))) " +
@@ -1413,6 +1448,15 @@ final class iOSCanvasViewportView: UIView {
             return "failed"
         @unknown default:
             return "unknown"
+        }
+    }
+
+    private func describe(pinchInputSource: PinchInputSource) -> String {
+        switch pinchInputSource {
+        case .directTouch:
+            return "directTouch"
+        case .indirectMirroringLike:
+            return "indirectMirroringLike"
         }
     }
 
