@@ -1233,7 +1233,12 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
 
         let zoomBefore = camera.zoomScale
         camera.zoom(by: scaleDelta, around: anchor)
+        let zoomAfter = camera.zoomScale
         let afterZoomApply = ProcessInfo.processInfo.systemUptime
+        guard zoomAfter != zoomBefore else {
+            return
+        }
+
         let refreshReason = "zoom scaleDelta=\(String(format: "%.4f", scaleDelta)) anchor=\(describe(point: anchor))"
         requestCanvasRefresh(reason: refreshReason)
         let afterRefresh = ProcessInfo.processInfo.systemUptime
@@ -1245,7 +1250,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             scaleDelta: scaleDelta,
             anchor: anchor,
             zoomBefore: zoomBefore,
-            zoomAfter: camera.zoomScale,
+            zoomAfter: zoomAfter,
             applyCostMs: (afterZoomApply - eventTime) * 1000,
             refreshCostMs: (afterRefresh - afterZoomApply) * 1000,
             autosaveCostMs: (afterAutosave - afterRefresh) * 1000,

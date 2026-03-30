@@ -13,7 +13,7 @@ todos:
     status: completed
   - id: guard-noop-zoom
     content: 在 iOS 控制器中为无效 zoom 加保护，到达 min/max 后跳过 refresh 和 autosave
-    status: pending
+    status: completed
   - id: autosave-on-end
     content: 把 continuous zoom 的 autosave 从每帧调度改为手势结束后调度，减少缩放期间缩略图生成干扰
     status: pending
