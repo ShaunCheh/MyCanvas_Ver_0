@@ -1264,7 +1264,9 @@ final class iOSCanvasViewportView: UIView {
     private func handleIndirectPan(_ gestureRecognizer: UIPanGestureRecognizer) {
         switch gestureRecognizer.state {
         case .began, .changed:
-            let delta = gestureRecognizer.translation(in: self)
+            let delta = normalizedViewportPanDelta(
+                fromIndirectScrollTranslation: gestureRecognizer.translation(in: self)
+            )
             guard delta != .zero else {
                 return
             }
@@ -1274,6 +1276,15 @@ final class iOSCanvasViewportView: UIView {
         default:
             break
         }
+    }
+
+    private func normalizedViewportPanDelta(
+        fromIndirectScrollTranslation translation: CGPoint
+    ) -> CGPoint {
+        // Indirect scroll translation already arrives in the same viewport
+        // coordinate space used by direct drag panning, so no sign flip is
+        // needed to feed CanvasCamera.pan(by:).
+        translation
     }
 
     @objc
