@@ -88,6 +88,7 @@ final class iOSCanvasViewportView: UIView {
     var onPointerUp: ((CGPoint) -> Void)?
     var onPointerCancel: (() -> Void)?
     var onLongPress: ((CGPoint) -> Void)?
+    var onPan: ((CGPoint) -> Void)?
     var onZoom: ((CGFloat, CGPoint) -> Void)?
     var onViewportSizeChange: ((CGSize) -> Void)?
     var resolveAnimatedImagePlaybackSource: ((CanvasImageAssetReference) -> CanvasAnimatedImagePlaybackSource?)?
@@ -99,6 +100,17 @@ final class iOSCanvasViewportView: UIView {
 
     private lazy var pinchGestureRecognizer: UIPinchGestureRecognizer = {
         let gestureRecognizer = UIPinchGestureRecognizer(target: self, action: #selector(handlePinch(_:)))
+        gestureRecognizer.cancelsTouchesInView = false
+        return gestureRecognizer
+    }()
+
+    private lazy var indirectPanGestureRecognizer: UIPanGestureRecognizer = {
+        let gestureRecognizer = UIPanGestureRecognizer(
+            target: self,
+            action: #selector(handleIndirectPan(_:))
+        )
+        gestureRecognizer.allowedScrollTypesMask = .continuous
+        gestureRecognizer.allowedTouchTypes = []
         gestureRecognizer.cancelsTouchesInView = false
         return gestureRecognizer
     }()
@@ -277,6 +289,7 @@ final class iOSCanvasViewportView: UIView {
         interactionOverlayLayer.addSublayer(rotationPointerLayer)
         interactionOverlayLayer.addSublayer(rotationTextBackgroundLayer)
         interactionOverlayLayer.addSublayer(rotationTextLayer)
+        addGestureRecognizer(indirectPanGestureRecognizer)
         addGestureRecognizer(pinchGestureRecognizer)
         addGestureRecognizer(longPressGestureRecognizer)
 
@@ -1244,6 +1257,22 @@ final class iOSCanvasViewportView: UIView {
             true
         default:
             false
+        }
+    }
+
+    @objc
+    private func handleIndirectPan(_ gestureRecognizer: UIPanGestureRecognizer) {
+        switch gestureRecognizer.state {
+        case .began, .changed:
+            let delta = gestureRecognizer.translation(in: self)
+            guard delta != .zero else {
+                return
+            }
+
+            onPan?(delta)
+            gestureRecognizer.setTranslation(.zero, in: self)
+        default:
+            break
         }
     }
 
