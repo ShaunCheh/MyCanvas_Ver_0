@@ -296,8 +296,10 @@ enum iOSCanvasImportAdapter {
             }
         }
 
-        let contentType = UTType(importedAs: typeIdentifier)
-        if let preferredFilenameExtension = contentType
+        let contentType = CanvasTypeIdentifierResolver.contentType(
+            for: typeIdentifier
+        )
+        if let preferredFilenameExtension = contentType?
             .preferredFilenameExtension?
             .lowercased(),
            preferredFilenameExtension.isEmpty == false
@@ -344,7 +346,8 @@ enum iOSCanvasImportAdapter {
     ) -> String? {
         let specificImageTypeIdentifier = itemProvider.registeredTypeIdentifiers.first {
             $0 != UTType.image.identifier &&
-                UTType(importedAs: $0).conforms(to: .image)
+                CanvasTypeIdentifierResolver.contentType(for: $0)?
+                .conforms(to: .image) == true
         }
         if let specificImageTypeIdentifier {
             return specificImageTypeIdentifier
@@ -361,9 +364,13 @@ enum iOSCanvasImportAdapter {
         from itemProvider: NSItemProvider
     ) -> String? {
         let specificVideoTypeIdentifier = itemProvider.registeredTypeIdentifiers.first {
-            let importedType = UTType(importedAs: $0)
-            return importedType.conforms(to: .movie) ||
-                importedType.conforms(to: .video)
+            guard let contentType = CanvasTypeIdentifierResolver.contentType(
+                for: $0
+            ) else {
+                return false
+            }
+            return contentType.conforms(to: .movie) ||
+                contentType.conforms(to: .video)
         }
         if let specificVideoTypeIdentifier {
             return specificVideoTypeIdentifier
@@ -397,7 +404,8 @@ enum iOSCanvasImportAdapter {
         typeIdentifier: String
     ) -> String? {
         guard let filenameHint, filenameHint.isEmpty == false else {
-            if let preferredFilenameExtension = UTType(importedAs: typeIdentifier)
+            if let preferredFilenameExtension = CanvasTypeIdentifierResolver
+                .contentType(for: typeIdentifier)?
                 .preferredFilenameExtension
             {
                 return "video.\(preferredFilenameExtension)"
@@ -410,7 +418,8 @@ enum iOSCanvasImportAdapter {
             return filenameHint
         }
 
-        if let preferredFilenameExtension = UTType(importedAs: typeIdentifier)
+        if let preferredFilenameExtension = CanvasTypeIdentifierResolver
+            .contentType(for: typeIdentifier)?
             .preferredFilenameExtension
         {
             return "\(filenameHint).\(preferredFilenameExtension)"

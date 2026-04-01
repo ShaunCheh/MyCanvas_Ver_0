@@ -3,17 +3,61 @@ import Foundation
 import ImageIO
 import UniformTypeIdentifiers
 
+enum CanvasTypeIdentifierResolver {
+    private static let ignoredIdentifierPrefixes = [
+        "com.apple.private.photos.thumbnail."
+    ]
+
+    static func contentType(for typeIdentifier: String?) -> UTType? {
+        guard let normalizedTypeIdentifier = normalizedTypeIdentifier(typeIdentifier) else {
+            return nil
+        }
+        guard ignoredIdentifierPrefixes.contains(where: normalizedTypeIdentifier.hasPrefix) == false else {
+            return nil
+        }
+        return UTType(normalizedTypeIdentifier)
+    }
+
+    static func resolvedIdentifier(
+        preferredTypeIdentifier: String?,
+        fallbackFilenameExtension: String? = nil
+    ) -> String? {
+        if let contentType = contentType(for: preferredTypeIdentifier) {
+            return contentType.identifier
+        }
+
+        guard
+            let fallbackFilenameExtension,
+            fallbackFilenameExtension.isEmpty == false,
+            let contentType = UTType(filenameExtension: fallbackFilenameExtension)
+        else {
+            return nil
+        }
+
+        return contentType.identifier
+    }
+
+    private static func normalizedTypeIdentifier(
+        _ typeIdentifier: String?
+    ) -> String? {
+        guard let typeIdentifier = typeIdentifier?.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        ), typeIdentifier.isEmpty == false
+        else {
+            return nil
+        }
+
+        return typeIdentifier
+    }
+}
+
 struct CanvasImportedImageSource: Equatable {
     let data: Data
     let typeIdentifier: String?
     let filenameHint: String?
 
     var contentType: UTType? {
-        guard let typeIdentifier else {
-            return nil
-        }
-
-        return UTType(importedAs: typeIdentifier)
+        CanvasTypeIdentifierResolver.contentType(for: typeIdentifier)
     }
 }
 
@@ -24,8 +68,10 @@ struct CanvasImportedVideoSource: Equatable {
     let shouldDeleteAfterImport: Bool
 
     var contentType: UTType? {
-        if let typeIdentifier, typeIdentifier.isEmpty == false {
-            return UTType(importedAs: typeIdentifier)
+        if let contentType = CanvasTypeIdentifierResolver.contentType(
+            for: typeIdentifier
+        ) {
+            return contentType
         }
 
         guard localFileURL.pathExtension.isEmpty == false else {
@@ -93,7 +139,9 @@ struct CanvasResolvedImportImage {
             explicitTypeIdentifier: typeIdentifier,
             imageSource: imageSource
         )
-        let contentType = resolvedTypeIdentifier.map { UTType(importedAs: $0) }
+        let contentType = CanvasTypeIdentifierResolver.contentType(
+            for: resolvedTypeIdentifier
+        )
         let animatedMetadata = Self.animatedMetadata(
             from: imageSource,
             contentType: contentType
@@ -154,11 +202,16 @@ struct CanvasResolvedImportImage {
         explicitTypeIdentifier: String?,
         imageSource: CGImageSource
     ) -> String? {
-        if let explicitTypeIdentifier, explicitTypeIdentifier.isEmpty == false {
-            return explicitTypeIdentifier
+        if let resolvedIdentifier = CanvasTypeIdentifierResolver.resolvedIdentifier(
+            preferredTypeIdentifier: explicitTypeIdentifier
+        ) {
+            return resolvedIdentifier
         }
 
-        return CGImageSourceGetType(imageSource) as String?
+        let imageSourceTypeIdentifier = CGImageSourceGetType(imageSource) as String?
+        return CanvasTypeIdentifierResolver.resolvedIdentifier(
+            preferredTypeIdentifier: imageSourceTypeIdentifier
+        ) ?? imageSourceTypeIdentifier
     }
 
     private static func animatedMetadata(
@@ -235,9 +288,13 @@ struct CanvasResolvedImportVideo {
             return nil
         }
 
+        let resolvedTypeIdentifier = CanvasTypeIdentifierResolver.resolvedIdentifier(
+            preferredTypeIdentifier: typeIdentifier,
+            fallbackFilenameExtension: localFileURL.pathExtension
+        )
         self.source = CanvasImportedVideoSource(
             localFileURL: localFileURL,
-            typeIdentifier: typeIdentifier,
+            typeIdentifier: resolvedTypeIdentifier,
             filenameHint: filenameHint,
             shouldDeleteAfterImport: shouldDeleteAfterImport
         )
