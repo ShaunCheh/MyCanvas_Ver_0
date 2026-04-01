@@ -7,9 +7,10 @@ import Foundation
 struct CanvasImageDisplayContract {
     let assetReference: CanvasImageAssetReference
     let posterCGImage: CGImage
+    let allowsAnimatedPlayback: Bool
 
     var isAnimatedAsset: Bool {
-        assetReference.kind.isAnimated
+        allowsAnimatedPlayback && assetReference.kind.isAnimated
     }
 }
 

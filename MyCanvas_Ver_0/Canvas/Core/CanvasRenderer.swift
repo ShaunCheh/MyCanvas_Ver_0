@@ -540,7 +540,8 @@ struct CanvasRenderer {
                 CanvasImageRenderPayload(
                     displayContract: CanvasImageDisplayContract(
                         assetReference: presentation.assetReference,
-                        posterCGImage: presentation.posterCGImage
+                        posterCGImage: presentation.posterCGImage,
+                        allowsAnimatedPlayback: presentation.allowsAnimatedPlayback
                     ),
                     contentsRect: presentation.isCropPreviewActive
                         ? CanvasImageCropRect.fullImage.cgRect

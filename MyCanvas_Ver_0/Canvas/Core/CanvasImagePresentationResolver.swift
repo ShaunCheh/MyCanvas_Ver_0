@@ -52,6 +52,7 @@ struct CanvasImagePresentationResolver {
             assetReference: effectiveItem.assetReference,
             assetKind: effectiveItem.assetKind,
             posterCGImage: effectiveItem.posterCGImage,
+            allowsAnimatedPlayback: effectiveItem.allowsAnimatedPlayback,
             logicalPixelSize: effectiveItem.logicalPixelSize,
             zIndex: effectiveItem.zIndex,
             effectiveRotationRadians: effectiveItem.rotationRadians,

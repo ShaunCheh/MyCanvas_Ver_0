@@ -49,8 +49,9 @@ struct CanvasImageCropRect: Equatable {
 
 struct CanvasImageItem {
     let id: CanvasImageItemID
-    let asset: CanvasImageAsset
+    var asset: CanvasImageAsset
     var videoSource: CanvasVideoSource?
+    var posterTimeSeconds: Double?
     var center: CGPoint
     var size: CGSize
     var zIndex: CGFloat
@@ -61,6 +62,7 @@ struct CanvasImageItem {
         id: CanvasImageItemID = UUID(),
         asset: CanvasImageAsset,
         videoSource: CanvasVideoSource? = nil,
+        posterTimeSeconds: Double? = nil,
         center: CGPoint,
         size: CGSize,
         zIndex: CGFloat = 0,
@@ -70,6 +72,10 @@ struct CanvasImageItem {
         self.id = id
         self.asset = asset
         self.videoSource = videoSource
+        self.posterTimeSeconds = Self.sanitizedPosterTimeSeconds(
+            posterTimeSeconds,
+            isVideo: videoSource != nil
+        )
         self.center = center
         self.size = size
         self.zIndex = zIndex
@@ -91,6 +97,10 @@ struct CanvasImageItem {
 
     var isVideo: Bool {
         videoSource != nil
+    }
+
+    var allowsAnimatedPlayback: Bool {
+        isVideo == false
     }
 
     var sourceVideoFilename: String? {
@@ -173,8 +183,7 @@ struct CanvasImageItem {
         if isVideo {
             // Video items own their poster image independently so later cover
             // changes do not rewrite another duplicated item's display frame.
-            duplicatedAsset = CanvasImageAsset.transientImage(
-                kind: asset.reference.kind,
+            duplicatedAsset = CanvasImageAsset.transientStaticImage(
                 cgImage: asset.posterCGImage,
                 logicalPixelSize: asset.logicalPixelSize
             )
@@ -185,6 +194,7 @@ struct CanvasImageItem {
         CanvasImageItem(
             asset: duplicatedAsset,
             videoSource: videoSource,
+            posterTimeSeconds: posterTimeSeconds,
             center: CGPoint(
                 x: center.x + offsetInWorld.x,
                 y: center.y + offsetInWorld.y
@@ -202,11 +212,35 @@ struct CanvasImageItem {
         id == other.id &&
             assetReference == other.assetReference &&
             videoSource == other.videoSource &&
+            posterTimeSeconds == other.posterTimeSeconds &&
             center == other.center &&
             size == other.size &&
             zIndex == other.zIndex &&
             cropRectNormalized == other.cropRectNormalized &&
             rotationRadians == other.rotationRadians
+    }
+
+    func updatingVideoPoster(
+        posterCGImage: CGImage,
+        logicalPixelSize: CGSize? = nil,
+        posterTimeSeconds: Double,
+        assetID: UUID = UUID()
+    ) -> CanvasImageItem? {
+        guard isVideo else {
+            return nil
+        }
+
+        var updatedItem = self
+        updatedItem.asset = CanvasImageAsset.transientStaticImage(
+            cgImage: posterCGImage,
+            logicalPixelSize: logicalPixelSize ?? asset.logicalPixelSize,
+            assetID: assetID
+        )
+        updatedItem.posterTimeSeconds = Self.sanitizedPosterTimeSeconds(
+            posterTimeSeconds,
+            isVideo: true
+        )
+        return updatedItem
     }
 
     func localFrame(forNormalizedCropRect normalizedCropRect: CanvasImageCropRect) -> CGRect {
@@ -281,5 +315,24 @@ struct CanvasImageItem {
             x: point.x * cosine - point.y * sine,
             y: point.x * sine + point.y * cosine
         )
+    }
+
+    private static func sanitizedPosterTimeSeconds(
+        _ posterTimeSeconds: Double?,
+        isVideo: Bool
+    ) -> Double? {
+        guard isVideo else {
+            return nil
+        }
+
+        guard let posterTimeSeconds else {
+            return 0
+        }
+
+        guard posterTimeSeconds.isFinite else {
+            return 0
+        }
+
+        return max(posterTimeSeconds, 0)
     }
 }

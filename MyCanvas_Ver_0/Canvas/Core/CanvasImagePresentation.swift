@@ -8,6 +8,7 @@ struct CanvasImagePresentation {
     let assetReference: CanvasImageAssetReference
     let assetKind: CanvasImageAssetKind
     let posterCGImage: CGImage
+    let allowsAnimatedPlayback: Bool
     let logicalPixelSize: CGSize
     let zIndex: CGFloat
     let effectiveRotationRadians: CGFloat

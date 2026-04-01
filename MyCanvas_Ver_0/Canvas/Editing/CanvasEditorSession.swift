@@ -7,6 +7,11 @@ struct CanvasTextEditCommitResult {
     let didChangeDocument: Bool
 }
 
+struct CanvasVideoPosterUpdateResult {
+    let item: CanvasImageItem
+    let refreshReason: String
+}
+
 final class CanvasEditorSession {
     let scene = CanvasScene()
     var camera = CanvasCamera()
@@ -549,6 +554,44 @@ final class CanvasEditorSession {
             itemID: itemID,
             didDeleteItem: false,
             didChangeDocument: true
+        )
+    }
+
+    func canUpdateVideoPoster(withID itemID: CanvasItemID) -> Bool {
+        scene.item(withID: itemID)?.isVideo == true
+    }
+
+    @discardableResult
+    func updateVideoPoster(
+        withID itemID: CanvasItemID,
+        posterCGImage: CGImage,
+        logicalPixelSize: CGSize? = nil,
+        posterTimeSeconds: Double
+    ) -> CanvasVideoPosterUpdateResult? {
+        guard canUpdateVideoPoster(withID: itemID) else {
+            return nil
+        }
+
+        let beforeSnapshot = currentBoardHistorySnapshot()
+        guard let updatedItem = scene.updateVideoPoster(
+            withID: itemID,
+            posterCGImage: posterCGImage,
+            logicalPixelSize: logicalPixelSize,
+            posterTimeSeconds: posterTimeSeconds
+        ) else {
+            return nil
+        }
+
+        syncInlineEditStateWithSelection()
+        let changeReason = "update video poster"
+        _ = recordImmediateHistoryChange(
+            from: beforeSnapshot,
+            reason: changeReason,
+            autosaveReason: changeReason
+        )
+        return CanvasVideoPosterUpdateResult(
+            item: updatedItem,
+            refreshReason: changeReason
         )
     }
 
@@ -1158,6 +1201,7 @@ final class CanvasEditorSession {
                 importedItem = CanvasImageItem(
                     asset: video.asset,
                     videoSource: video.videoSource,
+                    posterTimeSeconds: video.posterTimeSeconds,
                     center: CGPoint(
                         x: importCenter.x + offset.x,
                         y: importCenter.y + offset.y

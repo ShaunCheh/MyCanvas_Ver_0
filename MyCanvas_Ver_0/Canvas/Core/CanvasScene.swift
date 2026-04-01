@@ -218,6 +218,29 @@ final class CanvasScene {
     }
 
     @discardableResult
+    func updateVideoPoster(
+        withID id: CanvasImageItemID,
+        posterCGImage: CGImage,
+        logicalPixelSize: CGSize? = nil,
+        posterTimeSeconds: Double
+    ) -> CanvasImageItem? {
+        var updatedItem: CanvasImageItem?
+        updateImageItem(withID: id) { item in
+            guard let nextItem = item.updatingVideoPoster(
+                posterCGImage: posterCGImage,
+                logicalPixelSize: logicalPixelSize,
+                posterTimeSeconds: posterTimeSeconds
+            ) else {
+                return
+            }
+
+            item = nextItem
+            updatedItem = nextItem
+        }
+        return updatedItem
+    }
+
+    @discardableResult
     func updateTextItem(
         withID id: CanvasItemID,
         text: String

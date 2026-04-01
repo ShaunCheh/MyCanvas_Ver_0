@@ -121,13 +121,13 @@ enum CanvasMediaImportService {
             logicalPixelSize: video.logicalPixelSize
         )
         let videoSource = CanvasVideoSource(
-            assetReference: .persisted(filename: sourceVideoFilename),
-            posterTimeSeconds: video.posterTimeSeconds
+            assetReference: .persisted(filename: sourceVideoFilename)
         )
         return ImportedVideoResult(
             item: CanvasImportedVideoAsset(
                 asset: posterAsset,
-                videoSource: videoSource
+                videoSource: videoSource,
+                posterTimeSeconds: video.posterTimeSeconds
             ),
             createdAssetURLs: [
                 sourceVideoAssetURL,

@@ -283,6 +283,7 @@ struct CanvasResolvedImportVideo {
 struct CanvasImportedVideoAsset {
     let asset: CanvasImageAsset
     let videoSource: CanvasVideoSource
+    let posterTimeSeconds: Double
 }
 
 enum CanvasImportItem {

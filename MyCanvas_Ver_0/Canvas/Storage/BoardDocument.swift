@@ -251,8 +251,7 @@ struct BoardImageItemRecord: Codable {
         }
 
         return CanvasVideoSource(
-            assetReference: .persisted(filename: sourceVideoFilename),
-            posterTimeSeconds: posterTimeSeconds ?? 0
+            assetReference: .persisted(filename: sourceVideoFilename)
         )
     }
 

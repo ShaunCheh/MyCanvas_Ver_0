@@ -34,29 +34,14 @@ struct CanvasVideoAssetReference: Equatable, Hashable {
 
 struct CanvasVideoSource: Equatable, Hashable {
     let assetReference: CanvasVideoAssetReference
-    var posterTimeSeconds: Double
 
     init(
-        assetReference: CanvasVideoAssetReference,
-        posterTimeSeconds: Double = 0
+        assetReference: CanvasVideoAssetReference
     ) {
         self.assetReference = assetReference
-        self.posterTimeSeconds = Self.sanitizedPosterTimeSeconds(
-            posterTimeSeconds
-        )
     }
 
     var sourceVideoFilename: String {
         assetReference.stableAssetFilename
-    }
-
-    private static func sanitizedPosterTimeSeconds(
-        _ seconds: Double
-    ) -> Double {
-        guard seconds.isFinite else {
-            return 0
-        }
-
-        return max(seconds, 0)
     }
 }
