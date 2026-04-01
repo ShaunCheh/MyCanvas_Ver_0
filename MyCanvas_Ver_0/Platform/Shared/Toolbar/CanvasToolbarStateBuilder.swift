@@ -81,10 +81,10 @@ struct CanvasToolbarStateBuilder {
 
     func importItemState(isEnabled: Bool = true) -> CanvasToolbarItemState {
         CanvasToolbarItemState(
-            id: .importImage,
+            id: .importMedia,
             systemImageName: "plus",
             isEnabled: isEnabled,
-            accessibilityLabel: "Import image",
+            accessibilityLabel: "Import media",
             visualRole: .accent
         )
     }

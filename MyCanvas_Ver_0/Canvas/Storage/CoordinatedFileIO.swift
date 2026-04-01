@@ -72,6 +72,30 @@ enum CoordinatedFileIO {
         }
     }
 
+    static func copyItem(
+        at sourceURL: URL,
+        to destinationURL: URL,
+        fileManager: FileManager = .default
+    ) throws {
+        try ensureDirectory(
+            at: destinationURL.deletingLastPathComponent(),
+            fileManager: fileManager
+        )
+        try coordinateReadingAndWriting(
+            from: sourceURL,
+            to: destinationURL
+        ) { coordinatedSourceURL, coordinatedDestinationURL in
+            if fileManager.fileExists(atPath: coordinatedDestinationURL.path) {
+                try fileManager.removeItem(at: coordinatedDestinationURL)
+            }
+
+            try fileManager.copyItem(
+                at: coordinatedSourceURL,
+                to: coordinatedDestinationURL
+            )
+        }
+    }
+
     static func removeItemIfExists(
         at url: URL,
         fileManager: FileManager = .default
@@ -120,6 +144,41 @@ enum CoordinatedFileIO {
         coordinator.coordinate(writingItemAt: url, options: options, error: &coordinationError) { coordinatedURL in
             result = Result {
                 try accessor(coordinatedURL)
+            }
+        }
+
+        if let coordinationError {
+            throw coordinationError
+        }
+
+        guard let result else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+
+        return try result.get()
+    }
+
+    private static func coordinateReadingAndWriting<T>(
+        from sourceURL: URL,
+        to destinationURL: URL,
+        writingOptions: NSFileCoordinator.WritingOptions = .forReplacing,
+        accessor: (URL, URL) throws -> T
+    ) throws -> T {
+        var coordinationError: NSError?
+        var result: Result<T, Error>?
+        let coordinator = NSFileCoordinator()
+        coordinator.coordinate(
+            readingItemAt: sourceURL,
+            options: [],
+            writingItemAt: destinationURL,
+            options: writingOptions,
+            error: &coordinationError
+        ) { coordinatedSourceURL, coordinatedDestinationURL in
+            result = Result {
+                try accessor(
+                    coordinatedSourceURL,
+                    coordinatedDestinationURL
+                )
             }
         }
 

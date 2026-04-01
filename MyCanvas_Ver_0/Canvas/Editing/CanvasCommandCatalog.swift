@@ -8,10 +8,10 @@ struct CanvasCommandCatalog {
     ) -> CanvasCommandDescriptor {
         let descriptor: CanvasCommandDescriptor
         switch commandID {
-        case .importImages:
+        case .importMedia:
             descriptor = CanvasCommandDescriptor(
-                id: .importImages,
-                title: "Import Images",
+                id: .importMedia,
+                title: "Import Media",
                 systemImageName: "photo.on.rectangle.angled",
                 isEnabled: false,
                 isActive: false

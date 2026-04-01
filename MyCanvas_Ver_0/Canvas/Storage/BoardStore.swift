@@ -112,6 +112,26 @@ enum BoardStore {
         }
     }
 
+    static func ensureAssetsDirectoryURL(
+        for boardID: UUID,
+        userDefaults: UserDefaults = .standard
+    ) throws -> URL {
+        try SelectedFolderAccess.withBoardsDirectoryURL(userDefaults: userDefaults) { boardsDirectoryURL in
+            try CoordinatedFileIO.ensureDirectory(at: boardsDirectoryURL)
+            let boardDirectoryURL = self.boardDirectoryURL(
+                for: boardID,
+                boardsDirectoryURL: boardsDirectoryURL
+            )
+            let assetsDirectoryURL = boardDirectoryURL.appendingPathComponent(
+                assetsDirectoryName,
+                isDirectory: true
+            )
+            try CoordinatedFileIO.ensureDirectory(at: boardDirectoryURL)
+            try CoordinatedFileIO.ensureDirectory(at: assetsDirectoryURL)
+            return assetsDirectoryURL
+        }
+    }
+
     static func saveBoard(
         _ snapshot: BoardSaveSnapshot,
         userDefaults: UserDefaults = .standard

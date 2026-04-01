@@ -1042,11 +1042,11 @@ final class CanvasEditorSession {
 
     private func resolvedImportLayout(
         _ layout: CanvasImportLayout,
-        imageCount: Int
+        itemCount: Int
     ) -> CanvasImportLayout {
         switch layout {
         case .automatic:
-            if imageCount <= 1 {
+            if itemCount <= 1 {
                 return .stacked
             }
 
@@ -1059,7 +1059,7 @@ final class CanvasEditorSession {
     }
 
     private func importOffset(
-        forImageAt index: Int,
+        forItemAt index: Int,
         layout: CanvasImportLayout
     ) -> CGPoint {
         switch layout {
@@ -1074,12 +1074,12 @@ final class CanvasEditorSession {
         }
     }
 
-    private func importedImageChangeReason(for imageCount: Int) -> String {
-        guard imageCount > 1 else {
-            return "append image"
+    private func importedMediaChangeReason(for itemCount: Int) -> String {
+        guard itemCount > 1 else {
+            return "append media item"
         }
 
-        return "append \(imageCount) images"
+        return "append \(itemCount) media items"
     }
 
     @discardableResult
@@ -1113,12 +1113,12 @@ final class CanvasEditorSession {
     }
 
     @discardableResult
-    func appendImportedImages(
-        _ images: [CanvasResolvedImportImage],
+    func appendImportedMedia(
+        _ items: [CanvasImportItem],
         placement: CanvasImportPlacement = .cameraCenter,
         layout: CanvasImportLayout = .automatic
     ) -> [CanvasImageItem] {
-        guard images.isEmpty == false else {
+        guard items.isEmpty == false else {
             return []
         }
 
@@ -1126,38 +1126,55 @@ final class CanvasEditorSession {
         let importCenter = resolvedImportCenter(for: placement)
         let resolvedLayout = resolvedImportLayout(
             layout,
-            imageCount: images.count
+            itemCount: items.count
         )
         let startingZIndex = nextImageZIndex()
         var importedItems: [CanvasImageItem] = []
-        importedItems.reserveCapacity(images.count)
+        importedItems.reserveCapacity(items.count)
 
-        for (index, image) in images.enumerated() {
-            let importRegistration = image.makeTransientImageAssetRegistration()
-            let asset = importRegistration.asset
-            if let payload = importRegistration.payload {
-                transientImageAssetPayloads[payload.assetReference] = payload
-            }
+        for (index, item) in items.enumerated() {
             let offset = importOffset(
-                forImageAt: index,
+                forItemAt: index,
                 layout: resolvedLayout
             )
-            let item = CanvasImageItem(
-                asset: asset,
-                center: CGPoint(
-                    x: importCenter.x + offset.x,
-                    y: importCenter.y + offset.y
-                ),
-                size: normalizedDisplaySize(for: asset.logicalPixelSize),
-                zIndex: startingZIndex + CGFloat(index)
-            )
+            let importedItem: CanvasImageItem
+            switch item {
+            case let .image(image):
+                let importRegistration = image.makeTransientImageAssetRegistration()
+                let asset = importRegistration.asset
+                if let payload = importRegistration.payload {
+                    transientImageAssetPayloads[payload.assetReference] = payload
+                }
+                importedItem = CanvasImageItem(
+                    asset: asset,
+                    center: CGPoint(
+                        x: importCenter.x + offset.x,
+                        y: importCenter.y + offset.y
+                    ),
+                    size: normalizedDisplaySize(for: asset.logicalPixelSize),
+                    zIndex: startingZIndex + CGFloat(index)
+                )
+            case let .video(video):
+                importedItem = CanvasImageItem(
+                    asset: video.asset,
+                    videoSource: video.videoSource,
+                    center: CGPoint(
+                        x: importCenter.x + offset.x,
+                        y: importCenter.y + offset.y
+                    ),
+                    size: normalizedDisplaySize(
+                        for: video.asset.logicalPixelSize
+                    ),
+                    zIndex: startingZIndex + CGFloat(index)
+                )
+            }
 
-            scene.append(item)
-            expandBoardIfNeeded(toInclude: item.worldFrame)
-            importedItems.append(item)
+            scene.append(importedItem)
+            expandBoardIfNeeded(toInclude: importedItem.worldFrame)
+            importedItems.append(importedItem)
         }
 
-        let changeReason = importedImageChangeReason(
+        let changeReason = importedMediaChangeReason(
             for: importedItems.count
         )
         _ = recordImmediateHistoryChange(
@@ -1173,8 +1190,8 @@ final class CanvasEditorSession {
         _ cgImage: CGImage,
         placement: CanvasImportPlacement = .cameraCenter
     ) -> CanvasImageItem {
-        let importedItems = appendImportedImages(
-            [CanvasResolvedImportImage(cgImage: cgImage)],
+        let importedItems = appendImportedMedia(
+            [.image(CanvasResolvedImportImage(cgImage: cgImage))],
             placement: placement,
             layout: .stacked
         )

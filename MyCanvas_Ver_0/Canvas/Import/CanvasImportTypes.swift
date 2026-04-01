@@ -1,3 +1,4 @@
+import AVFoundation
 import CoreGraphics
 import Foundation
 import ImageIO
@@ -14,6 +15,25 @@ struct CanvasImportedImageSource: Equatable {
         }
 
         return UTType(importedAs: typeIdentifier)
+    }
+}
+
+struct CanvasImportedVideoSource: Equatable {
+    let localFileURL: URL
+    let typeIdentifier: String?
+    let filenameHint: String?
+    let shouldDeleteAfterImport: Bool
+
+    var contentType: UTType? {
+        if let typeIdentifier, typeIdentifier.isEmpty == false {
+            return UTType(importedAs: typeIdentifier)
+        }
+
+        guard localFileURL.pathExtension.isEmpty == false else {
+            return nil
+        }
+
+        return UTType(filenameExtension: localFileURL.pathExtension)
     }
 }
 
@@ -195,6 +215,81 @@ struct CanvasResolvedImportImage {
     }
 }
 
+struct CanvasResolvedImportVideo {
+    let source: CanvasImportedVideoSource
+    let posterCGImage: CGImage
+    let posterTimeSeconds: Double
+    let logicalPixelSize: CGSize
+
+    init?(
+        localFileURL: URL,
+        typeIdentifier: String? = nil,
+        filenameHint: String? = nil,
+        shouldDeleteAfterImport: Bool = false,
+        posterTimeSeconds: Double = 0
+    ) {
+        let sanitizedPosterTimeSeconds = Self.sanitizedPosterTimeSeconds(
+            posterTimeSeconds
+        )
+        guard let posterCGImage = Self.posterCGImage(
+            from: localFileURL,
+            at: sanitizedPosterTimeSeconds
+        ) else {
+            return nil
+        }
+
+        self.source = CanvasImportedVideoSource(
+            localFileURL: localFileURL,
+            typeIdentifier: typeIdentifier,
+            filenameHint: filenameHint,
+            shouldDeleteAfterImport: shouldDeleteAfterImport
+        )
+        self.posterCGImage = posterCGImage
+        self.posterTimeSeconds = sanitizedPosterTimeSeconds
+        self.logicalPixelSize = CGSize(
+            width: posterCGImage.width,
+            height: posterCGImage.height
+        )
+    }
+
+    private static func posterCGImage(
+        from localFileURL: URL,
+        at posterTimeSeconds: Double
+    ) -> CGImage? {
+        let asset = AVURLAsset(url: localFileURL)
+        let imageGenerator = AVAssetImageGenerator(asset: asset)
+        imageGenerator.appliesPreferredTrackTransform = true
+        let requestedTime = CMTime(
+            seconds: posterTimeSeconds,
+            preferredTimescale: 600
+        )
+        return try? imageGenerator.copyCGImage(
+            at: requestedTime,
+            actualTime: nil
+        )
+    }
+
+    private static func sanitizedPosterTimeSeconds(
+        _ posterTimeSeconds: Double
+    ) -> Double {
+        guard posterTimeSeconds.isFinite else {
+            return 0
+        }
+
+        return max(posterTimeSeconds, 0)
+    }
+}
+
+struct CanvasImportedVideoAsset {
+    let asset: CanvasImageAsset
+    let videoSource: CanvasVideoSource
+}
+
+enum CanvasImportItem {
+    case image(CanvasResolvedImportImage)
+    case video(CanvasImportedVideoAsset)
+}
+
 enum CanvasImportPlacement: Equatable {
     case cameraCenter
     case worldPoint(CGPoint)
@@ -207,10 +302,22 @@ enum CanvasImportLayout: Equatable {
 }
 
 struct CanvasImportRequest {
-    let images: [CanvasResolvedImportImage]
+    let items: [CanvasImportItem]
     let placement: CanvasImportPlacement
     let layout: CanvasImportLayout
     let sourceDescription: String
+
+    init(
+        items: [CanvasImportItem],
+        placement: CanvasImportPlacement = .cameraCenter,
+        layout: CanvasImportLayout = .automatic,
+        sourceDescription: String = "external source"
+    ) {
+        self.items = items
+        self.placement = placement
+        self.layout = layout
+        self.sourceDescription = sourceDescription
+    }
 
     init(
         images: [CanvasResolvedImportImage],
@@ -218,17 +325,19 @@ struct CanvasImportRequest {
         layout: CanvasImportLayout = .automatic,
         sourceDescription: String = "external source"
     ) {
-        self.images = images
-        self.placement = placement
-        self.layout = layout
-        self.sourceDescription = sourceDescription
+        self.init(
+            items: images.map { .image($0) },
+            placement: placement,
+            layout: layout,
+            sourceDescription: sourceDescription
+        )
     }
 
-    var imageCount: Int {
-        images.count
+    var itemCount: Int {
+        items.count
     }
 
     var isEmpty: Bool {
-        images.isEmpty
+        items.isEmpty
     }
 }

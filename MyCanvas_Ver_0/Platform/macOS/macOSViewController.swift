@@ -182,7 +182,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             .crop: cropButton,
             .save: saveButton,
             .text: textButton,
-            .importImage: importButton
+            .importMedia: importButton
         ]
     }
     private let canvasViewportView = macOSCanvasViewportView()
@@ -401,7 +401,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
 
     func performCommand(withID commandID: CanvasCommandID) {
         switch commandID {
-        case .importImages:
+        case .importMedia:
             break
         case .addTextItem:
             performCommand(.addTextItem)
@@ -1484,7 +1484,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         }
 
         let openPanel = NSOpenPanel()
-        openPanel.allowedContentTypes = [.image]
+        openPanel.allowedContentTypes = [.image, .movie]
         openPanel.allowsMultipleSelection = true
         openPanel.canChooseDirectories = false
         openPanel.canChooseFiles = true
@@ -1626,14 +1626,56 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             return false
         }
 
-        guard let command = CanvasTransferCommandLowerer.loweredCommand(
-            for: request
-        ) else {
+        do {
+            guard let importRequest = try buildImportRequest(
+                from: request
+            ),
+            let command = CanvasTransferCommandLowerer.loweredCommand(
+                for: importRequest
+            ) else {
+                return false
+            }
+
+            performCommand(command)
+            return true
+        } catch {
+            handleImportError(error)
             return false
         }
+    }
 
-        performCommand(command)
-        return true
+    private func buildImportRequest(
+        from request: CanvasTransferRequest
+    ) throws -> CanvasImportRequest? {
+        let boardID: UUID?
+        if request.containsVideo {
+            guard editorSession.ensureActiveBoardIdentityIfNeeded() else {
+                return nil
+            }
+
+            boardID = editorSession.activeBoardID
+        } else {
+            boardID = nil
+        }
+
+        return try CanvasMediaImportService.makeImportRequest(
+            from: request,
+            boardID: boardID
+        )
+    }
+
+    private func handleImportError(
+        _ error: Error
+    ) {
+        if case FolderBookmarkStoreError.missingBookmarkData = error {
+            showSaveButtonFeedback(.missingFolder)
+            presentImportError(
+                message: "Select a folder from the board list before importing videos."
+            )
+            return
+        }
+
+        presentImportError(message: error.localizedDescription)
     }
 
     func textDidChange(_ notification: Notification) {
@@ -2879,6 +2921,20 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = "Unable to Save Board"
+        alert.informativeText = message
+        alert.addButton(withTitle: "OK")
+
+        if let window = view.window {
+            alert.beginSheetModal(for: window)
+        } else {
+            alert.runModal()
+        }
+    }
+
+    private func presentImportError(message: String) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Unable to Import Media"
         alert.informativeText = message
         alert.addButton(withTitle: "OK")
 

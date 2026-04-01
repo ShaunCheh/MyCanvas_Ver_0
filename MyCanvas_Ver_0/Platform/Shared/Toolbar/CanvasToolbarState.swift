@@ -9,7 +9,7 @@ enum CanvasToolbarItemID: String, CaseIterable, Sendable {
     case crop
     case save
     case text
-    case importImage
+    case importMedia
     case undo
     case redo
 }

@@ -1,5 +1,6 @@
 enum CanvasTransferItem {
     case image(CanvasResolvedImportImage)
+    case video(CanvasResolvedImportVideo)
 }
 
 struct CanvasTransferRequest {
@@ -40,5 +41,15 @@ struct CanvasTransferRequest {
 
     var isEmpty: Bool {
         items.isEmpty
+    }
+
+    var containsVideo: Bool {
+        items.contains { item in
+            if case .video = item {
+                return true
+            }
+
+            return false
+        }
     }
 }

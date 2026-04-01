@@ -47,7 +47,7 @@ struct CanvasContextMenuCommandResolver {
         context: CanvasContextMenuContext
     ) -> CanvasCommand? {
         switch commandID {
-        case .importImages:
+        case .importMedia:
             return nil
         case .addTextItem:
             return .addTextItem

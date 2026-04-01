@@ -189,7 +189,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             .crop: cropButton,
             .save: saveButton,
             .text: textButton,
-            .importImage: importButton
+            .importMedia: importButton
         ]
     }
     private var historyButtons: [UIButton] {
@@ -1354,7 +1354,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
 
         commitActiveTextEditIfNeeded()
         var configuration = PHPickerConfiguration(photoLibrary: .shared())
-        configuration.filter = .images
+        configuration.filter = .any(of: [.images, .videos])
         configuration.selectionLimit = 0
 
         let pickerViewController = PHPickerViewController(configuration: configuration)
@@ -1554,14 +1554,56 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             return false
         }
 
-        guard let command = CanvasTransferCommandLowerer.loweredCommand(
-            for: request
-        ) else {
+        do {
+            guard let importRequest = try buildImportRequest(
+                from: request
+            ),
+            let command = CanvasTransferCommandLowerer.loweredCommand(
+                for: importRequest
+            ) else {
+                return false
+            }
+
+            performCommand(command)
+            return true
+        } catch {
+            handleImportError(error)
             return false
         }
+    }
 
-        performCommand(command)
-        return true
+    private func buildImportRequest(
+        from request: CanvasTransferRequest
+    ) throws -> CanvasImportRequest? {
+        let boardID: UUID?
+        if request.containsVideo {
+            guard editorSession.ensureActiveBoardIdentityIfNeeded() else {
+                return nil
+            }
+
+            boardID = editorSession.activeBoardID
+        } else {
+            boardID = nil
+        }
+
+        return try CanvasMediaImportService.makeImportRequest(
+            from: request,
+            boardID: boardID
+        )
+    }
+
+    private func handleImportError(
+        _ error: Error
+    ) {
+        if case FolderBookmarkStoreError.missingBookmarkData = error {
+            showSaveButtonFeedback(.missingFolder)
+            presentImportError(
+                message: "Select a folder from the board list before importing videos."
+            )
+            return
+        }
+
+        presentImportError(message: error.localizedDescription)
     }
 
     private func selectItem(
@@ -2818,6 +2860,16 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     private func presentSaveError(message: String) {
         let alertController = UIAlertController(
             title: "Unable to Save Board",
+            message: message,
+            preferredStyle: .alert
+        )
+        alertController.addAction(UIAlertAction(title: "OK", style: .default))
+        present(alertController, animated: true)
+    }
+
+    private func presentImportError(message: String) {
+        let alertController = UIAlertController(
+            title: "Unable to Import Media",
             message: message,
             preferredStyle: .alert
         )

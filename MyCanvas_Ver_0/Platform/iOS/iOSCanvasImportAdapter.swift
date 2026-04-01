@@ -1,22 +1,27 @@
 #if os(iOS)
-import ImageIO
 import PhotosUI
 import UniformTypeIdentifiers
 import UIKit
 
 enum iOSCanvasImportAdapter {
+    private static let supportedTransferTypeIdentifiers = [
+        UTType.image.identifier,
+        UTType.movie.identifier,
+        UTType.video.identifier
+    ]
+
     static func transferRequest(
         from results: [PHPickerResult],
         sourceDescription: String,
         placement: CanvasImportPlacement = .cameraCenter,
         layout: CanvasImportLayout = .automatic
     ) async -> CanvasTransferRequest? {
-        let resolvedImages = await resolvedImages(
+        let resolvedItems = await resolvedTransferItems(
             from: results.map(\.itemProvider)
         )
 
         return makeTransferRequest(
-            from: resolvedImages,
+            from: resolvedItems,
             sourceDescription: sourceDescription,
             placement: placement,
             layout: layout
@@ -29,19 +34,16 @@ enum iOSCanvasImportAdapter {
         placement: CanvasImportPlacement = .cameraCenter,
         layout: CanvasImportLayout = .automatic
     ) async -> CanvasTransferRequest? {
-        let imageProviders = pasteboard.itemProviders.filter {
-            $0.hasItemConformingToTypeIdentifier(UTType.image.identifier)
-        }
-        if imageProviders.isEmpty == false {
-            let resolvedImages = await resolvedImages(from: imageProviders)
-            if resolvedImages.isEmpty == false {
-                return makeTransferRequest(
-                    from: resolvedImages,
-                    sourceDescription: sourceDescription,
-                    placement: placement,
-                    layout: layout
-                )
-            }
+        let resolvedItems = await resolvedTransferItems(
+            from: pasteboard.itemProviders
+        )
+        if resolvedItems.isEmpty == false {
+            return makeTransferRequest(
+                from: resolvedItems,
+                sourceDescription: sourceDescription,
+                placement: placement,
+                layout: layout
+            )
         }
 
         guard
@@ -52,7 +54,7 @@ enum iOSCanvasImportAdapter {
         }
 
         return makeTransferRequest(
-            from: [resolvedImage],
+            from: [.image(resolvedImage)],
             sourceDescription: sourceDescription,
             placement: placement,
             layout: layout
@@ -65,12 +67,12 @@ enum iOSCanvasImportAdapter {
         placement: CanvasImportPlacement = .cameraCenter,
         layout: CanvasImportLayout = .automatic
     ) async -> CanvasTransferRequest? {
-        let resolvedImages = await resolvedImages(
+        let resolvedItems = await resolvedTransferItems(
             from: dropSession.items.map(\.itemProvider)
         )
 
         return makeTransferRequest(
-            from: resolvedImages,
+            from: resolvedItems,
             sourceDescription: sourceDescription,
             placement: placement,
             layout: layout
@@ -85,7 +87,7 @@ enum iOSCanvasImportAdapter {
         }
 
         return pasteboard.itemProviders.contains {
-            $0.hasItemConformingToTypeIdentifier(UTType.image.identifier)
+            canResolveTransfer(from: $0)
         }
     }
 
@@ -93,47 +95,65 @@ enum iOSCanvasImportAdapter {
         from dropSession: UIDropSession
     ) -> Bool {
         dropSession.hasItemsConforming(
-            toTypeIdentifiers: [UTType.image.identifier]
+            toTypeIdentifiers: supportedTransferTypeIdentifiers
         )
     }
 
-    private static func resolvedImages(
+    private static func resolvedTransferItems(
         from itemProviders: [NSItemProvider]
-    ) async -> [CanvasResolvedImportImage] {
-        var resolvedImages: [CanvasResolvedImportImage] = []
-        resolvedImages.reserveCapacity(itemProviders.count)
+    ) async -> [CanvasTransferItem] {
+        var resolvedItems: [CanvasTransferItem] = []
+        resolvedItems.reserveCapacity(itemProviders.count)
 
         for itemProvider in itemProviders {
             guard
-                let resolvedImage = await resolvedImage(
+                let resolvedItem = await resolvedTransferItem(
                     from: itemProvider
                 )
             else {
                 continue
             }
 
-            resolvedImages.append(resolvedImage)
+            resolvedItems.append(resolvedItem)
         }
 
-        return resolvedImages
+        return resolvedItems
     }
 
     private static func makeTransferRequest(
-        from images: [CanvasResolvedImportImage],
+        from items: [CanvasTransferItem],
         sourceDescription: String,
         placement: CanvasImportPlacement,
         layout: CanvasImportLayout
     ) -> CanvasTransferRequest? {
-        guard images.isEmpty == false else {
+        guard items.isEmpty == false else {
             return nil
         }
 
         return CanvasTransferRequest(
-            images: images,
+            items: items,
             placement: placement,
             layout: layout,
             sourceDescription: sourceDescription
         )
+    }
+
+    private static func resolvedTransferItem(
+        from itemProvider: NSItemProvider
+    ) async -> CanvasTransferItem? {
+        if preferredVideoTypeIdentifier(from: itemProvider) != nil {
+            guard let resolvedVideo = await resolvedVideo(from: itemProvider) else {
+                return nil
+            }
+
+            return .video(resolvedVideo)
+        }
+
+        if let resolvedImage = await resolvedImage(from: itemProvider) {
+            return .image(resolvedImage)
+        }
+
+        return nil
     }
 
     private static func resolvedImage(
@@ -162,6 +182,33 @@ enum iOSCanvasImportAdapter {
         return resolvedImage
     }
 
+    private static func resolvedVideo(
+        from itemProvider: NSItemProvider
+    ) async -> CanvasResolvedImportVideo? {
+        guard
+            let preferredTypeIdentifier = preferredVideoTypeIdentifier(
+                from: itemProvider
+            ),
+            let ownedFileURL = await loadOwnedFileURL(
+                from: itemProvider,
+                typeIdentifier: preferredTypeIdentifier,
+                filenameHint: itemProvider.suggestedName
+            )
+        else {
+            return nil
+        }
+
+        return CanvasResolvedImportVideo(
+            localFileURL: ownedFileURL,
+            typeIdentifier: preferredTypeIdentifier,
+            filenameHint: resolvedFilenameHint(
+                itemProvider.suggestedName,
+                typeIdentifier: preferredTypeIdentifier
+            ),
+            shouldDeleteAfterImport: true
+        )
+    }
+
     private static func loadImageData(
         from itemProvider: NSItemProvider,
         typeIdentifier: String
@@ -173,6 +220,97 @@ enum iOSCanvasImportAdapter {
                 continuation.resume(returning: data)
             }
         }
+    }
+
+    private static func loadOwnedFileURL(
+        from itemProvider: NSItemProvider,
+        typeIdentifier: String,
+        filenameHint: String?
+    ) async -> URL? {
+        await withCheckedContinuation { continuation in
+            itemProvider.loadFileRepresentation(
+                forTypeIdentifier: typeIdentifier
+            ) { fileURL, _ in
+                guard let fileURL else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+
+                do {
+                    let ownedFileURL = try makeOwnedTemporaryCopy(
+                        of: fileURL,
+                        filenameHint: filenameHint,
+                        typeIdentifier: typeIdentifier
+                    )
+                    continuation.resume(returning: ownedFileURL)
+                } catch {
+                    continuation.resume(returning: nil)
+                }
+            }
+        }
+    }
+
+    private static func makeOwnedTemporaryCopy(
+        of sourceURL: URL,
+        filenameHint: String?,
+        typeIdentifier: String
+    ) throws -> URL {
+        let fileManager = FileManager.default
+        let stagingDirectoryURL = fileManager.temporaryDirectory
+            .appendingPathComponent(
+                "CanvasImportedVideoStaging",
+                isDirectory: true
+            )
+        try fileManager.createDirectory(
+            at: stagingDirectoryURL,
+            withIntermediateDirectories: true,
+            attributes: nil
+        )
+
+        let fileExtension = preferredOwnedFileExtension(
+            filenameHint: filenameHint,
+            typeIdentifier: typeIdentifier,
+            fallbackURL: sourceURL
+        )
+        let stagedFileURL = stagingDirectoryURL.appendingPathComponent(
+            "\(UUID().uuidString).\(fileExtension)"
+        )
+        try fileManager.copyItem(
+            at: sourceURL,
+            to: stagedFileURL
+        )
+        return stagedFileURL
+    }
+
+    private static func preferredOwnedFileExtension(
+        filenameHint: String?,
+        typeIdentifier: String,
+        fallbackURL: URL
+    ) -> String {
+        if let filenameHint, filenameHint.isEmpty == false {
+            let hintExtension = URL(fileURLWithPath: filenameHint)
+                .pathExtension
+                .lowercased()
+            if hintExtension.isEmpty == false {
+                return hintExtension
+            }
+        }
+
+        let contentType = UTType(importedAs: typeIdentifier)
+        if let preferredFilenameExtension = contentType
+            .preferredFilenameExtension?
+            .lowercased(),
+           preferredFilenameExtension.isEmpty == false
+        {
+            return preferredFilenameExtension
+        }
+
+        let sourcePathExtension = fallbackURL.pathExtension.lowercased()
+        if sourcePathExtension.isEmpty == false {
+            return sourcePathExtension
+        }
+
+        return "mov"
     }
 
     private static func makeResolvedImportImage(
@@ -217,6 +355,68 @@ enum iOSCanvasImportAdapter {
         }
 
         return UTType.image.identifier
+    }
+
+    private static func preferredVideoTypeIdentifier(
+        from itemProvider: NSItemProvider
+    ) -> String? {
+        let specificVideoTypeIdentifier = itemProvider.registeredTypeIdentifiers.first {
+            let importedType = UTType(importedAs: $0)
+            return importedType.conforms(to: .movie) ||
+                importedType.conforms(to: .video)
+        }
+        if let specificVideoTypeIdentifier {
+            return specificVideoTypeIdentifier
+        }
+
+        if itemProvider.hasItemConformingToTypeIdentifier(
+            UTType.movie.identifier
+        ) {
+            return UTType.movie.identifier
+        }
+
+        if itemProvider.hasItemConformingToTypeIdentifier(
+            UTType.video.identifier
+        ) {
+            return UTType.video.identifier
+        }
+
+        return nil
+    }
+
+    private static func canResolveTransfer(
+        from itemProvider: NSItemProvider
+    ) -> Bool {
+        itemProvider.hasItemConformingToTypeIdentifier(
+            UTType.image.identifier
+        ) || preferredVideoTypeIdentifier(from: itemProvider) != nil
+    }
+
+    private static func resolvedFilenameHint(
+        _ filenameHint: String?,
+        typeIdentifier: String
+    ) -> String? {
+        guard let filenameHint, filenameHint.isEmpty == false else {
+            if let preferredFilenameExtension = UTType(importedAs: typeIdentifier)
+                .preferredFilenameExtension
+            {
+                return "video.\(preferredFilenameExtension)"
+            }
+
+            return nil
+        }
+
+        if URL(fileURLWithPath: filenameHint).pathExtension.isEmpty == false {
+            return filenameHint
+        }
+
+        if let preferredFilenameExtension = UTType(importedAs: typeIdentifier)
+            .preferredFilenameExtension
+        {
+            return "\(filenameHint).\(preferredFilenameExtension)"
+        }
+
+        return filenameHint
     }
 }
 #endif

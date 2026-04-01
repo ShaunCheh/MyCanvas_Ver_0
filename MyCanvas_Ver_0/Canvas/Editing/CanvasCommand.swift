@@ -1,7 +1,7 @@
 import Foundation
 
 enum CanvasCommandID: String {
-    case importImages
+    case importMedia
     case addTextItem
     case beginTextEdit
     case commitTextEdit
@@ -22,7 +22,7 @@ enum CanvasCommandID: String {
     // of these commands until explicit read-safe commands are introduced.
     var isAllowedInReadingMode: Bool {
         switch self {
-        case .importImages,
+        case .importMedia,
              .addTextItem,
              .beginTextEdit,
              .commitTextEdit,
@@ -43,7 +43,7 @@ enum CanvasCommandID: String {
 }
 
 enum CanvasCommand {
-    case importImages(CanvasImportRequest)
+    case importMedia(CanvasImportRequest)
     case addTextItem
     case beginTextEdit(itemID: CanvasItemID)
     case commitTextEdit
@@ -61,8 +61,8 @@ enum CanvasCommand {
 
     var id: CanvasCommandID {
         switch self {
-        case .importImages:
-            return .importImages
+        case .importMedia:
+            return .importMedia
         case .addTextItem:
             return .addTextItem
         case .beginTextEdit:
@@ -102,7 +102,7 @@ enum CanvasCommand {
     // controllers should cancel active rotation before applying these commands.
     var shouldCancelActiveRotation: Bool {
         switch self {
-        case .importImages,
+        case .importMedia,
              .addTextItem,
              .beginTextEdit,
              .commitTextEdit,

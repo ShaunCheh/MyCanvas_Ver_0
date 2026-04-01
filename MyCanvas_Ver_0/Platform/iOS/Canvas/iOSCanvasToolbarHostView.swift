@@ -178,7 +178,7 @@ final class iOSCanvasToolbarHostView: UIView {
         switch itemID {
         case .save, .undo, .redo:
             return UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
-        case .importImage:
+        case .importMedia:
             return UIImage.SymbolConfiguration(pointSize: 20, weight: .bold)
         case .crop, .text:
             return UIImage.SymbolConfiguration(pointSize: 17, weight: .semibold)

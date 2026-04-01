@@ -13,7 +13,7 @@ final class CanvasCommandExecutor {
         }
 
         switch command {
-        case let .importImages(request):
+        case let .importMedia(request):
             return request.isEmpty == false
         case .addTextItem:
             return session.canAddTextItem
@@ -52,19 +52,19 @@ final class CanvasCommandExecutor {
         }
 
         switch command {
-        case let .importImages(request):
-            let importedItems = session.appendImportedImages(
-                request.images,
+        case let .importMedia(request):
+            let importedItems = session.appendImportedMedia(
+                request.items,
                 placement: request.placement,
                 layout: request.layout
             )
-            let imageCount = importedItems.count
-            let imageLabel = imageCount == 1 ? "image" : "images"
+            let importedItemCount = importedItems.count
+            let itemLabel = importedItemCount == 1 ? "item" : "items"
             let sourceDescription = request.sourceDescription.isEmpty
                 ? ""
                 : " from \(request.sourceDescription)"
             return CanvasCommandExecutionResult(
-                refreshReason: "import \(imageCount) \(imageLabel)\(sourceDescription)"
+                refreshReason: "import \(importedItemCount) \(itemLabel)\(sourceDescription)"
             )
         case .addTextItem:
             guard let addedTextItem = session.addTextItem() else {
