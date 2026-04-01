@@ -437,8 +437,17 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             let editorContext = try editorSession.videoEditorContext(for: itemID)
             let editorViewController = iOSVideoDisplayFrameEditorViewController(
                 editorContext: editorContext
-            )
-            editorViewController.modalPresentationStyle = .fullScreen
+            ) { [weak self] frameImage in
+                guard let self else {
+                    throw iOSVideoEditorFlowError.presenterUnavailable
+                }
+
+                let updateResult = try self.editorSession.commitVideoPosterFrame(
+                    withID: itemID,
+                    frameImage: frameImage
+                )
+                self.requestCanvasRefresh(reason: updateResult.refreshReason)
+            }
             present(editorViewController, animated: true)
         } catch {
             presentVideoEditorError(message: error.localizedDescription)
@@ -3123,6 +3132,17 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             "occupiedRects=[\(occupiedRectsDescription)] " +
             "actionIDs=[\(actionIDsDescription)]"
         )
+    }
+}
+
+private enum iOSVideoEditorFlowError: LocalizedError {
+    case presenterUnavailable
+
+    var errorDescription: String? {
+        switch self {
+        case .presenterUnavailable:
+            "The canvas editor is no longer available."
+        }
     }
 }
 #endif
