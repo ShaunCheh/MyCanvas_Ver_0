@@ -7,10 +7,12 @@ final class CanvasVideoTimelineStripServiceTests: XCTestCase {
     override func setUp() {
         super.setUp()
         CanvasVideoFrameService.resetTimelineStripCache()
+        CanvasVideoFrameService.resetFrameDecodeSessionCache()
     }
 
     override func tearDown() {
         CanvasVideoFrameService.resetTimelineStripCache()
+        CanvasVideoFrameService.resetFrameDecodeSessionCache()
         super.tearDown()
     }
 
@@ -128,9 +130,75 @@ final class CanvasVideoTimelineStripServiceTests: XCTestCase {
             strip.request.requestedTimeRange.upperBound,
             strip.request.visibleTimeRange.upperBound
         )
-        XCTAssertEqual(strip.frames.count, strip.request.targetFrameCount)
+        XCTAssertEqual(
+            strip.frames.count,
+            min(
+                strip.request.targetFrameCount,
+                CanvasVideoFrameService.maximumTimelineStripFrameCount
+            )
+        )
         XCTAssertTrue(strip.frames.isEmpty == false)
         XCTAssertTrue(framesAreMonotonic(strip.frames))
+    }
+
+    func testFrameDecodeSessionCacheReusesSessionForRepeatedFrameRequests() throws {
+        let videoURL = try makeTestVideoURL()
+        defer { try? FileManager.default.removeItem(at: videoURL) }
+        try writeTestVideo(to: videoURL)
+
+        _ = try CanvasVideoFrameService.frameImage(
+            from: videoURL,
+            at: 0.2,
+            quality: .posterCommit
+        )
+        _ = try CanvasVideoFrameService.frameImage(
+            from: videoURL,
+            at: 0.8,
+            quality: .previewStripThumbnail(maxPixelSize: 48)
+        )
+
+        XCTAssertEqual(CanvasVideoFrameService.frameDecodeSessionEntryCount(), 1)
+    }
+
+    func testTimelineStripCapsFrameCountForExtremelyWideViewportRequests() throws {
+        let videoURL = try makeTestVideoURL()
+        defer { try? FileManager.default.removeItem(at: videoURL) }
+        try writeTestVideo(to: videoURL)
+
+        let viewport = CanvasVideoTimelineViewport(
+            durationSeconds: resolvedDurationSeconds(for: videoURL),
+            playheadTimeSeconds: 0.8,
+            zoomScale: CanvasVideoTimelineScale(
+                zoomScale: 32,
+                basePointsPerSecond: 180,
+                minZoomScale: 1,
+                maxZoomScale: 64
+            ),
+            visibleWidth: 3_000,
+            contentOffsetX: 100,
+            minimumContentWidth: 1
+        )
+        let request = CanvasVideoTimelineStripRequest(
+            viewport: viewport,
+            thumbnailWidth: 10,
+            maxPixelSize: 48,
+            overscanWidth: 1_500
+        )
+
+        XCTAssertGreaterThan(
+            request.targetFrameCount,
+            CanvasVideoFrameService.maximumTimelineStripFrameCount
+        )
+
+        let strip = try CanvasVideoFrameService.timelineStrip(
+            from: videoURL,
+            request: request
+        )
+
+        XCTAssertEqual(
+            strip.frames.count,
+            CanvasVideoFrameService.maximumTimelineStripFrameCount
+        )
     }
 }
 

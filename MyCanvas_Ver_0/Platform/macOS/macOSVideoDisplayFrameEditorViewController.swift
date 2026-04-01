@@ -70,23 +70,6 @@ final class macOSVideoDisplayFrameEditorViewController: NSViewController {
         view.translatesAutoresizingMaskIntoConstraints = false
         return view
     }()
-    private let timelineLoadingIndicator: NSProgressIndicator = {
-        let indicator = NSProgressIndicator()
-        indicator.translatesAutoresizingMaskIntoConstraints = false
-        indicator.style = .spinning
-        indicator.controlSize = .regular
-        indicator.isDisplayedWhenStopped = false
-        return indicator
-    }()
-    private let timelinePlaceholderLabel: NSTextField = {
-        let label = NSTextField(wrappingLabelWithString: "Loading timeline...")
-        label.translatesAutoresizingMaskIntoConstraints = false
-        label.font = .systemFont(ofSize: 13, weight: .medium)
-        label.textColor = .secondaryLabelColor
-        label.alignment = .center
-        label.maximumNumberOfLines = 2
-        return label
-    }()
     private let setDisplayFrameButton: NSButton = {
         let button = NSButton(title: "Use Current Frame", target: nil, action: nil)
         button.translatesAutoresizingMaskIntoConstraints = false
@@ -270,8 +253,6 @@ final class macOSVideoDisplayFrameEditorViewController: NSViewController {
         view.addSubview(timeSlider)
         view.addSubview(durationLabel)
         view.addSubview(timelineView)
-        view.addSubview(timelineLoadingIndicator)
-        view.addSubview(timelinePlaceholderLabel)
         view.addSubview(setDisplayFrameButton)
     }
 
@@ -330,28 +311,6 @@ final class macOSVideoDisplayFrameEditorViewController: NSViewController {
             timelineView.trailingAnchor.constraint(equalTo: playerView.trailingAnchor),
             timelineView.heightAnchor.constraint(equalToConstant: 112),
 
-            timelineLoadingIndicator.centerXAnchor.constraint(
-                equalTo: timelineView.centerXAnchor
-            ),
-            timelineLoadingIndicator.centerYAnchor.constraint(
-                equalTo: timelineView.centerYAnchor
-            ),
-
-            timelinePlaceholderLabel.centerXAnchor.constraint(
-                equalTo: timelineView.centerXAnchor
-            ),
-            timelinePlaceholderLabel.centerYAnchor.constraint(
-                equalTo: timelineView.centerYAnchor
-            ),
-            timelinePlaceholderLabel.leadingAnchor.constraint(
-                greaterThanOrEqualTo: timelineView.leadingAnchor,
-                constant: 12
-            ),
-            timelinePlaceholderLabel.trailingAnchor.constraint(
-                lessThanOrEqualTo: timelineView.trailingAnchor,
-                constant: -12
-            ),
-
             setDisplayFrameButton.topAnchor.constraint(
                 equalTo: timelineView.bottomAnchor,
                 constant: 22
@@ -381,7 +340,6 @@ final class macOSVideoDisplayFrameEditorViewController: NSViewController {
         let hasPlayableDuration = editorContext.durationSeconds > 0
         timeSlider.isEnabled = hasPlayableDuration
         playPauseButton.isEnabled = hasPlayableDuration
-        timelinePlaceholderLabel.isHidden = false
     }
 
     private func handlePlayerTimeUpdate(_ time: CMTime) {
@@ -539,9 +497,9 @@ final class macOSVideoDisplayFrameEditorViewController: NSViewController {
         let generation = timelineLoadGeneration
 
         if timelineView.hasRenderableStrip == false {
-            timelinePlaceholderLabel.stringValue = "Loading timeline..."
-            timelinePlaceholderLabel.isHidden = false
-            timelineLoadingIndicator.startAnimation(nil)
+            timelineView.setPlaceholderState(
+                .loading(message: "Loading timeline...")
+            )
         }
 
         var workItem: DispatchWorkItem?
@@ -575,16 +533,20 @@ final class macOSVideoDisplayFrameEditorViewController: NSViewController {
             return
         }
 
-        timelineLoadingIndicator.stopAnimation(nil)
         switch result {
         case let .success(strip):
             timelineView.applyStrip(strip)
-            timelinePlaceholderLabel.isHidden = true
+            if strip.frames.isEmpty {
+                timelineView.setPlaceholderState(
+                    .message("No timeline frames available.")
+                )
+            }
         case let .failure(error):
             if timelineView.hasRenderableStrip == false {
                 timelineView.applyStrip(nil)
-                timelinePlaceholderLabel.isHidden = false
-                timelinePlaceholderLabel.stringValue = "Unable to load timeline."
+                timelineView.setPlaceholderState(
+                    .message("Unable to load timeline.")
+                )
                 presentError(
                     title: "Unable to Load Timeline",
                     message: error.localizedDescription

@@ -1,6 +1,7 @@
 import XCTest
 @testable import MyCanvas_Ver_0
 
+@MainActor
 final class CanvasVideoEditorPreviewStateTests: XCTestCase {
     func testPreviewStateClampsTimeAndTracksPosterSelection() {
         var state = CanvasVideoEditorPreviewState(

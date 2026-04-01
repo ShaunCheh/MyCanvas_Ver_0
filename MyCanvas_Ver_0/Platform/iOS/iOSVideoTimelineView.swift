@@ -60,6 +60,23 @@ final class iOSVideoTimelineView: UIView {
         view.layer.cornerRadius = 5
         return view
     }()
+    private let timelineLoadingIndicator: UIActivityIndicatorView = {
+        let indicator = UIActivityIndicatorView(style: .medium)
+        indicator.translatesAutoresizingMaskIntoConstraints = false
+        indicator.hidesWhenStopped = true
+        indicator.isUserInteractionEnabled = false
+        return indicator
+    }()
+    private let timelinePlaceholderLabel: UILabel = {
+        let label = UILabel()
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.font = .systemFont(ofSize: 14, weight: .medium)
+        label.textColor = .secondaryLabel
+        label.textAlignment = .center
+        label.numberOfLines = 0
+        label.isUserInteractionEnabled = false
+        return label
+    }()
 
     private let trackFrameLayer = CALayer()
     private let rulerTickLayer = CALayer()
@@ -84,6 +101,10 @@ final class iOSVideoTimelineView: UIView {
     private var pinchLastScale: CGFloat = 1
     private var lastKnownBoundsSize: CGSize = .zero
     private var lastEmittedLoadSignature: StripLoadSignature?
+    private var reusableFrameLayers: [CALayer] = []
+    private var placeholderState: CanvasVideoTimelinePlaceholderState = .loading(
+        message: "Loading timeline..."
+    )
 
     private lazy var pinchGestureRecognizer: UIPinchGestureRecognizer = {
         let gestureRecognizer = UIPinchGestureRecognizer(
@@ -111,6 +132,7 @@ final class iOSVideoTimelineView: UIView {
         setupConstraints()
         setupLayers()
         scrollView.delegate = self
+        updatePlaceholderAppearance()
     }
 
     @available(*, unavailable)
@@ -141,6 +163,7 @@ final class iOSVideoTimelineView: UIView {
             playheadTimeSeconds,
             durationSeconds: self.durationSeconds
         )
+        setPlaceholderState(.loading(message: "Loading timeline..."))
         applyStrip(nil)
         setNeedsLayout()
     }
@@ -170,9 +193,18 @@ final class iOSVideoTimelineView: UIView {
         self.strip = strip
         if strip == nil {
             lastEmittedLoadSignature = nil
+        } else if strip?.frames.isEmpty == true {
+            setPlaceholderState(.message("No timeline frames available."))
+        } else {
+            setPlaceholderState(.hidden)
         }
         renderTrackFrames()
         emitStripRequestIfNeeded()
+    }
+
+    func setPlaceholderState(_ state: CanvasVideoTimelinePlaceholderState) {
+        placeholderState = state
+        updatePlaceholderAppearance()
     }
 
     private func setupViewHierarchy() {
@@ -187,9 +219,12 @@ final class iOSVideoTimelineView: UIView {
         contentView.addSubview(trackView)
         addSubview(playheadView)
         addSubview(playheadHandleView)
+        addSubview(timelineLoadingIndicator)
+        addSubview(timelinePlaceholderLabel)
 
         addGestureRecognizer(pinchGestureRecognizer)
         addGestureRecognizer(tapGestureRecognizer)
+        tapGestureRecognizer.require(toFail: pinchGestureRecognizer)
     }
 
     private func setupConstraints() {
@@ -205,7 +240,26 @@ final class iOSVideoTimelineView: UIView {
             playheadHandleView.centerXAnchor.constraint(equalTo: playheadView.centerXAnchor),
             playheadHandleView.centerYAnchor.constraint(equalTo: playheadView.topAnchor),
             playheadHandleView.widthAnchor.constraint(equalToConstant: 10),
-            playheadHandleView.heightAnchor.constraint(equalToConstant: 10)
+            playheadHandleView.heightAnchor.constraint(equalToConstant: 10),
+            timelineLoadingIndicator.centerXAnchor.constraint(equalTo: centerXAnchor),
+            timelineLoadingIndicator.centerYAnchor.constraint(equalTo: centerYAnchor, constant: -10),
+            timelinePlaceholderLabel.topAnchor.constraint(
+                equalTo: timelineLoadingIndicator.bottomAnchor,
+                constant: 8
+            ),
+            timelinePlaceholderLabel.centerXAnchor.constraint(equalTo: centerXAnchor),
+            timelinePlaceholderLabel.leadingAnchor.constraint(
+                greaterThanOrEqualTo: leadingAnchor,
+                constant: 12
+            ),
+            timelinePlaceholderLabel.trailingAnchor.constraint(
+                lessThanOrEqualTo: trailingAnchor,
+                constant: -12
+            ),
+            timelinePlaceholderLabel.bottomAnchor.constraint(
+                lessThanOrEqualTo: bottomAnchor,
+                constant: -12
+            )
         ])
     }
 
@@ -322,8 +376,8 @@ final class iOSVideoTimelineView: UIView {
     private func renderTrackFrames() {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        trackFrameLayer.sublayers?.forEach { $0.removeFromSuperlayer() }
         guard let strip, strip.frames.isEmpty == false else {
+            hideReusableFrameLayers(startingAt: 0)
             CATransaction.commit()
             return
         }
@@ -343,9 +397,10 @@ final class iOSVideoTimelineView: UIView {
                 rightEdge = (frame.contentX + strip.frames[index + 1].contentX) / 2
             }
 
-            let frameLayer = CALayer()
+            let frameLayer = reusableFrameLayer(at: index)
             frameLayer.contents = frame.cgImage
             frameLayer.contentsGravity = .resizeAspectFill
+            frameLayer.contentsScale = frameContentsScale
             frameLayer.masksToBounds = true
             frameLayer.frame = CGRect(
                 x: leftEdge,
@@ -353,9 +408,52 @@ final class iOSVideoTimelineView: UIView {
                 width: max(rightEdge - leftEdge, 1),
                 height: trackView.bounds.height
             )
-            trackFrameLayer.addSublayer(frameLayer)
+            frameLayer.isHidden = false
         }
+        hideReusableFrameLayers(startingAt: strip.frames.count)
         CATransaction.commit()
+    }
+
+    private var frameContentsScale: CGFloat {
+        window?.screen.scale ?? UIScreen.main.scale
+    }
+
+    private func reusableFrameLayer(at index: Int) -> CALayer {
+        while reusableFrameLayers.count <= index {
+            let frameLayer = CALayer()
+            frameLayer.contentsGravity = .resizeAspectFill
+            frameLayer.masksToBounds = true
+            trackFrameLayer.addSublayer(frameLayer)
+            reusableFrameLayers.append(frameLayer)
+        }
+        return reusableFrameLayers[index]
+    }
+
+    private func hideReusableFrameLayers(startingAt index: Int) {
+        guard index < reusableFrameLayers.count else {
+            return
+        }
+        for frameLayer in reusableFrameLayers[index...] {
+            frameLayer.contents = nil
+            frameLayer.isHidden = true
+        }
+    }
+
+    private func updatePlaceholderAppearance() {
+        switch placeholderState {
+        case .hidden:
+            timelineLoadingIndicator.stopAnimating()
+            timelinePlaceholderLabel.isHidden = true
+            timelinePlaceholderLabel.text = nil
+        case let .loading(message):
+            timelineLoadingIndicator.startAnimating()
+            timelinePlaceholderLabel.text = message
+            timelinePlaceholderLabel.isHidden = message.isEmpty
+        case let .message(message):
+            timelineLoadingIndicator.stopAnimating()
+            timelinePlaceholderLabel.text = message
+            timelinePlaceholderLabel.isHidden = false
+        }
     }
 
     private func renderRuler() {

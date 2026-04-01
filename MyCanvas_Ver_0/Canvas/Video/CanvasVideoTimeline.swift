@@ -453,3 +453,9 @@ struct CanvasVideoTimelineStrip {
         }?.offset
     }
 }
+
+enum CanvasVideoTimelinePlaceholderState: Equatable {
+    case hidden
+    case loading(message: String)
+    case message(String)
+}

@@ -85,7 +85,8 @@ private struct CanvasVideoTimelineStripCacheKey {
 
     init(
         localFileURL: URL,
-        request: CanvasVideoTimelineStripRequest
+        request: CanvasVideoTimelineStripRequest,
+        targetFrameCount: Int? = nil
     ) {
         sourceVideoPath = localFileURL
             .resolvingSymlinksInPath()
@@ -111,7 +112,7 @@ private struct CanvasVideoTimelineStripCacheKey {
             request.thumbnailWidth,
             scale: Self.layoutBucketScale
         )
-        targetFrameCount = request.targetFrameCount
+        self.targetFrameCount = max(targetFrameCount ?? request.targetFrameCount, 1)
         maxPixelSize = request.maxPixelSize
     }
 
@@ -235,8 +236,201 @@ private final class CanvasVideoTimelineStripCache {
     }
 }
 
+private final class CanvasVideoFrameDecodeSessionCache {
+    private let lock = NSLock()
+    private let countLimit: Int
+    private var sessions: [NSString: CanvasVideoFrameDecodeSession] = [:]
+    private var orderedKeys: [NSString] = []
+
+    init(countLimit: Int = 12) {
+        self.countLimit = max(countLimit, 1)
+    }
+
+    func session(for localFileURL: URL) -> CanvasVideoFrameDecodeSession {
+        let standardizedURL = localFileURL
+            .resolvingSymlinksInPath()
+            .standardizedFileURL
+        let cacheKey = standardizedURL.path as NSString
+
+        lock.lock()
+        if let existingSession = sessions[cacheKey] {
+            touch(cacheKey)
+            lock.unlock()
+            return existingSession
+        }
+
+        let session = CanvasVideoFrameDecodeSession(localFileURL: standardizedURL)
+        sessions[cacheKey] = session
+        touch(cacheKey)
+        evictIfNeeded()
+        lock.unlock()
+        return session
+    }
+
+    func removeAll() {
+        lock.lock()
+        sessions.removeAll()
+        orderedKeys.removeAll()
+        lock.unlock()
+    }
+
+    var entryCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return sessions.count
+    }
+
+    private func touch(_ key: NSString) {
+        orderedKeys.removeAll { $0 == key }
+        orderedKeys.append(key)
+    }
+
+    private func evictIfNeeded() {
+        while sessions.count > countLimit, let oldestKey = orderedKeys.first {
+            orderedKeys.removeFirst()
+            sessions.removeValue(forKey: oldestKey)
+        }
+    }
+}
+
+private final class CanvasVideoFrameDecodeSession {
+    private enum GeneratorKey: Hashable {
+        case posterCommit
+        case previewStripThumbnail(maxPixelSize: Int)
+
+        init(quality: CanvasVideoFrameRenderQuality) {
+            switch quality {
+            case .posterCommit:
+                self = .posterCommit
+            case let .previewStripThumbnail(maxPixelSize):
+                self = .previewStripThumbnail(maxPixelSize: max(maxPixelSize, 1))
+            }
+        }
+    }
+
+    let asset: AVURLAsset
+    let filename: String
+    let durationSeconds: Double
+    let naturalPixelSize: CGSize?
+
+    private let lock = NSLock()
+    private var imageGenerators: [GeneratorKey: AVAssetImageGenerator] = [:]
+
+    init(localFileURL: URL) {
+        asset = AVURLAsset(url: localFileURL)
+        filename = localFileURL.lastPathComponent
+        durationSeconds = CanvasVideoTimelineMath.sanitizedDurationSeconds(
+            asset.duration.seconds
+        )
+        naturalPixelSize = CanvasVideoFrameService.naturalVideoPixelSize(for: asset)
+    }
+
+    func frameImage(
+        at timeSeconds: Double,
+        quality: CanvasVideoFrameRenderQuality
+    ) throws -> CanvasVideoFrameImage {
+        lock.lock()
+        defer { lock.unlock() }
+
+        let imageGenerator = generator(for: quality)
+        return try CanvasVideoFrameService.makeFrameImage(
+            from: asset,
+            filename: filename,
+            at: timeSeconds,
+            imageGenerator: imageGenerator,
+            naturalPixelSize: naturalPixelSize
+        )
+    }
+
+    func previewStrip(
+        frameCount: Int,
+        maxPixelSize: Int
+    ) throws -> CanvasVideoPreviewStrip {
+        lock.lock()
+        defer { lock.unlock() }
+
+        let imageGenerator = generator(
+            for: .previewStripThumbnail(maxPixelSize: maxPixelSize)
+        )
+        let sampleTimes = CanvasVideoFrameService.previewSampleTimes(
+            durationSeconds: durationSeconds,
+            frameCount: max(frameCount, 1)
+        )
+        let frames = try sampleTimes.map { sampleTime in
+            let frameImage = try CanvasVideoFrameService.makeFrameImage(
+                from: asset,
+                filename: filename,
+                at: sampleTime,
+                imageGenerator: imageGenerator,
+                naturalPixelSize: naturalPixelSize
+            )
+            return CanvasVideoPreviewStripFrame(
+                cgImage: frameImage.cgImage,
+                timeSeconds: frameImage.actualTimeSeconds
+            )
+        }
+        return CanvasVideoPreviewStrip(
+            durationSeconds: durationSeconds,
+            frames: frames
+        )
+    }
+
+    func timelineStrip(
+        request: CanvasVideoTimelineStripRequest,
+        frameCount: Int
+    ) throws -> CanvasVideoTimelineStrip {
+        lock.lock()
+        defer { lock.unlock() }
+
+        let imageGenerator = generator(
+            for: .previewStripThumbnail(maxPixelSize: request.maxPixelSize)
+        )
+        let sampleTimes = request.sampleTimes(frameCount: frameCount)
+        let frames = try sampleTimes.map { sampleTime in
+            let frameImage = try CanvasVideoFrameService.makeFrameImage(
+                from: asset,
+                filename: filename,
+                at: sampleTime,
+                imageGenerator: imageGenerator,
+                naturalPixelSize: naturalPixelSize
+            )
+            return CanvasVideoTimelineStripFrame(
+                cgImage: frameImage.cgImage,
+                requestedTimeSeconds: sampleTime,
+                actualTimeSeconds: frameImage.actualTimeSeconds,
+                contentX: request.viewport.contentX(
+                    forTimeSeconds: frameImage.actualTimeSeconds
+                )
+            )
+        }
+        return CanvasVideoTimelineStrip(
+            request: request,
+            frames: frames
+        )
+    }
+
+    private func generator(
+        for quality: CanvasVideoFrameRenderQuality
+    ) -> AVAssetImageGenerator {
+        let generatorKey = GeneratorKey(quality: quality)
+        if let existingGenerator = imageGenerators[generatorKey] {
+            return existingGenerator
+        }
+
+        let generator = CanvasVideoFrameService.makeImageGenerator(
+            for: asset,
+            quality: quality
+        )
+        imageGenerators[generatorKey] = generator
+        return generator
+    }
+}
+
 enum CanvasVideoFrameService {
+    static let maximumTimelineStripFrameCount = 48
+
     private static let timelineStripCache = CanvasVideoTimelineStripCache()
+    private static let frameDecodeSessionCache = CanvasVideoFrameDecodeSessionCache()
 
     static func editorContext(
         for item: CanvasImageItem,
@@ -265,7 +459,7 @@ enum CanvasVideoFrameService {
             )
         }
 
-        let asset = AVURLAsset(url: sourceVideoURL)
+        let decodeSession = frameDecodeSession(for: sourceVideoURL)
         return CanvasVideoEditorContext(
             boardID: boardID,
             itemID: item.id,
@@ -275,8 +469,8 @@ enum CanvasVideoFrameService {
             currentPosterTimeSeconds: sanitizedTimeSeconds(
                 item.posterTimeSeconds ?? 0
             ),
-            durationSeconds: sanitizedDurationSeconds(asset.duration),
-            naturalPixelSize: naturalVideoPixelSize(for: asset) ?? item.logicalPixelSize
+            durationSeconds: decodeSession.durationSeconds,
+            naturalPixelSize: decodeSession.naturalPixelSize ?? item.logicalPixelSize
         )
     }
 
@@ -285,17 +479,9 @@ enum CanvasVideoFrameService {
         at timeSeconds: Double,
         quality: CanvasVideoFrameRenderQuality
     ) throws -> CanvasVideoFrameImage {
-        let asset = AVURLAsset(url: localFileURL)
-        let filename = localFileURL.lastPathComponent
-        let imageGenerator = makeImageGenerator(
-            for: asset,
-            quality: quality
-        )
-        return try makeFrameImage(
-            from: asset,
-            filename: filename,
+        try frameDecodeSession(for: localFileURL).frameImage(
             at: timeSeconds,
-            imageGenerator: imageGenerator
+            quality: quality
         )
     }
 
@@ -304,33 +490,9 @@ enum CanvasVideoFrameService {
         frameCount: Int,
         maxPixelSize: Int
     ) throws -> CanvasVideoPreviewStrip {
-        let asset = AVURLAsset(url: localFileURL)
-        let filename = localFileURL.lastPathComponent
-        let durationSeconds = sanitizedDurationSeconds(asset.duration)
-        let requestedFrameCount = max(frameCount, 1)
-        let sampleTimes = previewSampleTimes(
-            durationSeconds: durationSeconds,
-            frameCount: requestedFrameCount
-        )
-        let imageGenerator = makeImageGenerator(
-            for: asset,
-            quality: .previewStripThumbnail(maxPixelSize: maxPixelSize)
-        )
-        let frames = try sampleTimes.map { sampleTime in
-            let frameImage = try makeFrameImage(
-                from: asset,
-                filename: filename,
-                at: sampleTime,
-                imageGenerator: imageGenerator
-            )
-            return CanvasVideoPreviewStripFrame(
-                cgImage: frameImage.cgImage,
-                timeSeconds: frameImage.actualTimeSeconds
-            )
-        }
-        return CanvasVideoPreviewStrip(
-            durationSeconds: durationSeconds,
-            frames: frames
+        try frameDecodeSession(for: localFileURL).previewStrip(
+            frameCount: frameCount,
+            maxPixelSize: maxPixelSize
         )
     }
 
@@ -338,50 +500,30 @@ enum CanvasVideoFrameService {
         from localFileURL: URL,
         request: CanvasVideoTimelineStripRequest
     ) throws -> CanvasVideoTimelineStrip {
-        let asset = AVURLAsset(url: localFileURL)
+        let decodeSession = frameDecodeSession(for: localFileURL)
         let normalizedRequest = CanvasVideoTimelineStripRequest(
             viewport: request.viewport.with(
-                durationSeconds: sanitizedDurationSeconds(asset.duration)
+                durationSeconds: decodeSession.durationSeconds
             ),
             thumbnailWidth: request.thumbnailWidth,
             maxPixelSize: request.maxPixelSize,
             overscanWidth: request.overscanWidth
         )
+        let targetFrameCount = effectiveTimelineStripFrameCount(
+            for: normalizedRequest
+        )
         let cacheKey = CanvasVideoTimelineStripCacheKey(
             localFileURL: localFileURL,
-            request: normalizedRequest
+            request: normalizedRequest,
+            targetFrameCount: targetFrameCount
         )
         if let cachedStrip = timelineStripCache.strip(for: cacheKey) {
             return cachedStrip
         }
 
-        let filename = localFileURL.lastPathComponent
-        let imageGenerator = makeImageGenerator(
-            for: asset,
-            quality: .previewStripThumbnail(
-                maxPixelSize: normalizedRequest.maxPixelSize
-            )
-        )
-        let sampleTimes = normalizedRequest.sampleTimes()
-        let frames = try sampleTimes.map { sampleTime in
-            let frameImage = try makeFrameImage(
-                from: asset,
-                filename: filename,
-                at: sampleTime,
-                imageGenerator: imageGenerator
-            )
-            return CanvasVideoTimelineStripFrame(
-                cgImage: frameImage.cgImage,
-                requestedTimeSeconds: sampleTime,
-                actualTimeSeconds: frameImage.actualTimeSeconds,
-                contentX: normalizedRequest.viewport.contentX(
-                    forTimeSeconds: frameImage.actualTimeSeconds
-                )
-            )
-        }
-        let strip = CanvasVideoTimelineStrip(
+        let strip = try decodeSession.timelineStrip(
             request: normalizedRequest,
-            frames: frames
+            frameCount: targetFrameCount
         )
         timelineStripCache.insert(strip, for: cacheKey)
         return strip
@@ -395,13 +537,22 @@ enum CanvasVideoFrameService {
         timelineStripCache.removeAll()
     }
 
+    static func frameDecodeSessionEntryCount() -> Int {
+        frameDecodeSessionCache.entryCount
+    }
+
+    static func resetFrameDecodeSessionCache() {
+        frameDecodeSessionCache.removeAll()
+    }
+
     static func timelineStripCacheKeyDescription(
         from localFileURL: URL,
         request: CanvasVideoTimelineStripRequest
     ) -> String {
         CanvasVideoTimelineStripCacheKey(
             localFileURL: localFileURL,
-            request: request
+            request: request,
+            targetFrameCount: effectiveTimelineStripFrameCount(for: request)
         ).cacheKey as String
     }
 
@@ -452,11 +603,12 @@ enum CanvasVideoFrameService {
         )
     }
 
-    private static func makeFrameImage(
+    fileprivate static func makeFrameImage(
         from asset: AVAsset,
         filename: String,
         at timeSeconds: Double,
-        imageGenerator: AVAssetImageGenerator
+        imageGenerator: AVAssetImageGenerator,
+        naturalPixelSize: CGSize?
     ) throws -> CanvasVideoFrameImage {
         let clampedTimeSeconds = clampedTimeSeconds(
             timeSeconds,
@@ -482,7 +634,7 @@ enum CanvasVideoFrameService {
             : clampedTimeSeconds
         return CanvasVideoFrameImage(
             cgImage: cgImage,
-            logicalPixelSize: naturalVideoPixelSize(for: asset) ?? CGSize(
+            logicalPixelSize: naturalPixelSize ?? CGSize(
                 width: cgImage.width,
                 height: cgImage.height
             ),
@@ -491,7 +643,7 @@ enum CanvasVideoFrameService {
         )
     }
 
-    private static func makeImageGenerator(
+    fileprivate static func makeImageGenerator(
         for asset: AVAsset,
         quality: CanvasVideoFrameRenderQuality
     ) -> AVAssetImageGenerator {
@@ -554,7 +706,7 @@ enum CanvasVideoFrameService {
         return mutableData as Data
     }
 
-    private static func previewSampleTimes(
+    fileprivate static func previewSampleTimes(
         durationSeconds: Double,
         frameCount: Int
     ) -> [Double] {
@@ -565,6 +717,18 @@ enum CanvasVideoFrameService {
             in: 0...upperBound,
             frameCount: frameCount
         )
+    }
+
+    private static func frameDecodeSession(
+        for localFileURL: URL
+    ) -> CanvasVideoFrameDecodeSession {
+        frameDecodeSessionCache.session(for: localFileURL)
+    }
+
+    private static func effectiveTimelineStripFrameCount(
+        for request: CanvasVideoTimelineStripRequest
+    ) -> Int {
+        min(max(request.targetFrameCount, 1), maximumTimelineStripFrameCount)
     }
 
     private static func sanitizedTimeSeconds(
@@ -597,7 +761,7 @@ enum CanvasVideoFrameService {
         )
     }
 
-    private static func naturalVideoPixelSize(
+    fileprivate static func naturalVideoPixelSize(
         for asset: AVAsset
     ) -> CGSize? {
         guard let videoTrack = asset.tracks(withMediaType: .video).first else {
