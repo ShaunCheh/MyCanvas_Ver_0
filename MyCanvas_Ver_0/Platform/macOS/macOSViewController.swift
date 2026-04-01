@@ -424,7 +424,17 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             let editorContext = try editorSession.videoEditorContext(for: itemID)
             let editorViewController = macOSVideoDisplayFrameEditorViewController(
                 editorContext: editorContext
-            )
+            ) { [weak self] frameImage in
+                guard let self else {
+                    throw macOSVideoEditorFlowError.presenterUnavailable
+                }
+
+                let updateResult = try self.editorSession.commitVideoPosterFrame(
+                    withID: itemID,
+                    frameImage: frameImage
+                )
+                self.refreshCanvas(reason: updateResult.refreshReason)
+            }
             presentAsSheet(editorViewController)
         } catch {
             presentVideoEditorError(message: error.localizedDescription)
@@ -3116,6 +3126,17 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
 
     private func formatCoordinate(_ value: CGFloat) -> String {
         String(format: "%.2f", Double(value))
+    }
+}
+
+private enum macOSVideoEditorFlowError: LocalizedError {
+    case presenterUnavailable
+
+    var errorDescription: String? {
+        switch self {
+        case .presenterUnavailable:
+            "The canvas editor is no longer available."
+        }
     }
 }
 #endif
