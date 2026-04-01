@@ -423,7 +423,17 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         do {
             let editorContext = try editorSession.videoEditorContext(for: itemID)
             let editorViewController = macOSVideoDisplayFrameEditorViewController(
-                editorContext: editorContext
+                editorContext: editorContext,
+                loadTimelineStrip: { [weak self] request in
+                    guard let self else {
+                        throw macOSVideoEditorFlowError.presenterUnavailable
+                    }
+
+                    return try self.editorSession.videoTimelineStrip(
+                        for: itemID,
+                        request: request
+                    )
+                }
             ) { [weak self] frameImage in
                 guard let self else {
                     throw macOSVideoEditorFlowError.presenterUnavailable
