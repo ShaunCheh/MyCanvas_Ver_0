@@ -5,7 +5,7 @@ import Foundation
 import UIKit
 
 final class CanvasContextMenuHostView: UIView {
-    var onCommandSelected: ((CanvasCommandID) -> Void)?
+    var onActionSelected: ((CanvasContextMenuActionID) -> Void)?
     var onDismissRequested: (() -> Void)?
 
     private let layoutSolver = CanvasContextMenuLayoutSolver()
@@ -17,12 +17,12 @@ final class CanvasContextMenuHostView: UIView {
     private let menuContainerView = UIVisualEffectView(
         effect: UIBlurEffect(style: .systemChromeMaterial)
     )
-    private let commandStackView = UIStackView()
+    private let actionStackView = UIStackView()
     private var menuLeadingConstraint: NSLayoutConstraint!
     private var menuTopConstraint: NSLayoutConstraint!
     private var menuWidthConstraint: NSLayoutConstraint!
     private var menuHeightConstraint: NSLayoutConstraint!
-    private var commandIDs: [CanvasCommandID] = []
+    private var actionIDs: [CanvasContextMenuActionID] = []
     private(set) var currentState: CanvasContextMenuState?
 
     override init(frame: CGRect) {
@@ -37,14 +37,14 @@ final class CanvasContextMenuHostView: UIView {
         menuContainerView.clipsToBounds = true
         menuContainerView.isHidden = true
 
-        commandStackView.translatesAutoresizingMaskIntoConstraints = false
-        commandStackView.axis = .vertical
-        commandStackView.alignment = .fill
-        commandStackView.distribution = .fill
-        commandStackView.spacing = 6
+        actionStackView.translatesAutoresizingMaskIntoConstraints = false
+        actionStackView.axis = .vertical
+        actionStackView.alignment = .fill
+        actionStackView.distribution = .fill
+        actionStackView.spacing = 6
 
         addSubview(menuContainerView)
-        menuContainerView.contentView.addSubview(commandStackView)
+        menuContainerView.contentView.addSubview(actionStackView)
         menuLeadingConstraint = menuContainerView.leadingAnchor.constraint(equalTo: leadingAnchor)
         menuTopConstraint = menuContainerView.topAnchor.constraint(equalTo: topAnchor)
         menuWidthConstraint = menuContainerView.widthAnchor.constraint(equalToConstant: 0)
@@ -54,10 +54,10 @@ final class CanvasContextMenuHostView: UIView {
             menuTopConstraint,
             menuWidthConstraint,
             menuHeightConstraint,
-            commandStackView.topAnchor.constraint(equalTo: menuContainerView.contentView.topAnchor, constant: 10),
-            commandStackView.leadingAnchor.constraint(equalTo: menuContainerView.contentView.leadingAnchor, constant: 10),
-            commandStackView.trailingAnchor.constraint(equalTo: menuContainerView.contentView.trailingAnchor, constant: -10),
-            commandStackView.bottomAnchor.constraint(equalTo: menuContainerView.contentView.bottomAnchor, constant: -10)
+            actionStackView.topAnchor.constraint(equalTo: menuContainerView.contentView.topAnchor, constant: 10),
+            actionStackView.leadingAnchor.constraint(equalTo: menuContainerView.contentView.leadingAnchor, constant: 10),
+            actionStackView.trailingAnchor.constraint(equalTo: menuContainerView.contentView.trailingAnchor, constant: -10),
+            actionStackView.bottomAnchor.constraint(equalTo: menuContainerView.contentView.bottomAnchor, constant: -10)
         ])
     }
 
@@ -101,7 +101,7 @@ final class CanvasContextMenuHostView: UIView {
             return
         }
 
-        rebuildCommandButtons(for: state)
+        rebuildActionButtons(for: state)
         isHidden = false
         menuContainerView.isHidden = false
         updateLayout(layoutContext: layoutContext)
@@ -148,9 +148,9 @@ final class CanvasContextMenuHostView: UIView {
 
     func dismiss() {
         currentState = nil
-        commandIDs = []
-        commandStackView.arrangedSubviews.forEach { arrangedSubview in
-            commandStackView.removeArrangedSubview(arrangedSubview)
+        actionIDs = []
+        actionStackView.arrangedSubviews.forEach { arrangedSubview in
+            actionStackView.removeArrangedSubview(arrangedSubview)
             arrangedSubview.removeFromSuperview()
         }
         updateMenuContainerConstraints(.zero)
@@ -158,25 +158,25 @@ final class CanvasContextMenuHostView: UIView {
         isHidden = true
     }
 
-    private func rebuildCommandButtons(for state: CanvasContextMenuState) {
-        commandIDs = []
-        commandStackView.arrangedSubviews.forEach { arrangedSubview in
-            commandStackView.removeArrangedSubview(arrangedSubview)
+    private func rebuildActionButtons(for state: CanvasContextMenuState) {
+        actionIDs = []
+        actionStackView.arrangedSubviews.forEach { arrangedSubview in
+            actionStackView.removeArrangedSubview(arrangedSubview)
             arrangedSubview.removeFromSuperview()
         }
 
-        for commandState in state.commandStates {
-            let button = makeCommandButton(for: commandState)
-            button.tag = commandIDs.count
-            commandIDs.append(commandState.commandID)
-            commandStackView.addArrangedSubview(button)
+        for actionState in state.actionStates {
+            let button = makeActionButton(for: actionState)
+            button.tag = actionIDs.count
+            actionIDs.append(actionState.actionID)
+            actionStackView.addArrangedSubview(button)
         }
     }
 
-    private func makeCommandButton(
-        for commandState: CanvasContextMenuCommandState
+    private func makeActionButton(
+        for actionState: CanvasContextMenuActionState
     ) -> UIButton {
-        let descriptor = commandState.descriptor
+        let descriptor = actionState.descriptor
         let button = UIButton(type: .system)
         button.translatesAutoresizingMaskIntoConstraints = false
         button.heightAnchor.constraint(greaterThanOrEqualToConstant: 36).isActive = true
@@ -203,18 +203,18 @@ final class CanvasContextMenuHostView: UIView {
             ? (descriptor.isActive ? .systemOrange : .label)
             : .secondaryLabel
         button.configuration = configuration
-        button.addTarget(self, action: #selector(handleCommandButtonTap(_:)), for: .touchUpInside)
+        button.addTarget(self, action: #selector(handleActionButtonTap(_:)), for: .touchUpInside)
         return button
     }
 
     @objc
-    private func handleCommandButtonTap(_ sender: UIButton) {
+    private func handleActionButtonTap(_ sender: UIButton) {
         let index = sender.tag
-        guard commandIDs.indices.contains(index) else {
+        guard actionIDs.indices.contains(index) else {
             return
         }
 
-        onCommandSelected?(commandIDs[index])
+        onActionSelected?(actionIDs[index])
     }
 
     private func updateMenuContainerConstraints(_ frame: CGRect) {
@@ -226,7 +226,7 @@ final class CanvasContextMenuHostView: UIView {
     }
 
     private func preferredMenuSize() -> CGSize {
-        let stackSize = commandStackView.systemLayoutSizeFitting(
+        let stackSize = actionStackView.systemLayoutSizeFitting(
             UIView.layoutFittingCompressedSize
         )
         return CGSize(
@@ -239,7 +239,7 @@ final class CanvasContextMenuHostView: UIView {
 import AppKit
 
 final class CanvasContextMenuHostView: NSView {
-    var onCommandSelected: ((CanvasCommandID) -> Void)?
+    var onActionSelected: ((CanvasContextMenuActionID) -> Void)?
     var onDismissRequested: (() -> Void)?
 
     private let layoutSolver = CanvasContextMenuLayoutSolver()
@@ -249,8 +249,8 @@ final class CanvasContextMenuHostView: NSView {
         return configuration
     }()
     private let menuContainerView = NSVisualEffectView()
-    private let commandStackView = NSStackView()
-    private var commandIDs: [CanvasCommandID] = []
+    private let actionStackView = NSStackView()
+    private var actionIDs: [CanvasContextMenuActionID] = []
     private(set) var currentState: CanvasContextMenuState?
 
     override init(frame frameRect: NSRect) {
@@ -269,19 +269,19 @@ final class CanvasContextMenuHostView: NSView {
         menuContainerView.layer?.masksToBounds = true
         menuContainerView.isHidden = true
 
-        commandStackView.translatesAutoresizingMaskIntoConstraints = false
-        commandStackView.orientation = .vertical
-        commandStackView.alignment = .leading
-        commandStackView.distribution = .gravityAreas
-        commandStackView.spacing = 6
+        actionStackView.translatesAutoresizingMaskIntoConstraints = false
+        actionStackView.orientation = .vertical
+        actionStackView.alignment = .leading
+        actionStackView.distribution = .gravityAreas
+        actionStackView.spacing = 6
 
         addSubview(menuContainerView)
-        menuContainerView.addSubview(commandStackView)
+        menuContainerView.addSubview(actionStackView)
         NSLayoutConstraint.activate([
-            commandStackView.topAnchor.constraint(equalTo: menuContainerView.topAnchor, constant: 10),
-            commandStackView.leadingAnchor.constraint(equalTo: menuContainerView.leadingAnchor, constant: 10),
-            commandStackView.trailingAnchor.constraint(equalTo: menuContainerView.trailingAnchor, constant: -10),
-            commandStackView.bottomAnchor.constraint(equalTo: menuContainerView.bottomAnchor, constant: -10)
+            actionStackView.topAnchor.constraint(equalTo: menuContainerView.topAnchor, constant: 10),
+            actionStackView.leadingAnchor.constraint(equalTo: menuContainerView.leadingAnchor, constant: 10),
+            actionStackView.trailingAnchor.constraint(equalTo: menuContainerView.trailingAnchor, constant: -10),
+            actionStackView.bottomAnchor.constraint(equalTo: menuContainerView.bottomAnchor, constant: -10)
         ])
     }
 
@@ -337,7 +337,7 @@ final class CanvasContextMenuHostView: NSView {
             return
         }
 
-        rebuildCommandButtons(for: state)
+        rebuildActionButtons(for: state)
         isHidden = false
         menuContainerView.isHidden = false
         updateLayout(layoutContext: layoutContext)
@@ -383,9 +383,9 @@ final class CanvasContextMenuHostView: NSView {
 
     func dismiss() {
         currentState = nil
-        commandIDs = []
-        commandStackView.arrangedSubviews.forEach { arrangedSubview in
-            commandStackView.removeArrangedSubview(arrangedSubview)
+        actionIDs = []
+        actionStackView.arrangedSubviews.forEach { arrangedSubview in
+            actionStackView.removeArrangedSubview(arrangedSubview)
             arrangedSubview.removeFromSuperview()
         }
         menuContainerView.frame = .zero
@@ -393,26 +393,26 @@ final class CanvasContextMenuHostView: NSView {
         isHidden = true
     }
 
-    private func rebuildCommandButtons(for state: CanvasContextMenuState) {
-        commandIDs = []
-        commandStackView.arrangedSubviews.forEach { arrangedSubview in
-            commandStackView.removeArrangedSubview(arrangedSubview)
+    private func rebuildActionButtons(for state: CanvasContextMenuState) {
+        actionIDs = []
+        actionStackView.arrangedSubviews.forEach { arrangedSubview in
+            actionStackView.removeArrangedSubview(arrangedSubview)
             arrangedSubview.removeFromSuperview()
         }
 
-        for commandState in state.commandStates {
-            let button = makeCommandButton(for: commandState)
-            button.tag = commandIDs.count
-            commandIDs.append(commandState.commandID)
-            commandStackView.addArrangedSubview(button)
+        for actionState in state.actionStates {
+            let button = makeActionButton(for: actionState)
+            button.tag = actionIDs.count
+            actionIDs.append(actionState.actionID)
+            actionStackView.addArrangedSubview(button)
         }
     }
 
-    private func makeCommandButton(
-        for commandState: CanvasContextMenuCommandState
+    private func makeActionButton(
+        for actionState: CanvasContextMenuActionState
     ) -> NSButton {
-        let descriptor = commandState.descriptor
-        let button = NSButton(title: descriptor.title, target: self, action: #selector(handleCommandButtonClick(_:)))
+        let descriptor = actionState.descriptor
+        let button = NSButton(title: descriptor.title, target: self, action: #selector(handleActionButtonClick(_:)))
         button.translatesAutoresizingMaskIntoConstraints = false
         button.heightAnchor.constraint(greaterThanOrEqualToConstant: 30).isActive = true
         button.isBordered = false
@@ -437,17 +437,17 @@ final class CanvasContextMenuHostView: NSView {
     }
 
     @objc
-    private func handleCommandButtonClick(_ sender: NSButton) {
+    private func handleActionButtonClick(_ sender: NSButton) {
         let index = sender.tag
-        guard commandIDs.indices.contains(index) else {
+        guard actionIDs.indices.contains(index) else {
             return
         }
 
-        onCommandSelected?(commandIDs[index])
+        onActionSelected?(actionIDs[index])
     }
 
     private func preferredMenuSize() -> CGSize {
-        let stackSize = commandStackView.fittingSize
+        let stackSize = actionStackView.fittingSize
         return CGSize(
             width: stackSize.width + 20,
             height: stackSize.height + 20
@@ -468,8 +468,8 @@ private func logContextMenuLayout(
     let occupiedRectsDescription = occupiedRects.isEmpty
         ? "[]"
         : occupiedRects.map(contextMenuHostDescribe).joined(separator: ", ")
-    let commandIDsDescription = state.commandStates
-        .map(\.commandID.rawValue)
+    let actionIDsDescription = state.actionStates
+        .map(\.actionID.rawValueDescription)
         .joined(separator: ",")
 
     print(
@@ -481,7 +481,7 @@ private func logContextMenuLayout(
         "preferredSize=\(contextMenuHostDescribe(preferredSize)) " +
         "resolvedMenuFrame=\(resolvedMenuFrame.map(contextMenuHostDescribe) ?? "nil") " +
         "occupiedRects=[\(occupiedRectsDescription)] " +
-        "commandIDs=[\(commandIDsDescription)]"
+        "actionIDs=[\(actionIDsDescription)]"
     )
 }
 

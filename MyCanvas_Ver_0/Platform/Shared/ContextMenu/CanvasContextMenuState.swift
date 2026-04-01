@@ -1,18 +1,68 @@
 import CoreGraphics
 import Foundation
 
-struct CanvasContextMenuCommandState {
-    let commandID: CanvasCommandID
-    let descriptor: CanvasCommandDescriptor
+struct CanvasContextMenuActionDescriptor {
+    let title: String
+    let systemImageName: String
+    let isEnabled: Bool
+    let isActive: Bool
+
+    init(
+        title: String,
+        systemImageName: String,
+        isEnabled: Bool,
+        isActive: Bool
+    ) {
+        self.title = title
+        self.systemImageName = systemImageName
+        self.isEnabled = isEnabled
+        self.isActive = isActive
+    }
+
+    init(commandDescriptor: CanvasCommandDescriptor) {
+        self.init(
+            title: commandDescriptor.title,
+            systemImageName: commandDescriptor.systemImageName,
+            isEnabled: commandDescriptor.isEnabled,
+            isActive: commandDescriptor.isActive
+        )
+    }
+}
+
+enum CanvasContextMenuUIActionID: String {
+    case editVideoDisplayFrame
+
+    var rawValueDescription: String {
+        rawValue
+    }
+}
+
+enum CanvasContextMenuActionID {
+    case command(CanvasCommandID)
+    case uiAction(CanvasContextMenuUIActionID)
+
+    var rawValueDescription: String {
+        switch self {
+        case let .command(commandID):
+            return commandID.rawValue
+        case let .uiAction(uiActionID):
+            return uiActionID.rawValueDescription
+        }
+    }
+}
+
+struct CanvasContextMenuActionState {
+    let actionID: CanvasContextMenuActionID
+    let descriptor: CanvasContextMenuActionDescriptor
 }
 
 struct CanvasContextMenuState {
     let resolvedContext: CanvasContextMenuContext
     let layoutAnchorPoint: CGPoint
-    let commandStates: [CanvasContextMenuCommandState]
+    let actionStates: [CanvasContextMenuActionState]
 
     var isEmpty: Bool {
-        commandStates.isEmpty
+        actionStates.isEmpty
     }
 }
 

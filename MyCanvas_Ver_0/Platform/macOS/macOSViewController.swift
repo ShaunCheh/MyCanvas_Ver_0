@@ -74,7 +74,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     )
     private let commandCatalog = CanvasCommandCatalog()
     private let toolbarStateBuilder = CanvasToolbarStateBuilder()
-    private let contextMenuCommandResolver = CanvasContextMenuCommandResolver()
+    private let contextMenuActionResolver = CanvasContextMenuActionResolver()
     private let canvasHostView: NSView = {
         let view = NSView()
         view.translatesAutoresizingMaskIntoConstraints = false
@@ -271,21 +271,6 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         )
     }
 
-    private func frozenContextMenuCommandStates(
-        for commandIDs: [CanvasCommandID],
-        context: CanvasContextMenuContext
-    ) -> [CanvasContextMenuCommandState] {
-        commandIDs.map { commandID in
-            CanvasContextMenuCommandState(
-                commandID: commandID,
-                descriptor: commandDescriptor(
-                    for: commandID,
-                    context: context
-                )
-            )
-        }
-    }
-
     private func commandDescriptor(
         for commandID: CanvasCommandID,
         context: CanvasContextMenuContext? = nil
@@ -331,15 +316,11 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     private func presentContextMenu(
         for resolvedContext: CanvasContextMenuContext
     ) {
-        let commandIDs = contextMenuCommandResolver.commandIDs(
+        let actionStates = contextMenuActionResolver.actionStates(
             for: resolvedContext,
             session: editorSession
         )
-        let commandStates = frozenContextMenuCommandStates(
-            for: commandIDs,
-            context: resolvedContext
-        )
-        guard commandStates.isEmpty == false else {
+        guard actionStates.isEmpty == false else {
             dismissContextMenu()
             return
         }
@@ -347,7 +328,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         contextMenuState = CanvasContextMenuState(
             resolvedContext: resolvedContext,
             layoutAnchorPoint: contextMenuLayoutAnchorPoint(for: resolvedContext),
-            commandStates: commandStates
+            actionStates: actionStates
         )
     }
 
@@ -379,20 +360,70 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         contextMenuHostView.updateLayout(layoutContext: layoutContext)
     }
 
-    private func performContextMenuCommand(_ commandID: CanvasCommandID) {
-        guard
-            let contextMenuState,
-            let command = contextMenuCommandResolver.command(
-                for: commandID,
-                context: contextMenuState.resolvedContext
-            )
-        else {
+    private func performContextMenuAction(_ actionID: CanvasContextMenuActionID) {
+        guard let contextMenuState else {
             dismissContextMenu()
             return
         }
 
-        dismissContextMenu()
-        performCommand(command)
+        switch actionID {
+        case let .command(commandID):
+            guard let command = contextMenuActionResolver.command(
+                for: commandID,
+                context: contextMenuState.resolvedContext
+            ) else {
+                dismissContextMenu()
+                return
+            }
+
+            dismissContextMenu()
+            performCommand(command)
+        case let .uiAction(uiActionID):
+            dismissContextMenu()
+            performContextMenuUIAction(
+                uiActionID,
+                context: contextMenuState.resolvedContext
+            )
+        }
+    }
+
+    private func performContextMenuUIAction(
+        _ actionID: CanvasContextMenuUIActionID,
+        context: CanvasContextMenuContext
+    ) {
+        switch actionID {
+        case .editVideoDisplayFrame:
+            guard let itemID = targetVideoItemID(for: context) else {
+                return
+            }
+
+            presentVideoDisplayFrameEditor(for: itemID)
+        }
+    }
+
+    private func targetVideoItemID(
+        for context: CanvasContextMenuContext
+    ) -> CanvasItemID? {
+        guard
+            let itemID = context.targetItemID,
+            let item = scene.item(withID: itemID),
+            item.isVideo
+        else {
+            return nil
+        }
+
+        return itemID
+    }
+
+    private func presentVideoDisplayFrameEditor(for itemID: CanvasItemID) {
+        guard presentedViewControllers.isEmpty else {
+            return
+        }
+
+        let editorViewController = macOSVideoDisplayFrameEditorViewController(
+            itemID: itemID
+        )
+        presentAsSheet(editorViewController)
     }
 
     func canPerformCommand(_ commandID: CanvasCommandID) -> Bool {
@@ -905,8 +936,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         contextMenuHostView.onDismissRequested = { [weak self] in
             self?.dismissContextMenu()
         }
-        contextMenuHostView.onCommandSelected = { [weak self] commandID in
-            self?.performContextMenuCommand(commandID)
+        contextMenuHostView.onActionSelected = { [weak self] actionID in
+            self?.performContextMenuAction(actionID)
         }
     }
 
@@ -3041,8 +3072,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         let occupiedRectsDescription = layoutContext.occupiedRects
             .map(describe(rect:))
             .joined(separator: ", ")
-        let commandIDsDescription = state.commandStates
-            .map(\.commandID.rawValue)
+        let actionIDsDescription = state.actionStates
+            .map(\.actionID.rawValueDescription)
             .joined(separator: ",")
         let layoutAnchorPoint = contextMenuLayoutAnchorPoint(
             for: state.resolvedContext
@@ -3060,7 +3091,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             "layoutAnchorPoint=\(describe(point: layoutAnchorPoint)) " +
             "safeBounds=\(describe(rect: layoutContext.safeBounds)) " +
             "occupiedRects=[\(occupiedRectsDescription)] " +
-            "commandIDs=[\(commandIDsDescription)]"
+            "actionIDs=[\(actionIDsDescription)]"
         )
     }
 

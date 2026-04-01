@@ -1,45 +1,53 @@
 import Foundation
 
-struct CanvasContextMenuCommandResolver {
+struct CanvasContextMenuActionResolver {
     private let commandCatalog = CanvasCommandCatalog()
 
-    func commandIDs(
+    func actionStates(
         for context: CanvasContextMenuContext,
         session: CanvasEditorSession
-    ) -> [CanvasCommandID] {
-        let candidateIDs = candidateCommandIDs(
+    ) -> [CanvasContextMenuActionState] {
+        let candidateActionIDs = candidateActionIDs(
             for: context,
             session: session
         )
         if session.isReadingModeActive {
             print(
-                "[Canvas Shared][ContextMenuCommands] " +
+                "[Canvas Shared][ContextMenuActions] " +
                 context.debugSummary + " " +
-                "candidateIDs=[\(describeContextMenuCommandIDs(candidateIDs))] " +
+                "candidateIDs=[\(describeContextMenuActionIDs(candidateActionIDs))] " +
                 "enabledIDs=[] " +
-                "disabledIDs=[\(describeContextMenuCommandIDs(candidateIDs))] " +
+                "disabledIDs=[\(describeContextMenuActionIDs(candidateActionIDs))] " +
                 "reason=readingMode"
             )
             return []
         }
 
-        let enabledIDs = candidateIDs.filter { commandID in
-            commandCatalog.descriptor(
-                for: commandID,
-                session: session,
-                context: context
-            ).isEnabled
+        let actionStates = candidateActionIDs.map { actionID in
+            CanvasContextMenuActionState(
+                actionID: actionID,
+                descriptor: descriptor(
+                    for: actionID,
+                    context: context,
+                    session: session
+                )
+            )
         }
-        let enabledIDSet = Set(enabledIDs)
-        let disabledIDs = candidateIDs.filter { enabledIDSet.contains($0) == false }
-        print(
-            "[Canvas Shared][ContextMenuCommands] " +
-            context.debugSummary + " " +
-            "candidateIDs=[\(describeContextMenuCommandIDs(candidateIDs))] " +
-            "enabledIDs=[\(describeContextMenuCommandIDs(enabledIDs))] " +
-            "disabledIDs=[\(describeContextMenuCommandIDs(disabledIDs))]"
+        let enabledStates = actionStates.filter(\.descriptor.isEnabled)
+        let enabledIDSet = Set(
+            enabledStates.map(\.actionID.rawValueDescription)
         )
-        return enabledIDs
+        let disabledIDs = candidateActionIDs.filter { actionID in
+            enabledIDSet.contains(actionID.rawValueDescription) == false
+        }
+        print(
+            "[Canvas Shared][ContextMenuActions] " +
+            context.debugSummary + " " +
+            "candidateIDs=[\(describeContextMenuActionIDs(candidateActionIDs))] " +
+            "enabledIDs=[\(describeContextMenuActionIDs(enabledStates.map(\.actionID)))] " +
+            "disabledIDs=[\(describeContextMenuActionIDs(disabledIDs))]"
+        )
+        return enabledStates
     }
 
     func command(
@@ -133,87 +141,159 @@ struct CanvasContextMenuCommandResolver {
         }
     }
 
-    private func candidateCommandIDs(
+    private func descriptor(
+        for actionID: CanvasContextMenuActionID,
+        context: CanvasContextMenuContext,
+        session: CanvasEditorSession
+    ) -> CanvasContextMenuActionDescriptor {
+        switch actionID {
+        case let .command(commandID):
+            return CanvasContextMenuActionDescriptor(
+                commandDescriptor: commandCatalog.descriptor(
+                    for: commandID,
+                    session: session,
+                    context: context
+                )
+            )
+        case let .uiAction(uiActionID):
+            return uiActionDescriptor(
+                for: uiActionID,
+                context: context,
+                session: session
+            )
+        }
+    }
+
+    private func uiActionDescriptor(
+        for uiActionID: CanvasContextMenuUIActionID,
+        context: CanvasContextMenuContext,
+        session: CanvasEditorSession
+    ) -> CanvasContextMenuActionDescriptor {
+        switch uiActionID {
+        case .editVideoDisplayFrame:
+            return CanvasContextMenuActionDescriptor(
+                title: "Set Display Frame",
+                systemImageName: "movieclapper",
+                isEnabled: targetVideoItemID(
+                    in: context,
+                    session: session
+                ) != nil,
+                isActive: false
+            )
+        }
+    }
+
+    private func candidateActionIDs(
         for context: CanvasContextMenuContext,
         session: CanvasEditorSession
-    ) -> [CanvasCommandID] {
+    ) -> [CanvasContextMenuActionID] {
         let targetTextItem = context.targetItemID.flatMap { itemID in
             session.scene.textItem(withID: itemID)
         }
+        let includeVideoDisplayFrameAction =
+            targetVideoItemID(in: context, session: session) != nil
 
         switch context.targetKind {
         case .blank:
             return [
-                .clearSelection,
-                .undo,
-                .redo
+                .command(.clearSelection),
+                .command(.undo),
+                .command(.redo)
             ]
         case .selectedItemBody, .selectionHandle, .rotateHandle:
-            return selectedItemCommandIDs(
+            return selectedItemActionIDs(
                 includeCropCommand: targetTextItem == nil,
-                includeBeginTextEditCommand: targetTextItem != nil
+                includeBeginTextEditCommand: targetTextItem != nil,
+                includeVideoDisplayFrameAction: includeVideoDisplayFrameAction
             )
         case .unselectedItemBody:
             // Keep invocation target and current selection separate so opening a
             // menu does not rewrite selection/history before the user chooses an
             // explicit command.
-            return unselectedItemCommandIDs(
-                includeBeginTextEditCommand: targetTextItem != nil
+            return unselectedItemActionIDs(
+                includeBeginTextEditCommand: targetTextItem != nil,
+                includeVideoDisplayFrameAction: includeVideoDisplayFrameAction
             )
         case .cropHandle, .cropOutline:
-            return selectedItemCommandIDs(
+            return selectedItemActionIDs(
                 includeCropCommand: true,
-                includeBeginTextEditCommand: false
+                includeBeginTextEditCommand: false,
+                includeVideoDisplayFrameAction: false
             )
         }
     }
 
-    private func selectedItemCommandIDs(
+    private func selectedItemActionIDs(
         includeCropCommand: Bool,
-        includeBeginTextEditCommand: Bool
-    ) -> [CanvasCommandID] {
-        var commandIDs: [CanvasCommandID] = []
+        includeBeginTextEditCommand: Bool,
+        includeVideoDisplayFrameAction: Bool
+    ) -> [CanvasContextMenuActionID] {
+        var actionIDs: [CanvasContextMenuActionID] = []
         if includeCropCommand {
-            commandIDs.append(.crop)
+            actionIDs.append(.command(.crop))
         }
         if includeBeginTextEditCommand {
-            commandIDs.append(.beginTextEdit)
+            actionIDs.append(.command(.beginTextEdit))
         }
-        commandIDs.append(contentsOf: [
-            .duplicateItem,
-            .deleteItem,
-            .bringItemForward,
-            .sendItemBackward,
-            .bringItemToFront,
-            .sendItemToBack,
-            .clearSelection,
-            .undo,
-            .redo
+        if includeVideoDisplayFrameAction {
+            actionIDs.append(.uiAction(.editVideoDisplayFrame))
+        }
+        actionIDs.append(contentsOf: [
+            .command(.duplicateItem),
+            .command(.deleteItem),
+            .command(.bringItemForward),
+            .command(.sendItemBackward),
+            .command(.bringItemToFront),
+            .command(.sendItemToBack),
+            .command(.clearSelection),
+            .command(.undo),
+            .command(.redo)
         ])
-        return commandIDs
+        return actionIDs
     }
 
-    private func unselectedItemCommandIDs(
-        includeBeginTextEditCommand: Bool
-    ) -> [CanvasCommandID] {
-        var commandIDs: [CanvasCommandID] = [.selectItem]
+    private func unselectedItemActionIDs(
+        includeBeginTextEditCommand: Bool,
+        includeVideoDisplayFrameAction: Bool
+    ) -> [CanvasContextMenuActionID] {
+        var actionIDs: [CanvasContextMenuActionID] = [.command(.selectItem)]
         if includeBeginTextEditCommand {
-            commandIDs.append(.beginTextEdit)
+            actionIDs.append(.command(.beginTextEdit))
         }
-        commandIDs.append(contentsOf: [
-            .duplicateItem,
-            .deleteItem,
-            .bringItemForward,
-            .sendItemBackward,
-            .bringItemToFront,
-            .sendItemToBack,
-            .undo,
-            .redo
+        if includeVideoDisplayFrameAction {
+            actionIDs.append(.uiAction(.editVideoDisplayFrame))
+        }
+        actionIDs.append(contentsOf: [
+            .command(.duplicateItem),
+            .command(.deleteItem),
+            .command(.bringItemForward),
+            .command(.sendItemBackward),
+            .command(.bringItemToFront),
+            .command(.sendItemToBack),
+            .command(.undo),
+            .command(.redo)
         ])
-        return commandIDs
+        return actionIDs
+    }
+
+    private func targetVideoItemID(
+        in context: CanvasContextMenuContext,
+        session: CanvasEditorSession
+    ) -> CanvasItemID? {
+        guard
+            let itemID = context.targetItemID,
+            let item = session.scene.item(withID: itemID),
+            item.isVideo
+        else {
+            return nil
+        }
+
+        return itemID
     }
 }
 
-private func describeContextMenuCommandIDs(_ commandIDs: [CanvasCommandID]) -> String {
-    commandIDs.map(\.rawValue).joined(separator: ",")
+private func describeContextMenuActionIDs(
+    _ actionIDs: [CanvasContextMenuActionID]
+) -> String {
+    actionIDs.map(\.rawValueDescription).joined(separator: ",")
 }
