@@ -319,67 +319,43 @@ enum CanvasVideoFrameService {
         durationSeconds: Double,
         frameCount: Int
     ) -> [Double] {
-        guard frameCount > 1 else {
-            return [0]
-        }
-
         let upperBound = previewUpperBoundTimeSeconds(
             durationSeconds: durationSeconds
         )
-        guard upperBound > 0 else {
-            return Array(repeating: 0, count: frameCount)
-        }
-
-        let denominator = Double(frameCount - 1)
-        return (0..<frameCount).map { index in
-            (upperBound * Double(index)) / denominator
-        }
+        return CanvasVideoTimelineMath.evenlySpacedSampleTimes(
+            in: 0...upperBound,
+            frameCount: frameCount
+        )
     }
 
     private static func sanitizedTimeSeconds(
         _ timeSeconds: Double
     ) -> Double {
-        guard timeSeconds.isFinite else {
-            return 0
-        }
-
-        return max(timeSeconds, 0)
+        CanvasVideoTimelineMath.sanitizedTimeSeconds(timeSeconds)
     }
 
     private static func sanitizedDurationSeconds(
         _ duration: CMTime
     ) -> Double {
-        let seconds = duration.seconds
-        guard seconds.isFinite, seconds > 0 else {
-            return 0
-        }
-
-        return seconds
+        CanvasVideoTimelineMath.sanitizedDurationSeconds(duration.seconds)
     }
 
     private static func clampedTimeSeconds(
         _ timeSeconds: Double,
         for asset: AVAsset
     ) -> Double {
-        let sanitizedTimeSeconds = sanitizedTimeSeconds(timeSeconds)
-        let upperBound = previewUpperBoundTimeSeconds(
+        CanvasVideoTimelineMath.clampedTimeSeconds(
+            timeSeconds,
             durationSeconds: sanitizedDurationSeconds(asset.duration)
         )
-        guard upperBound > 0 else {
-            return 0
-        }
-
-        return min(sanitizedTimeSeconds, upperBound)
     }
 
     private static func previewUpperBoundTimeSeconds(
         durationSeconds: Double
     ) -> Double {
-        guard durationSeconds > 0 else {
-            return 0
-        }
-
-        return max(durationSeconds - (1.0 / 600.0), 0)
+        CanvasVideoTimelineMath.upperBoundTimeSeconds(
+            durationSeconds: durationSeconds
+        )
     }
 
     private static func naturalVideoPixelSize(

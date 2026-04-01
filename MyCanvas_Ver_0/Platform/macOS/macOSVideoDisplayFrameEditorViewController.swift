@@ -10,6 +10,7 @@ final class macOSVideoDisplayFrameEditorViewController: NSViewController {
         qos: .userInitiated
     )
     private let player = AVPlayer()
+    private let timelineScale = CanvasVideoTimelineScale()
     private let titleLabel: NSTextField = {
         let label = NSTextField(labelWithString: "Set Display Frame")
         label.translatesAutoresizingMaskIntoConstraints = false
@@ -544,7 +545,9 @@ final class macOSVideoDisplayFrameEditorViewController: NSViewController {
         for timeSeconds: Double,
         shouldScrollToSelection: Bool
     ) {
-        let nextIndex = nearestPreviewFrameIndex(for: timeSeconds)
+        let nextIndex = makePreviewStripTimelineResult(
+            for: timeSeconds
+        ).highlightedSampleIndex
         guard selectedPreviewFrameIndex != nextIndex else {
             return
         }
@@ -578,30 +581,38 @@ final class macOSVideoDisplayFrameEditorViewController: NSViewController {
         )
     }
 
-    private func nearestPreviewFrameIndex(
-        for timeSeconds: Double
-    ) -> Int? {
-        guard previewFrames.isEmpty == false else {
-            return nil
-        }
-
-        return previewFrames.enumerated().min { lhs, rhs in
-            abs(lhs.element.timeSeconds - timeSeconds) <
-                abs(rhs.element.timeSeconds - timeSeconds)
-        }?.offset
+    private func clampedTimeSeconds(_ timeSeconds: Double) -> Double {
+        CanvasVideoTimelineViewport.clampedTimeSeconds(
+            timeSeconds,
+            durationSeconds: editorContext.durationSeconds
+        )
     }
 
-    private func clampedTimeSeconds(_ timeSeconds: Double) -> Double {
-        guard editorContext.durationSeconds > 0 else {
-            return 0
-        }
-
-        let upperBound = max(editorContext.durationSeconds - (1.0 / 600.0), 0)
-        guard timeSeconds.isFinite else {
-            return 0
-        }
-
-        return min(max(timeSeconds, 0), upperBound)
+    private func makePreviewStripTimelineResult(
+        for timeSeconds: Double
+    ) -> CanvasVideoTimelineStripResult {
+        let visibleWidth = Double(
+            max(previewStripScrollView.contentSize.width, 1)
+        )
+        let viewport = CanvasVideoTimelineViewport(
+            durationSeconds: editorContext.durationSeconds,
+            playheadTimeSeconds: timeSeconds,
+            zoomScale: timelineScale,
+            visibleWidth: visibleWidth,
+            contentOffsetX: Double(
+                previewStripScrollView.contentView.bounds.origin.x
+            ),
+            minimumContentWidth: visibleWidth
+        )
+        let request = CanvasVideoTimelineStripRequest(
+            viewport: viewport,
+            thumbnailWidth: 92,
+            maxPixelSize: 180
+        )
+        return CanvasVideoTimelineStripResult(
+            request: request,
+            sampleTimes: previewFrames.map(\.timeSeconds)
+        )
     }
 
     private func presentError(title: String, message: String) {
