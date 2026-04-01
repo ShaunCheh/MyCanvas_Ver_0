@@ -573,7 +573,7 @@ final class macOSVideoDisplayFrameEditorViewController: NSViewController {
             ? [.centeredHorizontally]
             : []
         previewStripCollectionView.selectItems(
-            Set([indexPath]),
+            at: Set([indexPath]),
             scrollPosition: scrollPosition
         )
     }

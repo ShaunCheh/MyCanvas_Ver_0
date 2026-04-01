@@ -6,14 +6,35 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		9A9B9C032F600001005B952A /* XCTest.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9A9B9C022F600001005B952A /* XCTest.framework */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		9A9B9C092F600001005B952A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 286105502F4C51A4005B952A /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 286105572F4C51A4005B952A;
+			remoteInfo = MyCanvas_Ver_0;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		286105582F4C51A4005B952A /* MyCanvas_Ver_0.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MyCanvas_Ver_0.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		9A9B9C012F600001005B952A /* MyCanvas_Ver_0Tests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MyCanvas_Ver_0Tests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		9A9B9C022F600001005B952A /* XCTest.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = XCTest.framework; path = Platforms/MacOSX.platform/Developer/Library/Frameworks/XCTest.framework; sourceTree = DEVELOPER_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		2861055A2F4C51A4005B952A /* MyCanvas_Ver_0 */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = MyCanvas_Ver_0;
+			sourceTree = "<group>";
+		};
+		9A9B9C042F600001005B952A /* MyCanvas_Ver_0Tests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = MyCanvas_Ver_0Tests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -26,6 +47,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		9A9B9C062F600001005B952A /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9A9B9C032F600001005B952A /* XCTest.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -33,6 +62,8 @@
 			isa = PBXGroup;
 			children = (
 				2861055A2F4C51A4005B952A /* MyCanvas_Ver_0 */,
+				9A9B9C042F600001005B952A /* MyCanvas_Ver_0Tests */,
+				28BA821A2F7D0526004BBBD4 /* Frameworks */,
 				286105592F4C51A4005B952A /* Products */,
 			);
 			sourceTree = "<group>";
@@ -41,8 +72,17 @@
 			isa = PBXGroup;
 			children = (
 				286105582F4C51A4005B952A /* MyCanvas_Ver_0.app */,
+				9A9B9C012F600001005B952A /* MyCanvas_Ver_0Tests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		28BA821A2F7D0526004BBBD4 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				9A9B9C022F600001005B952A /* XCTest.framework */,
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -70,6 +110,29 @@
 			productReference = 286105582F4C51A4005B952A /* MyCanvas_Ver_0.app */;
 			productType = "com.apple.product-type.application";
 		};
+		9A9B9C052F600001005B952A /* MyCanvas_Ver_0Tests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 9A9B9C0D2F600001005B952A /* Build configuration list for PBXNativeTarget "MyCanvas_Ver_0Tests" */;
+			buildPhases = (
+				9A9B9C082F600001005B952A /* Sources */,
+				9A9B9C062F600001005B952A /* Frameworks */,
+				9A9B9C072F600001005B952A /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				9A9B9C0A2F600001005B952A /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				9A9B9C042F600001005B952A /* MyCanvas_Ver_0Tests */,
+			);
+			name = MyCanvas_Ver_0Tests;
+			packageProductDependencies = (
+			);
+			productName = MyCanvas_Ver_0Tests;
+			productReference = 9A9B9C012F600001005B952A /* MyCanvas_Ver_0Tests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -82,6 +145,10 @@
 				TargetAttributes = {
 					286105572F4C51A4005B952A = {
 						CreatedOnToolsVersion = 26.1.1;
+					};
+					9A9B9C052F600001005B952A = {
+						CreatedOnToolsVersion = 26.1.1;
+						TestTargetID = 286105572F4C51A4005B952A;
 					};
 				};
 			};
@@ -100,12 +167,20 @@
 			projectRoot = "";
 			targets = (
 				286105572F4C51A4005B952A /* MyCanvas_Ver_0 */,
+				9A9B9C052F600001005B952A /* MyCanvas_Ver_0Tests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		286105562F4C51A4005B952A /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		9A9B9C072F600001005B952A /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -122,7 +197,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		9A9B9C082F600001005B952A /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		9A9B9C0A2F600001005B952A /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 286105572F4C51A4005B952A /* MyCanvas_Ver_0 */;
+			targetProxy = 9A9B9C092F600001005B952A /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		286105612F4C51A5005B952A /* Debug */ = {
@@ -325,6 +415,57 @@
 			};
 			name = Release;
 		};
+		9A9B9C0B2F600001005B952A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = JWWZTL2S7W;
+				ENABLE_TESTING_SEARCH_PATHS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 12.4;
+				PRODUCT_BUNDLE_IDENTIFIER = "shaunyu.MyCanvas-Ver-0Tests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MyCanvas_Ver_0.app/Contents/MacOS/MyCanvas_Ver_0";
+				TEST_TARGET_NAME = MyCanvas_Ver_0;
+			};
+			name = Debug;
+		};
+		9A9B9C0C2F600001005B952A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = JWWZTL2S7W;
+				ENABLE_TESTING_SEARCH_PATHS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 12.4;
+				PRODUCT_BUNDLE_IDENTIFIER = "shaunyu.MyCanvas-Ver-0Tests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MyCanvas_Ver_0.app/Contents/MacOS/MyCanvas_Ver_0";
+				TEST_TARGET_NAME = MyCanvas_Ver_0;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -342,6 +483,15 @@
 			buildConfigurations = (
 				286105642F4C51A5005B952A /* Debug */,
 				286105652F4C51A5005B952A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		9A9B9C0D2F600001005B952A /* Build configuration list for PBXNativeTarget "MyCanvas_Ver_0Tests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9A9B9C0B2F600001005B952A /* Debug */,
+				9A9B9C0C2F600001005B952A /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

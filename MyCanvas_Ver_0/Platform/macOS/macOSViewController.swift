@@ -416,7 +416,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     }
 
     private func presentVideoDisplayFrameEditor(for itemID: CanvasItemID) {
-        guard presentedViewControllers.isEmpty else {
+        guard presentedViewControllers?.isEmpty != false else {
             return
         }
 

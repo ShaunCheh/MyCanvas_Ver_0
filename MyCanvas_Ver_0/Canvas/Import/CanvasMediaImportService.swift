@@ -22,7 +22,8 @@ enum CanvasMediaImportService {
             return nil
         }
 
-        let temporaryVideoURLsToDelete = transferRequest.items.compactMap { item in
+        let temporaryVideoURLsToDelete: [URL] = transferRequest.items.compactMap {
+            item -> URL? in
             guard case let .video(video) = item,
                   video.source.shouldDeleteAfterImport
             else {

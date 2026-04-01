@@ -191,7 +191,7 @@ struct CanvasImageItem {
             duplicatedAsset = asset
         }
 
-        CanvasImageItem(
+        return CanvasImageItem(
             asset: duplicatedAsset,
             videoSource: videoSource,
             posterTimeSeconds: posterTimeSeconds,

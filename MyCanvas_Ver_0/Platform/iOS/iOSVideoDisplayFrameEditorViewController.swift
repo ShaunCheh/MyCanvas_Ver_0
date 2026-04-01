@@ -501,7 +501,7 @@ final class iOSVideoDisplayFrameEditorViewController: UIViewController {
     ) {
         let clampedTimeSeconds = clampedTimeSeconds(timeSeconds)
         if pausePlayback {
-            pausePlayback()
+            self.pausePlayback()
         }
         currentTimeSecondsDidChange(
             clampedTimeSeconds,
