@@ -88,7 +88,7 @@ final class iOSVideoDisplayFrameEditorViewController: UIViewController {
         return button
     }()
 
-    private var currentPreviewTimeSeconds: Double
+    private var previewState: CanvasVideoEditorPreviewState
     private var hasPerformedInitialSeek = false
     private var isCommitting = false {
         didSet {
@@ -97,8 +97,6 @@ final class iOSVideoDisplayFrameEditorViewController: UIViewController {
     }
     private var playerTimeObserver: Any?
     private var playbackEndedObserver: NSObjectProtocol?
-    private var activeInteractionSources: Set<PreviewInteractionSource> = []
-    private var shouldResumePlaybackAfterInteraction = false
     private var timelineLoadGeneration = 0
     private var timelineLoadWorkItem: DispatchWorkItem?
 
@@ -110,7 +108,11 @@ final class iOSVideoDisplayFrameEditorViewController: UIViewController {
         self.editorContext = editorContext
         self.loadTimelineStrip = loadTimelineStrip
         self.onCommitFrameImage = onCommitFrameImage
-        currentPreviewTimeSeconds = editorContext.currentPosterTimeSeconds
+        previewState = CanvasVideoEditorPreviewState(
+            currentTimeSeconds: editorContext.currentPosterTimeSeconds,
+            posterTimeSeconds: editorContext.currentPosterTimeSeconds,
+            durationSeconds: editorContext.durationSeconds
+        )
         super.init(nibName: nil, bundle: nil)
         modalPresentationStyle = .fullScreen
         modalTransitionStyle = .coverVertical
@@ -150,7 +152,7 @@ final class iOSVideoDisplayFrameEditorViewController: UIViewController {
 
         hasPerformedInitialSeek = true
         seekPreview(
-            to: currentPreviewTimeSeconds,
+            to: previewState.snapshot.currentTimeSeconds,
             pausePlayback: true,
             updateSlider: true,
             updateTimeline: true
@@ -399,12 +401,13 @@ final class iOSVideoDisplayFrameEditorViewController: UIViewController {
     }
 
     private func applyInitialState() {
+        let snapshot = previewState.snapshot
         timelineView.configure(
-            durationSeconds: editorContext.durationSeconds,
-            playheadTimeSeconds: currentPreviewTimeSeconds
+            durationSeconds: snapshot.durationSeconds,
+            playheadTimeSeconds: snapshot.currentTimeSeconds
         )
         currentTimeSecondsDidChange(
-            currentPreviewTimeSeconds,
+            snapshot.currentTimeSeconds,
             updateSlider: true,
             updateTimeline: false
         )
@@ -418,7 +421,7 @@ final class iOSVideoDisplayFrameEditorViewController: UIViewController {
     }
 
     private func handlePlayerTimeUpdate(_ time: CMTime) {
-        guard isPreviewInteracting == false else {
+        guard previewState.snapshot.shouldAcceptPlayerTimeUpdates else {
             return
         }
 
@@ -448,22 +451,11 @@ final class iOSVideoDisplayFrameEditorViewController: UIViewController {
         updateSlider: Bool,
         updateTimeline: Bool
     ) {
-        currentPreviewTimeSeconds = clampedTimeSeconds(timeSeconds)
-        currentTimeLabel.text = formatVideoDisplayFrameEditorSeconds(
-            currentPreviewTimeSeconds
+        previewState.setCurrentTimeSeconds(timeSeconds)
+        applyPreviewState(
+            updateSlider: updateSlider,
+            updateTimeline: updateTimeline
         )
-        durationLabel.text = formatVideoDisplayFrameEditorSeconds(
-            editorContext.durationSeconds
-        )
-        if updateSlider, activeInteractionSources.contains(.slider) == false {
-            timeSlider.value = Float(currentPreviewTimeSeconds)
-        }
-        if updateTimeline {
-            timelineView.setPlayheadTimeSeconds(
-                currentPreviewTimeSeconds,
-                animated: false
-            )
-        }
     }
 
     private func seekPreview(
@@ -514,10 +506,13 @@ final class iOSVideoDisplayFrameEditorViewController: UIViewController {
     }
 
     private func updateCommitButtonConfiguration() {
+        let snapshot = previewState.snapshot
         var configuration = UIButton.Configuration.filled()
         configuration.title = isCommitting
             ? "Setting Display Frame..."
-            : "Use Current Frame"
+            : (snapshot.isCurrentPosterSelected
+                ? "Current Frame Already Used"
+                : "Use Current Frame")
         configuration.showsActivityIndicator = isCommitting
         configuration.cornerStyle = .large
         configuration.contentInsets = NSDirectionalEdgeInsets(
@@ -527,7 +522,10 @@ final class iOSVideoDisplayFrameEditorViewController: UIViewController {
             trailing: 18
         )
         setDisplayFrameButton.configuration = configuration
-        setDisplayFrameButton.isEnabled = isCommitting == false
+        setDisplayFrameButton.isEnabled = (
+            isCommitting == false &&
+                snapshot.isCurrentPosterSelected == false
+        )
     }
 
     private func clampedTimeSeconds(_ timeSeconds: Double) -> Double {
@@ -537,32 +535,51 @@ final class iOSVideoDisplayFrameEditorViewController: UIViewController {
         )
     }
 
-    private var isPreviewInteracting: Bool {
-        activeInteractionSources.isEmpty == false
+    private func applyPreviewState(
+        updateSlider: Bool,
+        updateTimeline: Bool
+    ) {
+        let snapshot = previewState.snapshot
+        currentTimeLabel.text = formatVideoDisplayFrameEditorSeconds(
+            snapshot.currentTimeSeconds
+        )
+        durationLabel.text = formatVideoDisplayFrameEditorSeconds(
+            snapshot.durationSeconds
+        )
+        if updateSlider, snapshot.isInteracting(with: .slider) == false {
+            timeSlider.value = Float(snapshot.currentTimeSeconds)
+        }
+        if updateTimeline {
+            timelineView.setPlayheadTimeSeconds(
+                snapshot.currentTimeSeconds,
+                animated: false
+            )
+        }
+        updateCommitButtonConfiguration()
     }
 
-    private func beginPreviewInteraction(_ source: PreviewInteractionSource) {
-        let wasEmpty = activeInteractionSources.isEmpty
-        activeInteractionSources.insert(source)
-        guard wasEmpty else {
-            return
+    private func beginPreviewInteraction(
+        _ source: CanvasVideoEditorPreviewInteractionSource
+    ) {
+        let playbackIntent = previewState.beginInteraction(
+            source,
+            wasPlaying: player.timeControlStatus == .playing
+        )
+        if playbackIntent == .pause {
+            pausePlayback()
         }
-
-        shouldResumePlaybackAfterInteraction = player.timeControlStatus == .playing
-        pausePlayback()
+        updateCommitButtonConfiguration()
     }
 
-    private func endPreviewInteraction(_ source: PreviewInteractionSource) {
-        activeInteractionSources.remove(source)
-        guard activeInteractionSources.isEmpty else {
-            return
-        }
-
-        if shouldResumePlaybackAfterInteraction {
+    private func endPreviewInteraction(
+        _ source: CanvasVideoEditorPreviewInteractionSource
+    ) {
+        let playbackIntent = previewState.endInteraction(source)
+        if playbackIntent == .resume {
             player.play()
             updatePlayPauseButtonConfiguration()
         }
-        shouldResumePlaybackAfterInteraction = false
+        updateCommitButtonConfiguration()
     }
 
     private func scheduleTimelineStripLoad(
@@ -659,9 +676,10 @@ final class iOSVideoDisplayFrameEditorViewController: UIViewController {
             editorContext.durationSeconds - 0.05,
             0
         )
-        let startTime = currentPreviewTimeSeconds >= restartFromBeginningThreshold
+        let startTime = previewState.snapshot.currentTimeSeconds
+            >= restartFromBeginningThreshold
             ? 0
-            : currentPreviewTimeSeconds
+            : previewState.snapshot.currentTimeSeconds
         currentTimeSecondsDidChange(
             startTime,
             updateSlider: true,
@@ -706,7 +724,7 @@ final class iOSVideoDisplayFrameEditorViewController: UIViewController {
 
         isCommitting = true
         pausePlayback()
-        let commitTimeSeconds = currentPreviewTimeSeconds
+        let commitTimeSeconds = previewState.snapshot.currentTimeSeconds
         let sourceVideoURL = editorContext.sourceVideoURL
         workerQueue.async { [weak self] in
             let result = Result {
@@ -755,11 +773,6 @@ private final class iOSVideoDisplayFramePlayerView: UIView {
     var playerLayer: AVPlayerLayer {
         layer as! AVPlayerLayer
     }
-}
-
-private enum PreviewInteractionSource: Hashable {
-    case slider
-    case timeline
 }
 
 private func formatVideoDisplayFrameEditorSeconds(
