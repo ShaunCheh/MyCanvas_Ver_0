@@ -69,7 +69,175 @@ struct CanvasPersistedVideoPoster {
     let posterTimeSeconds: Double
 }
 
+private struct CanvasVideoTimelineStripCacheKey {
+    private static let timeBucketScale = 1_000.0
+    private static let densityBucketScale = 1_000.0
+    private static let layoutBucketScale = 100.0
+
+    let sourceVideoPath: String
+    let requestedTimeLowerBucket: Int
+    let requestedTimeUpperBucket: Int
+    let pointsPerSecondBucket: Int
+    let contentWidthBucket: Int
+    let thumbnailWidthBucket: Int
+    let targetFrameCount: Int
+    let maxPixelSize: Int
+
+    init(
+        localFileURL: URL,
+        request: CanvasVideoTimelineStripRequest
+    ) {
+        sourceVideoPath = localFileURL
+            .resolvingSymlinksInPath()
+            .standardizedFileURL
+            .path
+        requestedTimeLowerBucket = Self.bucket(
+            request.requestedTimeRange.lowerBound,
+            scale: Self.timeBucketScale
+        )
+        requestedTimeUpperBucket = Self.bucket(
+            request.requestedTimeRange.upperBound,
+            scale: Self.timeBucketScale
+        )
+        pointsPerSecondBucket = Self.bucket(
+            request.viewport.zoomScale.pointsPerSecond,
+            scale: Self.densityBucketScale
+        )
+        contentWidthBucket = Self.bucket(
+            request.viewport.contentWidth,
+            scale: Self.layoutBucketScale
+        )
+        thumbnailWidthBucket = Self.bucket(
+            request.thumbnailWidth,
+            scale: Self.layoutBucketScale
+        )
+        targetFrameCount = request.targetFrameCount
+        maxPixelSize = request.maxPixelSize
+    }
+
+    var cacheKey: NSString {
+        [
+            sourceVideoPath,
+            "t\(requestedTimeLowerBucket)-\(requestedTimeUpperBucket)",
+            "pps\(pointsPerSecondBucket)",
+            "cw\(contentWidthBucket)",
+            "tw\(thumbnailWidthBucket)",
+            "fc\(targetFrameCount)",
+            "px\(maxPixelSize)"
+        ].joined(separator: "|") as NSString
+    }
+
+    private static func bucket(
+        _ value: Double,
+        scale: Double
+    ) -> Int {
+        guard value.isFinite else {
+            return 0
+        }
+
+        return Int((value * scale).rounded())
+    }
+}
+
+private final class CanvasVideoTimelineStripCache {
+    private final class Entry {
+        let strip: CanvasVideoTimelineStrip
+        let cost: Int
+
+        init(strip: CanvasVideoTimelineStrip) {
+            self.strip = strip
+            self.cost = max(
+                strip.frames.reduce(0) { partialResult, frame in
+                    partialResult + max(frame.cgImage.width * frame.cgImage.height * 4, 1)
+                },
+                1
+            )
+        }
+    }
+
+    private let lock = NSLock()
+    private let countLimit: Int
+    private let costLimit: Int
+    private var entries: [NSString: Entry] = [:]
+    private var orderedKeys: [NSString] = []
+    private var totalCost = 0
+
+    init(
+        countLimit: Int = 24,
+        costLimit: Int = 96 * 1024 * 1024
+    ) {
+        self.countLimit = max(countLimit, 1)
+        self.costLimit = max(costLimit, 1)
+    }
+
+    func strip(
+        for key: CanvasVideoTimelineStripCacheKey
+    ) -> CanvasVideoTimelineStrip? {
+        lock.lock()
+        defer { lock.unlock() }
+
+        guard let entry = entries[key.cacheKey] else {
+            return nil
+        }
+
+        touch(key.cacheKey)
+        return entry.strip
+    }
+
+    func insert(
+        _ strip: CanvasVideoTimelineStrip,
+        for key: CanvasVideoTimelineStripCacheKey
+    ) {
+        let cacheKey = key.cacheKey
+        let entry = Entry(strip: strip)
+
+        lock.lock()
+        if let existingEntry = entries[cacheKey] {
+            totalCost -= existingEntry.cost
+        }
+        entries[cacheKey] = entry
+        touch(cacheKey)
+        totalCost += entry.cost
+        evictIfNeeded()
+        lock.unlock()
+    }
+
+    func removeAll() {
+        lock.lock()
+        entries.removeAll()
+        orderedKeys.removeAll()
+        totalCost = 0
+        lock.unlock()
+    }
+
+    var entryCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return entries.count
+    }
+
+    private func touch(_ key: NSString) {
+        orderedKeys.removeAll { $0 == key }
+        orderedKeys.append(key)
+    }
+
+    private func evictIfNeeded() {
+        while
+            entries.count > countLimit || totalCost > costLimit,
+            let oldestKey = orderedKeys.first
+        {
+            orderedKeys.removeFirst()
+            guard let removedEntry = entries.removeValue(forKey: oldestKey) else {
+                continue
+            }
+            totalCost -= removedEntry.cost
+        }
+    }
+}
+
 enum CanvasVideoFrameService {
+    private static let timelineStripCache = CanvasVideoTimelineStripCache()
+
     static func editorContext(
         for item: CanvasImageItem,
         boardID: UUID,
@@ -164,6 +332,77 @@ enum CanvasVideoFrameService {
             durationSeconds: durationSeconds,
             frames: frames
         )
+    }
+
+    static func timelineStrip(
+        from localFileURL: URL,
+        request: CanvasVideoTimelineStripRequest
+    ) throws -> CanvasVideoTimelineStrip {
+        let asset = AVURLAsset(url: localFileURL)
+        let normalizedRequest = CanvasVideoTimelineStripRequest(
+            viewport: request.viewport.with(
+                durationSeconds: sanitizedDurationSeconds(asset.duration)
+            ),
+            thumbnailWidth: request.thumbnailWidth,
+            maxPixelSize: request.maxPixelSize,
+            overscanWidth: request.overscanWidth
+        )
+        let cacheKey = CanvasVideoTimelineStripCacheKey(
+            localFileURL: localFileURL,
+            request: normalizedRequest
+        )
+        if let cachedStrip = timelineStripCache.strip(for: cacheKey) {
+            return cachedStrip
+        }
+
+        let filename = localFileURL.lastPathComponent
+        let imageGenerator = makeImageGenerator(
+            for: asset,
+            quality: .previewStripThumbnail(
+                maxPixelSize: normalizedRequest.maxPixelSize
+            )
+        )
+        let sampleTimes = normalizedRequest.sampleTimes()
+        let frames = try sampleTimes.map { sampleTime in
+            let frameImage = try makeFrameImage(
+                from: asset,
+                filename: filename,
+                at: sampleTime,
+                imageGenerator: imageGenerator
+            )
+            return CanvasVideoTimelineStripFrame(
+                cgImage: frameImage.cgImage,
+                requestedTimeSeconds: sampleTime,
+                actualTimeSeconds: frameImage.actualTimeSeconds,
+                contentX: normalizedRequest.viewport.contentX(
+                    forTimeSeconds: frameImage.actualTimeSeconds
+                )
+            )
+        }
+        let strip = CanvasVideoTimelineStrip(
+            request: normalizedRequest,
+            frames: frames
+        )
+        timelineStripCache.insert(strip, for: cacheKey)
+        return strip
+    }
+
+    static func timelineStripCacheEntryCount() -> Int {
+        timelineStripCache.entryCount
+    }
+
+    static func resetTimelineStripCache() {
+        timelineStripCache.removeAll()
+    }
+
+    static func timelineStripCacheKeyDescription(
+        from localFileURL: URL,
+        request: CanvasVideoTimelineStripRequest
+    ) -> String {
+        CanvasVideoTimelineStripCacheKey(
+            localFileURL: localFileURL,
+            request: request
+        ).cacheKey as String
     }
 
     static func persistPosterAsset(

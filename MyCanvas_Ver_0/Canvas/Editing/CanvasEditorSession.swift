@@ -599,6 +599,25 @@ final class CanvasEditorSession {
         )
     }
 
+    func videoTimelineStrip(
+        for itemID: CanvasItemID,
+        request: CanvasVideoTimelineStripRequest
+    ) throws -> CanvasVideoTimelineStrip {
+        let editorContext = try videoEditorContext(for: itemID)
+        let normalizedRequest = CanvasVideoTimelineStripRequest(
+            viewport: request.viewport.with(
+                durationSeconds: editorContext.durationSeconds
+            ),
+            thumbnailWidth: request.thumbnailWidth,
+            maxPixelSize: request.maxPixelSize,
+            overscanWidth: request.overscanWidth
+        )
+        return try CanvasVideoFrameService.timelineStrip(
+            from: editorContext.sourceVideoURL,
+            request: normalizedRequest
+        )
+    }
+
     func canUpdateVideoPoster(withID itemID: CanvasItemID) -> Bool {
         scene.item(withID: itemID)?.isVideo == true
     }

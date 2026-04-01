@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 enum CanvasVideoTimelineMath {
@@ -263,6 +264,7 @@ struct CanvasVideoTimelineViewport: Equatable {
     }
 
     func with(
+        durationSeconds: Double? = nil,
         playheadTimeSeconds: Double? = nil,
         zoomScale: CanvasVideoTimelineScale? = nil,
         visibleWidth: Double? = nil,
@@ -270,7 +272,7 @@ struct CanvasVideoTimelineViewport: Equatable {
         minimumContentWidth: Double? = nil
     ) -> CanvasVideoTimelineViewport {
         CanvasVideoTimelineViewport(
-            durationSeconds: durationSeconds,
+            durationSeconds: durationSeconds ?? self.durationSeconds,
             playheadTimeSeconds: playheadTimeSeconds ?? self.playheadTimeSeconds,
             zoomScale: zoomScale ?? self.zoomScale,
             visibleWidth: visibleWidth ?? self.visibleWidth,
@@ -414,6 +416,38 @@ struct CanvasVideoTimelineStripResult: Equatable {
 
         let playheadContentX = request.viewport.playheadContentX
         return samples.enumerated().min { lhs, rhs in
+            abs(lhs.element.contentX - playheadContentX)
+                < abs(rhs.element.contentX - playheadContentX)
+        }?.offset
+    }
+}
+
+struct CanvasVideoTimelineStripFrame {
+    let cgImage: CGImage
+    let requestedTimeSeconds: Double
+    let actualTimeSeconds: Double
+    let contentX: Double
+}
+
+struct CanvasVideoTimelineStrip {
+    let request: CanvasVideoTimelineStripRequest
+    let frames: [CanvasVideoTimelineStripFrame]
+
+    var visibleTimeRange: ClosedRange<Double> {
+        request.visibleTimeRange
+    }
+
+    var requestedTimeRange: ClosedRange<Double> {
+        request.requestedTimeRange
+    }
+
+    var highlightedFrameIndex: Int? {
+        guard frames.isEmpty == false else {
+            return nil
+        }
+
+        let playheadContentX = request.viewport.playheadContentX
+        return frames.enumerated().min { lhs, rhs in
             abs(lhs.element.contentX - playheadContentX)
                 < abs(rhs.element.contentX - playheadContentX)
         }?.offset
