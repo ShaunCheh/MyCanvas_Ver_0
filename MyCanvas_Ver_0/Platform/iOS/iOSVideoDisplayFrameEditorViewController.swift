@@ -4,13 +4,13 @@ import UIKit
 
 final class iOSVideoDisplayFrameEditorViewController: UIViewController {
     private let editorContext: CanvasVideoEditorContext
+    private let loadTimelineStrip: (CanvasVideoTimelineStripRequest) throws -> CanvasVideoTimelineStrip
     private let onCommitFrameImage: (CanvasVideoFrameImage) throws -> Void
     private let workerQueue = DispatchQueue(
         label: "MyCanvas.iOS.VideoDisplayFrameEditor",
         qos: .userInitiated
     )
     private let player = AVPlayer()
-    private let timelineScale = CanvasVideoTimelineScale()
     private let titleLabel: UILabel = {
         let label = UILabel()
         label.translatesAutoresizingMaskIntoConstraints = false
@@ -61,34 +61,25 @@ final class iOSVideoDisplayFrameEditorViewController: UIViewController {
         slider.minimumValue = 0
         return slider
     }()
-    private let previewStripCollectionView: UICollectionView = {
-        let layout = UICollectionViewFlowLayout()
-        layout.scrollDirection = .horizontal
-        layout.minimumInteritemSpacing = 12
-        layout.minimumLineSpacing = 12
-        let collectionView = UICollectionView(
-            frame: .zero,
-            collectionViewLayout: layout
-        )
-        collectionView.translatesAutoresizingMaskIntoConstraints = false
-        collectionView.backgroundColor = .clear
-        collectionView.showsHorizontalScrollIndicator = false
-        return collectionView
+    private let timelineView: iOSVideoTimelineView = {
+        let view = iOSVideoTimelineView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        return view
     }()
-    private let previewStripLoadingIndicator: UIActivityIndicatorView = {
+    private let timelineLoadingIndicator: UIActivityIndicatorView = {
         let indicator = UIActivityIndicatorView(style: .medium)
         indicator.translatesAutoresizingMaskIntoConstraints = false
         indicator.hidesWhenStopped = true
         return indicator
     }()
-    private let previewStripPlaceholderLabel: UILabel = {
+    private let timelinePlaceholderLabel: UILabel = {
         let label = UILabel()
         label.translatesAutoresizingMaskIntoConstraints = false
         label.font = .systemFont(ofSize: 14, weight: .medium)
         label.textColor = .secondaryLabel
         label.textAlignment = .center
         label.numberOfLines = 0
-        label.text = "Loading preview frames..."
+        label.text = "Loading timeline..."
         return label
     }()
     private let setDisplayFrameButton: UIButton = {
@@ -97,11 +88,7 @@ final class iOSVideoDisplayFrameEditorViewController: UIViewController {
         return button
     }()
 
-    private var previewFrames: [CanvasVideoPreviewStripFrame] = []
     private var currentPreviewTimeSeconds: Double
-    private var selectedPreviewFrameIndex: Int?
-    private var isScrubbing = false
-    private var shouldResumePlaybackAfterScrub = false
     private var hasPerformedInitialSeek = false
     private var isCommitting = false {
         didSet {
@@ -110,12 +97,18 @@ final class iOSVideoDisplayFrameEditorViewController: UIViewController {
     }
     private var playerTimeObserver: Any?
     private var playbackEndedObserver: NSObjectProtocol?
+    private var activeInteractionSources: Set<PreviewInteractionSource> = []
+    private var shouldResumePlaybackAfterInteraction = false
+    private var timelineLoadGeneration = 0
+    private var timelineLoadWorkItem: DispatchWorkItem?
 
     init(
         editorContext: CanvasVideoEditorContext,
+        loadTimelineStrip: @escaping (CanvasVideoTimelineStripRequest) throws -> CanvasVideoTimelineStrip,
         onCommitFrameImage: @escaping (CanvasVideoFrameImage) throws -> Void
     ) {
         self.editorContext = editorContext
+        self.loadTimelineStrip = loadTimelineStrip
         self.onCommitFrameImage = onCommitFrameImage
         currentPreviewTimeSeconds = editorContext.currentPosterTimeSeconds
         super.init(nibName: nil, bundle: nil)
@@ -129,6 +122,7 @@ final class iOSVideoDisplayFrameEditorViewController: UIViewController {
     }
 
     deinit {
+        timelineLoadWorkItem?.cancel()
         if let playerTimeObserver {
             player.removeTimeObserver(playerTimeObserver)
         }
@@ -140,13 +134,12 @@ final class iOSVideoDisplayFrameEditorViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
-        configureCollectionView()
+        configureTimelineView()
         configureButtons()
         configurePlayer()
         setupViewHierarchy()
         setupConstraints()
         applyInitialState()
-        loadPreviewStrip()
     }
 
     override func viewDidAppear(_ animated: Bool) {
@@ -160,22 +153,14 @@ final class iOSVideoDisplayFrameEditorViewController: UIViewController {
             to: currentPreviewTimeSeconds,
             pausePlayback: true,
             updateSlider: true,
-            updateSelection: true
+            updateTimeline: true
         )
     }
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
+        timelineLoadWorkItem?.cancel()
         pausePlayback()
-    }
-
-    private func configureCollectionView() {
-        previewStripCollectionView.dataSource = self
-        previewStripCollectionView.delegate = self
-        previewStripCollectionView.register(
-            iOSVideoDisplayFramePreviewCell.self,
-            forCellWithReuseIdentifier: iOSVideoDisplayFramePreviewCell.reuseIdentifier
-        )
     }
 
     private func configureButtons() {
@@ -213,6 +198,35 @@ final class iOSVideoDisplayFrameEditorViewController: UIViewController {
         updateCommitButtonConfiguration()
     }
 
+    private func configureTimelineView() {
+        timelineView.onPlayheadTimeChangeRequested = { [weak self] timeSeconds in
+            guard let self else {
+                return
+            }
+
+            self.seekPreview(
+                to: timeSeconds,
+                pausePlayback: false,
+                updateSlider: true,
+                updateTimeline: false
+            )
+        }
+        timelineView.onInteractionStateChanged = { [weak self] isInteracting in
+            guard let self else {
+                return
+            }
+
+            if isInteracting {
+                self.beginPreviewInteraction(.timeline)
+            } else {
+                self.endPreviewInteraction(.timeline)
+            }
+        }
+        timelineView.onStripRequestChanged = { [weak self] request in
+            self?.scheduleTimelineStripLoad(for: request)
+        }
+    }
+
     private func configurePlayer() {
         let playerItem = AVPlayerItem(url: editorContext.sourceVideoURL)
         player.replaceCurrentItem(with: playerItem)
@@ -244,9 +258,9 @@ final class iOSVideoDisplayFrameEditorViewController: UIViewController {
         view.addSubview(currentTimeLabel)
         view.addSubview(timeSlider)
         view.addSubview(durationLabel)
-        view.addSubview(previewStripCollectionView)
-        view.addSubview(previewStripLoadingIndicator)
-        view.addSubview(previewStripPlaceholderLabel)
+        view.addSubview(timelineView)
+        view.addSubview(timelineLoadingIndicator)
+        view.addSubview(timelinePlaceholderLabel)
         view.addSubview(setDisplayFrameButton)
     }
 
@@ -333,41 +347,41 @@ final class iOSVideoDisplayFrameEditorViewController: UIViewController {
                 constant: -12
             ),
 
-            previewStripCollectionView.topAnchor.constraint(
+            timelineView.topAnchor.constraint(
                 equalTo: currentTimeLabel.bottomAnchor,
                 constant: 20
             ),
-            previewStripCollectionView.leadingAnchor.constraint(
+            timelineView.leadingAnchor.constraint(
                 equalTo: playerView.leadingAnchor
             ),
-            previewStripCollectionView.trailingAnchor.constraint(
+            timelineView.trailingAnchor.constraint(
                 equalTo: playerView.trailingAnchor
             ),
-            previewStripCollectionView.heightAnchor.constraint(equalToConstant: 92),
+            timelineView.heightAnchor.constraint(equalToConstant: 112),
 
-            previewStripLoadingIndicator.centerXAnchor.constraint(
-                equalTo: previewStripCollectionView.centerXAnchor
+            timelineLoadingIndicator.centerXAnchor.constraint(
+                equalTo: timelineView.centerXAnchor
             ),
-            previewStripLoadingIndicator.centerYAnchor.constraint(
-                equalTo: previewStripCollectionView.centerYAnchor
+            timelineLoadingIndicator.centerYAnchor.constraint(
+                equalTo: timelineView.centerYAnchor
             ),
-            previewStripPlaceholderLabel.centerXAnchor.constraint(
-                equalTo: previewStripCollectionView.centerXAnchor
+            timelinePlaceholderLabel.centerXAnchor.constraint(
+                equalTo: timelineView.centerXAnchor
             ),
-            previewStripPlaceholderLabel.centerYAnchor.constraint(
-                equalTo: previewStripCollectionView.centerYAnchor
+            timelinePlaceholderLabel.centerYAnchor.constraint(
+                equalTo: timelineView.centerYAnchor
             ),
-            previewStripPlaceholderLabel.leadingAnchor.constraint(
-                greaterThanOrEqualTo: previewStripCollectionView.leadingAnchor,
+            timelinePlaceholderLabel.leadingAnchor.constraint(
+                greaterThanOrEqualTo: timelineView.leadingAnchor,
                 constant: 12
             ),
-            previewStripPlaceholderLabel.trailingAnchor.constraint(
-                lessThanOrEqualTo: previewStripCollectionView.trailingAnchor,
+            timelinePlaceholderLabel.trailingAnchor.constraint(
+                lessThanOrEqualTo: timelineView.trailingAnchor,
                 constant: -12
             ),
 
             setDisplayFrameButton.topAnchor.constraint(
-                equalTo: previewStripCollectionView.bottomAnchor,
+                equalTo: timelineView.bottomAnchor,
                 constant: 24
             ),
             setDisplayFrameButton.leadingAnchor.constraint(
@@ -385,10 +399,14 @@ final class iOSVideoDisplayFrameEditorViewController: UIViewController {
     }
 
     private func applyInitialState() {
+        timelineView.configure(
+            durationSeconds: editorContext.durationSeconds,
+            playheadTimeSeconds: currentPreviewTimeSeconds
+        )
         currentTimeSecondsDidChange(
             currentPreviewTimeSeconds,
             updateSlider: true,
-            updateSelection: false
+            updateTimeline: false
         )
         timeSlider.maximumValue = Float(
             max(editorContext.durationSeconds, 0.001)
@@ -396,57 +414,11 @@ final class iOSVideoDisplayFrameEditorViewController: UIViewController {
         let hasPlayableDuration = editorContext.durationSeconds > 0
         timeSlider.isEnabled = hasPlayableDuration
         playPauseButton.isEnabled = hasPlayableDuration
-        previewStripPlaceholderLabel.isHidden = false
-    }
-
-    private func loadPreviewStrip() {
-        previewStripLoadingIndicator.startAnimating()
-        previewStripPlaceholderLabel.text = "Loading preview frames..."
-        let sourceVideoURL = editorContext.sourceVideoURL
-        workerQueue.async { [weak self] in
-            let result = Result {
-                try CanvasVideoFrameService.previewStrip(
-                    from: sourceVideoURL,
-                    frameCount: 10,
-                    maxPixelSize: 180
-                )
-            }
-            DispatchQueue.main.async {
-                self?.handlePreviewStripLoadResult(result)
-            }
-        }
-    }
-
-    private func handlePreviewStripLoadResult(
-        _ result: Result<CanvasVideoPreviewStrip, Error>
-    ) {
-        previewStripLoadingIndicator.stopAnimating()
-        switch result {
-        case let .success(previewStrip):
-            previewFrames = previewStrip.frames
-            previewStripCollectionView.reloadData()
-            previewStripPlaceholderLabel.isHidden = previewFrames.isEmpty == false
-            if previewFrames.isEmpty {
-                previewStripPlaceholderLabel.text = "No preview frames available."
-            }
-            updateSelectedPreviewFrameIndex(
-                for: currentPreviewTimeSeconds,
-                shouldScrollToSelection: false
-            )
-        case let .failure(error):
-            previewFrames = []
-            previewStripCollectionView.reloadData()
-            previewStripPlaceholderLabel.isHidden = false
-            previewStripPlaceholderLabel.text = "Unable to load preview frames."
-            presentError(
-                title: "Unable to Load Preview Frames",
-                message: error.localizedDescription
-            )
-        }
+        timelinePlaceholderLabel.isHidden = false
     }
 
     private func handlePlayerTimeUpdate(_ time: CMTime) {
-        guard isScrubbing == false else {
+        guard isPreviewInteracting == false else {
             return
         }
 
@@ -458,7 +430,7 @@ final class iOSVideoDisplayFrameEditorViewController: UIViewController {
         currentTimeSecondsDidChange(
             clampedTimeSeconds(timeSeconds),
             updateSlider: true,
-            updateSelection: true
+            updateTimeline: true
         )
     }
 
@@ -467,14 +439,14 @@ final class iOSVideoDisplayFrameEditorViewController: UIViewController {
         currentTimeSecondsDidChange(
             clampedTimeSeconds(editorContext.durationSeconds),
             updateSlider: true,
-            updateSelection: true
+            updateTimeline: true
         )
     }
 
     private func currentTimeSecondsDidChange(
         _ timeSeconds: Double,
         updateSlider: Bool,
-        updateSelection: Bool
+        updateTimeline: Bool
     ) {
         currentPreviewTimeSeconds = clampedTimeSeconds(timeSeconds)
         currentTimeLabel.text = formatVideoDisplayFrameEditorSeconds(
@@ -483,13 +455,13 @@ final class iOSVideoDisplayFrameEditorViewController: UIViewController {
         durationLabel.text = formatVideoDisplayFrameEditorSeconds(
             editorContext.durationSeconds
         )
-        if updateSlider, isScrubbing == false {
+        if updateSlider, activeInteractionSources.contains(.slider) == false {
             timeSlider.value = Float(currentPreviewTimeSeconds)
         }
-        if updateSelection {
-            updateSelectedPreviewFrameIndex(
-                for: currentPreviewTimeSeconds,
-                shouldScrollToSelection: false
+        if updateTimeline {
+            timelineView.setPlayheadTimeSeconds(
+                currentPreviewTimeSeconds,
+                animated: false
             )
         }
     }
@@ -498,7 +470,7 @@ final class iOSVideoDisplayFrameEditorViewController: UIViewController {
         to timeSeconds: Double,
         pausePlayback: Bool,
         updateSlider: Bool,
-        updateSelection: Bool
+        updateTimeline: Bool
     ) {
         let clampedTimeSeconds = clampedTimeSeconds(timeSeconds)
         if pausePlayback {
@@ -507,7 +479,7 @@ final class iOSVideoDisplayFrameEditorViewController: UIViewController {
         currentTimeSecondsDidChange(
             clampedTimeSeconds,
             updateSlider: updateSlider,
-            updateSelection: updateSelection
+            updateTimeline: updateTimeline
         )
         player.seek(
             to: CMTime(seconds: clampedTimeSeconds, preferredTimescale: 600),
@@ -558,40 +530,6 @@ final class iOSVideoDisplayFrameEditorViewController: UIViewController {
         setDisplayFrameButton.isEnabled = isCommitting == false
     }
 
-    private func updateSelectedPreviewFrameIndex(
-        for timeSeconds: Double,
-        shouldScrollToSelection: Bool
-    ) {
-        let nextIndex = makePreviewStripTimelineResult(
-            for: timeSeconds
-        ).highlightedSampleIndex
-        guard selectedPreviewFrameIndex != nextIndex else {
-            return
-        }
-
-        let indexPathsToReload = [selectedPreviewFrameIndex, nextIndex]
-            .compactMap { index -> IndexPath? in
-                guard let index else {
-                    return nil
-                }
-                return IndexPath(item: index, section: 0)
-            }
-        selectedPreviewFrameIndex = nextIndex
-        if indexPathsToReload.isEmpty == false {
-            previewStripCollectionView.reloadItems(at: indexPathsToReload)
-        } else {
-            previewStripCollectionView.reloadData()
-        }
-
-        if shouldScrollToSelection, let nextIndex {
-            previewStripCollectionView.scrollToItem(
-                at: IndexPath(item: nextIndex, section: 0),
-                at: .centeredHorizontally,
-                animated: true
-            )
-        }
-    }
-
     private func clampedTimeSeconds(_ timeSeconds: Double) -> Double {
         CanvasVideoTimelineViewport.clampedTimeSeconds(
             timeSeconds,
@@ -599,29 +537,94 @@ final class iOSVideoDisplayFrameEditorViewController: UIViewController {
         )
     }
 
-    private func makePreviewStripTimelineResult(
-        for timeSeconds: Double
-    ) -> CanvasVideoTimelineStripResult {
-        let visibleWidth = Double(
-            max(previewStripCollectionView.bounds.width, 1)
+    private var isPreviewInteracting: Bool {
+        activeInteractionSources.isEmpty == false
+    }
+
+    private func beginPreviewInteraction(_ source: PreviewInteractionSource) {
+        let wasEmpty = activeInteractionSources.isEmpty
+        activeInteractionSources.insert(source)
+        guard wasEmpty else {
+            return
+        }
+
+        shouldResumePlaybackAfterInteraction = player.timeControlStatus == .playing
+        pausePlayback()
+    }
+
+    private func endPreviewInteraction(_ source: PreviewInteractionSource) {
+        activeInteractionSources.remove(source)
+        guard activeInteractionSources.isEmpty else {
+            return
+        }
+
+        if shouldResumePlaybackAfterInteraction {
+            player.play()
+            updatePlayPauseButtonConfiguration()
+        }
+        shouldResumePlaybackAfterInteraction = false
+    }
+
+    private func scheduleTimelineStripLoad(
+        for request: CanvasVideoTimelineStripRequest
+    ) {
+        timelineLoadWorkItem?.cancel()
+        timelineLoadGeneration += 1
+        let generation = timelineLoadGeneration
+
+        if timelineView.hasRenderableStrip == false {
+            timelinePlaceholderLabel.text = "Loading timeline..."
+            timelinePlaceholderLabel.isHidden = false
+            timelineLoadingIndicator.startAnimating()
+        }
+
+        var workItem: DispatchWorkItem?
+        workItem = DispatchWorkItem { [weak self] in
+            guard let self, workItem?.isCancelled == false else {
+                return
+            }
+
+            let result = Result {
+                try self.loadTimelineStrip(request)
+            }
+            DispatchQueue.main.async {
+                self.handleTimelineStripLoadResult(
+                    result,
+                    generation: generation
+                )
+            }
+        }
+        timelineLoadWorkItem = workItem
+        workerQueue.asyncAfter(
+            deadline: .now() + 0.06,
+            execute: workItem!
         )
-        let viewport = CanvasVideoTimelineViewport(
-            durationSeconds: editorContext.durationSeconds,
-            playheadTimeSeconds: timeSeconds,
-            zoomScale: timelineScale,
-            visibleWidth: visibleWidth,
-            contentOffsetX: Double(previewStripCollectionView.contentOffset.x),
-            minimumContentWidth: visibleWidth
-        )
-        let request = CanvasVideoTimelineStripRequest(
-            viewport: viewport,
-            thumbnailWidth: 92,
-            maxPixelSize: 180
-        )
-        return CanvasVideoTimelineStripResult(
-            request: request,
-            sampleTimes: previewFrames.map(\.timeSeconds)
-        )
+    }
+
+    private func handleTimelineStripLoadResult(
+        _ result: Result<CanvasVideoTimelineStrip, Error>,
+        generation: Int
+    ) {
+        guard generation == timelineLoadGeneration else {
+            return
+        }
+
+        timelineLoadingIndicator.stopAnimating()
+        switch result {
+        case let .success(strip):
+            timelineView.applyStrip(strip)
+            timelinePlaceholderLabel.isHidden = true
+        case let .failure(error):
+            if timelineView.hasRenderableStrip == false {
+                timelineView.applyStrip(nil)
+                timelinePlaceholderLabel.isHidden = false
+                timelinePlaceholderLabel.text = "Unable to load timeline."
+                presentError(
+                    title: "Unable to Load Timeline",
+                    message: error.localizedDescription
+                )
+            }
+        }
     }
 
     private func presentError(title: String, message: String) {
@@ -662,7 +665,7 @@ final class iOSVideoDisplayFrameEditorViewController: UIViewController {
         currentTimeSecondsDidChange(
             startTime,
             updateSlider: true,
-            updateSelection: true
+            updateTimeline: true
         )
         player.seek(
             to: CMTime(seconds: startTime, preferredTimescale: 600),
@@ -676,9 +679,7 @@ final class iOSVideoDisplayFrameEditorViewController: UIViewController {
 
     @objc
     private func handleTimeSliderTouchDown() {
-        isScrubbing = true
-        shouldResumePlaybackAfterScrub = player.timeControlStatus == .playing
-        pausePlayback()
+        beginPreviewInteraction(.slider)
     }
 
     @objc
@@ -688,18 +689,13 @@ final class iOSVideoDisplayFrameEditorViewController: UIViewController {
             to: selectedTimeSeconds,
             pausePlayback: false,
             updateSlider: true,
-            updateSelection: true
+            updateTimeline: true
         )
     }
 
     @objc
     private func handleTimeSliderTouchEnded() {
-        isScrubbing = false
-        if shouldResumePlaybackAfterScrub {
-            player.play()
-            updatePlayPauseButtonConfiguration()
-        }
-        shouldResumePlaybackAfterScrub = false
+        endPreviewInteraction(.slider)
     }
 
     @objc
@@ -751,67 +747,6 @@ final class iOSVideoDisplayFrameEditorViewController: UIViewController {
     }
 }
 
-extension iOSVideoDisplayFrameEditorViewController: UICollectionViewDataSource {
-    func collectionView(
-        _ collectionView: UICollectionView,
-        numberOfItemsInSection section: Int
-    ) -> Int {
-        previewFrames.count
-    }
-
-    func collectionView(
-        _ collectionView: UICollectionView,
-        cellForItemAt indexPath: IndexPath
-    ) -> UICollectionViewCell {
-        guard
-            let cell = collectionView.dequeueReusableCell(
-                withReuseIdentifier: iOSVideoDisplayFramePreviewCell.reuseIdentifier,
-                for: indexPath
-            ) as? iOSVideoDisplayFramePreviewCell,
-            previewFrames.indices.contains(indexPath.item)
-        else {
-            return UICollectionViewCell()
-        }
-
-        cell.apply(
-            frame: previewFrames[indexPath.item],
-            isHighlighted: indexPath.item == selectedPreviewFrameIndex
-        )
-        return cell
-    }
-}
-
-extension iOSVideoDisplayFrameEditorViewController: UICollectionViewDelegateFlowLayout {
-    func collectionView(
-        _ collectionView: UICollectionView,
-        didSelectItemAt indexPath: IndexPath
-    ) {
-        guard previewFrames.indices.contains(indexPath.item) else {
-            return
-        }
-
-        let selectedFrame = previewFrames[indexPath.item]
-        seekPreview(
-            to: selectedFrame.timeSeconds,
-            pausePlayback: true,
-            updateSlider: true,
-            updateSelection: true
-        )
-        updateSelectedPreviewFrameIndex(
-            for: selectedFrame.timeSeconds,
-            shouldScrollToSelection: false
-        )
-    }
-
-    func collectionView(
-        _ collectionView: UICollectionView,
-        layout collectionViewLayout: UICollectionViewLayout,
-        sizeForItemAt indexPath: IndexPath
-    ) -> CGSize {
-        CGSize(width: 92, height: collectionView.bounds.height - 8)
-    }
-}
-
 private final class iOSVideoDisplayFramePlayerView: UIView {
     override class var layerClass: AnyClass {
         AVPlayerLayer.self
@@ -822,86 +757,9 @@ private final class iOSVideoDisplayFramePlayerView: UIView {
     }
 }
 
-private final class iOSVideoDisplayFramePreviewCell: UICollectionViewCell {
-    static let reuseIdentifier = "iOSVideoDisplayFramePreviewCell"
-
-    private let imageView: UIImageView = {
-        let imageView = UIImageView()
-        imageView.translatesAutoresizingMaskIntoConstraints = false
-        imageView.contentMode = .scaleAspectFill
-        imageView.clipsToBounds = true
-        imageView.layer.cornerRadius = 12
-        return imageView
-    }()
-    private let timeLabel: UILabel = {
-        let label = UILabel()
-        label.translatesAutoresizingMaskIntoConstraints = false
-        label.font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
-        label.textAlignment = .center
-        label.textColor = .secondaryLabel
-        return label
-    }()
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        contentView.addSubview(imageView)
-        contentView.addSubview(timeLabel)
-        contentView.layer.cornerRadius = 14
-        contentView.layer.borderWidth = 1
-        contentView.layer.borderColor = UIColor.separator.cgColor
-        NSLayoutConstraint.activate([
-            imageView.topAnchor.constraint(equalTo: contentView.topAnchor),
-            imageView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-            imageView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-            imageView.heightAnchor.constraint(
-                equalTo: contentView.heightAnchor,
-                multiplier: 0.74
-            ),
-            timeLabel.topAnchor.constraint(
-                equalTo: imageView.bottomAnchor,
-                constant: 6
-            ),
-            timeLabel.leadingAnchor.constraint(
-                equalTo: contentView.leadingAnchor,
-                constant: 4
-            ),
-            timeLabel.trailingAnchor.constraint(
-                equalTo: contentView.trailingAnchor,
-                constant: -4
-            ),
-            timeLabel.bottomAnchor.constraint(
-                lessThanOrEqualTo: contentView.bottomAnchor
-            )
-        ])
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    override func prepareForReuse() {
-        super.prepareForReuse()
-        imageView.image = nil
-        timeLabel.text = nil
-    }
-
-    func apply(
-        frame: CanvasVideoPreviewStripFrame,
-        isHighlighted: Bool
-    ) {
-        imageView.image = UIImage(cgImage: frame.cgImage)
-        timeLabel.text = formatVideoDisplayFrameEditorSeconds(
-            frame.timeSeconds
-        )
-        contentView.layer.borderWidth = isHighlighted ? 2 : 1
-        contentView.layer.borderColor = isHighlighted
-            ? UIColor.systemBlue.cgColor
-            : UIColor.separator.cgColor
-        contentView.backgroundColor = isHighlighted
-            ? UIColor.systemBlue.withAlphaComponent(0.08)
-            : .secondarySystemBackground
-    }
+private enum PreviewInteractionSource: Hashable {
+    case slider
+    case timeline
 }
 
 private func formatVideoDisplayFrameEditorSeconds(

@@ -436,7 +436,17 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         do {
             let editorContext = try editorSession.videoEditorContext(for: itemID)
             let editorViewController = iOSVideoDisplayFrameEditorViewController(
-                editorContext: editorContext
+                editorContext: editorContext,
+                loadTimelineStrip: { [weak self] request in
+                    guard let self else {
+                        throw iOSVideoEditorFlowError.presenterUnavailable
+                    }
+
+                    return try self.editorSession.videoTimelineStrip(
+                        for: itemID,
+                        request: request
+                    )
+                }
             ) { [weak self] frameImage in
                 guard let self else {
                     throw iOSVideoEditorFlowError.presenterUnavailable
