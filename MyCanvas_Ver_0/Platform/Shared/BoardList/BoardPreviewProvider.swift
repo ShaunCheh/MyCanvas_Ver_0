@@ -4,16 +4,19 @@ import Foundation
 final class BoardPreviewProvider {
     private let thumbnailCache: BoardThumbnailCache
     private let thumbnailRenderer: BoardThumbnailRenderer
+    private let mediaPosterImageResolver: BoardMediaPosterImageResolver
     private let renderQueue: OperationQueue
     private let callbackQueue: DispatchQueue
 
     init(
         thumbnailCache: BoardThumbnailCache = BoardThumbnailCache(),
         thumbnailRenderer: BoardThumbnailRenderer = BoardThumbnailRenderer(),
+        mediaPosterImageResolver: BoardMediaPosterImageResolver = BoardMediaPosterImageResolver(),
         callbackQueue: DispatchQueue = .main
     ) {
         self.thumbnailCache = thumbnailCache
         self.thumbnailRenderer = thumbnailRenderer
+        self.mediaPosterImageResolver = mediaPosterImageResolver
         self.callbackQueue = callbackQueue
 
         let renderQueue = OperationQueue()
@@ -49,7 +52,8 @@ final class BoardPreviewProvider {
                 phase: "immediatePreview-cache-hit",
                 item: item,
                 targetPixelSize: targetPixelSize,
-                cachedImage: cachedImage
+                cachedImage: cachedImage,
+                mediaPosterImageResolver: mediaPosterImageResolver
             )
             return .thumbnail(cachedImage, item.previewSeed)
         }
@@ -116,7 +120,8 @@ final class BoardPreviewProvider {
                 phase: "requestThumbnail-cache-hit",
                 item: item,
                 targetPixelSize: targetPixelSize,
-                cachedImage: cachedImage
+                cachedImage: cachedImage,
+                mediaPosterImageResolver: mediaPosterImageResolver
             )
             callbackQueue.async { [weak requestToken] in
                 guard let requestToken, requestToken.isCancelled == false else {
@@ -309,7 +314,8 @@ private func logBoardPreviewProviderCacheHit(
     phase: String,
     item: BoardCatalogItem,
     targetPixelSize: CGSize,
-    cachedImage: CGImage
+    cachedImage: CGImage,
+    mediaPosterImageResolver: BoardMediaPosterImageResolver
 ) {
     logBoardThumbnailTraceImageRegions(
         phase: phase,
@@ -322,13 +328,15 @@ private func logBoardPreviewProviderCacheHit(
     )
     logBoardPreviewProviderSourceImagesIfNeeded(
         phase: phase,
-        item: item
+        item: item,
+        mediaPosterImageResolver: mediaPosterImageResolver
     )
 }
 
 private func logBoardPreviewProviderSourceImagesIfNeeded(
     phase: String,
     item: BoardCatalogItem,
+    mediaPosterImageResolver: BoardMediaPosterImageResolver,
     maxImageCount: Int = 8,
     maxPixelSize: Int = 128
 ) {
@@ -346,34 +354,23 @@ private func logBoardPreviewProviderSourceImagesIfNeeded(
     }
 
     for imageItemRecord in imageItemRecords {
-        let assetURL = item.assetsDirectoryURL.appendingPathComponent(
-            imageItemRecord.assetFilename
+        let previewAssetFilename = mediaPosterImageResolver.previewAssetFilename(
+            for: imageItemRecord
         )
         do {
-            let assetData = try CoordinatedFileIO.readData(at: assetURL)
-            guard
-                let image = CanvasImagePosterFrameDecoder.decodePosterFrame(
-                    from: assetData,
-                    maxPixelSize: maxPixelSize
-                )
-            else {
-                print(
-                    "[BoardList][ThumbnailTrace][SourceImage] " +
-                        "phase=\(phase) " +
-                        "boardID=\(item.boardID.uuidString) " +
-                        "itemID=\(imageItemRecord.id.uuidString) " +
-                        "assetFilename=\(imageItemRecord.assetFilename) " +
-                        "status=decode-failed"
-                )
-                continue
-            }
+            let image = try mediaPosterImageResolver.resolvePreviewImage(
+                for: imageItemRecord,
+                assetsDirectoryURL: item.assetsDirectoryURL,
+                animatedImagePreviewMode: BoardPreviewContent.animatedImagePreviewMode,
+                maxPixelSize: maxPixelSize
+            )
 
             print(
                 "[BoardList][ThumbnailTrace][SourceImage] " +
                     "phase=\(phase) " +
                     "boardID=\(item.boardID.uuidString) " +
                     "itemID=\(imageItemRecord.id.uuidString) " +
-                    "assetFilename=\(imageItemRecord.assetFilename) " +
+                    "assetFilename=\(previewAssetFilename) " +
                     "signature=\(BoardThumbnailImageSignature.describe(image))"
             )
         } catch {
@@ -382,7 +379,7 @@ private func logBoardPreviewProviderSourceImagesIfNeeded(
                     "phase=\(phase) " +
                     "boardID=\(item.boardID.uuidString) " +
                     "itemID=\(imageItemRecord.id.uuidString) " +
-                    "assetFilename=\(imageItemRecord.assetFilename) " +
+                    "assetFilename=\(previewAssetFilename) " +
                     "status=read-failed " +
                     "error=\(error)"
             )

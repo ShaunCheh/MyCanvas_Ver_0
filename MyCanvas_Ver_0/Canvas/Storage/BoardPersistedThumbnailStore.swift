@@ -27,7 +27,7 @@ enum BoardPersistedThumbnailStore {
     static let filename = "thumbnail.png"
     // Bump this when thumbnail pixels should be regenerated even if the board
     // document itself did not change.
-    static let formatVersion = 2
+    static let formatVersion = 3
     static let maximumLongestSide: CGFloat = 1024
     private static let freshnessTolerance: TimeInterval = 1
     private static let formatVersionMetadataPrefix =

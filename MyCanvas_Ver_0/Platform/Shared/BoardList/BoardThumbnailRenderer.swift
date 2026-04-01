@@ -10,7 +10,6 @@ private struct BoardThumbnailTraceContext {
 
 enum BoardThumbnailRendererError: LocalizedError {
     case invalidBitmapContext
-    case invalidBoardImageAsset(filename: String)
     case invalidRuntimeImageAsset(itemID: UUID)
     case cancelled
 
@@ -18,8 +17,6 @@ enum BoardThumbnailRendererError: LocalizedError {
         switch self {
         case .invalidBitmapContext:
             return "The thumbnail bitmap context could not be created."
-        case let .invalidBoardImageAsset(filename):
-            return "The board thumbnail asset could not be decoded: \(filename)"
         case let .invalidRuntimeImageAsset(itemID):
             return "The runtime image asset for board item \(itemID.uuidString) is missing."
         case .cancelled:
@@ -30,11 +27,14 @@ enum BoardThumbnailRendererError: LocalizedError {
 
 final class BoardThumbnailRenderer {
     private let geometryPreviewBuilder: BoardGeometryPreviewBuilder
+    private let mediaPosterImageResolver: BoardMediaPosterImageResolver
 
     init(
-        geometryPreviewBuilder: BoardGeometryPreviewBuilder = BoardGeometryPreviewBuilder()
+        geometryPreviewBuilder: BoardGeometryPreviewBuilder = BoardGeometryPreviewBuilder(),
+        mediaPosterImageResolver: BoardMediaPosterImageResolver = BoardMediaPosterImageResolver()
     ) {
         self.geometryPreviewBuilder = geometryPreviewBuilder
+        self.mediaPosterImageResolver = mediaPosterImageResolver
     }
 
     func renderThumbnail(
@@ -109,13 +109,15 @@ final class BoardThumbnailRenderer {
                     geometry: geometry
                 )
             }
+            let previewAssetFilename = self.mediaPosterImageResolver
+                .previewAssetFilename(for: itemRecord)
             let decodeMaxPixelSize = decodeMaxPixelSizesByFilename[
-                itemRecord.assetFilename
+                previewAssetFilename
             ] ?? self.decodeMaxPixelSize(
                 for: itemRecord,
                 geometry: geometry
             )
-            if let cachedImage = cachedImagesByFilename[itemRecord.assetFilename] {
+            if let cachedImage = cachedImagesByFilename[previewAssetFilename] {
                 return cachedImage
             }
 
@@ -125,7 +127,7 @@ final class BoardThumbnailRenderer {
                 animatedImagePreviewMode: animatedImagePreviewMode,
                 maxPixelSize: decodeMaxPixelSize
             )
-            cachedImagesByFilename[itemRecord.assetFilename] = image
+            cachedImagesByFilename[previewAssetFilename] = image
             return image
         }
     }
@@ -480,10 +482,12 @@ final class BoardThumbnailRenderer {
                 for: imageItemRecord,
                 geometry: geometry
             )
+            let previewAssetFilename = mediaPosterImageResolver
+                .previewAssetFilename(for: imageItemRecord)
             let existingPixelSize = resolvedMaxPixelSizesByFilename[
-                imageItemRecord.assetFilename
+                previewAssetFilename
             ] ?? 0
-            resolvedMaxPixelSizesByFilename[imageItemRecord.assetFilename] = max(
+            resolvedMaxPixelSizesByFilename[previewAssetFilename] = max(
                 existingPixelSize,
                 decodeMaxPixelSize
             )
@@ -896,24 +900,12 @@ final class BoardThumbnailRenderer {
         animatedImagePreviewMode: CanvasAnimatedImagePreviewMode,
         maxPixelSize: Int
     ) throws -> CGImage {
-        let assetURL = assetsDirectoryURL.appendingPathComponent(itemRecord.assetFilename)
-        let assetData = try CoordinatedFileIO.readData(at: assetURL)
-        let image: CGImage?
-        switch animatedImagePreviewMode {
-        case .posterFrameOnly:
-            image = CanvasImagePosterFrameDecoder.decodePosterFrame(
-                from: assetData,
-                maxPixelSize: maxPixelSize
-            )
-        }
-
-        guard let image else {
-            throw BoardThumbnailRendererError.invalidBoardImageAsset(
-                filename: itemRecord.assetFilename
-            )
-        }
-
-        return image
+        try mediaPosterImageResolver.resolvePreviewImage(
+            for: itemRecord,
+            assetsDirectoryURL: assetsDirectoryURL,
+            animatedImagePreviewMode: animatedImagePreviewMode,
+            maxPixelSize: maxPixelSize
+        )
     }
 
     private func orderedItemRecords(
