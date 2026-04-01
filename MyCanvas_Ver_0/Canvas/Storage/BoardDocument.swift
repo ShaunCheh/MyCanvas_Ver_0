@@ -46,8 +46,8 @@ struct BoardRuntimeState {
         )
     }
 
-    // Image-backed items still need a projection because storage and thumbnail
-    // code still reason about persisted image assets as a filtered subset.
+    // Poster-backed items still project through CanvasImageItem so storage and
+    // thumbnail code can treat images and video covers as one renderable subset.
     var imageItems: [CanvasImageItem] {
         items.compactMap(\.imageItem)
     }
@@ -89,6 +89,12 @@ struct BoardDocument: Codable {
         items.compactMap(\.imageItemRecord)
     }
 
+    var referencedAssetFilenames: Set<String> {
+        imageItemRecords.reduce(into: Set<String>()) { partialResult, record in
+            partialResult.formUnion(record.referencedAssetFilenames)
+        }
+    }
+
     var textItemRecords: [BoardTextItemRecord] {
         items.compactMap(\.textItemRecord)
     }
@@ -99,8 +105,10 @@ struct BoardImageItemRecord: Codable {
     var center: BoardPointRecord
     var size: BoardSizeRecord
     var zIndex: Double
-    var assetFilename: String
+    var posterImageFilename: String
     var assetKind: CanvasImageAssetKind
+    var sourceVideoFilename: String?
+    var posterTimeSeconds: Double?
     var cropRectNormalized: BoardImageCropRecord?
     var rotationRadians: Double?
 
@@ -111,6 +119,9 @@ struct BoardImageItemRecord: Codable {
         zIndex: Double,
         assetFilename: String,
         assetKind: CanvasImageAssetKind = .staticImage,
+        posterImageFilename: String? = nil,
+        sourceVideoFilename: String? = nil,
+        posterTimeSeconds: Double? = nil,
         cropRectNormalized: BoardImageCropRecord?,
         rotationRadians: Double?
     ) {
@@ -118,8 +129,16 @@ struct BoardImageItemRecord: Codable {
         self.center = center
         self.size = size
         self.zIndex = zIndex
-        self.assetFilename = assetFilename
+        self.posterImageFilename = Self.sanitizedAssetFilename(
+            posterImageFilename ?? assetFilename
+        )
         self.assetKind = assetKind
+        self.sourceVideoFilename = Self.sanitizedOptionalAssetFilename(
+            sourceVideoFilename
+        )
+        self.posterTimeSeconds = Self.sanitizedPosterTimeSeconds(
+            posterTimeSeconds
+        )
         self.cropRectNormalized = cropRectNormalized
         self.rotationRadians = rotationRadians
     }
@@ -131,6 +150,9 @@ struct BoardImageItemRecord: Codable {
         case zIndex
         case assetFilename
         case assetKind
+        case posterImageFilename
+        case sourceVideoFilename
+        case posterTimeSeconds
         case cropRectNormalized
         case rotationRadians
     }
@@ -141,11 +163,34 @@ struct BoardImageItemRecord: Codable {
         center = try container.decode(BoardPointRecord.self, forKey: .center)
         size = try container.decode(BoardSizeRecord.self, forKey: .size)
         zIndex = try container.decode(Double.self, forKey: .zIndex)
-        assetFilename = try container.decode(String.self, forKey: .assetFilename)
+        let legacyAssetFilename = try container.decode(
+            String.self,
+            forKey: .assetFilename
+        )
+        posterImageFilename = Self.sanitizedAssetFilename(
+            try container.decodeIfPresent(
+                String.self,
+                forKey: .posterImageFilename
+            ) ?? legacyAssetFilename
+        )
         assetKind = try container.decodeIfPresent(
             CanvasImageAssetKind.self,
             forKey: .assetKind
-        ) ?? CanvasImageAssetKind.inferredPersistedKind(from: assetFilename)
+        ) ?? CanvasImageAssetKind.inferredPersistedKind(
+            from: posterImageFilename
+        )
+        sourceVideoFilename = Self.sanitizedOptionalAssetFilename(
+            try container.decodeIfPresent(
+                String.self,
+                forKey: .sourceVideoFilename
+            )
+        )
+        posterTimeSeconds = Self.sanitizedPosterTimeSeconds(
+            try container.decodeIfPresent(
+                Double.self,
+                forKey: .posterTimeSeconds
+            )
+        )
         cropRectNormalized = try container.decodeIfPresent(
             BoardImageCropRecord.self,
             forKey: .cropRectNormalized
@@ -162,8 +207,19 @@ struct BoardImageItemRecord: Codable {
         try container.encode(center, forKey: .center)
         try container.encode(size, forKey: .size)
         try container.encode(zIndex, forKey: .zIndex)
-        try container.encode(assetFilename, forKey: .assetFilename)
+        // Keep the legacy key aligned with the poster filename so older preview
+        // code paths can continue to read the current display image.
+        try container.encode(posterImageFilename, forKey: .assetFilename)
         try container.encode(assetKind, forKey: .assetKind)
+        try container.encode(posterImageFilename, forKey: .posterImageFilename)
+        try container.encodeIfPresent(
+            sourceVideoFilename,
+            forKey: .sourceVideoFilename
+        )
+        try container.encodeIfPresent(
+            posterTimeSeconds,
+            forKey: .posterTimeSeconds
+        )
         try container.encodeIfPresent(
             cropRectNormalized,
             forKey: .cropRectNormalized
@@ -174,11 +230,84 @@ struct BoardImageItemRecord: Codable {
         )
     }
 
+    var assetFilename: String {
+        posterImageFilename
+    }
+
+    var isVideo: Bool {
+        sourceVideoFilename != nil
+    }
+
     var assetReference: CanvasImageAssetReference {
         .persisted(
             kind: assetKind,
-            filename: assetFilename
+            filename: posterImageFilename
         )
+    }
+
+    var videoSource: CanvasVideoSource? {
+        guard let sourceVideoFilename else {
+            return nil
+        }
+
+        return CanvasVideoSource(
+            assetReference: .persisted(filename: sourceVideoFilename),
+            posterTimeSeconds: posterTimeSeconds ?? 0
+        )
+    }
+
+    var referencedAssetFilenames: Set<String> {
+        var filenames: Set<String> = [posterImageFilename]
+        if let sourceVideoFilename {
+            filenames.insert(sourceVideoFilename)
+        }
+        return filenames
+    }
+
+    private static func sanitizedAssetFilename(
+        _ filename: String
+    ) -> String {
+        let trimmedFilename = filename.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+        guard trimmedFilename.isEmpty == false else {
+            assertionFailure("Persisted asset filenames must not be empty.")
+            return "asset.png"
+        }
+
+        return trimmedFilename
+    }
+
+    private static func sanitizedOptionalAssetFilename(
+        _ filename: String?
+    ) -> String? {
+        guard let filename else {
+            return nil
+        }
+
+        let trimmedFilename = filename.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+        guard trimmedFilename.isEmpty == false else {
+            assertionFailure("Persisted asset filenames must not be empty.")
+            return nil
+        }
+
+        return trimmedFilename
+    }
+
+    private static func sanitizedPosterTimeSeconds(
+        _ posterTimeSeconds: Double?
+    ) -> Double? {
+        guard let posterTimeSeconds else {
+            return nil
+        }
+
+        guard posterTimeSeconds.isFinite else {
+            return 0
+        }
+
+        return max(posterTimeSeconds, 0)
     }
 }
 

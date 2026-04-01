@@ -34,6 +34,7 @@ enum BoardDocumentMapper {
                             filename: imageRecord.assetReference.stableAssetFilename,
                             cgImage: try imageLoader(imageRecord)
                         ),
+                        videoSource: imageRecord.videoSource,
                         center: imageRecord.center.cgPoint,
                         size: imageRecord.size.cgSize,
                         zIndex: CGFloat(imageRecord.zIndex),
@@ -107,6 +108,9 @@ enum BoardDocumentMapper {
             zIndex: Double(item.zIndex),
             assetFilename: item.assetReference.stableAssetFilename,
             assetKind: item.assetKind,
+            posterImageFilename: item.assetReference.stableAssetFilename,
+            sourceVideoFilename: item.videoSource?.sourceVideoFilename,
+            posterTimeSeconds: item.videoSource?.posterTimeSeconds,
             cropRectNormalized: BoardImageCropRecord(item.cropRectNormalized),
             rotationRadians: Double(item.rotationRadians)
         )

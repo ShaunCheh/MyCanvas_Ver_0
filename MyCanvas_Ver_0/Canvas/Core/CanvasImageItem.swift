@@ -50,6 +50,7 @@ struct CanvasImageCropRect: Equatable {
 struct CanvasImageItem {
     let id: CanvasImageItemID
     let asset: CanvasImageAsset
+    var videoSource: CanvasVideoSource?
     var center: CGPoint
     var size: CGSize
     var zIndex: CGFloat
@@ -59,6 +60,7 @@ struct CanvasImageItem {
     init(
         id: CanvasImageItemID = UUID(),
         asset: CanvasImageAsset,
+        videoSource: CanvasVideoSource? = nil,
         center: CGPoint,
         size: CGSize,
         zIndex: CGFloat = 0,
@@ -67,6 +69,7 @@ struct CanvasImageItem {
     ) {
         self.id = id
         self.asset = asset
+        self.videoSource = videoSource
         self.center = center
         self.size = size
         self.zIndex = zIndex
@@ -84,6 +87,14 @@ struct CanvasImageItem {
 
     var assetKind: CanvasImageAssetKind {
         assetReference.kind
+    }
+
+    var isVideo: Bool {
+        videoSource != nil
+    }
+
+    var sourceVideoFilename: String? {
+        videoSource?.sourceVideoFilename
     }
 
     var posterCGImage: CGImage {
@@ -155,11 +166,25 @@ struct CanvasImageItem {
         cropRectNormalized.cgRect
     }
 
-    // Phase 0 freezes duplicate semantics so later asset-reference work keeps
-    // sharing one underlying image resource instead of cloning file storage.
+    // Static images/GIFs keep sharing one underlying asset reference, while
+    // video items share only the source video and get an independent poster file.
     func duplicated(offsetInWorld: CGPoint) -> CanvasImageItem {
+        let duplicatedAsset: CanvasImageAsset
+        if isVideo {
+            // Video items own their poster image independently so later cover
+            // changes do not rewrite another duplicated item's display frame.
+            duplicatedAsset = CanvasImageAsset.transientImage(
+                kind: asset.reference.kind,
+                cgImage: asset.posterCGImage,
+                logicalPixelSize: asset.logicalPixelSize
+            )
+        } else {
+            duplicatedAsset = asset
+        }
+
         CanvasImageItem(
-            asset: asset,
+            asset: duplicatedAsset,
+            videoSource: videoSource,
             center: CGPoint(
                 x: center.x + offsetInWorld.x,
                 y: center.y + offsetInWorld.y
@@ -176,6 +201,7 @@ struct CanvasImageItem {
     func matchesDocumentState(_ other: CanvasImageItem) -> Bool {
         id == other.id &&
             assetReference == other.assetReference &&
+            videoSource == other.videoSource &&
             center == other.center &&
             size == other.size &&
             zIndex == other.zIndex &&

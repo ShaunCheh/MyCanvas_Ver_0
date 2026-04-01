@@ -17,6 +17,7 @@ struct BoardDocumentCatalogEntry {
 enum BoardStoreError: LocalizedError {
     case invalidBoardDirectory
     case invalidBoardImageAsset(filename: String)
+    case missingBoardVideoAsset(filename: String)
     case failedToEncodeImageAsset(itemID: UUID)
     case missingAnimatedImageSource(itemID: UUID)
 
@@ -26,6 +27,8 @@ enum BoardStoreError: LocalizedError {
             return "The board directory is invalid."
         case let .invalidBoardImageAsset(filename):
             return "The board image asset could not be decoded: \(filename)"
+        case let .missingBoardVideoAsset(filename):
+            return "The board video asset is missing: \(filename)"
         case let .failedToEncodeImageAsset(itemID):
             return "The image asset could not be encoded for board item \(itemID.uuidString)."
         case let .missingAnimatedImageSource(itemID):
@@ -61,6 +64,10 @@ enum BoardStore {
                 isDirectory: true
             )
 
+            try validateReferencedVideoAssets(
+                for: document.imageItemRecords,
+                in: assetsDirectoryURL
+            )
             let runtimeState = try BoardDocumentMapper.makeRuntimeState(from: document) { imageRecord in
                 let assetURL = assetsDirectoryURL.appendingPathComponent(imageRecord.assetFilename)
                 let assetData = try CoordinatedFileIO.readData(at: assetURL)
@@ -131,23 +138,36 @@ enum BoardStore {
             )
             let document = BoardDocumentMapper.makeDocument(from: persistedState)
 
-            var writtenAssetFilenames: Set<String> = []
+            var writtenPosterAssetFilenames: Set<String> = []
+            var validatedVideoAssetFilenames: Set<String> = []
             for item in persistedState.imageItems {
-                let assetFilename = item.assetReference.stableAssetFilename
-                guard writtenAssetFilenames.insert(assetFilename).inserted else {
-                    continue
+                let posterAssetFilename = item.assetReference.stableAssetFilename
+                if writtenPosterAssetFilenames.insert(posterAssetFilename).inserted {
+                    let assetURL = assetsDirectoryURL.appendingPathComponent(
+                        posterAssetFilename
+                    )
+                    try persistImageAssetIfNeeded(
+                        for: item,
+                        snapshot: persistedSnapshot,
+                        to: assetURL
+                    )
                 }
 
-                let assetURL = assetsDirectoryURL.appendingPathComponent(assetFilename)
-                try persistImageAssetIfNeeded(
-                    for: item,
-                    snapshot: persistedSnapshot,
-                    to: assetURL
-                )
+                if let sourceVideoFilename = item.sourceVideoFilename,
+                   validatedVideoAssetFilenames.insert(sourceVideoFilename).inserted
+                {
+                    let videoAssetURL = assetsDirectoryURL.appendingPathComponent(
+                        sourceVideoFilename
+                    )
+                    try validateVideoAssetExists(
+                        at: videoAssetURL,
+                        filename: sourceVideoFilename
+                    )
+                }
             }
 
             try removeOrphanedAssets(
-                keeping: Set(document.imageItemRecords.map(\.assetFilename)),
+                keeping: document.referencedAssetFilenames,
                 in: assetsDirectoryURL
             )
 
@@ -364,6 +384,39 @@ enum BoardStore {
                 throw BoardStoreError.missingAnimatedImageSource(itemID: item.id)
             }
             try CoordinatedFileIO.writeData(assetData, to: assetURL)
+        }
+    }
+
+    private static func validateReferencedVideoAssets(
+        for imageRecords: [BoardImageItemRecord],
+        in assetsDirectoryURL: URL
+    ) throws {
+        var validatedFilenames: Set<String> = []
+        for imageRecord in imageRecords {
+            guard let sourceVideoFilename = imageRecord.sourceVideoFilename else {
+                continue
+            }
+
+            guard validatedFilenames.insert(sourceVideoFilename).inserted else {
+                continue
+            }
+
+            let videoAssetURL = assetsDirectoryURL.appendingPathComponent(
+                sourceVideoFilename
+            )
+            try validateVideoAssetExists(
+                at: videoAssetURL,
+                filename: sourceVideoFilename
+            )
+        }
+    }
+
+    private static func validateVideoAssetExists(
+        at assetURL: URL,
+        filename: String
+    ) throws {
+        guard try CoordinatedFileIO.modificationDate(at: assetURL) != nil else {
+            throw BoardStoreError.missingBoardVideoAsset(filename: filename)
         }
     }
 
