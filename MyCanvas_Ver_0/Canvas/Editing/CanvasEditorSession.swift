@@ -557,15 +557,80 @@ final class CanvasEditorSession {
         )
     }
 
+    func videoEditorContext(
+        for itemID: CanvasItemID
+    ) throws -> CanvasVideoEditorContext {
+        guard let activeBoardID else {
+            throw CanvasVideoFrameServiceError.missingBoardIdentity
+        }
+        guard let item = scene.item(withID: itemID), item.isVideo else {
+            throw CanvasVideoFrameServiceError.invalidVideoItem(itemID: itemID)
+        }
+
+        return try CanvasVideoFrameService.editorContext(
+            for: item,
+            boardID: activeBoardID
+        )
+    }
+
+    func videoFrameImage(
+        for itemID: CanvasItemID,
+        at timeSeconds: Double,
+        quality: CanvasVideoFrameRenderQuality = .posterCommit
+    ) throws -> CanvasVideoFrameImage {
+        let editorContext = try videoEditorContext(for: itemID)
+        return try CanvasVideoFrameService.frameImage(
+            from: editorContext.sourceVideoURL,
+            at: timeSeconds,
+            quality: quality
+        )
+    }
+
+    func videoPreviewStrip(
+        for itemID: CanvasItemID,
+        frameCount: Int = 9,
+        maxPixelSize: Int = 160
+    ) throws -> CanvasVideoPreviewStrip {
+        let editorContext = try videoEditorContext(for: itemID)
+        return try CanvasVideoFrameService.previewStrip(
+            from: editorContext.sourceVideoURL,
+            frameCount: frameCount,
+            maxPixelSize: maxPixelSize
+        )
+    }
+
     func canUpdateVideoPoster(withID itemID: CanvasItemID) -> Bool {
         scene.item(withID: itemID)?.isVideo == true
     }
 
     @discardableResult
+    func commitVideoPosterFrame(
+        withID itemID: CanvasItemID,
+        frameImage: CanvasVideoFrameImage
+    ) throws -> CanvasVideoPosterUpdateResult {
+        let editorContext = try videoEditorContext(for: itemID)
+        let persistedPoster = try CanvasVideoFrameService.persistPosterAsset(
+            cgImage: frameImage.cgImage,
+            logicalPixelSize: frameImage.logicalPixelSize,
+            posterTimeSeconds: frameImage.actualTimeSeconds,
+            boardID: editorContext.boardID,
+            itemID: itemID
+        )
+        guard let updateResult = updateVideoPoster(
+            withID: itemID,
+            posterAsset: persistedPoster.asset,
+            posterTimeSeconds: persistedPoster.posterTimeSeconds
+        ) else {
+            throw CanvasVideoFrameServiceError.invalidVideoItem(itemID: itemID)
+        }
+
+        return updateResult
+    }
+
+    @discardableResult
     func updateVideoPoster(
         withID itemID: CanvasItemID,
-        posterCGImage: CGImage,
-        logicalPixelSize: CGSize? = nil,
+        posterAsset: CanvasImageAsset,
         posterTimeSeconds: Double
     ) -> CanvasVideoPosterUpdateResult? {
         guard canUpdateVideoPoster(withID: itemID) else {
@@ -575,8 +640,7 @@ final class CanvasEditorSession {
         let beforeSnapshot = currentBoardHistorySnapshot()
         guard let updatedItem = scene.updateVideoPoster(
             withID: itemID,
-            posterCGImage: posterCGImage,
-            logicalPixelSize: logicalPixelSize,
+            posterAsset: posterAsset,
             posterTimeSeconds: posterTimeSeconds
         ) else {
             return nil

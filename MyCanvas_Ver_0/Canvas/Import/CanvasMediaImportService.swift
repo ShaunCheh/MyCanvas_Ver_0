@@ -1,18 +1,14 @@
 import CoreGraphics
 import Foundation
-import ImageIO
 import UniformTypeIdentifiers
 
 enum CanvasMediaImportServiceError: LocalizedError {
     case missingBoardIDForVideoImport
-    case failedToEncodeVideoPoster
 
     var errorDescription: String? {
         switch self {
         case .missingBoardIDForVideoImport:
             return "Unable to determine the destination board for the imported video."
-        case .failedToEncodeVideoPoster:
-            return "Unable to create a poster image for the imported video."
         }
     }
 }
@@ -98,42 +94,39 @@ enum CanvasMediaImportService {
         into assetsDirectoryURL: URL
     ) throws -> ImportedVideoResult {
         let sourceVideoFilename = makeUniqueVideoFilename(for: video.source)
-        let posterImageFilename = makePosterFilename()
         let sourceVideoAssetURL = assetsDirectoryURL.appendingPathComponent(
             sourceVideoFilename
         )
-        let posterImageAssetURL = assetsDirectoryURL.appendingPathComponent(
-            posterImageFilename
-        )
 
-        try CoordinatedFileIO.copyItem(
-            at: video.source.localFileURL,
-            to: sourceVideoAssetURL
-        )
-        try CoordinatedFileIO.writeData(
-            makePNGData(for: video.posterCGImage),
-            to: posterImageAssetURL
-        )
-
-        let posterAsset = CanvasImageAsset.persistedStaticImage(
-            filename: posterImageFilename,
-            cgImage: video.posterCGImage,
-            logicalPixelSize: video.logicalPixelSize
-        )
-        let videoSource = CanvasVideoSource(
-            assetReference: .persisted(filename: sourceVideoFilename)
-        )
-        return ImportedVideoResult(
-            item: CanvasImportedVideoAsset(
-                asset: posterAsset,
-                videoSource: videoSource,
-                posterTimeSeconds: video.posterTimeSeconds
-            ),
-            createdAssetURLs: [
-                sourceVideoAssetURL,
-                posterImageAssetURL
-            ]
-        )
+        var createdAssetURLs: [URL] = []
+        do {
+            try CoordinatedFileIO.copyItem(
+                at: video.source.localFileURL,
+                to: sourceVideoAssetURL
+            )
+            createdAssetURLs.append(sourceVideoAssetURL)
+            let persistedPoster = try CanvasVideoFrameService.persistPosterAsset(
+                cgImage: video.posterCGImage,
+                logicalPixelSize: video.logicalPixelSize,
+                posterTimeSeconds: video.posterTimeSeconds,
+                to: assetsDirectoryURL
+            )
+            createdAssetURLs.append(persistedPoster.assetURL)
+            let videoSource = CanvasVideoSource(
+                assetReference: .persisted(filename: sourceVideoFilename)
+            )
+            return ImportedVideoResult(
+                item: CanvasImportedVideoAsset(
+                    asset: persistedPoster.asset,
+                    videoSource: videoSource,
+                    posterTimeSeconds: persistedPoster.posterTimeSeconds
+                ),
+                createdAssetURLs: createdAssetURLs
+            )
+        } catch {
+            cleanupImportedAssetURLs(createdAssetURLs)
+            throw error
+        }
     }
 
     private static func makeUniqueVideoFilename(
@@ -171,34 +164,6 @@ enum CanvasMediaImportService {
 
         return "mov"
     }
-
-    private static func makePosterFilename() -> String {
-        "\(UUID().uuidString).png"
-    }
-
-    private static func makePNGData(
-        for image: CGImage
-    ) throws -> Data {
-        let mutableData = NSMutableData()
-        guard
-            let destination = CGImageDestinationCreateWithData(
-                mutableData,
-                UTType.png.identifier as CFString,
-                1,
-                nil
-            )
-        else {
-            throw CanvasMediaImportServiceError.failedToEncodeVideoPoster
-        }
-
-        CGImageDestinationAddImage(destination, image, nil)
-        guard CGImageDestinationFinalize(destination) else {
-            throw CanvasMediaImportServiceError.failedToEncodeVideoPoster
-        }
-
-        return mutableData as Data
-    }
-
     private static func cleanupImportedAssetURLs(
         _ assetURLs: [URL]
     ) {

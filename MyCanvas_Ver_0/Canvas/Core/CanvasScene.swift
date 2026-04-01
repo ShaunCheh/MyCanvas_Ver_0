@@ -220,15 +220,13 @@ final class CanvasScene {
     @discardableResult
     func updateVideoPoster(
         withID id: CanvasImageItemID,
-        posterCGImage: CGImage,
-        logicalPixelSize: CGSize? = nil,
+        posterAsset: CanvasImageAsset,
         posterTimeSeconds: Double
     ) -> CanvasImageItem? {
         var updatedItem: CanvasImageItem?
         updateImageItem(withID: id) { item in
             guard let nextItem = item.updatingVideoPoster(
-                posterCGImage: posterCGImage,
-                logicalPixelSize: logicalPixelSize,
+                posterAsset: posterAsset,
                 posterTimeSeconds: posterTimeSeconds
             ) else {
                 return

@@ -420,10 +420,15 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             return
         }
 
-        let editorViewController = macOSVideoDisplayFrameEditorViewController(
-            itemID: itemID
-        )
-        presentAsSheet(editorViewController)
+        do {
+            let editorContext = try editorSession.videoEditorContext(for: itemID)
+            let editorViewController = macOSVideoDisplayFrameEditorViewController(
+                editorContext: editorContext
+            )
+            presentAsSheet(editorViewController)
+        } catch {
+            presentVideoEditorError(message: error.localizedDescription)
+        }
     }
 
     func canPerformCommand(_ commandID: CanvasCommandID) -> Bool {
@@ -2966,6 +2971,20 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = "Unable to Import Media"
+        alert.informativeText = message
+        alert.addButton(withTitle: "OK")
+
+        if let window = view.window {
+            alert.beginSheetModal(for: window)
+        } else {
+            alert.runModal()
+        }
+    }
+
+    private func presentVideoEditorError(message: String) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Unable to Open Video Editor"
         alert.informativeText = message
         alert.addButton(withTitle: "OK")
 

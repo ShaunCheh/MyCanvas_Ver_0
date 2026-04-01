@@ -221,21 +221,15 @@ struct CanvasImageItem {
     }
 
     func updatingVideoPoster(
-        posterCGImage: CGImage,
-        logicalPixelSize: CGSize? = nil,
-        posterTimeSeconds: Double,
-        assetID: UUID = UUID()
+        posterAsset: CanvasImageAsset,
+        posterTimeSeconds: Double
     ) -> CanvasImageItem? {
         guard isVideo else {
             return nil
         }
 
         var updatedItem = self
-        updatedItem.asset = CanvasImageAsset.transientStaticImage(
-            cgImage: posterCGImage,
-            logicalPixelSize: logicalPixelSize ?? asset.logicalPixelSize,
-            assetID: assetID
-        )
+        updatedItem.asset = posterAsset
         updatedItem.posterTimeSeconds = Self.sanitizedPosterTimeSeconds(
             posterTimeSeconds,
             isVideo: true

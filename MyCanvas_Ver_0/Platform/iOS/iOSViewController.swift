@@ -433,11 +433,16 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             return
         }
 
-        let editorViewController = iOSVideoDisplayFrameEditorViewController(
-            itemID: itemID
-        )
-        editorViewController.modalPresentationStyle = .fullScreen
-        present(editorViewController, animated: true)
+        do {
+            let editorContext = try editorSession.videoEditorContext(for: itemID)
+            let editorViewController = iOSVideoDisplayFrameEditorViewController(
+                editorContext: editorContext
+            )
+            editorViewController.modalPresentationStyle = .fullScreen
+            present(editorViewController, animated: true)
+        } catch {
+            presentVideoEditorError(message: error.localizedDescription)
+        }
     }
 
     override var canBecomeFirstResponder: Bool {
@@ -2902,6 +2907,16 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     private func presentImportError(message: String) {
         let alertController = UIAlertController(
             title: "Unable to Import Media",
+            message: message,
+            preferredStyle: .alert
+        )
+        alertController.addAction(UIAlertAction(title: "OK", style: .default))
+        present(alertController, animated: true)
+    }
+
+    private func presentVideoEditorError(message: String) {
+        let alertController = UIAlertController(
+            title: "Unable to Open Video Editor",
             message: message,
             preferredStyle: .alert
         )

@@ -1,4 +1,3 @@
-import AVFoundation
 import CoreGraphics
 import Foundation
 import ImageIO
@@ -228,12 +227,10 @@ struct CanvasResolvedImportVideo {
         shouldDeleteAfterImport: Bool = false,
         posterTimeSeconds: Double = 0
     ) {
-        let sanitizedPosterTimeSeconds = Self.sanitizedPosterTimeSeconds(
-            posterTimeSeconds
-        )
-        guard let posterCGImage = Self.posterCGImage(
+        guard let posterFrame = try? CanvasVideoFrameService.frameImage(
             from: localFileURL,
-            at: sanitizedPosterTimeSeconds
+            at: posterTimeSeconds,
+            quality: .posterCommit
         ) else {
             return nil
         }
@@ -244,39 +241,9 @@ struct CanvasResolvedImportVideo {
             filenameHint: filenameHint,
             shouldDeleteAfterImport: shouldDeleteAfterImport
         )
-        self.posterCGImage = posterCGImage
-        self.posterTimeSeconds = sanitizedPosterTimeSeconds
-        self.logicalPixelSize = CGSize(
-            width: posterCGImage.width,
-            height: posterCGImage.height
-        )
-    }
-
-    private static func posterCGImage(
-        from localFileURL: URL,
-        at posterTimeSeconds: Double
-    ) -> CGImage? {
-        let asset = AVURLAsset(url: localFileURL)
-        let imageGenerator = AVAssetImageGenerator(asset: asset)
-        imageGenerator.appliesPreferredTrackTransform = true
-        let requestedTime = CMTime(
-            seconds: posterTimeSeconds,
-            preferredTimescale: 600
-        )
-        return try? imageGenerator.copyCGImage(
-            at: requestedTime,
-            actualTime: nil
-        )
-    }
-
-    private static func sanitizedPosterTimeSeconds(
-        _ posterTimeSeconds: Double
-    ) -> Double {
-        guard posterTimeSeconds.isFinite else {
-            return 0
-        }
-
-        return max(posterTimeSeconds, 0)
+        self.posterCGImage = posterFrame.cgImage
+        self.posterTimeSeconds = posterFrame.actualTimeSeconds
+        self.logicalPixelSize = posterFrame.logicalPixelSize
     }
 }
 

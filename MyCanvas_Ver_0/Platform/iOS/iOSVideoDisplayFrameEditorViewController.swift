@@ -2,7 +2,7 @@
 import UIKit
 
 final class iOSVideoDisplayFrameEditorViewController: UIViewController {
-    private let itemID: CanvasItemID
+    private let editorContext: CanvasVideoEditorContext
     private let titleLabel: UILabel = {
         let label = UILabel()
         label.translatesAutoresizingMaskIntoConstraints = false
@@ -28,8 +28,8 @@ final class iOSVideoDisplayFrameEditorViewController: UIViewController {
         return button
     }()
 
-    init(itemID: CanvasItemID) {
-        self.itemID = itemID
+    init(editorContext: CanvasVideoEditorContext) {
+        self.editorContext = editorContext
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -42,8 +42,13 @@ final class iOSVideoDisplayFrameEditorViewController: UIViewController {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
         detailLabel.text =
-            "Video item: \(itemID.uuidString)\n" +
-            "The platform-specific frame controls will be added in the next phase."
+            "Video item: \(editorContext.itemID.uuidString)\n" +
+            "Source video: \(editorContext.sourceVideoFilename)\n" +
+            "Current poster: \(editorContext.currentPosterFilename)\n" +
+            "Poster time: \(formatVideoDisplayFrameEditorSeconds(editorContext.currentPosterTimeSeconds))\n" +
+            "Duration: \(formatVideoDisplayFrameEditorSeconds(editorContext.durationSeconds))\n" +
+            "Video size: \(Int(editorContext.naturalPixelSize.width)) x \(Int(editorContext.naturalPixelSize.height))\n" +
+            "The shared frame extraction and poster persistence services are ready. The full platform UI will be added in the next phase."
         closeButton.addTarget(
             self,
             action: #selector(handleCloseButtonTap),
@@ -87,5 +92,11 @@ final class iOSVideoDisplayFrameEditorViewController: UIViewController {
     private func handleCloseButtonTap() {
         dismiss(animated: true)
     }
+}
+
+private func formatVideoDisplayFrameEditorSeconds(
+    _ timeSeconds: Double
+) -> String {
+    String(format: "%.2fs", timeSeconds)
 }
 #endif
