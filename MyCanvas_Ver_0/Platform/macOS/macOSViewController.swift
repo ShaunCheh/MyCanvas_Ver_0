@@ -477,20 +477,28 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             return
         }
 
-        let editorViewController = macOSGIFFrameImportViewController(
-            itemID: itemID,
-            configuration: .current
-        ) { [weak self] frameIndices in
-            guard let self else {
-                throw macOSGIFFrameImportFlowError.presenterUnavailable
-            }
+        do {
+            let editorContext = try editorSession.gifFrameImportEditorContext(
+                for: itemID
+            )
+            let editorViewController = macOSGIFFrameImportViewController(
+                editorContext: editorContext
+            ) { [weak self] frameIndices in
+                guard let self else {
+                    throw macOSGIFFrameImportFlowError.presenterUnavailable
+                }
 
-            try self.performGIFFrameImport(
-                for: itemID,
-                frameIndices: frameIndices
+                try self.performGIFFrameImport(
+                    for: itemID,
+                    frameIndices: frameIndices
+                )
+            }
+            presentAsSheet(editorViewController)
+        } catch {
+            presentGIFFrameImportEditorError(
+                message: error.localizedDescription
             )
         }
-        presentAsSheet(editorViewController)
     }
 
     private func performGIFFrameImport(
@@ -3058,6 +3066,20 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = "Unable to Open Video Editor"
+        alert.informativeText = message
+        alert.addButton(withTitle: "OK")
+
+        if let window = view.window {
+            alert.beginSheetModal(for: window)
+        } else {
+            alert.runModal()
+        }
+    }
+
+    private func presentGIFFrameImportEditorError(message: String) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Unable to Open GIF Frame Importer"
         alert.informativeText = message
         alert.addButton(withTitle: "OK")
 
