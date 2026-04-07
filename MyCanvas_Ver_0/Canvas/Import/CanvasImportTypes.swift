@@ -270,27 +270,122 @@ enum CanvasImportPlacement: Equatable {
     case worldPoint(CGPoint)
 }
 
+struct CanvasImportGridConfiguration: Equatable {
+    let columns: Int
+    let horizontalSpacing: CGFloat
+    let verticalSpacing: CGFloat
+
+    init(
+        columns: Int,
+        horizontalSpacing: CGFloat,
+        verticalSpacing: CGFloat
+    ) {
+        self.columns = max(columns, 1)
+        self.horizontalSpacing = max(horizontalSpacing, 0)
+        self.verticalSpacing = max(verticalSpacing, 0)
+    }
+}
+
+enum CanvasImportRotationPolicy: Equatable {
+    case useAssetDefault
+    case fixed(CGFloat)
+
+    func resolvedRotationRadians(
+        assetDefaultRadians: CGFloat = 0
+    ) -> CGFloat {
+        let sanitizedDefaultRadians = assetDefaultRadians.isFinite
+            ? assetDefaultRadians
+            : 0
+        switch self {
+        case .useAssetDefault:
+            return sanitizedDefaultRadians
+        case let .fixed(rotationRadians):
+            return rotationRadians.isFinite
+                ? rotationRadians
+                : sanitizedDefaultRadians
+        }
+    }
+}
+
+struct CanvasImportPresentationTemplate: Equatable {
+    let size: CGSize
+    let cropRectNormalized: CanvasImageCropRect
+    let rotationPolicy: CanvasImportRotationPolicy
+
+    init(
+        size: CGSize,
+        cropRectNormalized: CanvasImageCropRect = .fullImage,
+        rotationPolicy: CanvasImportRotationPolicy = .useAssetDefault
+    ) {
+        self.size = Self.sanitizedSize(size)
+        self.cropRectNormalized = cropRectNormalized
+        self.rotationPolicy = rotationPolicy
+    }
+
+    func resolvedRotationRadians(
+        assetDefaultRadians: CGFloat = 0
+    ) -> CGFloat {
+        rotationPolicy.resolvedRotationRadians(
+            assetDefaultRadians: assetDefaultRadians
+        )
+    }
+
+    private static func sanitizedSize(_ size: CGSize) -> CGSize {
+        let sanitizedWidth = size.width.isFinite ? max(size.width, 1) : 1
+        let sanitizedHeight = size.height.isFinite ? max(size.height, 1) : 1
+        return CGSize(
+            width: sanitizedWidth,
+            height: sanitizedHeight
+        )
+    }
+}
+
 enum CanvasImportLayout: Equatable {
     case automatic
     case stacked
     case staggered(stepInWorld: CGPoint)
+    case grid(
+        columns: Int,
+        horizontalSpacing: CGFloat,
+        verticalSpacing: CGFloat
+    )
+
+    var gridConfiguration: CanvasImportGridConfiguration? {
+        guard case let .grid(
+            columns,
+            horizontalSpacing,
+            verticalSpacing
+        ) = self
+        else {
+            return nil
+        }
+
+        return CanvasImportGridConfiguration(
+            columns: columns,
+            horizontalSpacing: horizontalSpacing,
+            verticalSpacing: verticalSpacing
+        )
+    }
 }
 
 struct CanvasImportRequest {
     let items: [CanvasImportItem]
     let placement: CanvasImportPlacement
     let layout: CanvasImportLayout
+    let presentationTemplate: CanvasImportPresentationTemplate?
     let sourceDescription: String
 
     init(
         items: [CanvasImportItem],
         placement: CanvasImportPlacement = .cameraCenter,
         layout: CanvasImportLayout = .automatic,
+        presentationTemplate: CanvasImportPresentationTemplate? = nil,
         sourceDescription: String = "external source"
     ) {
         self.items = items
         self.placement = placement
         self.layout = layout
+        self.presentationTemplate = presentationTemplate
         self.sourceDescription = sourceDescription
     }
 
@@ -298,12 +393,14 @@ struct CanvasImportRequest {
         images: [CanvasResolvedImportImage],
         placement: CanvasImportPlacement = .cameraCenter,
         layout: CanvasImportLayout = .automatic,
+        presentationTemplate: CanvasImportPresentationTemplate? = nil,
         sourceDescription: String = "external source"
     ) {
         self.init(
             items: images.map { .image($0) },
             placement: placement,
             layout: layout,
+            presentationTemplate: presentationTemplate,
             sourceDescription: sourceDescription
         )
     }

@@ -1181,6 +1181,17 @@ final class CanvasEditorSession {
             return .stacked
         case let .staggered(stepInWorld):
             return .staggered(stepInWorld: stepInWorld)
+        case let .grid(columns, horizontalSpacing, verticalSpacing):
+            let gridConfiguration = CanvasImportGridConfiguration(
+                columns: columns,
+                horizontalSpacing: horizontalSpacing,
+                verticalSpacing: verticalSpacing
+            )
+            return .grid(
+                columns: gridConfiguration.columns,
+                horizontalSpacing: gridConfiguration.horizontalSpacing,
+                verticalSpacing: gridConfiguration.verticalSpacing
+            )
         }
     }
 
@@ -1197,6 +1208,11 @@ final class CanvasEditorSession {
                 x: stepInWorld.x * multiplier,
                 y: stepInWorld.y * multiplier
             )
+        case .grid:
+            // Phase 2 only extends the import model contract. Phase 3 wires grid
+            // positioning into appendImportedMedia once item sizing/template
+            // semantics are available at the execution layer.
+            return .zero
         }
     }
 
