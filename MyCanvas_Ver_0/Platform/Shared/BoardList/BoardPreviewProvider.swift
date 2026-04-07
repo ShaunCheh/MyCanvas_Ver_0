@@ -105,6 +105,14 @@ final class BoardPreviewProvider {
                 targetPixelSize: targetPixelSize
             )
         else {
+            logBoardPreviewProviderDecision(
+                phase: "requestThumbnail",
+                boardID: item.boardID,
+                revisionToken: item.revisionToken,
+                targetPixelSize: targetPixelSize,
+                source: "skip",
+                reason: "invalid-cache-key"
+            )
             return requestToken
         }
 
@@ -125,6 +133,14 @@ final class BoardPreviewProvider {
             )
             callbackQueue.async { [weak requestToken] in
                 guard let requestToken, requestToken.isCancelled == false else {
+                    logBoardPreviewProviderDecision(
+                        phase: "requestThumbnail",
+                        boardID: item.boardID,
+                        revisionToken: item.revisionToken,
+                        targetPixelSize: cacheKey.pixelSize,
+                        source: "callback-drop",
+                        reason: "token-cancelled-before-cache-delivery"
+                    )
                     return
                 }
 
@@ -159,22 +175,54 @@ final class BoardPreviewProvider {
                     cacheKey: cacheKey,
                     cancellationCheck: cancellationCheck
                 ) else {
+                    logBoardPreviewProviderDecision(
+                        phase: "requestThumbnail",
+                        boardID: item.boardID,
+                        revisionToken: item.revisionToken,
+                        targetPixelSize: cacheKey.pixelSize,
+                        source: "render-miss",
+                        reason: "load-best-available-returned-nil"
+                    )
                     return
                 }
 
                 guard operation.isCancelled == false, requestToken.isCancelled == false else {
+                    logBoardPreviewProviderDecision(
+                        phase: "requestThumbnail",
+                        boardID: item.boardID,
+                        revisionToken: item.revisionToken,
+                        targetPixelSize: cacheKey.pixelSize,
+                        source: "callback-drop",
+                        reason: "cancelled-after-render-before-delivery"
+                    )
                     return
                 }
 
                 self.thumbnailCache.insert(renderedImage, for: cacheKey)
                 self.callbackQueue.async { [weak requestToken] in
                     guard let requestToken, requestToken.isCancelled == false else {
+                        logBoardPreviewProviderDecision(
+                            phase: "requestThumbnail",
+                            boardID: item.boardID,
+                            revisionToken: item.revisionToken,
+                            targetPixelSize: cacheKey.pixelSize,
+                            source: "callback-drop",
+                            reason: "token-cancelled-before-render-delivery"
+                        )
                         return
                     }
 
                     completion(.thumbnail(renderedImage, item.previewSeed))
                 }
             } catch BoardThumbnailRendererError.cancelled {
+                logBoardPreviewProviderDecision(
+                    phase: "requestThumbnail",
+                    boardID: item.boardID,
+                    revisionToken: item.revisionToken,
+                    targetPixelSize: cacheKey.pixelSize,
+                    source: "cancelled",
+                    reason: "operation-or-token-cancelled"
+                )
                 return
             } catch {
                 print(

@@ -141,7 +141,7 @@ final class macOSBoardCollectionItem: NSCollectionViewItem, NSTextFieldDelegate 
             logRenameTrace("prepareForReuse")
         }
         invalidateTitleEditingFocusRequests()
-        cancelThumbnailRequest()
+        cancelThumbnailRequest(reason: "prepareForReuse")
         representedEntryID = nil
         representedBoardID = nil
         representedTitle = nil
@@ -174,7 +174,7 @@ final class macOSBoardCollectionItem: NSCollectionViewItem, NSTextFieldDelegate 
         onRenameSubmitted: RenameSubmitHandler? = nil,
         onRenameCancelled: RenameCancelHandler? = nil
     ) {
-        cancelThumbnailRequest()
+        cancelThumbnailRequest(reason: "configure")
         representedEntryID = entry.id
         representedBoardID = entry.boardID
         representedTitle = entry.title
@@ -202,6 +202,11 @@ final class macOSBoardCollectionItem: NSCollectionViewItem, NSTextFieldDelegate 
                 "displayMode=\(displayMode.title) " +
                 "isEditingTitle=\(isEditingTitle)"
         )
+        logThumbnailTrace(
+            "configure",
+            extra:
+                "previewContent=\(describeThumbnailPreviewContent(previewContent))"
+        )
     }
 
     func beginTitleEditing() {
@@ -221,7 +226,15 @@ final class macOSBoardCollectionItem: NSCollectionViewItem, NSTextFieldDelegate 
         )
     }
 
-    func cancelThumbnailRequest() {
+    func cancelThumbnailRequest(reason: String = "unspecified") {
+        guard thumbnailRequestToken != nil else {
+            return
+        }
+
+        logThumbnailTrace(
+            "cancelThumbnailRequest",
+            extra: "reason=\(reason)"
+        )
         thumbnailRequestToken?.cancel()
         thumbnailRequestToken = nil
     }
@@ -246,21 +259,76 @@ final class macOSBoardCollectionItem: NSCollectionViewItem, NSTextFieldDelegate 
         for item: BoardCatalogItem,
         displayMode: BoardListDisplayMode
     ) {
-        cancelThumbnailRequest()
+        cancelThumbnailRequest(reason: "requestThumbnail-restart")
+        let targetPixelSize = targetThumbnailPixelSize(for: displayMode)
+        logThumbnailTrace(
+            "requestThumbnail",
+            extra:
+                "requestedBoardID=\(item.boardID.uuidString) " +
+                "requestedRevision=\(item.revisionToken) " +
+                "targetPixelSize=\(describeThumbnailPixelSize(targetPixelSize))"
+        )
 
         thumbnailRequestToken = previewProvider.requestThumbnail(
             for: item,
-            targetPixelSize: targetThumbnailPixelSize(for: displayMode)
+            targetPixelSize: targetPixelSize
         ) { [weak self] previewContent in
-            guard
-                let self,
-                let previewContent,
-                self.representedBoardID == item.boardID,
-                self.representedRevisionToken == item.revisionToken
-            else {
+            guard let self else {
+                print(
+                    "[BoardList][macOS][ThumbnailTrace][Item] " +
+                        "t=\(boardListSelectionTraceTimestamp()) " +
+                        "phase=requestThumbnailCallbackDropped " +
+                        "requestedBoardID=\(item.boardID.uuidString) " +
+                        "requestedRevision=\(item.revisionToken) " +
+                        "reason=item-deallocated"
+                )
                 return
             }
 
+            guard let previewContent else {
+                self.logThumbnailTrace(
+                    "requestThumbnailCallbackDropped",
+                    extra:
+                        "requestedBoardID=\(item.boardID.uuidString) " +
+                        "requestedRevision=\(item.revisionToken) " +
+                        "reason=nil-preview-content"
+                )
+                return
+            }
+
+            guard self.representedBoardID == item.boardID else {
+                self.logThumbnailTrace(
+                    "requestThumbnailCallbackDropped",
+                    extra:
+                        "requestedBoardID=\(item.boardID.uuidString) " +
+                        "currentBoardID=\(self.representedBoardID?.uuidString ?? "nil") " +
+                        "requestedRevision=\(item.revisionToken) " +
+                        "currentRevision=\(self.representedRevisionToken ?? "nil") " +
+                        "reason=board-id-mismatch"
+                )
+                return
+            }
+
+            guard self.representedRevisionToken == item.revisionToken else {
+                self.logThumbnailTrace(
+                    "requestThumbnailCallbackDropped",
+                    extra:
+                        "requestedBoardID=\(item.boardID.uuidString) " +
+                        "currentBoardID=\(self.representedBoardID?.uuidString ?? "nil") " +
+                        "requestedRevision=\(item.revisionToken) " +
+                        "currentRevision=\(self.representedRevisionToken ?? "nil") " +
+                        "reason=revision-mismatch"
+                )
+                return
+            }
+
+            self.logThumbnailTrace(
+                "requestThumbnailApply",
+                extra:
+                    "requestedBoardID=\(item.boardID.uuidString) " +
+                    "requestedRevision=\(item.revisionToken) " +
+                    "previewContent=\(self.describeThumbnailPreviewContent(previewContent))"
+            )
             self.previewView.apply(content: previewContent)
         }
     }
@@ -440,6 +508,37 @@ final class macOSBoardCollectionItem: NSCollectionViewItem, NSTextFieldDelegate 
                 "highlightState=\(describeSelectionTraceHighlightState(highlightState))" +
                 extraSuffix
         )
+    }
+
+    private func logThumbnailTrace(_ phase: String, extra: String = "") {
+        let extraSuffix = extra.isEmpty ? "" : " \(extra)"
+        print(
+            "[BoardList][macOS][ThumbnailTrace][Item] " +
+                "t=\(boardListSelectionTraceTimestamp()) " +
+                "phase=\(phase) " +
+                "entryID=\(describeSelectionTraceEntryID(representedEntryID)) " +
+                "boardID=\(representedBoardID?.uuidString ?? "nil") " +
+                "revision=\(representedRevisionToken ?? "nil") " +
+                "displayMode=\(representedDisplayMode?.title ?? "nil")" +
+                extraSuffix
+        )
+    }
+
+    private func describeThumbnailPreviewContent(
+        _ content: BoardPreviewContent
+    ) -> String {
+        switch content {
+        case .empty:
+            return "empty"
+        case .geometry:
+            return "geometry"
+        case let .thumbnail(image, _):
+            return "thumbnail(\(image.width)x\(image.height))"
+        }
+    }
+
+    private func describeThumbnailPixelSize(_ size: CGSize) -> String {
+        "{\(String(format: "%.2f", Double(size.width))), \(String(format: "%.2f", Double(size.height)))}"
     }
 
     private func describeSelectionTraceEntryID(_ entryID: BoardListEntryID?) -> String {

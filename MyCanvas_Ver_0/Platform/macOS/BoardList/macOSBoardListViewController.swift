@@ -313,6 +313,48 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
         String(format: "(x=%.1f,y=%.1f)", point.x, point.y)
     }
 
+    private func logThumbnailTrace(
+        phase: String,
+        boardID: UUID,
+        revisionToken: String,
+        targetPixelSize: CGSize,
+        previewContent: BoardPreviewContent,
+        indexPath: IndexPath,
+        reason: String?
+    ) {
+        var message =
+            "[BoardList][macOS][ThumbnailTrace][Controller] " +
+            "t=\(selectionTraceTimestamp()) " +
+            "phase=\(phase) " +
+            "boardID=\(boardID.uuidString) " +
+            "revision=\(revisionToken) " +
+            "displayMode=\(displayMode.title) " +
+            "indexPath=\(describeSelectionTraceIndexPath(indexPath)) " +
+            "targetPixelSize=\(describeBoardListThumbnailSize(targetPixelSize)) " +
+            "previewContent=\(describeBoardListPreviewContent(previewContent))"
+        if let reason {
+            message += " reason=\(reason)"
+        }
+        print(message)
+    }
+
+    private func describeBoardListPreviewContent(
+        _ previewContent: BoardPreviewContent
+    ) -> String {
+        switch previewContent {
+        case .empty:
+            return "empty"
+        case .geometry:
+            return "geometry"
+        case let .thumbnail(image, _):
+            return "thumbnail(\(image.width)x\(image.height))"
+        }
+    }
+
+    private func describeBoardListThumbnailSize(_ size: CGSize) -> String {
+        "{\(String(format: "%.2f", Double(size.width))), \(String(format: "%.2f", Double(size.height)))}"
+    }
+
     private func describeSelectionTraceIndexPaths(_ indexPaths: Set<IndexPath>) -> String {
         guard indexPaths.isEmpty == false else {
             return "[]"
@@ -1183,6 +1225,15 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
                 for: catalogItem,
                 targetPixelSize: targetPixelSize
             )
+            logThumbnailTrace(
+                phase: "configureItemImmediatePreview",
+                boardID: catalogItem.boardID,
+                revisionToken: catalogItem.revisionToken,
+                targetPixelSize: targetPixelSize,
+                previewContent: previewContent,
+                indexPath: indexPath,
+                reason: nil
+            )
         } else {
             previewContent = .empty
         }
@@ -1229,10 +1280,30 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
         if entry.canRequestPreview,
            let catalogItem = entry.catalogItem,
            previewContent.isThumbnail == false {
+            logThumbnailTrace(
+                phase: "configureItemAsyncRequest",
+                boardID: catalogItem.boardID,
+                revisionToken: catalogItem.revisionToken,
+                targetPixelSize: item.targetThumbnailPixelSize(for: displayMode),
+                previewContent: previewContent,
+                indexPath: indexPath,
+                reason: "immediate-preview-not-thumbnail"
+            )
             item.requestThumbnail(
                 using: previewProvider,
                 for: catalogItem,
                 displayMode: displayMode
+            )
+        } else if entry.canRequestPreview,
+                  let catalogItem = entry.catalogItem {
+            logThumbnailTrace(
+                phase: "configureItemAsyncRequestSkipped",
+                boardID: catalogItem.boardID,
+                revisionToken: catalogItem.revisionToken,
+                targetPixelSize: item.targetThumbnailPixelSize(for: displayMode),
+                previewContent: previewContent,
+                indexPath: indexPath,
+                reason: "immediate-preview-already-thumbnail"
             )
         }
         return item
