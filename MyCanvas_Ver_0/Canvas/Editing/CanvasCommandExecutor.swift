@@ -56,7 +56,8 @@ final class CanvasCommandExecutor {
             let importedItems = session.appendImportedMedia(
                 request.items,
                 placement: request.placement,
-                layout: request.layout
+                layout: request.layout,
+                presentationTemplate: request.presentationTemplate
             )
             let importedItemCount = importedItems.count
             let itemLabel = importedItemCount == 1 ? "item" : "items"

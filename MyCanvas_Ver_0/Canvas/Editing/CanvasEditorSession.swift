@@ -12,6 +12,16 @@ struct CanvasVideoPosterUpdateResult {
     let refreshReason: String
 }
 
+private struct CanvasPreparedImportItem {
+    let asset: CanvasImageAsset
+    let transientPayload: CanvasTransientImageAssetPayload?
+    let videoSource: CanvasVideoSource?
+    let posterTimeSeconds: Double?
+    let size: CGSize
+    let cropRectNormalized: CanvasImageCropRect
+    let rotationRadians: CGFloat
+}
+
 final class CanvasEditorSession {
     let scene = CanvasScene()
     var camera = CanvasCamera()
@@ -1197,7 +1207,8 @@ final class CanvasEditorSession {
 
     private func importOffset(
         forItemAt index: Int,
-        layout: CanvasImportLayout
+        layout: CanvasImportLayout,
+        gridCellSize: CGSize? = nil
     ) -> CGPoint {
         switch layout {
         case .automatic, .stacked:
@@ -1209,11 +1220,93 @@ final class CanvasEditorSession {
                 y: stepInWorld.y * multiplier
             )
         case .grid:
-            // Phase 2 only extends the import model contract. Phase 3 wires grid
-            // positioning into appendImportedMedia once item sizing/template
-            // semantics are available at the execution layer.
-            return .zero
+            guard
+                let gridConfiguration = layout.gridConfiguration,
+                let gridCellSize
+            else {
+                return .zero
+            }
+
+            let columnIndex = index % gridConfiguration.columns
+            let rowIndex = index / gridConfiguration.columns
+            return CGPoint(
+                x: CGFloat(columnIndex) * (
+                    gridCellSize.width + gridConfiguration.horizontalSpacing
+                ),
+                y: CGFloat(rowIndex) * (
+                    gridCellSize.height + gridConfiguration.verticalSpacing
+                )
+            )
         }
+    }
+
+    private func resolvedImportPresentationTemplate(
+        _ presentationTemplate: CanvasImportPresentationTemplate?,
+        defaultSize: CGSize
+    ) -> CanvasImportPresentationTemplate {
+        presentationTemplate ?? CanvasImportPresentationTemplate(
+            size: defaultSize
+        )
+    }
+
+    private func preparedImportItem(
+        from item: CanvasImportItem,
+        presentationTemplate: CanvasImportPresentationTemplate?
+    ) -> CanvasPreparedImportItem {
+        switch item {
+        case let .image(image):
+            let importRegistration = image.makeTransientImageAssetRegistration()
+            let asset = importRegistration.asset
+            let presentationTemplate = resolvedImportPresentationTemplate(
+                presentationTemplate,
+                defaultSize: normalizedDisplaySize(for: asset.logicalPixelSize)
+            )
+            return CanvasPreparedImportItem(
+                asset: asset,
+                transientPayload: importRegistration.payload,
+                videoSource: nil,
+                posterTimeSeconds: nil,
+                size: presentationTemplate.size,
+                cropRectNormalized: presentationTemplate.cropRectNormalized,
+                rotationRadians: presentationTemplate.resolvedRotationRadians(
+                    assetDefaultRadians: 0
+                )
+            )
+        case let .video(video):
+            let presentationTemplate = resolvedImportPresentationTemplate(
+                presentationTemplate,
+                defaultSize: normalizedDisplaySize(
+                    for: video.asset.logicalPixelSize
+                )
+            )
+            return CanvasPreparedImportItem(
+                asset: video.asset,
+                transientPayload: nil,
+                videoSource: video.videoSource,
+                posterTimeSeconds: video.posterTimeSeconds,
+                size: presentationTemplate.size,
+                cropRectNormalized: presentationTemplate.cropRectNormalized,
+                rotationRadians: presentationTemplate.resolvedRotationRadians(
+                    assetDefaultRadians: 0
+                )
+            )
+        }
+    }
+
+    private func gridCellSize(
+        for preparedItems: [CanvasPreparedImportItem],
+        layout: CanvasImportLayout
+    ) -> CGSize? {
+        guard layout.gridConfiguration != nil else {
+            return nil
+        }
+
+        let maxWidth = preparedItems.map(\.size.width).max() ?? 1
+        let maxHeight = preparedItems.map(\.size.height).max() ?? 1
+        return CGSize(
+            width: max(maxWidth, 1),
+            height: max(maxHeight, 1)
+        )
     }
 
     private func importedMediaChangeReason(for itemCount: Int) -> String {
@@ -1258,7 +1351,8 @@ final class CanvasEditorSession {
     func appendImportedMedia(
         _ items: [CanvasImportItem],
         placement: CanvasImportPlacement = .cameraCenter,
-        layout: CanvasImportLayout = .automatic
+        layout: CanvasImportLayout = .automatic,
+        presentationTemplate: CanvasImportPresentationTemplate? = nil
     ) -> [CanvasImageItem] {
         guard items.isEmpty == false else {
             return []
@@ -1271,49 +1365,45 @@ final class CanvasEditorSession {
             itemCount: items.count
         )
         let startingZIndex = nextImageZIndex()
+        let preparedItems = items.map { item in
+            preparedImportItem(
+                from: item,
+                presentationTemplate: presentationTemplate
+            )
+        }
+        let resolvedGridCellSize = gridCellSize(
+            for: preparedItems,
+            layout: resolvedLayout
+        )
         var importedItems: [CanvasImageItem] = []
         importedItems.reserveCapacity(items.count)
 
-        for (index, item) in items.enumerated() {
+        for (index, preparedItem) in preparedItems.enumerated() {
             let offset = importOffset(
                 forItemAt: index,
-                layout: resolvedLayout
+                layout: resolvedLayout,
+                gridCellSize: resolvedGridCellSize
             )
-            let importedItem: CanvasImageItem
-            switch item {
-            case let .image(image):
-                let importRegistration = image.makeTransientImageAssetRegistration()
-                let asset = importRegistration.asset
-                if let payload = importRegistration.payload {
-                    transientImageAssetPayloads[payload.assetReference] = payload
-                }
-                importedItem = CanvasImageItem(
-                    asset: asset,
-                    center: CGPoint(
-                        x: importCenter.x + offset.x,
-                        y: importCenter.y + offset.y
-                    ),
-                    size: normalizedDisplaySize(for: asset.logicalPixelSize),
-                    zIndex: startingZIndex + CGFloat(index)
-                )
-            case let .video(video):
-                importedItem = CanvasImageItem(
-                    asset: video.asset,
-                    videoSource: video.videoSource,
-                    posterTimeSeconds: video.posterTimeSeconds,
-                    center: CGPoint(
-                        x: importCenter.x + offset.x,
-                        y: importCenter.y + offset.y
-                    ),
-                    size: normalizedDisplaySize(
-                        for: video.asset.logicalPixelSize
-                    ),
-                    zIndex: startingZIndex + CGFloat(index)
-                )
+            if let payload = preparedItem.transientPayload {
+                transientImageAssetPayloads[payload.assetReference] = payload
             }
 
+            let importedItem = CanvasImageItem(
+                asset: preparedItem.asset,
+                videoSource: preparedItem.videoSource,
+                posterTimeSeconds: preparedItem.posterTimeSeconds,
+                center: CGPoint(
+                    x: importCenter.x + offset.x,
+                    y: importCenter.y + offset.y
+                ),
+                size: preparedItem.size,
+                zIndex: startingZIndex + CGFloat(index),
+                cropRectNormalized: preparedItem.cropRectNormalized,
+                rotationRadians: preparedItem.rotationRadians
+            )
+
             scene.append(importedItem)
-            expandBoardIfNeeded(toInclude: importedItem.worldFrame)
+            expandBoardIfNeeded(toInclude: importedItem.worldBounds)
             importedItems.append(importedItem)
         }
 

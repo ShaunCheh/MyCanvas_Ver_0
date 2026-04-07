@@ -4,16 +4,16 @@ overview: 按你选定的方案 2，扩展通用 `importMedia` 落板链路来�
 todos:
   - id: phase0-config
     content: 定义 GIF 多选帧导入的共享配置源，统一 4 列默认值、缩略图尺寸和网格间距
-    status: pending
+    status: completed
   - id: phase1-gif-service
     content: 抽出共享 GIF 帧服务，统一元数据、缩略图和全尺寸帧解码
-    status: pending
+    status: completed
   - id: phase2-import-model
     content: 扩展 CanvasImportLayout 与 CanvasImportRequest，支持通用网格布局和导入几何模板
-    status: pending
+    status: completed
   - id: phase3-session-placement
     content: 改造 CanvasEditorSession.appendImportedMedia，使其支持 grid 布局和 size/crop/rotation 模板继承
-    status: pending
+    status: completed
   - id: phase4-gif-request-builder
     content: 实现从已选 GIF 和多选 frameIndex 构造静态图片导入请求的共享 builder
     status: pending
