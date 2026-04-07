@@ -129,8 +129,11 @@ struct CanvasResolvedImportImage {
         filenameHint: String? = nil
     ) {
         guard
-            let imageSource = CGImageSourceCreateWithData(data as CFData, nil),
-            let cgImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil)
+            let imageSource = CanvasGIFFrameService.makeImageSource(from: data),
+            let cgImage = CanvasGIFFrameService.decodeFrame(
+                at: 0,
+                from: imageSource
+            )
         else {
             return nil
         }
@@ -142,10 +145,9 @@ struct CanvasResolvedImportImage {
         let contentType = CanvasTypeIdentifierResolver.contentType(
             for: resolvedTypeIdentifier
         )
-        let animatedMetadata = Self.animatedMetadata(
-            from: imageSource,
-            contentType: contentType
-        )
+        let animatedMetadata = contentType?.conforms(to: .gif) == true
+            ? CanvasGIFFrameService.animatedMetadata(from: imageSource)
+            : nil
         let assetKind: CanvasImageAssetKind =
             contentType?.conforms(to: .gif) == true &&
             animatedMetadata != nil
@@ -212,58 +214,6 @@ struct CanvasResolvedImportImage {
         return CanvasTypeIdentifierResolver.resolvedIdentifier(
             preferredTypeIdentifier: imageSourceTypeIdentifier
         ) ?? imageSourceTypeIdentifier
-    }
-
-    private static func animatedMetadata(
-        from imageSource: CGImageSource,
-        contentType: UTType?
-    ) -> CanvasAnimatedImageMetadata? {
-        guard contentType?.conforms(to: .gif) == true else {
-            return nil
-        }
-
-        let frameCount = CGImageSourceGetCount(imageSource)
-        guard frameCount > 1 else {
-            return nil
-        }
-
-        let properties = CGImageSourceCopyProperties(
-            imageSource,
-            nil
-        ) as? [CFString: Any]
-        let gifProperties = properties?[kCGImagePropertyGIFDictionary] as? [CFString: Any]
-        let loopCount = gifProperties?[kCGImagePropertyGIFLoopCount] as? Int
-        let frameDelayTimes = (0..<frameCount).map { frameIndex in
-            frameDelay(
-                forFrameAt: frameIndex,
-                imageSource: imageSource
-            )
-        }
-        return CanvasAnimatedImageMetadata(
-            frameCount: frameCount,
-            frameDelayTimes: frameDelayTimes,
-            loopCount: loopCount
-        )
-    }
-
-    private static func frameDelay(
-        forFrameAt frameIndex: Int,
-        imageSource: CGImageSource
-    ) -> TimeInterval {
-        let properties = CGImageSourceCopyPropertiesAtIndex(
-            imageSource,
-            frameIndex,
-            nil
-        ) as? [CFString: Any]
-        let gifProperties = properties?[kCGImagePropertyGIFDictionary] as? [CFString: Any]
-        let unclampedDelay = gifProperties?[kCGImagePropertyGIFUnclampedDelayTime] as? Double
-        let clampedDelay = gifProperties?[kCGImagePropertyGIFDelayTime] as? Double
-        let rawDelay = unclampedDelay ?? clampedDelay ?? 0.1
-        guard rawDelay.isFinite, rawDelay > 0.011 else {
-            return 0.1
-        }
-
-        return rawDelay
     }
 }
 

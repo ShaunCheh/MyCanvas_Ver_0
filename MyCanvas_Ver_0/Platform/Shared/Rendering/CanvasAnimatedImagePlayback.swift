@@ -241,27 +241,22 @@ private final class CanvasGIFPlaybackController {
 
     init?(source: CanvasAnimatedImagePlaybackSource) {
         guard
-            let imageSource = CGImageSourceCreateWithData(source.data as CFData, nil)
+            let imageSource = CanvasGIFFrameService.makeImageSource(
+                from: source.data
+            ),
+            let metadata = CanvasGIFFrameService.playbackMetadata(
+                from: imageSource,
+                importedMetadata: source.animatedMetadata
+            )
         else {
             return nil
         }
 
-        let frameCount = CGImageSourceGetCount(imageSource)
-        guard frameCount > 1 else {
-            return nil
-        }
-
-        let metadata = Self.makePlaybackMetadata(
-            from: source.animatedMetadata,
-            imageSource: imageSource,
-            frameCount: frameCount
-        )
-
         assetReference = source.assetReference
         self.imageSource = imageSource
-        self.frameCount = frameCount
-        frameDelayTimes = metadata.frameDelayTimes
-        loopCount = metadata.loopCount
+        self.frameCount = metadata.frameCount
+        self.frameDelayTimes = metadata.frameDelayTimes
+        self.loopCount = metadata.loopCount
     }
 
     var hasBindings: Bool {
@@ -365,13 +360,10 @@ private final class CanvasGIFPlaybackController {
     }
 
     private func decodeFrame(at frameIndex: Int) -> CGImage? {
-        let options = [
-            kCGImageSourceShouldCacheImmediately: true
-        ] as CFDictionary
-        return CGImageSourceCreateImageAtIndex(
-            imageSource,
-            frameIndex,
-            options
+        CanvasGIFFrameService.decodeFrame(
+            at: frameIndex,
+            from: imageSource,
+            maxPixelSize: nil
         )
     }
 
@@ -387,60 +379,4 @@ private final class CanvasGIFPlaybackController {
         }
     }
 
-    private static func makePlaybackMetadata(
-        from importedMetadata: CanvasAnimatedImageMetadata?,
-        imageSource: CGImageSource,
-        frameCount: Int
-    ) -> CanvasAnimatedImageMetadata {
-        let frameDelayTimes: [TimeInterval]
-        if let importedMetadata,
-           importedMetadata.frameCount == frameCount,
-           importedMetadata.frameDelayTimes.count == frameCount
-        {
-            frameDelayTimes = importedMetadata.frameDelayTimes
-        } else {
-            frameDelayTimes = (0..<frameCount).map { frameIndex in
-                frameDelay(forFrameAt: frameIndex, imageSource: imageSource)
-            }
-        }
-
-        let loopCount = importedMetadata?.loopCount ?? gifLoopCount(
-            from: imageSource
-        )
-
-        return CanvasAnimatedImageMetadata(
-            frameCount: frameCount,
-            frameDelayTimes: frameDelayTimes,
-            loopCount: loopCount
-        )
-    }
-
-    private static func gifLoopCount(from imageSource: CGImageSource) -> Int? {
-        let properties = CGImageSourceCopyProperties(
-            imageSource,
-            nil
-        ) as? [CFString: Any]
-        let gifProperties = properties?[kCGImagePropertyGIFDictionary] as? [CFString: Any]
-        return gifProperties?[kCGImagePropertyGIFLoopCount] as? Int
-    }
-
-    private static func frameDelay(
-        forFrameAt frameIndex: Int,
-        imageSource: CGImageSource
-    ) -> TimeInterval {
-        let properties = CGImageSourceCopyPropertiesAtIndex(
-            imageSource,
-            frameIndex,
-            nil
-        ) as? [CFString: Any]
-        let gifProperties = properties?[kCGImagePropertyGIFDictionary] as? [CFString: Any]
-        let unclampedDelay = gifProperties?[kCGImagePropertyGIFUnclampedDelayTime] as? Double
-        let clampedDelay = gifProperties?[kCGImagePropertyGIFDelayTime] as? Double
-        let rawDelay = unclampedDelay ?? clampedDelay ?? 0.1
-        guard rawDelay.isFinite, rawDelay > 0.011 else {
-            return 0.1
-        }
-
-        return rawDelay
-    }
 }
