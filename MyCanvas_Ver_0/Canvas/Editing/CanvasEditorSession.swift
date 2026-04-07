@@ -583,6 +583,63 @@ final class CanvasEditorSession {
         )
     }
 
+    func gifFrameImportRequest(
+        for itemID: CanvasItemID,
+        frameIndices: [Int],
+        configuration: CanvasGIFFrameImportConfiguration = .current,
+        userDefaults: UserDefaults = .standard
+    ) throws -> CanvasImportRequest {
+        guard
+            let sourceItem = scene.item(withID: itemID),
+            sourceItem.isVideo == false,
+            sourceItem.assetKind == .animatedGIF
+        else {
+            throw CanvasGIFFrameImportBuilderError.invalidAnimatedGIFItem(
+                itemID: itemID
+            )
+        }
+
+        let sourceData = try gifFrameImportSourceData(
+            for: sourceItem,
+            userDefaults: userDefaults
+        )
+        return try CanvasGIFFrameImportBuilder.makeImportRequest(
+            from: sourceItem,
+            gifData: sourceData,
+            selectedFrameIndices: frameIndices,
+            configuration: configuration
+        )
+    }
+
+    private func gifFrameImportSourceData(
+        for sourceItem: CanvasImageItem,
+        userDefaults: UserDefaults = .standard
+    ) throws -> Data {
+        if let sourceData = transientImageAssetPayload(
+            for: sourceItem.assetReference
+        )?.source?.data {
+            return sourceData
+        }
+
+        guard let activeBoardID else {
+            throw CanvasGIFFrameImportBuilderError.missingBoardIdentity
+        }
+
+        do {
+            return try BoardStore.loadImageAssetData(
+                boardID: activeBoardID,
+                filename: sourceItem.assetReference.stableAssetFilename,
+                userDefaults: userDefaults
+            )
+        } catch let error as FolderBookmarkStoreError {
+            throw error
+        } catch {
+            throw CanvasGIFFrameImportBuilderError.missingAnimatedImageSource(
+                itemID: sourceItem.id
+            )
+        }
+    }
+
     func videoFrameImage(
         for itemID: CanvasItemID,
         at timeSeconds: Double,

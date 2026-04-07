@@ -16,7 +16,7 @@ todos:
     status: completed
   - id: phase4-gif-request-builder
     content: 实现从已选 GIF 和多选 frameIndex 构造静态图片导入请求的共享 builder
-    status: pending
+    status: completed
   - id: phase5-menu-wiring
     content: 接入 GIF 上下文菜单动作，并在 iOS/macOS ViewController 中打通入口和 importMedia 执行
     status: pending
