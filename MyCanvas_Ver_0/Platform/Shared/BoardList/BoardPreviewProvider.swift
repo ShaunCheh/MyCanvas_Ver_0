@@ -7,16 +7,19 @@ final class BoardPreviewProvider {
     private let mediaPosterImageResolver: BoardMediaPosterImageResolver
     private let renderQueue: OperationQueue
     private let callbackQueue: DispatchQueue
+    private let userDefaults: UserDefaults
 
     init(
         thumbnailCache: BoardThumbnailCache = BoardThumbnailCache(),
         thumbnailRenderer: BoardThumbnailRenderer = BoardThumbnailRenderer(),
         mediaPosterImageResolver: BoardMediaPosterImageResolver = BoardMediaPosterImageResolver(),
+        userDefaults: UserDefaults = .standard,
         callbackQueue: DispatchQueue = .main
     ) {
         self.thumbnailCache = thumbnailCache
         self.thumbnailRenderer = thumbnailRenderer
         self.mediaPosterImageResolver = mediaPosterImageResolver
+        self.userDefaults = userDefaults
         self.callbackQueue = callbackQueue
 
         let renderQueue = OperationQueue()
@@ -53,16 +56,22 @@ final class BoardPreviewProvider {
                 item: item,
                 targetPixelSize: targetPixelSize,
                 cachedImage: cachedImage,
-                mediaPosterImageResolver: mediaPosterImageResolver
+                mediaPosterImageResolver: mediaPosterImageResolver,
+                userDefaults: userDefaults
             )
             return .thumbnail(cachedImage, item.previewSeed)
         }
 
         do {
-            if let persistedThumbnail = try loadPersistedThumbnailPreview(
-                for: item,
-                cacheKey: cacheKey
+            let persistedThumbnail = try withScopedPreviewFileAccess(
+                for: item
             ) {
+                try loadPersistedThumbnailPreview(
+                    for: item,
+                    cacheKey: cacheKey
+                )
+            }
+            if let persistedThumbnail {
                 logBoardPreviewProviderDecision(
                     phase: "immediatePreview",
                     boardID: item.boardID,
@@ -78,6 +87,8 @@ final class BoardPreviewProvider {
                 "[BoardPreviewProvider] Failed to load persisted thumbnail " +
                 "boardID=\(item.boardID.uuidString) " +
                 "revision=\(item.revisionToken) " +
+                "persistedThumbnailURL=\(item.persistedThumbnailURL.path) " +
+                "assetsDirectoryURL=\(item.assetsDirectoryURL.path) " +
                 "error=\(error)"
             )
         }
@@ -129,7 +140,8 @@ final class BoardPreviewProvider {
                 item: item,
                 targetPixelSize: targetPixelSize,
                 cachedImage: cachedImage,
-                mediaPosterImageResolver: mediaPosterImageResolver
+                mediaPosterImageResolver: mediaPosterImageResolver,
+                userDefaults: self.userDefaults
             )
             callbackQueue.async { [weak requestToken] in
                 guard let requestToken, requestToken.isCancelled == false else {
@@ -170,11 +182,16 @@ final class BoardPreviewProvider {
                     }
                 }
 
-                guard let renderedImage = try self.loadBestAvailableThumbnail(
-                    for: item,
-                    cacheKey: cacheKey,
-                    cancellationCheck: cancellationCheck
-                ) else {
+                let renderedImage = try self.withScopedPreviewFileAccess(
+                    for: item
+                ) {
+                    try self.loadBestAvailableThumbnail(
+                        for: item,
+                        cacheKey: cacheKey,
+                        cancellationCheck: cancellationCheck
+                    )
+                }
+                guard let renderedImage else {
                     logBoardPreviewProviderDecision(
                         phase: "requestThumbnail",
                         boardID: item.boardID,
@@ -229,6 +246,8 @@ final class BoardPreviewProvider {
                     "[BoardPreviewProvider] Failed to render thumbnail " +
                     "boardID=\(item.boardID.uuidString) " +
                     "revision=\(item.revisionToken) " +
+                    "persistedThumbnailURL=\(item.persistedThumbnailURL.path) " +
+                    "assetsDirectoryURL=\(item.assetsDirectoryURL.path) " +
                     "error=\(error)"
                 )
             }
@@ -356,6 +375,17 @@ final class BoardPreviewProvider {
             cancellationCheck: cancellationCheck
         )
     }
+
+    private func withScopedPreviewFileAccess<T>(
+        for item: BoardCatalogItem,
+        _ body: () throws -> T
+    ) throws -> T {
+        try SelectedFolderAccess.withBoardsDirectoryURL(
+            userDefaults: userDefaults
+        ) { _ in
+            try body()
+        }
+    }
 }
 
 private func logBoardPreviewProviderCacheHit(
@@ -363,7 +393,8 @@ private func logBoardPreviewProviderCacheHit(
     item: BoardCatalogItem,
     targetPixelSize: CGSize,
     cachedImage: CGImage,
-    mediaPosterImageResolver: BoardMediaPosterImageResolver
+    mediaPosterImageResolver: BoardMediaPosterImageResolver,
+    userDefaults: UserDefaults
 ) {
     logBoardThumbnailTraceImageRegions(
         phase: phase,
@@ -377,7 +408,8 @@ private func logBoardPreviewProviderCacheHit(
     logBoardPreviewProviderSourceImagesIfNeeded(
         phase: phase,
         item: item,
-        mediaPosterImageResolver: mediaPosterImageResolver
+        mediaPosterImageResolver: mediaPosterImageResolver,
+        userDefaults: userDefaults
     )
 }
 
@@ -385,6 +417,7 @@ private func logBoardPreviewProviderSourceImagesIfNeeded(
     phase: String,
     item: BoardCatalogItem,
     mediaPosterImageResolver: BoardMediaPosterImageResolver,
+    userDefaults: UserDefaults,
     maxImageCount: Int = 8,
     maxPixelSize: Int = 128
 ) {
@@ -401,37 +434,57 @@ private func logBoardPreviewProviderSourceImagesIfNeeded(
         return
     }
 
-    for imageItemRecord in imageItemRecords {
-        let previewAssetFilename = mediaPosterImageResolver.previewAssetFilename(
-            for: imageItemRecord
-        )
-        do {
-            let image = try mediaPosterImageResolver.resolvePreviewImage(
-                for: imageItemRecord,
-                assetsDirectoryURL: item.assetsDirectoryURL,
-                animatedImagePreviewMode: BoardPreviewContent.animatedImagePreviewMode,
-                maxPixelSize: maxPixelSize
-            )
+    do {
+        try SelectedFolderAccess.withBoardsDirectoryURL(
+            userDefaults: userDefaults
+        ) { _ in
+            for imageItemRecord in imageItemRecords {
+                let previewAssetFilename = mediaPosterImageResolver.previewAssetFilename(
+                    for: imageItemRecord
+                )
+                let assetURL = item.assetsDirectoryURL.appendingPathComponent(
+                    previewAssetFilename
+                )
+                do {
+                    let image = try mediaPosterImageResolver.resolvePreviewImage(
+                        for: imageItemRecord,
+                        assetsDirectoryURL: item.assetsDirectoryURL,
+                        animatedImagePreviewMode: BoardPreviewContent.animatedImagePreviewMode,
+                        maxPixelSize: maxPixelSize
+                    )
 
-            print(
-                "[BoardList][ThumbnailTrace][SourceImage] " +
-                    "phase=\(phase) " +
-                    "boardID=\(item.boardID.uuidString) " +
-                    "itemID=\(imageItemRecord.id.uuidString) " +
-                    "assetFilename=\(previewAssetFilename) " +
-                    "signature=\(BoardThumbnailImageSignature.describe(image))"
-            )
-        } catch {
-            print(
-                "[BoardList][ThumbnailTrace][SourceImage] " +
-                    "phase=\(phase) " +
-                    "boardID=\(item.boardID.uuidString) " +
-                    "itemID=\(imageItemRecord.id.uuidString) " +
-                    "assetFilename=\(previewAssetFilename) " +
-                    "status=read-failed " +
-                    "error=\(error)"
-            )
+                    print(
+                        "[BoardList][ThumbnailTrace][SourceImage] " +
+                            "phase=\(phase) " +
+                            "boardID=\(item.boardID.uuidString) " +
+                            "itemID=\(imageItemRecord.id.uuidString) " +
+                            "assetFilename=\(previewAssetFilename) " +
+                            "assetURL=\(assetURL.path) " +
+                            "signature=\(BoardThumbnailImageSignature.describe(image))"
+                    )
+                } catch {
+                    print(
+                        "[BoardList][ThumbnailTrace][SourceImage] " +
+                            "phase=\(phase) " +
+                            "boardID=\(item.boardID.uuidString) " +
+                            "itemID=\(imageItemRecord.id.uuidString) " +
+                            "assetFilename=\(previewAssetFilename) " +
+                            "assetURL=\(assetURL.path) " +
+                            "status=read-failed " +
+                            "error=\(error)"
+                    )
+                }
+            }
         }
+    } catch {
+        print(
+            "[BoardList][ThumbnailTrace][SourceImage] " +
+                "phase=\(phase) " +
+                "boardID=\(item.boardID.uuidString) " +
+                "assetsDirectoryURL=\(item.assetsDirectoryURL.path) " +
+                "status=scope-failed " +
+                "error=\(error)"
+        )
     }
 }
 
