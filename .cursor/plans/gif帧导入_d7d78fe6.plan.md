@@ -19,7 +19,7 @@ todos:
     status: completed
   - id: phase5-menu-wiring
     content: 接入 GIF 上下文菜单动作，并在 iOS/macOS ViewController 中打通入口和 importMedia 执行
-    status: pending
+    status: completed
   - id: phase6-ios-editor
     content: 实现 iOS GIF 多选帧页面，使用 4 列可配置 UICollectionView 网格
     status: pending

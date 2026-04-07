@@ -411,6 +411,12 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             }
 
             presentVideoDisplayFrameEditor(for: itemID)
+        case .importGIFFrames:
+            guard let itemID = targetGIFItemID(for: context) else {
+                return
+            }
+
+            presentGIFFrameImportEditor(for: itemID)
         }
     }
 
@@ -421,6 +427,21 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             let itemID = context.targetItemID,
             let item = scene.item(withID: itemID),
             item.isVideo
+        else {
+            return nil
+        }
+
+        return itemID
+    }
+
+    private func targetGIFItemID(
+        for context: CanvasContextMenuContext
+    ) -> CanvasItemID? {
+        guard
+            let itemID = context.targetItemID,
+            let item = scene.item(withID: itemID),
+            item.isVideo == false,
+            item.assetKind == .animatedGIF
         else {
             return nil
         }
@@ -462,6 +483,38 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         } catch {
             presentVideoEditorError(message: error.localizedDescription)
         }
+    }
+
+    private func presentGIFFrameImportEditor(for itemID: CanvasItemID) {
+        guard presentedViewController == nil else {
+            return
+        }
+
+        let editorViewController = iOSGIFFrameImportViewController(
+            itemID: itemID,
+            configuration: .current
+        ) { [weak self] frameIndices in
+            guard let self else {
+                throw iOSGIFFrameImportFlowError.presenterUnavailable
+            }
+
+            try self.performGIFFrameImport(
+                for: itemID,
+                frameIndices: frameIndices
+            )
+        }
+        present(editorViewController, animated: true)
+    }
+
+    private func performGIFFrameImport(
+        for itemID: CanvasItemID,
+        frameIndices: [Int]
+    ) throws {
+        let request = try editorSession.gifFrameImportRequest(
+            for: itemID,
+            frameIndices: frameIndices
+        )
+        performCommand(.importMedia(request))
     }
 
     override var canBecomeFirstResponder: Bool {
@@ -3146,6 +3199,17 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
 }
 
 private enum iOSVideoEditorFlowError: LocalizedError {
+    case presenterUnavailable
+
+    var errorDescription: String? {
+        switch self {
+        case .presenterUnavailable:
+            "The canvas editor is no longer available."
+        }
+    }
+}
+
+private enum iOSGIFFrameImportFlowError: LocalizedError {
     case presenterUnavailable
 
     var errorDescription: String? {

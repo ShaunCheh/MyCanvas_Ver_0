@@ -180,6 +180,16 @@ struct CanvasContextMenuActionResolver {
                 ) != nil,
                 isActive: false
             )
+        case .importGIFFrames:
+            return CanvasContextMenuActionDescriptor(
+                title: "Import GIF Frames",
+                systemImageName: "square.grid.3x3",
+                isEnabled: targetGIFItemID(
+                    in: context,
+                    session: session
+                ) != nil,
+                isActive: false
+            )
         }
     }
 
@@ -192,6 +202,8 @@ struct CanvasContextMenuActionResolver {
         }
         let includeVideoDisplayFrameAction =
             targetVideoItemID(in: context, session: session) != nil
+        let includeGIFFrameImportAction =
+            targetGIFItemID(in: context, session: session) != nil
 
         switch context.targetKind {
         case .blank:
@@ -204,7 +216,8 @@ struct CanvasContextMenuActionResolver {
             return selectedItemActionIDs(
                 includeCropCommand: targetTextItem == nil,
                 includeBeginTextEditCommand: targetTextItem != nil,
-                includeVideoDisplayFrameAction: includeVideoDisplayFrameAction
+                includeVideoDisplayFrameAction: includeVideoDisplayFrameAction,
+                includeGIFFrameImportAction: includeGIFFrameImportAction
             )
         case .unselectedItemBody:
             // Keep invocation target and current selection separate so opening a
@@ -212,13 +225,15 @@ struct CanvasContextMenuActionResolver {
             // explicit command.
             return unselectedItemActionIDs(
                 includeBeginTextEditCommand: targetTextItem != nil,
-                includeVideoDisplayFrameAction: includeVideoDisplayFrameAction
+                includeVideoDisplayFrameAction: includeVideoDisplayFrameAction,
+                includeGIFFrameImportAction: includeGIFFrameImportAction
             )
         case .cropHandle, .cropOutline:
             return selectedItemActionIDs(
                 includeCropCommand: true,
                 includeBeginTextEditCommand: false,
-                includeVideoDisplayFrameAction: false
+                includeVideoDisplayFrameAction: false,
+                includeGIFFrameImportAction: false
             )
         }
     }
@@ -226,7 +241,8 @@ struct CanvasContextMenuActionResolver {
     private func selectedItemActionIDs(
         includeCropCommand: Bool,
         includeBeginTextEditCommand: Bool,
-        includeVideoDisplayFrameAction: Bool
+        includeVideoDisplayFrameAction: Bool,
+        includeGIFFrameImportAction: Bool
     ) -> [CanvasContextMenuActionID] {
         var actionIDs: [CanvasContextMenuActionID] = []
         if includeCropCommand {
@@ -237,6 +253,9 @@ struct CanvasContextMenuActionResolver {
         }
         if includeVideoDisplayFrameAction {
             actionIDs.append(.uiAction(.editVideoDisplayFrame))
+        }
+        if includeGIFFrameImportAction {
+            actionIDs.append(.uiAction(.importGIFFrames))
         }
         actionIDs.append(contentsOf: [
             .command(.duplicateItem),
@@ -254,7 +273,8 @@ struct CanvasContextMenuActionResolver {
 
     private func unselectedItemActionIDs(
         includeBeginTextEditCommand: Bool,
-        includeVideoDisplayFrameAction: Bool
+        includeVideoDisplayFrameAction: Bool,
+        includeGIFFrameImportAction: Bool
     ) -> [CanvasContextMenuActionID] {
         var actionIDs: [CanvasContextMenuActionID] = [.command(.selectItem)]
         if includeBeginTextEditCommand {
@@ -262,6 +282,9 @@ struct CanvasContextMenuActionResolver {
         }
         if includeVideoDisplayFrameAction {
             actionIDs.append(.uiAction(.editVideoDisplayFrame))
+        }
+        if includeGIFFrameImportAction {
+            actionIDs.append(.uiAction(.importGIFFrames))
         }
         actionIDs.append(contentsOf: [
             .command(.duplicateItem),
@@ -284,6 +307,22 @@ struct CanvasContextMenuActionResolver {
             let itemID = context.targetItemID,
             let item = session.scene.item(withID: itemID),
             item.isVideo
+        else {
+            return nil
+        }
+
+        return itemID
+    }
+
+    private func targetGIFItemID(
+        in context: CanvasContextMenuContext,
+        session: CanvasEditorSession
+    ) -> CanvasItemID? {
+        guard
+            let itemID = context.targetItemID,
+            let item = session.scene.item(withID: itemID),
+            item.isVideo == false,
+            item.assetKind == .animatedGIF
         else {
             return nil
         }

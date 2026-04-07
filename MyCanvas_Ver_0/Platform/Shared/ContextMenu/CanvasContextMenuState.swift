@@ -31,6 +31,7 @@ struct CanvasContextMenuActionDescriptor {
 
 enum CanvasContextMenuUIActionID: String {
     case editVideoDisplayFrame
+    case importGIFFrames
 
     var rawValueDescription: String {
         rawValue
