@@ -583,6 +583,45 @@ final class CanvasEditorSession {
         )
     }
 
+    func gifFrameImportEditorContext(
+        for itemID: CanvasItemID,
+        configuration: CanvasGIFFrameImportConfiguration = .current,
+        userDefaults: UserDefaults = .standard
+    ) throws -> CanvasGIFFrameImportEditorContext {
+        guard
+            let sourceItem = scene.item(withID: itemID),
+            sourceItem.isVideo == false,
+            sourceItem.assetKind == .animatedGIF
+        else {
+            throw CanvasGIFFrameImportBuilderError.invalidAnimatedGIFItem(
+                itemID: itemID
+            )
+        }
+
+        let sourceData = try gifFrameImportSourceData(
+            for: sourceItem,
+            userDefaults: userDefaults
+        )
+        guard
+            let imageSource = CanvasGIFFrameService.makeImageSource(from: sourceData)
+        else {
+            throw CanvasGIFFrameImportBuilderError.invalidGIFData
+        }
+
+        let frameCount = CanvasGIFFrameService.frameCount(from: imageSource)
+        guard frameCount > 1 else {
+            throw CanvasGIFFrameImportBuilderError.invalidGIFData
+        }
+
+        return CanvasGIFFrameImportEditorContext(
+            itemID: itemID,
+            gifData: sourceData,
+            frameCount: frameCount,
+            selectionGrid: configuration.selectionGrid,
+            thumbnailMaxPixelSize: configuration.thumbnailMaxPixelSize
+        )
+    }
+
     func gifFrameImportRequest(
         for itemID: CanvasItemID,
         frameIndices: [Int],

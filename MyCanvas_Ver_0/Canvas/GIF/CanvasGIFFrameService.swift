@@ -2,6 +2,18 @@ import CoreGraphics
 import Foundation
 import ImageIO
 
+struct CanvasGIFFrameImportEditorContext {
+    let itemID: CanvasItemID
+    let gifData: Data
+    let frameCount: Int
+    let selectionGrid: CanvasGIFFrameImportGridConfiguration
+    let thumbnailMaxPixelSize: Int
+
+    var frameIndices: Range<Int> {
+        0..<frameCount
+    }
+}
+
 enum CanvasGIFFrameService {
     private static let defaultFrameDelay: TimeInterval = 0.1
     private static let minimumAcceptedFrameDelay: TimeInterval = 0.011
@@ -11,10 +23,16 @@ enum CanvasGIFFrameService {
         CGImageSourceCreateWithData(data as CFData, nil)
     }
 
+    static func frameCount(
+        from imageSource: CGImageSource
+    ) -> Int {
+        CGImageSourceGetCount(imageSource)
+    }
+
     static func animatedMetadata(
         from imageSource: CGImageSource
     ) -> CanvasAnimatedImageMetadata? {
-        let frameCount = CGImageSourceGetCount(imageSource)
+        let frameCount = frameCount(from: imageSource)
         guard frameCount > 1 else {
             return nil
         }
@@ -36,7 +54,7 @@ enum CanvasGIFFrameService {
         from imageSource: CGImageSource,
         importedMetadata: CanvasAnimatedImageMetadata?
     ) -> CanvasAnimatedImageMetadata? {
-        let frameCount = CGImageSourceGetCount(imageSource)
+        let frameCount = frameCount(from: imageSource)
         guard frameCount > 1 else {
             return nil
         }
@@ -56,7 +74,7 @@ enum CanvasGIFFrameService {
         from imageSource: CGImageSource,
         maxPixelSize: Int? = nil
     ) -> CGImage? {
-        let frameCount = CGImageSourceGetCount(imageSource)
+        let frameCount = frameCount(from: imageSource)
         guard frameIndex >= 0, frameIndex < frameCount else {
             return nil
         }

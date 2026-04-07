@@ -206,6 +206,68 @@ final class CanvasGIFFrameImportBuilderTests: XCTestCase {
         )
     }
 
+    func testSessionGIFFrameImportEditorContextUsesTransientPayloadSourceData() throws {
+        let session = makeGIFFrameImportTestSession()
+        let gifData = try makeGIFFrameImportTestGIFData(
+            frames: [
+                GIFFrameImportTestSpec(
+                    image: try makeGIFFrameImportTestImage(
+                        red: 1,
+                        green: 0,
+                        blue: 0
+                    ),
+                    delayTime: 0.1
+                ),
+                GIFFrameImportTestSpec(
+                    image: try makeGIFFrameImportTestImage(
+                        red: 0,
+                        green: 1,
+                        blue: 0
+                    ),
+                    delayTime: 0.1
+                ),
+                GIFFrameImportTestSpec(
+                    image: try makeGIFFrameImportTestImage(
+                        red: 0,
+                        green: 0,
+                        blue: 1
+                    ),
+                    delayTime: 0.1
+                )
+            ]
+        )
+        let sourceImage = try XCTUnwrap(
+            CanvasResolvedImportImage(
+                data: gifData,
+                typeIdentifier: UTType.gif.identifier,
+                filenameHint: "editor-context-source.gif"
+            )
+        )
+        let importedItem = try XCTUnwrap(
+            session.appendImportedMedia(
+                [.image(sourceImage)],
+                placement: .worldPoint(CGPoint(x: 30, y: 45)),
+                layout: .stacked
+            ).first
+        )
+
+        let editorContext = try session.gifFrameImportEditorContext(
+            for: importedItem.id
+        )
+
+        XCTAssertEqual(editorContext.itemID, importedItem.id)
+        XCTAssertEqual(editorContext.gifData, gifData)
+        XCTAssertEqual(editorContext.frameCount, 3)
+        XCTAssertEqual(
+            editorContext.selectionGrid,
+            CanvasGIFFrameImportConfiguration.current.selectionGrid
+        )
+        XCTAssertEqual(
+            editorContext.thumbnailMaxPixelSize,
+            CanvasGIFFrameImportConfiguration.current.thumbnailMaxPixelSize
+        )
+    }
+
     func testSessionGIFFrameImportRequestFallsBackToPersistedGIFAssetData() throws {
         try withTemporaryGIFFrameImportWorkspace { _, userDefaults in
             let session = makeGIFFrameImportTestSession()
@@ -282,6 +344,76 @@ final class CanvasGIFFrameImportBuilderTests: XCTestCase {
             )
             XCTAssertGreaterThan(pixel.green, pixel.red)
             XCTAssertGreaterThan(pixel.green, pixel.blue)
+        }
+    }
+
+    func testSessionGIFFrameImportEditorContextFallsBackToPersistedGIFAssetData() throws {
+        try withTemporaryGIFFrameImportWorkspace { _, userDefaults in
+            let session = makeGIFFrameImportTestSession()
+            session.startNewBoard(
+                now: Date(timeIntervalSince1970: 1_710_001_100)
+            )
+            let boardID = try XCTUnwrap(session.activeBoardID)
+            let gifData = try makeGIFFrameImportTestGIFData(
+                frames: [
+                    GIFFrameImportTestSpec(
+                        image: try makeGIFFrameImportTestImage(
+                            red: 1,
+                            green: 0,
+                            blue: 0
+                        ),
+                        delayTime: 0.1
+                    ),
+                    GIFFrameImportTestSpec(
+                        image: try makeGIFFrameImportTestImage(
+                            red: 0,
+                            green: 1,
+                            blue: 0
+                        ),
+                        delayTime: 0.1
+                    )
+                ]
+            )
+            let persistedFilename = "persisted-editor-context.gif"
+            let posterImage = try makeGIFFrameImportTestImage(
+                red: 1,
+                green: 0,
+                blue: 0
+            )
+            let sourceItem = CanvasImageItem(
+                asset: CanvasImageAsset(
+                    reference: .persistedAnimatedGIF(filename: persistedFilename),
+                    poster: CanvasImagePoster(cgImage: posterImage),
+                    logicalPixelSize: CGSize(
+                        width: posterImage.width,
+                        height: posterImage.height
+                    )
+                ),
+                center: CGPoint(x: 50, y: 80),
+                size: CGSize(width: 140, height: 90),
+                zIndex: 0
+            )
+            session.scene.append(sourceItem)
+
+            let assetsDirectoryURL = try BoardStore.ensureAssetsDirectoryURL(
+                for: boardID,
+                userDefaults: userDefaults
+            )
+            try CoordinatedFileIO.writeData(
+                gifData,
+                to: assetsDirectoryURL.appendingPathComponent(
+                    persistedFilename
+                )
+            )
+
+            let editorContext = try session.gifFrameImportEditorContext(
+                for: sourceItem.id,
+                userDefaults: userDefaults
+            )
+
+            XCTAssertEqual(editorContext.itemID, sourceItem.id)
+            XCTAssertEqual(editorContext.gifData, gifData)
+            XCTAssertEqual(editorContext.frameCount, 2)
         }
     }
 }

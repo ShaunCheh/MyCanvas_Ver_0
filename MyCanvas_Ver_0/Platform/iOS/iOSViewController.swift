@@ -490,20 +490,28 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             return
         }
 
-        let editorViewController = iOSGIFFrameImportViewController(
-            itemID: itemID,
-            configuration: .current
-        ) { [weak self] frameIndices in
-            guard let self else {
-                throw iOSGIFFrameImportFlowError.presenterUnavailable
-            }
+        do {
+            let editorContext = try editorSession.gifFrameImportEditorContext(
+                for: itemID
+            )
+            let editorViewController = iOSGIFFrameImportViewController(
+                editorContext: editorContext
+            ) { [weak self] frameIndices in
+                guard let self else {
+                    throw iOSGIFFrameImportFlowError.presenterUnavailable
+                }
 
-            try self.performGIFFrameImport(
-                for: itemID,
-                frameIndices: frameIndices
+                try self.performGIFFrameImport(
+                    for: itemID,
+                    frameIndices: frameIndices
+                )
+            }
+            present(editorViewController, animated: true)
+        } catch {
+            presentGIFFrameImportEditorError(
+                message: error.localizedDescription
             )
         }
-        present(editorViewController, animated: true)
     }
 
     private func performGIFFrameImport(
@@ -2989,6 +2997,16 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     private func presentVideoEditorError(message: String) {
         let alertController = UIAlertController(
             title: "Unable to Open Video Editor",
+            message: message,
+            preferredStyle: .alert
+        )
+        alertController.addAction(UIAlertAction(title: "OK", style: .default))
+        present(alertController, animated: true)
+    }
+
+    private func presentGIFFrameImportEditorError(message: String) {
+        let alertController = UIAlertController(
+            title: "Unable to Open GIF Frame Importer",
             message: message,
             preferredStyle: .alert
         )

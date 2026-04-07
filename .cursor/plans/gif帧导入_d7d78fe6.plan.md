@@ -22,7 +22,7 @@ todos:
     status: completed
   - id: phase6-ios-editor
     content: 实现 iOS GIF 多选帧页面，使用 4 列可配置 UICollectionView 网格
-    status: pending
+    status: completed
   - id: phase7-macos-editor
     content: 实现 macOS GIF 多选帧页面，使用 4 列可配置 NSCollectionView 网格
     status: pending
