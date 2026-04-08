@@ -1898,7 +1898,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             to: targetStage,
             duration: remainingToolbarTransitionDuration(
                 fullDuration: runtime.context.configuration.collapseDuration,
-                currentStage: runtime.stage
+                currentStage: runtime.stage,
+                targetStage: targetStage
             ),
             completion: completion
         )
@@ -1934,7 +1935,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             to: targetStage,
             duration: remainingToolbarTransitionDuration(
                 fullDuration: runtime.context.configuration.slideDuration,
-                currentStage: runtime.stage
+                currentStage: runtime.stage,
+                targetStage: targetStage
             ),
             completion: completion
         )
@@ -2177,17 +2179,18 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
 
     private func remainingToolbarTransitionDuration(
         fullDuration: TimeInterval,
-        currentStage: CanvasToolbarTransitionStage
+        currentStage: CanvasToolbarTransitionStage,
+        targetStage: CanvasToolbarTransitionStage
     ) -> TimeInterval {
         let progress: CGFloat
-        switch currentStage {
-        case let .collapsing(currentProgress),
-             let .exiting(currentProgress),
-             let .entering(currentProgress),
-             let .expanding(currentProgress):
+        switch (currentStage, targetStage) {
+        case let (.collapsing(currentProgress), .collapsing),
+             let (.exiting(currentProgress), .exiting),
+             let (.entering(currentProgress), .entering),
+             let (.expanding(currentProgress), .expanding):
             progress = clampedToolbarTransitionProgress(currentProgress)
-        case .steadyVisible, .hidden:
-            progress = 1
+        default:
+            progress = 0
         }
 
         return max(fullDuration * TimeInterval(1 - progress), 0)
