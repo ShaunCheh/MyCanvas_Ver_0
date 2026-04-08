@@ -52,7 +52,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         case croppingSelectedItem(PointerCropState)
         case movingCropFrame(PointerCropTranslationState)
         case rotatingSelectedItem(PointerRotateState)
-        case draggingSelectedItem(itemID: CanvasItemID)
+        case draggingSelectedItem(CanvasSelectedItemDragState)
         case resizingSelectedItem(PointerResizeState)
         case draggingCanvas
     }
@@ -1434,8 +1434,23 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
                     return
                 }
 
-                pointerDragState = .draggingSelectedItem(itemID: itemID)
-                moveSelectedItem(withID: itemID, from: pressedLocation, to: location)
+                guard let dragState = makeSelectedItemDragState(
+                    itemID: itemID,
+                    initialViewportLocation: pressedLocation
+                ) else {
+                    pointerDragState = .idle
+                    return
+                }
+
+                guard let updatedDragState = moveSelectedItem(
+                    using: dragState,
+                    to: location
+                ) else {
+                    pointerDragState = .idle
+                    return
+                }
+
+                pointerDragState = .draggingSelectedItem(updatedDragState)
             case .unselectedItemBody, .blank:
                 pointerDragState = .draggingCanvas
                 panCanvas(from: pressedLocation, to: location)
@@ -1446,8 +1461,15 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             updateTranslatedCropDraft(using: translationState, to: location)
         case let .rotatingSelectedItem(rotateState):
             updateRotationDraft(using: rotateState, to: location)
-        case let .draggingSelectedItem(itemID):
-            moveSelectedItem(withID: itemID, from: previousLocation, to: location)
+        case let .draggingSelectedItem(dragState):
+            guard let updatedDragState = moveSelectedItem(
+                using: dragState,
+                to: location
+            ) else {
+                pointerDragState = .idle
+                return
+            }
+            pointerDragState = .draggingSelectedItem(updatedDragState)
         case let .resizingSelectedItem(resizeState):
             resizeSelectedItem(using: resizeState, to: location)
         case .draggingCanvas:
@@ -2814,39 +2836,44 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         }
     }
 
-    private func moveSelectedItem(
-        withID itemID: CanvasItemID,
-        from previousLocation: CGPoint,
-        to location: CGPoint
-    ) {
+    private func makeSelectedItemDragState(
+        itemID: CanvasItemID,
+        initialViewportLocation: CGPoint
+    ) -> CanvasSelectedItemDragState? {
         guard let movingItem = scene.boardItem(withID: itemID) else {
+            return nil
+        }
+
+        return CanvasSelectedItemDragState(
+            itemID: itemID,
+            dragStartWorldLocation: camera.viewportToWorld(initialViewportLocation),
+            dragStartCenter: movingItem.center
+        )
+    }
+
+    private func moveSelectedItem(
+        using dragState: CanvasSelectedItemDragState,
+        to location: CGPoint
+    ) -> CanvasSelectedItemDragState? {
+        guard let movingItem = scene.boardItem(withID: dragState.itemID) else {
             clearAlignmentInteractionStateIfNeeded(
                 refreshReason: "clear missing alignment interaction item"
             )
-            return
+            return nil
         }
 
-        let previousWorldLocation = camera.viewportToWorld(previousLocation)
         let currentWorldLocation = camera.viewportToWorld(location)
-        let rawDeltaInWorld = CGPoint(
-            x: currentWorldLocation.x - previousWorldLocation.x,
-            y: currentWorldLocation.y - previousWorldLocation.y
-        )
-        guard rawDeltaInWorld != .zero else {
-            return
-        }
-
-        let proposedCenter = CGPoint(
-            x: movingItem.center.x + rawDeltaInWorld.x,
-            y: movingItem.center.y + rawDeltaInWorld.y
+        let proposedCenter = dragState.proposedCenter(
+            for: currentWorldLocation
         )
         let solveResult = alignmentGuideSolver.solve(
             CanvasAlignmentSolveRequest(
-                movingItemID: itemID,
+                movingItemID: dragState.itemID,
                 proposedCenter: proposedCenter,
                 scene: scene,
                 boardState: boardState,
-                camera: camera
+                camera: camera,
+                lockState: dragState.alignmentLock
             )
         )
         let resolvedDeltaInWorld = CGPoint(
@@ -2855,13 +2882,14 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         )
 
         alignmentInteractionState = solveResult.interactionState
-        scene.moveItem(withID: itemID, by: resolvedDeltaInWorld)
-        if let movedItem = scene.boardItem(withID: itemID) {
+        scene.moveItem(withID: dragState.itemID, by: resolvedDeltaInWorld)
+        if let movedItem = scene.boardItem(withID: dragState.itemID) {
             expandBoardIfNeeded(toInclude: movedItem.worldBounds)
         }
         refreshCanvas(
             reason: "move selected item by \(describe(point: resolvedDeltaInWorld))"
         )
+        return dragState.replacingAlignmentLock(solveResult.lockState)
     }
 
     private func makePointerResizeState(

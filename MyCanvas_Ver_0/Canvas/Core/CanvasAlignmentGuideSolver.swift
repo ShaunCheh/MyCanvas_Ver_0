@@ -78,14 +78,73 @@ struct CanvasAlignmentMatch: Equatable {
     let distanceInWorld: CGFloat
 }
 
+struct CanvasAlignmentAxisLock: Equatable {
+    let movingAnchor: CanvasAlignmentAnchor
+    let referenceAnchor: CanvasAlignmentAnchor
+    let referenceSource: CanvasAlignmentReferenceSource
+
+    var axis: CanvasAlignmentCoordinateAxis {
+        movingAnchor.axis
+    }
+
+    init(
+        movingAnchor: CanvasAlignmentAnchor,
+        referenceAnchor: CanvasAlignmentAnchor,
+        referenceSource: CanvasAlignmentReferenceSource
+    ) {
+        self.movingAnchor = movingAnchor
+        self.referenceAnchor = referenceAnchor
+        self.referenceSource = referenceSource
+    }
+
+    init(match: CanvasAlignmentMatch) {
+        self.init(
+            movingAnchor: match.movingAnchor,
+            referenceAnchor: match.referenceAnchor,
+            referenceSource: match.referenceSource
+        )
+    }
+}
+
+struct CanvasAlignmentLockState: Equatable {
+    let xAxis: CanvasAlignmentAxisLock?
+    let yAxis: CanvasAlignmentAxisLock?
+
+    static let none = CanvasAlignmentLockState()
+
+    init(
+        xAxis: CanvasAlignmentAxisLock? = nil,
+        yAxis: CanvasAlignmentAxisLock? = nil
+    ) {
+        self.xAxis = xAxis
+        self.yAxis = yAxis
+    }
+
+    var isActive: Bool {
+        xAxis != nil || yAxis != nil
+    }
+}
+
 struct CanvasAlignmentSolverConfiguration: Equatable {
-    let snapThresholdInViewport: CGFloat
+    let snapEnterThresholdInViewport: CGFloat
+    let snapReleaseThresholdInViewport: CGFloat
     let searchPaddingInViewport: CGFloat
 
-    static let `default` = CanvasAlignmentSolverConfiguration(
-        snapThresholdInViewport: 8,
-        searchPaddingInViewport: 160
-    )
+    init(
+        snapEnterThresholdInViewport: CGFloat = 8,
+        snapReleaseThresholdInViewport: CGFloat = 12,
+        searchPaddingInViewport: CGFloat = 160
+    ) {
+        let clampedEnterThreshold = max(snapEnterThresholdInViewport, 0)
+        self.snapEnterThresholdInViewport = clampedEnterThreshold
+        self.snapReleaseThresholdInViewport = max(
+            snapReleaseThresholdInViewport,
+            clampedEnterThreshold
+        )
+        self.searchPaddingInViewport = max(searchPaddingInViewport, 0)
+    }
+
+    static let `default` = CanvasAlignmentSolverConfiguration()
 }
 
 struct CanvasAlignmentSolveRequest {
@@ -94,18 +153,38 @@ struct CanvasAlignmentSolveRequest {
     let scene: CanvasScene
     let boardState: CanvasBoardState?
     let camera: CanvasCamera
+    let lockState: CanvasAlignmentLockState
+
+    init(
+        movingItemID: CanvasItemID,
+        proposedCenter: CGPoint,
+        scene: CanvasScene,
+        boardState: CanvasBoardState?,
+        camera: CanvasCamera,
+        lockState: CanvasAlignmentLockState = .none
+    ) {
+        self.movingItemID = movingItemID
+        self.proposedCenter = proposedCenter
+        self.scene = scene
+        self.boardState = boardState
+        self.camera = camera
+        self.lockState = lockState
+    }
 }
 
 struct CanvasAlignmentSolveResult {
     let resolvedCenter: CGPoint
     let interactionState: CanvasAlignmentInteractionState?
+    let lockState: CanvasAlignmentLockState
 
     static func passthrough(
-        proposedCenter: CGPoint
+        proposedCenter: CGPoint,
+        lockState: CanvasAlignmentLockState = .none
     ) -> CanvasAlignmentSolveResult {
         CanvasAlignmentSolveResult(
             resolvedCenter: proposedCenter,
-            interactionState: nil
+            interactionState: nil,
+            lockState: lockState
         )
     }
 }
@@ -120,7 +199,8 @@ struct CanvasAlignmentGuideSolver {
     ) -> CanvasAlignmentSolveResult {
         guard let movingItem = request.scene.boardItem(withID: request.movingItemID) else {
             return CanvasAlignmentSolveResult.passthrough(
-                proposedCenter: request.proposedCenter
+                proposedCenter: request.proposedCenter,
+                lockState: .none
             )
         }
 
@@ -140,37 +220,63 @@ struct CanvasAlignmentGuideSolver {
         )
         guard references.isEmpty == false else {
             return CanvasAlignmentSolveResult.passthrough(
-                proposedCenter: request.proposedCenter
+                proposedCenter: request.proposedCenter,
+                lockState: .none
             )
         }
 
-        let thresholdInWorld = max(
+        let enterThresholdInWorld = max(
             request.camera.worldDistance(
-                forViewportDistance: configuration.snapThresholdInViewport
+                forViewportDistance: configuration.snapEnterThresholdInViewport
             ),
             0
+        )
+        let releaseThresholdInWorld = max(
+            request.camera.worldDistance(
+                forViewportDistance: configuration.snapReleaseThresholdInViewport
+            ),
+            enterThresholdInWorld
         )
         let xCandidate = bestCandidate(
             for: proposedFrame,
             axis: .x,
             references: references,
-            thresholdInWorld: thresholdInWorld
+            enterThresholdInWorld: enterThresholdInWorld,
+            releaseThresholdInWorld: releaseThresholdInWorld,
+            previousLock: request.lockState.xAxis
         )
         let yCandidate = bestCandidate(
             for: proposedFrame,
             axis: .y,
             references: references,
-            thresholdInWorld: thresholdInWorld
+            enterThresholdInWorld: enterThresholdInWorld,
+            releaseThresholdInWorld: releaseThresholdInWorld,
+            previousLock: request.lockState.yAxis
         )
         guard xCandidate != nil || yCandidate != nil else {
             return CanvasAlignmentSolveResult.passthrough(
-                proposedCenter: request.proposedCenter
+                proposedCenter: request.proposedCenter,
+                lockState: .none
             )
         }
 
         let resolvedCenter = CGPoint(
             x: request.proposedCenter.x + (xCandidate?.deltaInWorld ?? 0),
             y: request.proposedCenter.y + (yCandidate?.deltaInWorld ?? 0)
+        )
+        let lockState = CanvasAlignmentLockState(
+            xAxis: xCandidate?.axisLock,
+            yAxis: yCandidate?.axisLock
+        )
+        logSolveDiagnostics(
+            movingItem: movingItem,
+            proposedCenter: request.proposedCenter,
+            resolvedCenter: resolvedCenter,
+            camera: request.camera,
+            enterThresholdInWorld: enterThresholdInWorld,
+            releaseThresholdInWorld: releaseThresholdInWorld,
+            xCandidate: xCandidate,
+            yCandidate: yCandidate
         )
         let resolvedFrame = worldFrame(
             size: movingItem.size,
@@ -188,7 +294,62 @@ struct CanvasAlignmentGuideSolver {
         )
         return CanvasAlignmentSolveResult(
             resolvedCenter: resolvedCenter,
-            interactionState: interactionState.isActive ? interactionState : nil
+            interactionState: interactionState.isActive ? interactionState : nil,
+            lockState: lockState
+        )
+    }
+
+    private func logSolveDiagnostics(
+        movingItem: CanvasBoardItem,
+        proposedCenter: CGPoint,
+        resolvedCenter: CGPoint,
+        camera: CanvasCamera,
+        enterThresholdInWorld: CGFloat,
+        releaseThresholdInWorld: CGFloat,
+        xCandidate: CanvasAlignmentAxisCandidate?,
+        yCandidate: CanvasAlignmentAxisCandidate?
+    ) {
+        guard canvasAlignmentDiagnosticLoggingEnabled else {
+            return
+        }
+
+        let rawDeltaInWorld = CGPoint(
+            x: proposedCenter.x - movingItem.center.x,
+            y: proposedCenter.y - movingItem.center.y
+        )
+        let resolvedDeltaInWorld = CGPoint(
+            x: resolvedCenter.x - movingItem.center.x,
+            y: resolvedCenter.y - movingItem.center.y
+        )
+        let solverCorrectionInWorld = CGPoint(
+            x: resolvedCenter.x - proposedCenter.x,
+            y: resolvedCenter.y - proposedCenter.y
+        )
+        let xAxisPinned = xCandidate != nil &&
+            abs(rawDeltaInWorld.x) > canvasAlignmentComparisonEpsilon &&
+            abs(resolvedDeltaInWorld.x) <= canvasAlignmentComparisonEpsilon
+        let yAxisPinned = yCandidate != nil &&
+            abs(rawDeltaInWorld.y) > canvasAlignmentComparisonEpsilon &&
+            abs(resolvedDeltaInWorld.y) <= canvasAlignmentComparisonEpsilon
+
+        print(
+            "[Canvas Alignment][Solver] " +
+            "itemID=\(movingItem.id.uuidString) " +
+            "centerBefore=\(describeAlignmentPoint(movingItem.center)) " +
+            "rawDelta=\(describeAlignmentPoint(rawDeltaInWorld)) " +
+            "proposedCenter=\(describeAlignmentPoint(proposedCenter)) " +
+            "resolvedCenter=\(describeAlignmentPoint(resolvedCenter)) " +
+            "resolvedDelta=\(describeAlignmentPoint(resolvedDeltaInWorld)) " +
+            "solverCorrection=\(describeAlignmentPoint(solverCorrectionInWorld)) " +
+            "zoom=\(formatAlignmentValue(camera.zoomScale)) " +
+            "enterThresholdWorld=\(formatAlignmentValue(enterThresholdInWorld)) " +
+            "releaseThresholdWorld=\(formatAlignmentValue(releaseThresholdInWorld)) " +
+            "enterThresholdViewport=\(formatAlignmentValue(configuration.snapEnterThresholdInViewport)) " +
+            "releaseThresholdViewport=\(formatAlignmentValue(configuration.snapReleaseThresholdInViewport)) " +
+            "xMatch=\(describeAlignmentMatch(xCandidate?.match, zoomScale: camera.zoomScale)) " +
+            "yMatch=\(describeAlignmentMatch(yCandidate?.match, zoomScale: camera.zoomScale)) " +
+            "xAxisPinned=\(xAxisPinned) " +
+            "yAxisPinned=\(yAxisPinned)"
         )
     }
 
@@ -246,6 +407,34 @@ struct CanvasAlignmentGuideSolver {
         for movingFrame: CGRect,
         axis: CanvasAlignmentCoordinateAxis,
         references: [CanvasAlignmentReference],
+        enterThresholdInWorld: CGFloat,
+        releaseThresholdInWorld: CGFloat,
+        previousLock: CanvasAlignmentAxisLock?
+    ) -> CanvasAlignmentAxisCandidate? {
+        if let previousLock,
+           let lockedCandidate = lockedCandidate(
+                for: movingFrame,
+                axis: axis,
+                references: references,
+                previousLock: previousLock,
+                releaseThresholdInWorld: releaseThresholdInWorld
+           )
+        {
+            return lockedCandidate
+        }
+
+        return bestEnteringCandidate(
+            for: movingFrame,
+            axis: axis,
+            references: references,
+            thresholdInWorld: enterThresholdInWorld
+        )
+    }
+
+    private func bestEnteringCandidate(
+        for movingFrame: CGRect,
+        axis: CanvasAlignmentCoordinateAxis,
+        references: [CanvasAlignmentReference],
         thresholdInWorld: CGFloat
     ) -> CanvasAlignmentAxisCandidate? {
         let anchors = anchors(for: axis)
@@ -289,6 +478,64 @@ struct CanvasAlignmentGuideSolver {
         }
 
         return bestCandidate
+    }
+
+    private func lockedCandidate(
+        for movingFrame: CGRect,
+        axis: CanvasAlignmentCoordinateAxis,
+        references: [CanvasAlignmentReference],
+        previousLock: CanvasAlignmentAxisLock,
+        releaseThresholdInWorld: CGFloat
+    ) -> CanvasAlignmentAxisCandidate? {
+        guard previousLock.axis == axis else {
+            return nil
+        }
+
+        guard let reference = reference(
+            for: previousLock.referenceSource,
+            in: references
+        ) else {
+            return nil
+        }
+
+        let movingCoordinate = previousLock.movingAnchor.coordinate(in: movingFrame)
+        let referenceCoordinate = previousLock.referenceAnchor.coordinate(
+            in: reference.frame
+        )
+        let deltaInWorld = referenceCoordinate - movingCoordinate
+        let distanceInWorld = abs(deltaInWorld)
+        guard distanceInWorld <= releaseThresholdInWorld else {
+            return nil
+        }
+
+        return CanvasAlignmentAxisCandidate(
+            match: CanvasAlignmentMatch(
+                movingAnchor: previousLock.movingAnchor,
+                referenceAnchor: previousLock.referenceAnchor,
+                referenceSource: previousLock.referenceSource,
+                referenceCoordinate: referenceCoordinate,
+                distanceInWorld: distanceInWorld
+            ),
+            deltaInWorld: deltaInWorld,
+            referenceFrame: reference.frame,
+            orthogonalOverlap: orthogonalOverlap(
+                between: movingFrame,
+                and: reference.frame,
+                for: axis
+            ),
+            orthogonalCenterDistance: orthogonalCenterDistance(
+                between: movingFrame,
+                and: reference.frame,
+                for: axis
+            )
+        )
+    }
+
+    private func reference(
+        for source: CanvasAlignmentReferenceSource,
+        in references: [CanvasAlignmentReference]
+    ) -> CanvasAlignmentReference? {
+        references.first { $0.source == source }
     }
 
     private func guide(
@@ -444,9 +691,50 @@ private struct CanvasAlignmentAxisCandidate {
     let referenceFrame: CGRect
     let orthogonalOverlap: CGFloat
     let orthogonalCenterDistance: CGFloat
+
+    var axisLock: CanvasAlignmentAxisLock {
+        CanvasAlignmentAxisLock(match: match)
+    }
 }
 
+private let canvasAlignmentDiagnosticLoggingEnabled = false
 private let canvasAlignmentComparisonEpsilon: CGFloat = 0.0001
+
+private func describeAlignmentPoint(_ point: CGPoint) -> String {
+    "{\(formatAlignmentValue(point.x)), \(formatAlignmentValue(point.y))}"
+}
+
+private func describeAlignmentMatch(
+    _ match: CanvasAlignmentMatch?,
+    zoomScale: CGFloat
+) -> String {
+    guard let match else {
+        return "nil"
+    }
+
+    return
+        "moving=\(String(describing: match.movingAnchor)) " +
+        "reference=\(String(describing: match.referenceAnchor)) " +
+        "source=\(describeAlignmentReferenceSource(match.referenceSource)) " +
+        "coordinate=\(formatAlignmentValue(match.referenceCoordinate)) " +
+        "distanceWorld=\(formatAlignmentValue(match.distanceInWorld)) " +
+        "distanceViewport=\(formatAlignmentValue(match.distanceInWorld * zoomScale))"
+}
+
+private func describeAlignmentReferenceSource(
+    _ source: CanvasAlignmentReferenceSource
+) -> String {
+    switch source {
+    case .board:
+        return "board"
+    case let .item(itemID):
+        return "item(\(itemID.uuidString))"
+    }
+}
+
+private func formatAlignmentValue(_ value: CGFloat) -> String {
+    String(format: "%.3f", Double(value))
+}
 
 extension CanvasCamera {
     func worldDistance(

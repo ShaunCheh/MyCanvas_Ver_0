@@ -22,7 +22,8 @@ final class CanvasAlignmentGuideSolverTests: XCTestCase {
         )
         let solver = CanvasAlignmentGuideSolver(
             configuration: CanvasAlignmentSolverConfiguration(
-                snapThresholdInViewport: 5,
+                snapEnterThresholdInViewport: 5,
+                snapReleaseThresholdInViewport: 8,
                 searchPaddingInViewport: 160
             )
         )
@@ -220,6 +221,210 @@ final class CanvasAlignmentGuideSolverTests: XCTestCase {
         XCTAssertEqual(result.resolvedCenter, CGPoint(x: -180, y: 0))
         XCTAssertEqual(result.interactionState?.xMatch?.movingAnchor, .left)
         XCTAssertEqual(result.interactionState?.xMatch?.referenceSource, .board)
+    }
+
+    func testSolveKeepsExistingLockWhilePointerStaysWithinReleaseThreshold() {
+        let movingItem = makeAlignmentTestTextItem(center: CGPoint(x: 0, y: 0))
+        let referenceItem = makeAlignmentTestTextItem(
+            center: CGPoint(x: 100, y: 200),
+            zIndex: 1
+        )
+        let scene = makeAlignmentTestScene(
+            items: [
+                .text(movingItem),
+                .text(referenceItem)
+            ]
+        )
+        let solver = CanvasAlignmentGuideSolver(
+            configuration: CanvasAlignmentSolverConfiguration(
+                snapEnterThresholdInViewport: 5,
+                snapReleaseThresholdInViewport: 12,
+                searchPaddingInViewport: 160
+            )
+        )
+
+        let result = solver.solve(
+            CanvasAlignmentSolveRequest(
+                movingItemID: movingItem.id,
+                proposedCenter: CGPoint(x: 108, y: 0),
+                scene: scene,
+                boardState: nil,
+                camera: makeAlignmentTestCamera(),
+                lockState: CanvasAlignmentLockState(
+                    xAxis: CanvasAlignmentAxisLock(
+                        movingAnchor: .centerX,
+                        referenceAnchor: .centerX,
+                        referenceSource: .item(referenceItem.id)
+                    )
+                )
+            )
+        )
+
+        XCTAssertEqual(result.resolvedCenter, CGPoint(x: 100, y: 0))
+        XCTAssertEqual(result.interactionState?.xMatch?.referenceSource, .item(referenceItem.id))
+        XCTAssertEqual(
+            result.lockState,
+            CanvasAlignmentLockState(
+                xAxis: CanvasAlignmentAxisLock(
+                    movingAnchor: .centerX,
+                    referenceAnchor: .centerX,
+                    referenceSource: .item(referenceItem.id)
+                )
+            )
+        )
+    }
+
+    func testSolveReleasesExistingLockAfterCrossingReleaseThreshold() {
+        let movingItem = makeAlignmentTestTextItem(center: CGPoint(x: 0, y: 0))
+        let referenceItem = makeAlignmentTestTextItem(
+            center: CGPoint(x: 100, y: 200),
+            zIndex: 1
+        )
+        let scene = makeAlignmentTestScene(
+            items: [
+                .text(movingItem),
+                .text(referenceItem)
+            ]
+        )
+        let solver = CanvasAlignmentGuideSolver(
+            configuration: CanvasAlignmentSolverConfiguration(
+                snapEnterThresholdInViewport: 5,
+                snapReleaseThresholdInViewport: 12,
+                searchPaddingInViewport: 160
+            )
+        )
+
+        let result = solver.solve(
+            CanvasAlignmentSolveRequest(
+                movingItemID: movingItem.id,
+                proposedCenter: CGPoint(x: 113, y: 0),
+                scene: scene,
+                boardState: nil,
+                camera: makeAlignmentTestCamera(),
+                lockState: CanvasAlignmentLockState(
+                    xAxis: CanvasAlignmentAxisLock(
+                        movingAnchor: .centerX,
+                        referenceAnchor: .centerX,
+                        referenceSource: .item(referenceItem.id)
+                    )
+                )
+            )
+        )
+
+        XCTAssertEqual(result.resolvedCenter, CGPoint(x: 113, y: 0))
+        XCTAssertNil(result.interactionState)
+        XCTAssertEqual(result.lockState, .none)
+    }
+
+    func testSolveCanReleaseSingleAxisWhileKeepingOtherAxisLocked() {
+        let movingItem = makeAlignmentTestTextItem(center: CGPoint(x: 0, y: 0))
+        let referenceItem = makeAlignmentTestTextItem(
+            center: CGPoint(x: 100, y: 200),
+            zIndex: 1
+        )
+        let scene = makeAlignmentTestScene(
+            items: [
+                .text(movingItem),
+                .text(referenceItem)
+            ]
+        )
+        let solver = CanvasAlignmentGuideSolver(
+            configuration: CanvasAlignmentSolverConfiguration(
+                snapEnterThresholdInViewport: 5,
+                snapReleaseThresholdInViewport: 12,
+                searchPaddingInViewport: 160
+            )
+        )
+
+        let result = solver.solve(
+            CanvasAlignmentSolveRequest(
+                movingItemID: movingItem.id,
+                proposedCenter: CGPoint(x: 109, y: 213),
+                scene: scene,
+                boardState: nil,
+                camera: makeAlignmentTestCamera(),
+                lockState: CanvasAlignmentLockState(
+                    xAxis: CanvasAlignmentAxisLock(
+                        movingAnchor: .centerX,
+                        referenceAnchor: .centerX,
+                        referenceSource: .item(referenceItem.id)
+                    ),
+                    yAxis: CanvasAlignmentAxisLock(
+                        movingAnchor: .centerY,
+                        referenceAnchor: .centerY,
+                        referenceSource: .item(referenceItem.id)
+                    )
+                )
+            )
+        )
+
+        XCTAssertEqual(result.resolvedCenter, CGPoint(x: 100, y: 213))
+        XCTAssertNotNil(result.interactionState?.xMatch)
+        XCTAssertNil(result.interactionState?.yMatch)
+        XCTAssertEqual(
+            result.lockState,
+            CanvasAlignmentLockState(
+                xAxis: CanvasAlignmentAxisLock(
+                    movingAnchor: .centerX,
+                    referenceAnchor: .centerX,
+                    referenceSource: .item(referenceItem.id)
+                )
+            )
+        )
+    }
+
+    func testSolveUsesViewportDistanceForReleaseThresholdAcrossZoomLevels() {
+        let movingItem = makeAlignmentTestTextItem(center: CGPoint(x: 0, y: 0))
+        let referenceItem = makeAlignmentTestTextItem(
+            center: CGPoint(x: 100, y: 200),
+            zIndex: 1
+        )
+        let scene = makeAlignmentTestScene(
+            items: [
+                .text(movingItem),
+                .text(referenceItem)
+            ]
+        )
+        let solver = CanvasAlignmentGuideSolver(
+            configuration: CanvasAlignmentSolverConfiguration(
+                snapEnterThresholdInViewport: 5,
+                snapReleaseThresholdInViewport: 10,
+                searchPaddingInViewport: 160
+            )
+        )
+        let lockState = CanvasAlignmentLockState(
+            xAxis: CanvasAlignmentAxisLock(
+                movingAnchor: .centerX,
+                referenceAnchor: .centerX,
+                referenceSource: .item(referenceItem.id)
+            )
+        )
+
+        let zoomScaleOneResult = solver.solve(
+            CanvasAlignmentSolveRequest(
+                movingItemID: movingItem.id,
+                proposedCenter: CGPoint(x: 108, y: 0),
+                scene: scene,
+                boardState: nil,
+                camera: makeAlignmentTestCamera(zoomScale: 1),
+                lockState: lockState
+            )
+        )
+        let zoomScaleTwoResult = solver.solve(
+            CanvasAlignmentSolveRequest(
+                movingItemID: movingItem.id,
+                proposedCenter: CGPoint(x: 108, y: 0),
+                scene: scene,
+                boardState: nil,
+                camera: makeAlignmentTestCamera(zoomScale: 2),
+                lockState: lockState
+            )
+        )
+
+        XCTAssertEqual(zoomScaleOneResult.resolvedCenter, CGPoint(x: 100, y: 0))
+        XCTAssertEqual(zoomScaleTwoResult.resolvedCenter, CGPoint(x: 108, y: 0))
+        XCTAssertNotEqual(zoomScaleOneResult.lockState, .none)
+        XCTAssertEqual(zoomScaleTwoResult.lockState, .none)
     }
 }
 
