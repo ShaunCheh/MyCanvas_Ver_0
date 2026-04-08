@@ -346,7 +346,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             return
         }
 
-        let layoutContext = performOverlayLayoutPass()
+        let layoutContext = contextMenuLayoutContextForCurrentChromeState()
         if let contextMenuState {
             logContextMenuPresentation(
                 state: contextMenuState,
@@ -356,6 +356,42 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         contextMenuHostView.apply(
             state: contextMenuState,
             layoutContext: layoutContext
+        )
+    }
+
+    private func contextMenuLayoutContextForCurrentChromeState() -> CanvasChromeLayoutContext {
+        if let runtime = toolbarTransitionRuntime {
+            return transitionContextMenuLayoutContext(for: runtime)
+        }
+
+        return performOverlayLayoutPass()
+    }
+
+    private func transitionContextMenuLayoutContext(
+        for runtime: CanvasToolbarTransitionRuntime
+    ) -> CanvasChromeLayoutContext {
+        var chromeBlockers = baseChromeBlockersForToolbarLayout()
+        let transitionFrame = normalizedToolbarFrame(
+            currentToolbarAnimatedFrame(fallback: runtime.currentPresentation.frame),
+            fallback: runtime.currentPresentation.frame
+        )
+        appendChromeBlocker(
+            kind: .toolbar,
+            rect: transitionFrame,
+            to: &chromeBlockers
+        )
+
+        let chromeLayoutContext = CanvasChromeLayoutContext(
+            safeBounds: toolbarLayoutSafeBounds(),
+            toolbarPreferredPlacement: runtime.context.visibleSnapshot.state.placement,
+            toolbarMeasuredSize: CanvasChromeLayoutGeometry.sanitizedSize(
+                runtime.context.frames.visibleFrame.size
+            ),
+            chromeBlockers: chromeBlockers
+        )
+        return makeContextMenuLayoutContext(
+            chromeLayoutContext: chromeLayoutContext,
+            miniMapFrame: miniMapMountView.frame
         )
     }
 
@@ -654,6 +690,10 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             "snapshotViewportBounds=\(describe(rect: lastRenderSnapshot.viewportBounds))"
         )
         updateCameraViewportSizeIfNeeded(trigger: "viewDidLayout")
+        guard isToolbarTransitionActive == false else {
+            markToolbarTransitionLayoutReconcilePending()
+            return
+        }
         updateChromeOverlayLayout()
         print(
             "[Canvas macOS][ControllerLifecycle] " +
@@ -767,6 +807,11 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     }
 
     private func updateChromeOverlayLayout() {
+        guard isToolbarTransitionActive == false else {
+            markToolbarTransitionLayoutReconcilePending()
+            return
+        }
+
         let contextMenuLayoutContext = performOverlayLayoutPass()
         updateContextMenuLayout(using: contextMenuLayoutContext)
     }
