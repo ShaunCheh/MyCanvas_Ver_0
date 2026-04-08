@@ -29,6 +29,7 @@ final class macOSCanvasViewportView: NSView {
     private static let cropOutlineLineWidth: CGFloat = 2
     private static let cropHandleLineWidth: CGFloat = 2
     private static let cropHandleSize: CGFloat = 10
+    private static let alignmentGuideLineWidth: CGFloat = 2
     private static let rotateGuideLineWidth: CGFloat = 2
     private static let rotateHandleLineWidth: CGFloat = 2
     private static let rotateHandleSize: CGFloat = 12
@@ -50,6 +51,7 @@ final class macOSCanvasViewportView: NSView {
     private let overlayLayer = CALayer()
     private let selectionOutlineLayer = CAShapeLayer()
     private let interactionOverlayLayer = CALayer()
+    private let alignmentGuideLayer = CAShapeLayer()
     private let rotationRingLayer = CAShapeLayer()
     private let rotationTickLayer = CAShapeLayer()
     private let rotationPointerLayer = CAShapeLayer()
@@ -181,6 +183,7 @@ final class macOSCanvasViewportView: NSView {
         overlayLayer.addSublayer(cropOutlineLayer)
         overlayLayer.addSublayer(rotateGuideLayer)
         overlayLayer.addSublayer(rotateHandleLayer)
+        interactionOverlayLayer.addSublayer(alignmentGuideLayer)
         interactionOverlayLayer.addSublayer(rotationRingLayer)
         interactionOverlayLayer.addSublayer(rotationTickLayer)
         interactionOverlayLayer.addSublayer(rotationPointerLayer)
@@ -191,6 +194,7 @@ final class macOSCanvasViewportView: NSView {
         configureBoardSurfaceLayer()
         configureSelectionOutlineLayer()
         configureInteractionOverlayLayer()
+        configureAlignmentGuideLayer()
         configureRotationRingLayer()
         configureRotationTickLayer()
         configureRotationPointerLayer()
@@ -417,6 +421,15 @@ final class macOSCanvasViewportView: NSView {
 
     private func configureInteractionOverlayLayer() {
         interactionOverlayLayer.isHidden = true
+    }
+
+    private func configureAlignmentGuideLayer() {
+        alignmentGuideLayer.fillColor = nil
+        alignmentGuideLayer.strokeColor = Self.selectionStrokeColor
+        alignmentGuideLayer.lineWidth = Self.alignmentGuideLineWidth
+        alignmentGuideLayer.lineCap = .round
+        alignmentGuideLayer.lineJoin = .round
+        alignmentGuideLayer.isHidden = true
     }
 
     private func configureRotationRingLayer() {
@@ -649,8 +662,7 @@ final class macOSCanvasViewportView: NSView {
         case .rotation:
             refreshRotationInteractionOverlay(from: interactionOverlay)
         case .alignment:
-            // Phase 0 only lands the contract; viewport drawing comes later.
-            hideInteractionOverlay()
+            refreshAlignmentInteractionOverlay(from: interactionOverlay)
         }
     }
 
@@ -765,19 +777,25 @@ final class macOSCanvasViewportView: NSView {
             return
         }
 
-        interactionOverlayLayer.isHidden = !payload.isActive
+        guard payload.isActive else {
+            hideInteractionOverlay()
+            return
+        }
+
+        interactionOverlayLayer.isHidden = false
+        hideAlignmentInteractionOverlayLayer()
 
         rotationRingLayer.frame = bounds
         rotationRingLayer.path = CGPath(
             ellipseIn: payload.ringScreenRect,
             transform: nil
         )
-        rotationRingLayer.isHidden = !payload.isActive
+        rotationRingLayer.isHidden = false
         rotationRingLayer.contentsScale = currentContentsScale
 
         rotationTickLayer.frame = bounds
         rotationTickLayer.path = Self.lineSegmentsPath(payload.tickSegments)
-        rotationTickLayer.isHidden = !payload.isActive
+        rotationTickLayer.isHidden = false
         rotationTickLayer.contentsScale = currentContentsScale
 
         rotationPointerLayer.frame = bounds
@@ -785,7 +803,7 @@ final class macOSCanvasViewportView: NSView {
             payload.zeroReferenceSegment,
             payload.currentAngleSegment
         ])
-        rotationPointerLayer.isHidden = !payload.isActive
+        rotationPointerLayer.isHidden = false
         rotationPointerLayer.contentsScale = currentContentsScale
 
         let attributedText = Self.rotationAttributedText(for: payload)
@@ -804,13 +822,37 @@ final class macOSCanvasViewportView: NSView {
             cornerHeight: Self.rotationTextCornerRadius,
             transform: nil
         )
-        rotationTextBackgroundLayer.isHidden = !payload.isActive
+        rotationTextBackgroundLayer.isHidden = false
         rotationTextBackgroundLayer.contentsScale = currentContentsScale
 
         rotationTextLayer.frame = textFrame
         rotationTextLayer.string = attributedText
-        rotationTextLayer.isHidden = !payload.isActive
+        rotationTextLayer.isHidden = false
         rotationTextLayer.contentsScale = currentContentsScale
+    }
+
+    private func refreshAlignmentInteractionOverlay(
+        from interactionOverlay: CanvasInteractionRenderOverlay
+    ) {
+        guard case let .alignment(payload) = interactionOverlay.payload else {
+            hideInteractionOverlay()
+            return
+        }
+
+        guard payload.isActive else {
+            hideInteractionOverlay()
+            return
+        }
+
+        interactionOverlayLayer.isHidden = false
+        hideRotationInteractionOverlayLayers()
+
+        alignmentGuideLayer.frame = bounds
+        alignmentGuideLayer.path = payload.guideSegments.isEmpty
+            ? nil
+            : Self.lineSegmentsPath(payload.guideSegments)
+        alignmentGuideLayer.isHidden = payload.guideSegments.isEmpty
+        alignmentGuideLayer.contentsScale = currentContentsScale
     }
 
     private func hideEditOverlay() {
@@ -820,7 +862,17 @@ final class macOSCanvasViewportView: NSView {
 
     private func hideInteractionOverlay() {
         interactionOverlayLayer.isHidden = true
+        hideAlignmentInteractionOverlayLayer()
+        hideRotationInteractionOverlayLayers()
+    }
 
+    private func hideAlignmentInteractionOverlayLayer() {
+        alignmentGuideLayer.path = nil
+        alignmentGuideLayer.frame = bounds
+        alignmentGuideLayer.isHidden = true
+    }
+
+    private func hideRotationInteractionOverlayLayers() {
         rotationRingLayer.path = nil
         rotationRingLayer.frame = bounds
         rotationRingLayer.isHidden = true
