@@ -24,7 +24,8 @@ struct CanvasRenderer {
         interactionState: CanvasInteractionState = CanvasInteractionState(),
         inlineEditState: CanvasInlineEditState? = nil,
         rotationPreviewState: CanvasRotationPreviewState? = nil,
-        rotationInteractionState: CanvasRotationInteractionState? = nil
+        rotationInteractionState: CanvasRotationInteractionState? = nil,
+        alignmentInteractionState: CanvasAlignmentInteractionState? = nil
     ) -> CanvasRenderSnapshot {
         let visibleWorldRect = camera.visibleWorldRect
         // Avoid turning an invalid zero-sized viewport into point-based culling.
@@ -74,7 +75,8 @@ struct CanvasRenderer {
             interactionState: interactionState,
             inlineEditState: inlineEditState,
             rotationPreviewState: rotationPreviewState,
-            rotationInteractionState: rotationInteractionState
+            rotationInteractionState: rotationInteractionState,
+            alignmentInteractionState: alignmentInteractionState
         )
 
         return CanvasRenderSnapshot(
@@ -359,15 +361,26 @@ struct CanvasRenderer {
         interactionState: CanvasInteractionState,
         inlineEditState: CanvasInlineEditState?,
         rotationPreviewState: CanvasRotationPreviewState?,
-        rotationInteractionState: CanvasRotationInteractionState?
+        rotationInteractionState: CanvasRotationInteractionState?,
+        alignmentInteractionState: CanvasAlignmentInteractionState?
     ) -> CanvasInteractionRenderOverlay? {
-        makeRotationInteractionOverlay(
+        if let rotationOverlay = makeRotationInteractionOverlay(
             scene: scene,
             camera: camera,
             interactionState: interactionState,
             inlineEditState: inlineEditState,
             rotationPreviewState: rotationPreviewState,
             rotationInteractionState: rotationInteractionState
+        ) {
+            return rotationOverlay
+        }
+
+        return makeAlignmentInteractionOverlay(
+            scene: scene,
+            camera: camera,
+            interactionState: interactionState,
+            inlineEditState: inlineEditState,
+            alignmentInteractionState: alignmentInteractionState
         )
     }
 
@@ -459,6 +472,47 @@ struct CanvasRenderer {
                     currentAngleSegment: currentAngleSegment,
                     textScreenAnchor: textScreenAnchor,
                     isActive: true
+                )
+            )
+        )
+    }
+
+    private func makeAlignmentInteractionOverlay(
+        scene: CanvasScene,
+        camera: CanvasCamera,
+        interactionState: CanvasInteractionState,
+        inlineEditState: CanvasInlineEditState?,
+        alignmentInteractionState: CanvasAlignmentInteractionState?
+    ) -> CanvasInteractionRenderOverlay? {
+        guard inlineEditState == nil else {
+            return nil
+        }
+
+        guard
+            let alignmentInteractionState,
+            alignmentInteractionState.isActive,
+            interactionState.selectedItemID == alignmentInteractionState.itemID,
+            scene.boardItem(withID: alignmentInteractionState.itemID) != nil
+        else {
+            return nil
+        }
+
+        let guideSegments = alignmentInteractionState.guides.map { guide in
+            CanvasInteractionLineSegment(
+                start: camera.worldToViewport(guide.worldStart),
+                end: camera.worldToViewport(guide.worldEnd)
+            )
+        }
+
+        return CanvasInteractionRenderOverlay(
+            itemID: alignmentInteractionState.itemID,
+            kind: .alignment,
+            payload: .alignment(
+                CanvasAlignmentInteractionOverlayPayload(
+                    guideSegments: guideSegments,
+                    xMatch: alignmentInteractionState.xMatch,
+                    yMatch: alignmentInteractionState.yMatch,
+                    isActive: alignmentInteractionState.isActive
                 )
             )
         )

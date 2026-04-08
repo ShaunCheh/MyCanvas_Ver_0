@@ -31,6 +31,7 @@ final class CanvasEditorSession {
     var inlineEditState: CanvasInlineEditState?
     var rotationPreviewState: CanvasRotationPreviewState?
     var rotationInteractionState: CanvasRotationInteractionState?
+    var alignmentInteractionState: CanvasAlignmentInteractionState?
 
     private(set) var lastRenderSnapshot: CanvasRenderSnapshot = .empty
     private(set) var activeBoardID: UUID?
@@ -177,6 +178,10 @@ final class CanvasEditorSession {
         isReadingModeActive ? nil : rotationInteractionState
     }
 
+    var presentationAlignmentInteractionState: CanvasAlignmentInteractionState? {
+        isReadingModeActive ? nil : alignmentInteractionState
+    }
+
     var selectedBoardItem: CanvasBoardItem? {
         guard let selectedItemID = interactionState.selectedItemID else {
             return nil
@@ -197,7 +202,8 @@ final class CanvasEditorSession {
             interactionState: presentationInteractionState,
             inlineEditState: presentationInlineEditState,
             rotationPreviewState: presentationRotationPreviewState,
-            rotationInteractionState: presentationRotationInteractionState
+            rotationInteractionState: presentationRotationInteractionState,
+            alignmentInteractionState: presentationAlignmentInteractionState
         )
         lastRenderSnapshot = snapshot
         return snapshot
@@ -351,6 +357,7 @@ final class CanvasEditorSession {
         inlineEditState = nil
         rotationPreviewState = nil
         rotationInteractionState = nil
+        alignmentInteractionState = nil
         if preserveTransientImageAssetPayloads == false {
             transientImageAssetPayloads.removeAll()
         }
@@ -378,6 +385,7 @@ final class CanvasEditorSession {
             inlineEditState = nil
             rotationPreviewState = nil
             rotationInteractionState = nil
+            alignmentInteractionState = nil
             lastRenderSnapshot = .empty
         }
     }
