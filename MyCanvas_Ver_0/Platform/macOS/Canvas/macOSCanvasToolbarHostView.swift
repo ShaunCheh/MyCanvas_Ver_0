@@ -1,5 +1,6 @@
 #if os(macOS)
 import AppKit
+import QuartzCore
 
 final class macOSCanvasToolbarHostView: NSView {
     private enum Layout {
@@ -57,6 +58,7 @@ final class macOSCanvasToolbarHostView: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         translatesAutoresizingMaskIntoConstraints = false
+        wantsLayer = true
         addSubview(backgroundView)
         addSubview(contentClipView)
         contentClipView.addSubview(buttonsStackView)
@@ -97,27 +99,31 @@ final class macOSCanvasToolbarHostView: NSView {
     }
 
     func render(_ state: CanvasToolbarState) {
+        clearTransitionAnimations()
         isTransitionRendering = false
         preferredAxisOverride = state.preferredAxis
         dockEdge = state.placement.preferredEdge
         transitionInteractivity = true
         backgroundView.isHidden = state.showsBackground == false
-        applyContentTransitionAppearance(alpha: 1, scale: 1)
+        applyContentTransitionAppearance(alpha: 1, scale: 1, animated: false)
         isHidden = state.items.isEmpty
         syncButtons(with: state.items)
     }
 
     func renderTransition(_ presentation: CanvasToolbarTransitionPresentation) {
+        let shouldAnimate = shouldAnimateTransitionChanges
+        if shouldAnimate == false {
+            clearTransitionAnimations()
+        }
         isTransitionRendering = true
         transitionInteractivity = presentation.isInteractive
         backgroundView.isHidden = presentation.showsBackground == false
-        if frame != presentation.frame {
-            frame = presentation.frame
-        }
+        applyTransitionFrame(presentation.frame, animated: shouldAnimate)
         syncButtons(with: presentation.itemStates)
         applyContentTransitionAppearance(
             alpha: presentation.contentAlpha,
-            scale: presentation.contentScale
+            scale: presentation.contentScale,
+            animated: shouldAnimate
         )
         isHidden = presentation.keepsHostVisible == false
     }
@@ -182,14 +188,57 @@ final class macOSCanvasToolbarHostView: NSView {
 
     private func applyContentTransitionAppearance(
         alpha: CGFloat,
-        scale: CGFloat
+        scale: CGFloat,
+        animated: Bool
     ) {
         let clampedAlpha = min(max(alpha, 0), 1)
         let clampedScale = max(scale, 0)
-        buttonsStackView.alphaValue = clampedAlpha
+        if animated {
+            buttonsStackView.animator().alphaValue = clampedAlpha
+        } else {
+            buttonsStackView.alphaValue = clampedAlpha
+        }
+
+        CATransaction.begin()
+        if animated {
+            CATransaction.setAnimationDuration(NSAnimationContext.current.duration)
+            CATransaction.setAnimationTimingFunction(
+                CAMediaTimingFunction(name: .easeInEaseOut)
+            )
+        } else {
+            CATransaction.setDisableActions(true)
+        }
         buttonsStackView.layer?.setAffineTransform(
             CGAffineTransform(scaleX: clampedScale, y: clampedScale)
         )
+        CATransaction.commit()
+    }
+
+    private var shouldAnimateTransitionChanges: Bool {
+        NSAnimationContext.current.duration > 0
+    }
+
+    private func applyTransitionFrame(
+        _ targetFrame: CGRect,
+        animated: Bool
+    ) {
+        guard frame != targetFrame else {
+            return
+        }
+
+        if animated {
+            animator().setFrameOrigin(targetFrame.origin)
+            animator().setFrameSize(targetFrame.size)
+        } else {
+            frame = targetFrame
+        }
+    }
+
+    private func clearTransitionAnimations() {
+        layer?.removeAllAnimations()
+        backgroundView.layer?.removeAllAnimations()
+        contentClipView.layer?.removeAllAnimations()
+        buttonsStackView.layer?.removeAllAnimations()
     }
 
     private func applyAppearance(
