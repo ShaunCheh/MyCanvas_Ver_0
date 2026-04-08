@@ -24,9 +24,18 @@ final class macOSCanvasToolbarHostView: NSView {
         return view
     }()
 
+    // Clip toolbar content during collapse without squeezing button constraints.
+    private let contentClipView: macOSCanvasChromeOverlayView = {
+        let view = macOSCanvasChromeOverlayView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.layer?.masksToBounds = true
+        return view
+    }()
+
     private let buttonsStackView: macOSCanvasChromeStackView = {
         let stackView = macOSCanvasChromeStackView()
         stackView.translatesAutoresizingMaskIntoConstraints = false
+        stackView.wantsLayer = true
         stackView.orientation = .vertical
         stackView.alignment = .trailing
         stackView.distribution = .fill
@@ -36,6 +45,8 @@ final class macOSCanvasToolbarHostView: NSView {
 
     private var registeredButtons: [CanvasToolbarItemID: NSButton] = [:]
     private var preferredAxisOverride: CanvasToolbarAxis?
+    private var isTransitionRendering = false
+    private var transitionInteractivity = true
 
     var dockEdge: CanvasToolbarDockEdge = .trailing {
         didSet {
@@ -47,16 +58,29 @@ final class macOSCanvasToolbarHostView: NSView {
         super.init(frame: frameRect)
         translatesAutoresizingMaskIntoConstraints = false
         addSubview(backgroundView)
-        addSubview(buttonsStackView)
+        addSubview(contentClipView)
+        contentClipView.addSubview(buttonsStackView)
         NSLayoutConstraint.activate([
             backgroundView.topAnchor.constraint(equalTo: topAnchor),
             backgroundView.leadingAnchor.constraint(equalTo: leadingAnchor),
             backgroundView.trailingAnchor.constraint(equalTo: trailingAnchor),
             backgroundView.bottomAnchor.constraint(equalTo: bottomAnchor),
-            buttonsStackView.topAnchor.constraint(equalTo: topAnchor, constant: CanvasToolbarChromeMetrics.verticalInset),
-            buttonsStackView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: CanvasToolbarChromeMetrics.horizontalInset),
-            buttonsStackView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -CanvasToolbarChromeMetrics.horizontalInset),
-            buttonsStackView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -CanvasToolbarChromeMetrics.verticalInset)
+            contentClipView.topAnchor.constraint(equalTo: topAnchor),
+            contentClipView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            contentClipView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            contentClipView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            buttonsStackView.topAnchor.constraint(
+                equalTo: contentClipView.topAnchor,
+                constant: CanvasToolbarChromeMetrics.verticalInset
+            ),
+            buttonsStackView.leadingAnchor.constraint(
+                equalTo: contentClipView.leadingAnchor,
+                constant: CanvasToolbarChromeMetrics.horizontalInset
+            ),
+            buttonsStackView.trailingAnchor.constraint(
+                equalTo: contentClipView.trailingAnchor,
+                constant: -CanvasToolbarChromeMetrics.horizontalInset
+            )
         ])
         updateDockEdgeLayout()
     }
@@ -73,11 +97,39 @@ final class macOSCanvasToolbarHostView: NSView {
     }
 
     func render(_ state: CanvasToolbarState) {
+        isTransitionRendering = false
         preferredAxisOverride = state.preferredAxis
         dockEdge = state.placement.preferredEdge
+        transitionInteractivity = true
         backgroundView.isHidden = state.showsBackground == false
+        applyContentTransitionAppearance(alpha: 1, scale: 1)
         isHidden = state.items.isEmpty
         syncButtons(with: state.items)
+    }
+
+    func renderTransition(_ presentation: CanvasToolbarTransitionPresentation) {
+        isTransitionRendering = true
+        transitionInteractivity = presentation.isInteractive
+        backgroundView.isHidden = presentation.showsBackground == false
+        if frame != presentation.frame {
+            frame = presentation.frame
+        }
+        syncButtons(with: presentation.itemStates)
+        applyContentTransitionAppearance(
+            alpha: presentation.contentAlpha,
+            scale: presentation.contentScale
+        )
+        isHidden = presentation.keepsHostVisible == false
+    }
+
+    func completeTransition(applying state: CanvasToolbarState) {
+        isTransitionRendering = false
+        render(state)
+    }
+
+    func cancelTransition(applying state: CanvasToolbarState) {
+        isTransitionRendering = false
+        render(state)
     }
 
     func measuredContentSize() -> CGSize {
@@ -92,6 +144,9 @@ final class macOSCanvasToolbarHostView: NSView {
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
+        guard transitionInteractivity else {
+            return nil
+        }
         let hitView = super.hitTest(point)
         return hitView === self ? nil : hitView
     }
@@ -123,6 +178,18 @@ final class macOSCanvasToolbarHostView: NSView {
         buttonsStackView.alignment = preferredAxis == .horizontal
             ? .centerY
             : .trailing
+    }
+
+    private func applyContentTransitionAppearance(
+        alpha: CGFloat,
+        scale: CGFloat
+    ) {
+        let clampedAlpha = min(max(alpha, 0), 1)
+        let clampedScale = max(scale, 0)
+        buttonsStackView.alphaValue = clampedAlpha
+        buttonsStackView.layer?.setAffineTransform(
+            CGAffineTransform(scaleX: clampedScale, y: clampedScale)
+        )
     }
 
     private func applyAppearance(
