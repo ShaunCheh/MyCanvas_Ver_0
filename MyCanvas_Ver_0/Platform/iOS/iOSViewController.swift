@@ -136,6 +136,11 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     }
     private let toolbarPlacementSolver = CanvasToolbarPlacementSolver()
     private let toolbarHostView = iOSCanvasToolbarHostView()
+    private var toolbarTransitionRuntime: CanvasToolbarTransitionRuntime?
+    private var toolbarTransitionAnimator: UIViewPropertyAnimator?
+    private var isToolbarTransitionActive: Bool {
+        toolbarTransitionRuntime != nil
+    }
     private let textEditorOverlayView = iOSCanvasTextEditorOverlayView()
     private let historyButtonsStackView: iOSCanvasChromeStackView = {
         let stackView = iOSCanvasChromeStackView()
@@ -655,6 +660,11 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     }
 
     private func updatePreparedToolbarPlacement() {
+        guard isToolbarTransitionActive == false else {
+            markToolbarTransitionLayoutReconcilePending()
+            return
+        }
+
         renderToolbar()
         if view.bounds.isEmpty == false {
             view.layoutIfNeeded()
@@ -692,6 +702,11 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     }
 
     private func applyToolbarFrame(_ toolbarFrame: CGRect) {
+        guard isToolbarTransitionActive == false else {
+            markToolbarTransitionLayoutReconcilePending()
+            return
+        }
+
         if toolbarHostView.frame != toolbarFrame {
             toolbarHostView.frame = toolbarFrame
         }
@@ -1541,12 +1556,591 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
 
     @objc
     private func handleWorkspaceModeButtonTap() {
-        workspaceMode = workspaceMode.toggled
+        beginToolbarModeTransition(
+            to: workspaceMode == .editing ? .toReading : .toEditing
+        )
+    }
+
+    private func beginToolbarModeTransition(
+        to direction: CanvasToolbarTransitionDirection
+    ) {
+        let targetMode = toolbarTargetWorkspaceMode(for: direction)
+        if let runtime = toolbarTransitionRuntime,
+           toolbarTargetWorkspaceMode(for: runtime.context.direction) == targetMode
+        {
+            return
+        }
+
         dismissContextMenu()
+        cancelAndRebaseToolbarTransitionIfNeeded(targetMode: targetMode)
+
+        guard let context = prepareToolbarTransitionContext(direction: direction) else {
+            toolbarTransitionAnimator?.stopAnimation(true)
+            toolbarTransitionAnimator = nil
+            toolbarTransitionRuntime = nil
+            updatePreparedToolbarPlacement()
+            return
+        }
+
+        let initialStage = initialToolbarTransitionStage(
+            for: direction,
+            context: context
+        )
+        let initialPresentation = CanvasToolbarTransitionGeometry.presentation(
+            for: initialStage,
+            context: context
+        )
+
+        toolbarTransitionRuntime = CanvasToolbarTransitionRuntime(
+            context: context,
+            stage: initialStage,
+            currentPresentation: initialPresentation,
+            pendingLayoutReconcile: true
+        )
+        toolbarHostView.renderTransition(initialPresentation)
+
+        switch initialStage {
+        case .collapsing, .expanding:
+            runToolbarCollapsePhase()
+        case .exiting, .entering:
+            runToolbarSlidePhase()
+        case .steadyVisible, .hidden:
+            finishToolbarModeTransition(applying: context.settledState)
+        }
+    }
+
+    private func prepareToolbarTransitionContext(
+        direction: CanvasToolbarTransitionDirection
+    ) -> CanvasToolbarTransitionContext? {
+        let configuration = CanvasToolbarTransitionConfiguration()
+
+        switch direction {
+        case .toReading:
+            let visibleState = makeToolbarState()
+            let visibleFrame = currentToolbarTransitionStartFrame(
+                fallbackState: visibleState
+            )
+
+            applyWorkspaceModeForToolbarTransition(to: .reading)
+
+            let settledState = makeToolbarState()
+            guard visibleState.items.isEmpty == false else {
+                return nil
+            }
+
+            let collapsedFrame = CanvasToolbarTransitionGeometry.collapsedFrame(
+                from: visibleFrame
+            )
+            let offscreenFrame = CanvasToolbarTransitionGeometry.offscreenFrame(
+                from: collapsedFrame,
+                safeBounds: toolbarLayoutSafeBounds()
+            )
+
+            return CanvasToolbarTransitionContext(
+                direction: direction,
+                visibleSnapshot: CanvasToolbarTransitionSnapshot(
+                    state: visibleState,
+                    frame: visibleFrame
+                ),
+                settledState: settledState,
+                frames: CanvasToolbarTransitionFrames(
+                    visibleFrame: visibleFrame,
+                    collapsedFrame: collapsedFrame,
+                    offscreenFrame: offscreenFrame
+                ),
+                configuration: configuration
+            )
+
+        case .toEditing:
+            applyWorkspaceModeForToolbarTransition(to: .editing)
+
+            let visibleState = makeToolbarState()
+            guard visibleState.items.isEmpty == false else {
+                return nil
+            }
+
+            let visibleFrame = resolvedSteadyToolbarFrame(for: visibleState)
+            let collapsedFrame = CanvasToolbarTransitionGeometry.collapsedFrame(
+                from: visibleFrame
+            )
+            let offscreenFrame = CanvasToolbarTransitionGeometry.offscreenFrame(
+                from: collapsedFrame,
+                safeBounds: toolbarLayoutSafeBounds()
+            )
+
+            return CanvasToolbarTransitionContext(
+                direction: direction,
+                visibleSnapshot: CanvasToolbarTransitionSnapshot(
+                    state: visibleState,
+                    frame: visibleFrame
+                ),
+                settledState: visibleState,
+                frames: CanvasToolbarTransitionFrames(
+                    visibleFrame: visibleFrame,
+                    collapsedFrame: collapsedFrame,
+                    offscreenFrame: offscreenFrame
+                ),
+                configuration: configuration
+            )
+        }
+    }
+
+    private func runToolbarCollapsePhase() {
+        guard let runtime = toolbarTransitionRuntime else {
+            return
+        }
+
+        let targetStage: CanvasToolbarTransitionStage
+        let completion: () -> Void
+
+        switch runtime.context.direction {
+        case .toReading:
+            targetStage = .collapsing(progress: 1)
+            completion = { [weak self] in
+                self?.runToolbarSlidePhase()
+            }
+        case .toEditing:
+            targetStage = .expanding(progress: 1)
+            completion = { [weak self] in
+                guard let self else {
+                    return
+                }
+                self.finishToolbarModeTransition(
+                    applying: runtime.context.settledState
+                )
+            }
+        }
+
+        animateToolbarTransition(
+            to: targetStage,
+            duration: remainingToolbarTransitionDuration(
+                fullDuration: runtime.context.configuration.collapseDuration,
+                currentStage: runtime.stage
+            ),
+            completion: completion
+        )
+    }
+
+    private func runToolbarSlidePhase() {
+        guard let runtime = toolbarTransitionRuntime else {
+            return
+        }
+
+        let targetStage: CanvasToolbarTransitionStage
+        let completion: () -> Void
+
+        switch runtime.context.direction {
+        case .toReading:
+            targetStage = .exiting(progress: 1)
+            completion = { [weak self] in
+                guard let self else {
+                    return
+                }
+                self.finishToolbarModeTransition(
+                    applying: runtime.context.settledState
+                )
+            }
+        case .toEditing:
+            targetStage = .entering(progress: 1)
+            completion = { [weak self] in
+                self?.runToolbarCollapsePhase()
+            }
+        }
+
+        animateToolbarTransition(
+            to: targetStage,
+            duration: remainingToolbarTransitionDuration(
+                fullDuration: runtime.context.configuration.slideDuration,
+                currentStage: runtime.stage
+            ),
+            completion: completion
+        )
+    }
+
+    private func finishToolbarModeTransition(
+        applying settledState: CanvasToolbarState
+    ) {
+        let pendingLayoutReconcile = toolbarTransitionRuntime?.pendingLayoutReconcile
+            ?? true
+        toolbarTransitionAnimator = nil
+        toolbarTransitionRuntime = nil
+        toolbarHostView.completeTransition(applying: settledState)
+        if pendingLayoutReconcile {
+            updatePreparedToolbarPlacement()
+        }
+    }
+
+    private func cancelAndRebaseToolbarTransitionIfNeeded(
+        targetMode: CanvasWorkspaceMode
+    ) {
+        guard var runtime = toolbarTransitionRuntime else {
+            return
+        }
+
+        guard
+            toolbarTargetWorkspaceMode(for: runtime.context.direction) != targetMode
+        else {
+            return
+        }
+
+        runtime.currentPresentation = inferredCurrentToolbarTransitionPresentation(
+            from: runtime
+        )
+        runtime.pendingLayoutReconcile = true
+        toolbarTransitionRuntime = runtime
+
+        toolbarTransitionAnimator?.stopAnimation(true)
+        toolbarTransitionAnimator = nil
+        toolbarHostView.renderTransition(runtime.currentPresentation)
+    }
+
+    private func animateToolbarTransition(
+        to targetStage: CanvasToolbarTransitionStage,
+        duration: TimeInterval,
+        completion: @escaping () -> Void
+    ) {
+        guard var runtime = toolbarTransitionRuntime else {
+            return
+        }
+
+        let targetPresentation = CanvasToolbarTransitionGeometry.presentation(
+            for: targetStage,
+            context: runtime.context
+        )
+        runtime.stage = targetStage
+        runtime.currentPresentation = targetPresentation
+        toolbarTransitionRuntime = runtime
+
+        if duration <= 0 {
+            toolbarHostView.renderTransition(targetPresentation)
+            completion()
+            return
+        }
+
+        let animator = UIViewPropertyAnimator(
+            duration: duration,
+            curve: .easeInOut
+        ) { [weak self] in
+            self?.toolbarHostView.renderTransition(targetPresentation)
+        }
+        animator.addCompletion { [weak self] position in
+            guard let self else {
+                return
+            }
+            guard self.toolbarTransitionAnimator === animator else {
+                return
+            }
+
+            self.toolbarTransitionAnimator = nil
+            guard position == .end else {
+                return
+            }
+
+            completion()
+        }
+
+        toolbarTransitionAnimator?.stopAnimation(true)
+        toolbarTransitionAnimator = animator
+        animator.startAnimation()
+    }
+
+    private func applyWorkspaceModeForToolbarTransition(
+        to targetMode: CanvasWorkspaceMode
+    ) {
+        workspaceMode = targetMode
         updateWorkspaceModeButtonAppearance()
-        updateInlineEditButtonsAppearance()
+        updateHistoryButtonsAppearance()
+        syncTextEditorPresentation()
         requestCanvasRefresh(reason: "toggle workspace mode")
         scheduleAutosave(reason: "toggle workspace mode")
+    }
+
+    private func toolbarTargetWorkspaceMode(
+        for direction: CanvasToolbarTransitionDirection
+    ) -> CanvasWorkspaceMode {
+        switch direction {
+        case .toReading:
+            return .reading
+        case .toEditing:
+            return .editing
+        }
+    }
+
+    private func markToolbarTransitionLayoutReconcilePending() {
+        guard var runtime = toolbarTransitionRuntime else {
+            return
+        }
+
+        runtime.pendingLayoutReconcile = true
+        toolbarTransitionRuntime = runtime
+    }
+
+    private func initialToolbarTransitionStage(
+        for direction: CanvasToolbarTransitionDirection,
+        context: CanvasToolbarTransitionContext
+    ) -> CanvasToolbarTransitionStage {
+        guard let currentPresentation = toolbarTransitionRuntime?.currentPresentation else {
+            switch direction {
+            case .toReading:
+                return .collapsing(progress: 0)
+            case .toEditing:
+                return .entering(progress: 0)
+            }
+        }
+
+        let currentFrame = normalizedToolbarFrame(
+            currentPresentation.frame,
+            fallback: context.frames.visibleFrame
+        )
+        let collapsedFrame = normalizedToolbarFrame(
+            context.frames.collapsedFrame,
+            fallback: currentFrame
+        )
+
+        switch direction {
+        case .toReading:
+            let isCollapsed = currentFrame.height <= (collapsedFrame.height + 0.5)
+            if isCollapsed {
+                return .exiting(
+                    progress: toolbarLinearProgress(
+                        from: collapsedFrame.minX,
+                        to: context.frames.offscreenFrame.minX,
+                        current: currentFrame.minX
+                    )
+                )
+            }
+
+            return .collapsing(progress: 0)
+
+        case .toEditing:
+            if currentFrame.height > (collapsedFrame.height + 0.5) {
+                let expandingProgress = toolbarLinearProgress(
+                    from: collapsedFrame.height,
+                    to: context.frames.visibleFrame.height,
+                    current: currentFrame.height
+                )
+                if expandingProgress >= 0.999 {
+                    return .steadyVisible
+                }
+
+                return .expanding(progress: expandingProgress)
+            }
+
+            let enteringProgress = toolbarLinearProgress(
+                from: context.frames.offscreenFrame.minX,
+                to: collapsedFrame.minX,
+                current: currentFrame.minX
+            )
+            if enteringProgress >= 0.999 {
+                return .expanding(progress: 0)
+            }
+
+            return .entering(progress: enteringProgress)
+        }
+    }
+
+    private func inferredCurrentToolbarTransitionPresentation(
+        from runtime: CanvasToolbarTransitionRuntime
+    ) -> CanvasToolbarTransitionPresentation {
+        let currentFrame = currentToolbarAnimatedFrame(
+            fallback: runtime.currentPresentation.frame
+        )
+
+        switch runtime.stage {
+        case .steadyVisible:
+            return CanvasToolbarTransitionGeometry.presentation(
+                for: .steadyVisible,
+                context: runtime.context
+            )
+        case .hidden:
+            return CanvasToolbarTransitionGeometry.presentation(
+                for: .hidden,
+                context: runtime.context
+            )
+        case .collapsing:
+            return CanvasToolbarTransitionGeometry.presentation(
+                for: .collapsing(
+                    progress: toolbarLinearProgress(
+                        from: runtime.context.frames.visibleFrame.height,
+                        to: runtime.context.frames.collapsedFrame.height,
+                        current: currentFrame.height
+                    )
+                ),
+                context: runtime.context
+            )
+        case .exiting:
+            return CanvasToolbarTransitionGeometry.presentation(
+                for: .exiting(
+                    progress: toolbarLinearProgress(
+                        from: runtime.context.frames.collapsedFrame.minX,
+                        to: runtime.context.frames.offscreenFrame.minX,
+                        current: currentFrame.minX
+                    )
+                ),
+                context: runtime.context
+            )
+        case .entering:
+            return CanvasToolbarTransitionGeometry.presentation(
+                for: .entering(
+                    progress: toolbarLinearProgress(
+                        from: runtime.context.frames.offscreenFrame.minX,
+                        to: runtime.context.frames.collapsedFrame.minX,
+                        current: currentFrame.minX
+                    )
+                ),
+                context: runtime.context
+            )
+        case .expanding:
+            return CanvasToolbarTransitionGeometry.presentation(
+                for: .expanding(
+                    progress: toolbarLinearProgress(
+                        from: runtime.context.frames.collapsedFrame.height,
+                        to: runtime.context.frames.visibleFrame.height,
+                        current: currentFrame.height
+                    )
+                ),
+                context: runtime.context
+            )
+        }
+    }
+
+    private func remainingToolbarTransitionDuration(
+        fullDuration: TimeInterval,
+        currentStage: CanvasToolbarTransitionStage
+    ) -> TimeInterval {
+        let progress: CGFloat
+        switch currentStage {
+        case let .collapsing(currentProgress),
+             let .exiting(currentProgress),
+             let .entering(currentProgress),
+             let .expanding(currentProgress):
+            progress = clampedToolbarTransitionProgress(currentProgress)
+        case .steadyVisible, .hidden:
+            progress = 1
+        }
+
+        return max(fullDuration * TimeInterval(1 - progress), 0)
+    }
+
+    private func currentToolbarTransitionStartFrame(
+        fallbackState: CanvasToolbarState
+    ) -> CGRect {
+        if let runtime = toolbarTransitionRuntime,
+           let runtimeFrame = CanvasChromeLayoutGeometry.sanitizedRect(
+               runtime.currentPresentation.frame
+           ),
+           runtimeFrame.isEmpty == false
+        {
+            return runtimeFrame
+        }
+
+        if let currentFrame = CanvasChromeLayoutGeometry.sanitizedRect(
+            toolbarHostView.frame
+        ),
+           currentFrame.isEmpty == false
+        {
+            return currentFrame
+        }
+
+        return resolvedSteadyToolbarFrame(for: fallbackState)
+    }
+
+    private func currentToolbarAnimatedFrame(fallback: CGRect) -> CGRect {
+        if let animatedFrame = toolbarHostView.layer.presentation()?.frame,
+           let sanitizedAnimatedFrame = CanvasChromeLayoutGeometry.sanitizedRect(
+               animatedFrame
+           )
+        {
+            return sanitizedAnimatedFrame
+        }
+
+        if let currentFrame = CanvasChromeLayoutGeometry.sanitizedRect(
+            toolbarHostView.frame
+        ) {
+            return currentFrame
+        }
+
+        return normalizedToolbarFrame(fallback, fallback: fallback)
+    }
+
+    private func normalizedToolbarFrame(
+        _ frame: CGRect,
+        fallback: CGRect
+    ) -> CGRect {
+        CanvasChromeLayoutGeometry.sanitizedRect(frame)
+            ?? CanvasChromeLayoutGeometry.sanitizedRect(fallback)
+            ?? fallback.standardized
+    }
+
+    private func resolvedSteadyToolbarFrame(
+        for state: CanvasToolbarState
+    ) -> CGRect {
+        let placementResult = CanvasToolbarPlacementPass.resolve(
+            safeBounds: toolbarLayoutSafeBounds(),
+            toolbarPreferredPlacement: state.placement,
+            toolbarMeasuredSize: measuredToolbarHostSize(for: state),
+            baseChromeBlockers: baseChromeBlockersForToolbarLayout(),
+            scale: toolbarPlacementScale(),
+            solver: toolbarPlacementSolver
+        )
+
+        return normalizedToolbarFrame(
+            placementResult.toolbarFrame,
+            fallback: placementResult.toolbarFrame
+        )
+    }
+
+    private func measuredToolbarHostSize(
+        for state: CanvasToolbarState
+    ) -> CGSize {
+        guard state.items.isEmpty == false else {
+            return .zero
+        }
+
+        let itemCount = CGFloat(state.items.count)
+        let stackedLength = (itemCount * CanvasToolbarChromeMetrics.buttonEdge)
+            + (max(itemCount - 1, 0) * CanvasToolbarChromeMetrics.spacing)
+        let measuredStackSize: CGSize
+
+        switch state.preferredAxis {
+        case .horizontal:
+            measuredStackSize = CGSize(
+                width: stackedLength,
+                height: CanvasToolbarChromeMetrics.buttonEdge
+            )
+        case .vertical:
+            measuredStackSize = CGSize(
+                width: CanvasToolbarChromeMetrics.buttonEdge,
+                height: stackedLength
+            )
+        }
+
+        return CanvasChromeLayoutGeometry.sanitizedSize(
+            CanvasToolbarMeasurement.measuredContentSize(
+                forMeasuredStackSize: measuredStackSize
+            )
+        )
+    }
+
+    private func toolbarLinearProgress(
+        from start: CGFloat,
+        to end: CGFloat,
+        current: CGFloat
+    ) -> CGFloat {
+        guard start.isFinite, end.isFinite, current.isFinite else {
+            return 0
+        }
+
+        let delta = end - start
+        guard delta != 0 else {
+            return 0
+        }
+
+        return clampedToolbarTransitionProgress((current - start) / delta)
+    }
+
+    private func clampedToolbarTransitionProgress(_ progress: CGFloat) -> CGFloat {
+        min(max(progress, 0), 1)
     }
 
     @objc
@@ -2898,6 +3492,11 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
 
     private func renderToolbar() {
         guard isViewLoaded else {
+            return
+        }
+
+        guard isToolbarTransitionActive == false else {
+            markToolbarTransitionLayoutReconcilePending()
             return
         }
 
