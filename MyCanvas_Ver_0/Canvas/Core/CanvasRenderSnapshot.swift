@@ -134,6 +134,7 @@ struct CanvasInteractionLineSegment {
 
 enum CanvasInteractionOverlayKind {
     case rotation
+    case alignment
 }
 
 enum CanvasInteractionAngleZeroReference {
@@ -155,8 +156,18 @@ struct CanvasRotationInteractionOverlayPayload {
     let isActive: Bool
 }
 
+// Alignment overlay also stays in transient interaction space; the renderer
+// will later map world-space guides into these screen-space segments.
+struct CanvasAlignmentInteractionOverlayPayload {
+    let guideSegments: [CanvasInteractionLineSegment]
+    let xMatch: CanvasAlignmentMatch?
+    let yMatch: CanvasAlignmentMatch?
+    let isActive: Bool
+}
+
 enum CanvasInteractionRenderOverlayPayload {
     case rotation(CanvasRotationInteractionOverlayPayload)
+    case alignment(CanvasAlignmentInteractionOverlayPayload)
 }
 
 // Interaction overlays intentionally live alongside edit overlays so transient

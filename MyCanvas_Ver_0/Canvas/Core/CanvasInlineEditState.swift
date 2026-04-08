@@ -33,6 +33,19 @@ struct CanvasRotationInteractionState {
     let itemID: CanvasItemID
 }
 
+// Like rotation interaction state, alignment guides stay transient and never
+// enter BoardRuntimeState / history snapshots.
+struct CanvasAlignmentInteractionState: Equatable {
+    let itemID: CanvasItemID
+    let guides: [CanvasAlignmentGuide]
+    let xMatch: CanvasAlignmentMatch?
+    let yMatch: CanvasAlignmentMatch?
+
+    var isActive: Bool {
+        guides.isEmpty == false || xMatch != nil || yMatch != nil
+    }
+}
+
 // This transient editing state is intentionally kept out of BoardRuntimeState /
 // board.json so inline crop/text drafts never become persisted document data.
 struct CanvasInlineEditState {

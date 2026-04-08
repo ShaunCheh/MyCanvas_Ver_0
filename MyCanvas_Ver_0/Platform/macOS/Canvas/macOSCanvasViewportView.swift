@@ -648,6 +648,9 @@ final class macOSCanvasViewportView: NSView {
         switch interactionOverlay.kind {
         case .rotation:
             refreshRotationInteractionOverlay(from: interactionOverlay)
+        case .alignment:
+            // Phase 0 only lands the contract; viewport drawing comes later.
+            hideInteractionOverlay()
         }
     }
 
