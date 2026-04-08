@@ -97,6 +97,141 @@ final class CanvasEditorSessionAlignmentOverlayTests: XCTestCase {
 
         XCTAssertNil(snapshot.interactionOverlay)
     }
+
+    func testMakeCanvasSnapshotHidesAlignmentOverlayDuringInlineCropEdit() throws {
+        let item = try makeAlignmentOverlayTestImageItem()
+        let session = makeAlignmentOverlayTestSession(with: item)
+        session.inlineEditState = CanvasInlineEditState(item: item)
+        session.alignmentInteractionState = makeAlignmentOverlayTestState(
+            itemID: item.id
+        )
+
+        let snapshot = session.makeCanvasSnapshot()
+
+        XCTAssertNil(snapshot.interactionOverlay)
+    }
+
+    func testCurrentBoardHistorySnapshotIgnoresTransientAlignmentState() {
+        let item = makeAlignmentOverlayTestItem()
+        let session = makeAlignmentOverlayTestSession(with: item)
+        let baselineSnapshot = session.currentBoardHistorySnapshot()
+
+        session.rotationInteractionState = CanvasRotationInteractionState(
+            itemID: item.id
+        )
+        session.alignmentInteractionState = makeAlignmentOverlayTestState(
+            itemID: item.id
+        )
+
+        let historySnapshot = session.currentBoardHistorySnapshot()
+
+        XCTAssertEqual(historySnapshot, baselineSnapshot)
+    }
+
+    func testApplyBoardRuntimeStateClearsTransientAlignmentState() {
+        let currentItem = makeAlignmentOverlayTestItem()
+        let replacementItem = CanvasTextItem(
+            text: "restored",
+            center: CGPoint(x: 160, y: 80),
+            size: CGSize(width: 110, height: 44)
+        )
+        let session = makeAlignmentOverlayTestSession(with: currentItem)
+        session.rotationInteractionState = CanvasRotationInteractionState(
+            itemID: currentItem.id
+        )
+        session.alignmentInteractionState = makeAlignmentOverlayTestState(
+            itemID: currentItem.id
+        )
+
+        session.applyBoardRuntimeState(
+            makeAlignmentOverlayTestRuntimeState(
+                items: [.text(replacementItem)],
+                selectedItemID: replacementItem.id
+            )
+        )
+
+        XCTAssertNil(session.rotationInteractionState)
+        XCTAssertNil(session.alignmentInteractionState)
+        XCTAssertEqual(
+            session.scene.boardItem(withID: replacementItem.id)?.id,
+            replacementItem.id
+        )
+        XCTAssertNil(session.scene.boardItem(withID: currentItem.id))
+    }
+
+    func testApplyBoardHistorySnapshotClearsTransientAlignmentStateWithoutActiveBoard() {
+        let currentItem = makeAlignmentOverlayTestItem()
+        let replacementItem = CanvasTextItem(
+            text: "undo target",
+            center: CGPoint(x: 180, y: 120),
+            size: CGSize(width: 120, height: 48)
+        )
+        let session = makeAlignmentOverlayTestSession(with: currentItem)
+        session.rotationInteractionState = CanvasRotationInteractionState(
+            itemID: currentItem.id
+        )
+        session.alignmentInteractionState = makeAlignmentOverlayTestState(
+            itemID: currentItem.id
+        )
+
+        session.applyBoardHistorySnapshot(
+            BoardHistorySnapshot(
+                items: [.text(replacementItem)],
+                boardState: nil,
+                interactionState: CanvasInteractionState(
+                    selectedItemID: replacementItem.id
+                )
+            )
+        )
+
+        XCTAssertNil(session.rotationInteractionState)
+        XCTAssertNil(session.alignmentInteractionState)
+        XCTAssertEqual(
+            session.scene.boardItem(withID: replacementItem.id)?.id,
+            replacementItem.id
+        )
+        XCTAssertNil(session.scene.boardItem(withID: currentItem.id))
+    }
+
+    func testApplyBoardHistorySnapshotClearsTransientAlignmentStateWithActiveBoard() {
+        let currentItem = makeAlignmentOverlayTestItem()
+        let replacementItem = CanvasTextItem(
+            text: "redo target",
+            center: CGPoint(x: 220, y: 140),
+            size: CGSize(width: 140, height: 52)
+        )
+        let session = makeAlignmentOverlayTestSession(with: currentItem)
+        session.applyBoardRuntimeState(
+            makeAlignmentOverlayTestRuntimeState(
+                items: [.text(currentItem)],
+                selectedItemID: currentItem.id
+            )
+        )
+        session.rotationInteractionState = CanvasRotationInteractionState(
+            itemID: currentItem.id
+        )
+        session.alignmentInteractionState = makeAlignmentOverlayTestState(
+            itemID: currentItem.id
+        )
+
+        session.applyBoardHistorySnapshot(
+            BoardHistorySnapshot(
+                items: [.text(replacementItem)],
+                boardState: nil,
+                interactionState: CanvasInteractionState(
+                    selectedItemID: replacementItem.id
+                )
+            )
+        )
+
+        XCTAssertNil(session.rotationInteractionState)
+        XCTAssertNil(session.alignmentInteractionState)
+        XCTAssertEqual(
+            session.scene.boardItem(withID: replacementItem.id)?.id,
+            replacementItem.id
+        )
+        XCTAssertNil(session.scene.boardItem(withID: currentItem.id))
+    }
 }
 
 private enum CanvasEditorSessionAlignmentOverlayTestRetainer {
@@ -106,17 +241,36 @@ private enum CanvasEditorSessionAlignmentOverlayTestRetainer {
 private func makeAlignmentOverlayTestSession(
     with item: CanvasTextItem
 ) -> CanvasEditorSession {
+    makeAlignmentOverlayTestSession(
+        items: [.text(item)],
+        selectedItemID: item.id
+    )
+}
+
+private func makeAlignmentOverlayTestSession(
+    with item: CanvasImageItem
+) -> CanvasEditorSession {
+    makeAlignmentOverlayTestSession(
+        items: [.image(item)],
+        selectedItemID: item.id
+    )
+}
+
+private func makeAlignmentOverlayTestSession(
+    items: [CanvasBoardItem],
+    selectedItemID: CanvasItemID
+) -> CanvasEditorSession {
     let session = CanvasEditorSession(
         saveQueueLabel: "CanvasEditorSessionAlignmentOverlayTests.save",
         logPrefix: "[CanvasEditorSessionAlignmentOverlayTests]"
     )
-    session.scene.setItems([.text(item)])
+    session.scene.setItems(items)
     session.camera = CanvasCamera(
         center: .zero,
         zoomScale: 1,
         viewportSize: CGSize(width: 600, height: 400)
     )
-    session.interactionState.selectedItemID = item.id
+    session.interactionState.selectedItemID = selectedItemID
     CanvasEditorSessionAlignmentOverlayTestRetainer.sessions.append(session)
     return session
 }
@@ -153,4 +307,62 @@ private func makeAlignmentOverlayTestState(
         ),
         yMatch: nil
     )
+}
+
+private func makeAlignmentOverlayTestRuntimeState(
+    items: [CanvasBoardItem],
+    selectedItemID: CanvasItemID? = nil
+) -> BoardRuntimeState {
+    BoardRuntimeState(
+        boardID: UUID(),
+        title: "Alignment Test Board",
+        createdAt: Date(timeIntervalSince1970: 0),
+        updatedAt: Date(timeIntervalSince1970: 0),
+        items: items,
+        boardState: nil,
+        camera: CanvasCamera(
+            center: .zero,
+            zoomScale: 1,
+            viewportSize: CGSize(width: 600, height: 400)
+        ),
+        interactionState: CanvasInteractionState(selectedItemID: selectedItemID),
+        workspaceMode: .editing
+    )
+}
+
+private func makeAlignmentOverlayTestImageItem() throws -> CanvasImageItem {
+    CanvasImageItem(
+        asset: .transientStaticImage(
+            cgImage: try makeAlignmentOverlayTestCGImage()
+        ),
+        center: CGPoint(x: 20, y: 20),
+        size: CGSize(width: 96, height: 64)
+    )
+}
+
+private func makeAlignmentOverlayTestCGImage() throws -> CGImage {
+    let colorSpace = CGColorSpaceCreateDeviceRGB()
+    let bitmapInfo = CGImageAlphaInfo.premultipliedLast.rawValue
+    guard let context = CGContext(
+        data: nil,
+        width: 2,
+        height: 2,
+        bitsPerComponent: 8,
+        bytesPerRow: 2 * 4,
+        space: colorSpace,
+        bitmapInfo: bitmapInfo
+    ) else {
+        throw AlignmentOverlayTestImageError.failedToCreateBitmapContext
+    }
+    context.setFillColor(red: 0.2, green: 0.6, blue: 0.9, alpha: 1)
+    context.fill(CGRect(x: 0, y: 0, width: 2, height: 2))
+    guard let image = context.makeImage() else {
+        throw AlignmentOverlayTestImageError.failedToCreateImage
+    }
+    return image
+}
+
+private enum AlignmentOverlayTestImageError: Error {
+    case failedToCreateBitmapContext
+    case failedToCreateImage
 }
