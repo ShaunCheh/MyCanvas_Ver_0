@@ -66,6 +66,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     private static let rotateHandleHitTargetSize: CGFloat = 22
 
     private let miniMapLayoutSolver = CanvasOverlayLayoutSolver()
+    private let alignmentGuideSolver = CanvasAlignmentGuideSolver()
     var miniMapConfiguration = CanvasMiniMapConfiguration()
     var launchContext: CanvasLaunchContext?
     var onBackToBoardList: (() -> Void)?
@@ -243,6 +244,11 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     private var rotationInteractionState: CanvasRotationInteractionState? {
         get { editorSession.rotationInteractionState }
         set { editorSession.rotationInteractionState = newValue }
+    }
+
+    private var alignmentInteractionState: CanvasAlignmentInteractionState? {
+        get { editorSession.alignmentInteractionState }
+        set { editorSession.alignmentInteractionState = newValue }
     }
 
     private var lastRenderSnapshot: CanvasRenderSnapshot {
@@ -1463,6 +1469,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
                 return
             }
 
+            let clearedAlignmentInteractionState =
+                clearAlignmentInteractionStateIfNeeded()
             let pressedItemID = pressContext.targetItemID
             let releasedContext = resolvePointerPressContext(at: location)
             let releasedItemID = releasedContext.targetItemID
@@ -1470,6 +1478,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             var clickTarget = "blank"
             var clickResult = "selection_unchanged"
             var affectedItemID: CanvasItemID?
+            var didTriggerPressedRefresh = false
 
             switch pressContext.targetKind {
             case .rotateHandle:
@@ -1496,11 +1505,13 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
                     )
                     if previousSelectedItemID != itemID {
                         clickResult = "item_selected"
+                        didTriggerPressedRefresh = true
                     } else {
                         if case .selectedItemBody = pressContext.targetKind,
                            beginTextEditIfPossible(for: itemID)
                         {
                             clickResult = "text_edit_began"
+                            didTriggerPressedRefresh = true
                         }
                     }
                 } else {
@@ -1513,6 +1524,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
                     clearSelectionIfNeeded(recordHistory: true)
                     if previousSelectedItemID != nil {
                         clickResult = "item_deselected"
+                        didTriggerPressedRefresh = true
                     }
                 } else {
                     clickTarget = "mismatched_hit_test"
@@ -1529,6 +1541,9 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
                 currentSelectedItemID: interactionState.selectedItemID,
                 affectedItemID: affectedItemID
             )
+            if clearedAlignmentInteractionState, didTriggerPressedRefresh == false {
+                refreshCanvas(reason: "clear alignment interaction on pointer up")
+            }
             editorSession.cancelPendingHistoryTransaction()
         case .rotatingSelectedItem:
             commitRotationDraftIfNeeded()
@@ -1536,6 +1551,9 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             commitCropDraftIfNeeded()
         case .draggingSelectedItem:
             commitPendingPointerHistoryTransaction(autosaveReason: "move item")
+            clearAlignmentInteractionStateIfNeeded(
+                refreshReason: "finish move alignment interaction"
+            )
         case .resizingSelectedItem:
             commitPendingPointerHistoryTransaction(autosaveReason: "resize item")
         case .draggingCanvas, .idle:
@@ -1553,6 +1571,9 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             commitCropDraftIfNeeded()
         case .draggingSelectedItem:
             commitPendingPointerHistoryTransaction(autosaveReason: "move item")
+            clearAlignmentInteractionStateIfNeeded(
+                refreshReason: "cancel move alignment interaction"
+            )
         case .resizingSelectedItem:
             commitPendingPointerHistoryTransaction(autosaveReason: "resize item")
         case .pressed, .draggingCanvas, .idle:
@@ -2748,6 +2769,21 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         rotationInteractionState = nil
     }
 
+    @discardableResult
+    private func clearAlignmentInteractionStateIfNeeded(
+        refreshReason: String? = nil
+    ) -> Bool {
+        guard alignmentInteractionState != nil else {
+            return false
+        }
+
+        alignmentInteractionState = nil
+        if let refreshReason {
+            refreshCanvas(reason: refreshReason)
+        }
+        return true
+    }
+
     private func cancelRotationInteractionIfNeeded(
         resetPointerDragState: Bool = false,
         refreshAfterCancellation: Bool = false
@@ -2783,21 +2819,49 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         from previousLocation: CGPoint,
         to location: CGPoint
     ) {
-        let previousWorldLocation = camera.viewportToWorld(previousLocation)
-        let currentWorldLocation = camera.viewportToWorld(location)
-        let deltaInWorld = CGPoint(
-            x: currentWorldLocation.x - previousWorldLocation.x,
-            y: currentWorldLocation.y - previousWorldLocation.y
-        )
-        guard deltaInWorld != .zero else {
+        guard let movingItem = scene.boardItem(withID: itemID) else {
+            clearAlignmentInteractionStateIfNeeded(
+                refreshReason: "clear missing alignment interaction item"
+            )
             return
         }
 
-        scene.moveItem(withID: itemID, by: deltaInWorld)
+        let previousWorldLocation = camera.viewportToWorld(previousLocation)
+        let currentWorldLocation = camera.viewportToWorld(location)
+        let rawDeltaInWorld = CGPoint(
+            x: currentWorldLocation.x - previousWorldLocation.x,
+            y: currentWorldLocation.y - previousWorldLocation.y
+        )
+        guard rawDeltaInWorld != .zero else {
+            return
+        }
+
+        let proposedCenter = CGPoint(
+            x: movingItem.center.x + rawDeltaInWorld.x,
+            y: movingItem.center.y + rawDeltaInWorld.y
+        )
+        let solveResult = alignmentGuideSolver.solve(
+            CanvasAlignmentSolveRequest(
+                movingItemID: itemID,
+                proposedCenter: proposedCenter,
+                scene: scene,
+                boardState: boardState,
+                camera: camera
+            )
+        )
+        let resolvedDeltaInWorld = CGPoint(
+            x: solveResult.resolvedCenter.x - movingItem.center.x,
+            y: solveResult.resolvedCenter.y - movingItem.center.y
+        )
+
+        alignmentInteractionState = solveResult.interactionState
+        scene.moveItem(withID: itemID, by: resolvedDeltaInWorld)
         if let movedItem = scene.boardItem(withID: itemID) {
             expandBoardIfNeeded(toInclude: movedItem.worldBounds)
         }
-        refreshCanvas()
+        refreshCanvas(
+            reason: "move selected item by \(describe(point: resolvedDeltaInWorld))"
+        )
     }
 
     private func makePointerResizeState(
