@@ -4,6 +4,7 @@ import AppKit
 final class macOSAppRootViewController: NSViewController {
     private let launchCoordinator: AppLaunchCoordinator
     private var currentViewController: NSViewController?
+    private var currentBoardListCanvasTransitionContext: BoardListCanvasTransitionContext?
     private lazy var boardListViewController: macOSBoardListViewController = {
         let viewController = macOSBoardListViewController()
         configureBoardListViewController(viewController)
@@ -62,8 +63,8 @@ final class macOSAppRootViewController: NSViewController {
         case let .canvas(launchContext):
             let viewController = macOSViewController()
             viewController.launchContext = launchContext
-            viewController.onBackToBoardList = { [weak self] in
-                self?.display(.boardList)
+            viewController.onReturnToBoardList = { [weak self] request in
+                self?.handleCanvasReturnRequest(request)
             }
             return viewController
         }
@@ -72,12 +73,23 @@ final class macOSAppRootViewController: NSViewController {
     private func configureBoardListViewController(
         _ viewController: macOSBoardListViewController
     ) {
-        viewController.onOpenBoard = { [weak self] boardID in
-            self?.display(.canvas(.existing(boardID: boardID)))
+        viewController.onOpenCanvas = { [weak self] request in
+            self?.handleCanvasOpenRequest(request)
         }
-        viewController.onCreateBoard = { [weak self] in
-            self?.display(.canvas(.newBoard))
-        }
+    }
+
+    private func handleCanvasOpenRequest(
+        _ request: BoardListCanvasOpenRequest
+    ) {
+        currentBoardListCanvasTransitionContext = request.transitionContext
+        display(.canvas(request.launchContext))
+    }
+
+    private func handleCanvasReturnRequest(
+        _ request: BoardListCanvasReturnRequest
+    ) {
+        currentBoardListCanvasTransitionContext = request.transitionContext
+        display(.boardList)
     }
 
     private func setCurrentViewController(_ viewController: NSViewController) {

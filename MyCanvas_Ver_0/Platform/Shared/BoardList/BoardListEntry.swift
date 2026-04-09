@@ -1,6 +1,6 @@
 import Foundation
 
-enum BoardListEntryID: Hashable {
+enum BoardListEntryID: Hashable, Sendable {
     case newBoard
     case board(UUID)
 }

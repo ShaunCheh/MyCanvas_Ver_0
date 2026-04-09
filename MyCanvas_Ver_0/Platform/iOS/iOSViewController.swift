@@ -67,7 +67,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     private let alignmentGuideSolver = CanvasAlignmentGuideSolver()
     var miniMapConfiguration = CanvasMiniMapConfiguration()
     var launchContext: CanvasLaunchContext?
-    var onBackToBoardList: (() -> Void)?
+    var onReturnToBoardList: ((BoardListCanvasReturnRequest) -> Void)?
     private let editorSession = CanvasEditorSession(
         saveQueueLabel: "MyCanvas.BoardSave.iOS",
         logPrefix: "[BoardStore][iOS]"
@@ -1637,11 +1637,18 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         performCommand(.redo)
     }
 
+    private func makeReturnToBoardListRequest() -> BoardListCanvasReturnRequest {
+        .backButton(
+            boardID: editorSession.activeBoardID,
+            launchContext: launchContext
+        )
+    }
+
     @objc
     private func handleBackButtonTap() {
         commitActiveTextEditIfNeeded()
         dismissContextMenu()
-        onBackToBoardList?()
+        onReturnToBoardList?(makeReturnToBoardListRequest())
     }
 
     @objc

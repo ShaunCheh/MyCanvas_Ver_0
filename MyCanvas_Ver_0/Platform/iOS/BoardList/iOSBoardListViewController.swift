@@ -15,8 +15,7 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
     }
 
     private let folderPicker = FolderPicker()
-    var onOpenBoard: ((UUID) -> Void)?
-    var onCreateBoard: (() -> Void)?
+    var onOpenCanvas: ((BoardListCanvasOpenRequest) -> Void)?
 
     private let catalogLoader = BoardCatalogLoader()
     private let previewProvider = BoardPreviewProvider()
@@ -523,11 +522,17 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
             return
         }
 
+        onOpenCanvas?(makeOpenRequest(for: entry))
+    }
+
+    private func makeOpenRequest(
+        for entry: BoardListEntry
+    ) -> BoardListCanvasOpenRequest {
         switch entry {
         case .newBoardPlaceholder:
-            onCreateBoard?()
+            return .newBoardPlaceholder()
         case let .board(item):
-            onOpenBoard?(item.boardID)
+            return .existingBoard(boardID: item.boardID)
         }
     }
 

@@ -69,7 +69,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     private let alignmentGuideSolver = CanvasAlignmentGuideSolver()
     var miniMapConfiguration = CanvasMiniMapConfiguration()
     var launchContext: CanvasLaunchContext?
-    var onBackToBoardList: (() -> Void)?
+    var onReturnToBoardList: ((BoardListCanvasReturnRequest) -> Void)?
     private let editorSession = CanvasEditorSession(
         saveQueueLabel: "MyCanvas.BoardSave.macOS",
         logPrefix: "[BoardStore][macOS]"
@@ -1775,11 +1775,18 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         }
     }
 
+    private func makeReturnToBoardListRequest() -> BoardListCanvasReturnRequest {
+        .backButton(
+            boardID: editorSession.activeBoardID,
+            launchContext: launchContext
+        )
+    }
+
     @objc
     private func handleBackButtonClick() {
         commitActiveTextEditIfNeeded()
         dismissContextMenu()
-        onBackToBoardList?()
+        onReturnToBoardList?(makeReturnToBoardListRequest())
     }
 
     @objc
