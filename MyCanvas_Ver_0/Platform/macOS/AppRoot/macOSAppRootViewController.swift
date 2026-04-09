@@ -5,6 +5,15 @@ final class macOSAppRootViewController: NSViewController {
     private let launchCoordinator: AppLaunchCoordinator
     private var currentViewController: NSViewController?
     private var currentBoardListCanvasTransitionContext: BoardListCanvasTransitionContext?
+    private var transitionPhase: macOSBoardListCanvasTransitionPhase = .idle
+    private var activeTransitionSession: macOSBoardListCanvasTransitionSession?
+    private let overlayHostView: NSView = {
+        let view = NSView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.wantsLayer = true
+        view.layer?.backgroundColor = NSColor.clear.cgColor
+        return view
+    }()
     private lazy var boardListViewController: macOSBoardListViewController = {
         let viewController = macOSBoardListViewController()
         configureBoardListViewController(viewController)
@@ -39,10 +48,12 @@ final class macOSAppRootViewController: NSViewController {
             "rootViewBounds=\(describeAppRootRect(view.bounds)) " +
             "rootViewFrame=\(describeAppRootRect(view.frame))"
         )
+        setupTransitionInfrastructure()
         display(launchCoordinator.initialDestination())
     }
 
     func display(_ destination: AppLaunchDestination) {
+        discardActiveTransitionIfNeeded()
         print(
             "[Canvas macOS][AppRoot] " +
             "action=display " +
@@ -52,21 +63,16 @@ final class macOSAppRootViewController: NSViewController {
             "currentViewController=\(describeAppRootViewController(currentViewController))"
         )
         let viewController = makeViewController(for: destination)
-        setCurrentViewController(viewController)
+        setCurrentViewControllerImmediately(viewController)
+        transitionPhase = steadyPhase(for: destination)
     }
 
     private func makeViewController(for destination: AppLaunchDestination) -> NSViewController {
         switch destination {
         case .boardList:
-            boardListViewController.prepareForDisplay()
-            return boardListViewController
+            return makeBoardListViewController()
         case let .canvas(launchContext):
-            let viewController = macOSViewController()
-            viewController.launchContext = launchContext
-            viewController.onReturnToBoardList = { [weak self] request in
-                self?.handleCanvasReturnRequest(request)
-            }
-            return viewController
+            return makeCanvasViewController(for: launchContext)
         }
     }
 
@@ -82,23 +88,14 @@ final class macOSAppRootViewController: NSViewController {
         _ request: BoardListCanvasOpenRequest
     ) {
         currentBoardListCanvasTransitionContext = request.transitionContext
-        display(.canvas(request.launchContext))
+        beginOpeningTransition(with: request)
     }
 
     private func handleCanvasReturnRequest(
         _ request: BoardListCanvasReturnRequest
     ) {
         currentBoardListCanvasTransitionContext = request.transitionContext
-        let targetBoardID = request.transitionContext.targetBoardID
-        boardListViewController.prepareTransitionTargetGeometry(
-            for: targetBoardID
-        ) { [weak self] geometry in
-            self?.updateCurrentTransitionTargetGeometry(
-                geometry,
-                expectedBoardID: targetBoardID
-            )
-        }
-        display(.boardList)
+        beginClosingTransition(with: request)
     }
 
     private func updateCurrentTransitionTargetGeometry(
@@ -117,40 +114,276 @@ final class macOSAppRootViewController: NSViewController {
         currentBoardListCanvasTransitionContext = context
     }
 
-    private func setCurrentViewController(_ viewController: NSViewController) {
-        print(
-            "[Canvas macOS][AppRoot] " +
-            "action=setCurrentViewController " +
-            "incoming=\(describeAppRootViewController(viewController)) " +
-            "previous=\(describeAppRootViewController(currentViewController)) " +
-            "rootViewBounds=\(describeAppRootRect(view.bounds)) " +
-            "rootViewFrame=\(describeAppRootRect(view.frame))"
-        )
-        if let currentViewController {
-            currentViewController.view.removeFromSuperview()
-            currentViewController.removeFromParent()
+    private func beginOpeningTransition(
+        with request: BoardListCanvasOpenRequest
+    ) {
+        guard activeTransitionSession == nil else {
+            display(.canvas(request.launchContext))
+            return
         }
 
-        addChild(viewController)
-        viewController.view.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(viewController.view)
-
-        NSLayoutConstraint.activate([
-            viewController.view.topAnchor.constraint(equalTo: view.topAnchor),
-            viewController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            viewController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            viewController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor)
-        ])
-
-        currentViewController = viewController
-
-        print(
-            "[Canvas macOS][AppRoot] " +
-            "action=setCurrentViewControllerCompleted " +
-            "current=\(describeAppRootViewController(currentViewController)) " +
-            "childViewBounds=\(describeAppRootRect(viewController.view.bounds)) " +
-            "childViewFrame=\(describeAppRootRect(viewController.view.frame))"
+        let sourceViewController = currentViewController ?? boardListViewController
+        let destinationViewController = makeCanvasViewController(
+            for: request.launchContext
         )
+        let carrier = macOSBoardListCanvasTransitionCarrierFactory.makeCarrier(
+            preferredKind: request.preferredCarrierKind
+        )
+        let session = macOSBoardListCanvasTransitionSession(
+            context: request.transitionContext,
+            carrier: carrier,
+            sourceViewController: sourceViewController,
+            destinationViewController: destinationViewController
+        )
+
+        activeTransitionSession = session
+        transitionPhase = .opening
+        carrier.install(in: overlayHostView)
+        mountViewController(destinationViewController, hidden: true)
+        carrier.beginTransition(
+            with: session.context,
+            sourceViewController: sourceViewController,
+            destinationViewController: destinationViewController
+        )
+
+        DispatchQueue.main.async { [weak self] in
+            self?.completeOpeningTransition(
+                sessionID: session.id
+            )
+        }
+    }
+
+    private func completeOpeningTransition(sessionID: UUID) {
+        guard
+            transitionPhase == .opening,
+            let session = activeTransitionSession,
+            session.id == sessionID,
+            let destinationViewController = session.destinationViewController
+        else {
+            return
+        }
+
+        if let sourceViewController = session.sourceViewController,
+           sourceViewController !== destinationViewController {
+            unmountViewController(sourceViewController)
+        }
+        destinationViewController.view.isHidden = false
+        currentViewController = destinationViewController
+        session.carrier.completeTransition()
+        activeTransitionSession = nil
+        transitionPhase = .steadyCanvas
+    }
+
+    private func beginClosingTransition(
+        with request: BoardListCanvasReturnRequest
+    ) {
+        guard activeTransitionSession == nil else {
+            display(.boardList)
+            return
+        }
+
+        let sourceViewController = currentViewController
+        let destinationViewController = boardListViewController
+        let carrier = macOSBoardListCanvasTransitionCarrierFactory.makeCarrier(
+            preferredKind: request.preferredCarrierKind
+        )
+        let session = macOSBoardListCanvasTransitionSession(
+            context: request.transitionContext,
+            carrier: carrier,
+            sourceViewController: sourceViewController,
+            destinationViewController: destinationViewController
+        )
+
+        activeTransitionSession = session
+        transitionPhase = .closing
+        carrier.install(in: overlayHostView)
+        mountViewController(destinationViewController, hidden: true)
+        destinationViewController.prepareForDisplay()
+        carrier.beginTransition(
+            with: session.context,
+            sourceViewController: sourceViewController,
+            destinationViewController: destinationViewController
+        )
+
+        let targetBoardID = request.transitionContext.targetBoardID
+        destinationViewController.prepareTransitionTargetGeometry(
+            for: targetBoardID
+        ) { [weak self] geometry in
+            self?.handleResolvedClosingTargetGeometry(
+                geometry,
+                sessionID: session.id,
+                expectedBoardID: targetBoardID
+            )
+        }
+    }
+
+    private func handleResolvedClosingTargetGeometry(
+        _ geometry: BoardListCanvasTransitionTargetGeometry,
+        sessionID: UUID,
+        expectedBoardID: UUID?
+    ) {
+        guard
+            transitionPhase == .closing,
+            let session = activeTransitionSession,
+            session.id == sessionID
+        else {
+            return
+        }
+
+        updateCurrentTransitionTargetGeometry(
+            geometry,
+            expectedBoardID: expectedBoardID
+        )
+        session.context.targetGeometry = geometry
+        session.carrier.updateTransitionContext(session.context)
+        completeClosingTransition(sessionID: sessionID)
+    }
+
+    private func completeClosingTransition(sessionID: UUID) {
+        guard
+            transitionPhase == .closing,
+            let session = activeTransitionSession,
+            session.id == sessionID,
+            let destinationViewController = session.destinationViewController
+        else {
+            return
+        }
+
+        if let sourceViewController = session.sourceViewController,
+           sourceViewController !== destinationViewController {
+            unmountViewController(sourceViewController)
+        }
+        destinationViewController.view.isHidden = false
+        currentViewController = destinationViewController
+        session.carrier.completeTransition()
+        activeTransitionSession = nil
+        transitionPhase = .steadyBoardList
+    }
+
+    private func makeBoardListViewController() -> macOSBoardListViewController {
+        boardListViewController.prepareForDisplay()
+        return boardListViewController
+    }
+
+    private func makeCanvasViewController(
+        for launchContext: CanvasLaunchContext
+    ) -> macOSViewController {
+        let viewController = macOSViewController()
+        viewController.launchContext = launchContext
+        viewController.onReturnToBoardList = { [weak self] request in
+            self?.handleCanvasReturnRequest(request)
+        }
+        return viewController
+    }
+
+    private func setupTransitionInfrastructure() {
+        view.addSubview(overlayHostView)
+        NSLayoutConstraint.activate([
+            overlayHostView.topAnchor.constraint(equalTo: view.topAnchor),
+            overlayHostView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            overlayHostView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            overlayHostView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        ])
+    }
+
+    private func setCurrentViewControllerImmediately(
+        _ viewController: NSViewController
+    ) {
+        if let currentViewController,
+           currentViewController !== viewController {
+            unmountViewController(currentViewController)
+        }
+
+        mountViewController(viewController, hidden: false)
+        currentViewController = viewController
+    }
+
+    private func mountViewController(
+        _ viewController: NSViewController,
+        hidden: Bool
+    ) {
+        if viewController.parent !== self {
+            addChild(viewController)
+            viewController.view.translatesAutoresizingMaskIntoConstraints = false
+            view.addSubview(
+                viewController.view,
+                positioned: .below,
+                relativeTo: overlayHostView
+            )
+            NSLayoutConstraint.activate([
+                viewController.view.topAnchor.constraint(equalTo: view.topAnchor),
+                viewController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+                viewController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+                viewController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+            ])
+        } else if viewController.view.superview == nil {
+            view.addSubview(
+                viewController.view,
+                positioned: .below,
+                relativeTo: overlayHostView
+            )
+        } else {
+            view.addSubview(
+                viewController.view,
+                positioned: .below,
+                relativeTo: overlayHostView
+            )
+        }
+
+        viewController.view.isHidden = hidden
+        view.addSubview(
+            overlayHostView,
+            positioned: .above,
+            relativeTo: viewController.view
+        )
+    }
+
+    private func unmountViewController(_ viewController: NSViewController) {
+        guard viewController.parent === self else {
+            return
+        }
+
+        viewController.view.removeFromSuperview()
+        viewController.removeFromParent()
+    }
+
+    private func discardActiveTransitionIfNeeded() {
+        guard let session = activeTransitionSession else {
+            return
+        }
+
+        session.carrier.cancelTransition()
+        if let destinationViewController = session.destinationViewController,
+           destinationViewController !== currentViewController {
+            unmountViewController(destinationViewController)
+        }
+        currentViewController?.view.isHidden = false
+        activeTransitionSession = nil
+        transitionPhase = steadyPhase(for: currentViewController)
+    }
+
+    private func steadyPhase(
+        for destination: AppLaunchDestination
+    ) -> macOSBoardListCanvasTransitionPhase {
+        switch destination {
+        case .boardList:
+            return .steadyBoardList
+        case .canvas:
+            return .steadyCanvas
+        }
+    }
+
+    private func steadyPhase(
+        for viewController: NSViewController?
+    ) -> macOSBoardListCanvasTransitionPhase {
+        switch viewController {
+        case is macOSBoardListViewController:
+            return .steadyBoardList
+        case is macOSViewController:
+            return .steadyCanvas
+        default:
+            return .idle
+        }
     }
 }
 
