@@ -853,8 +853,13 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
             return item.transitionGeometry(in: view)
         }
 
+        let cardRect = transitionCardRect(at: indexPath)
         return BoardListCanvasTransitionSourceGeometry(
-            cardRect: transitionCardRect(at: indexPath)
+            cardRect: cardRect,
+            focusRect: transitionFocusRect(
+                at: indexPath,
+                cardRect: cardRect
+            )
         )
     }
 
@@ -866,13 +871,20 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
         }
 
         if let item = collectionView.item(at: indexPath) as? macOSBoardCollectionItem {
+            let itemGeometry = item.transitionGeometry(in: view)
             return BoardListCanvasTransitionTargetGeometry(
-                cardRect: item.transitionGeometry(in: view).cardRect
+                cardRect: itemGeometry.cardRect,
+                focusRect: itemGeometry.focusRect
             )
         }
 
+        let cardRect = transitionCardRect(at: indexPath)
         return BoardListCanvasTransitionTargetGeometry(
-            cardRect: transitionCardRect(at: indexPath)
+            cardRect: cardRect,
+            focusRect: transitionFocusRect(
+                at: indexPath,
+                cardRect: cardRect
+            )
         )
     }
 
@@ -886,6 +898,21 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
         return view.convert(
             layoutAttributes.frame,
             from: collectionView
+        )
+    }
+
+    private func transitionFocusRect(
+        at indexPath: IndexPath,
+        cardRect: CGRect? = nil
+    ) -> CGRect? {
+        guard let entry = entry(at: indexPath) else {
+            return nil
+        }
+
+        return BoardListCanvasTransitionFocusRectResolver.focusRect(
+            in: cardRect ?? transitionCardRect(at: indexPath),
+            displayMode: displayMode,
+            isPlaceholder: entry.isPlaceholder
         )
     }
 

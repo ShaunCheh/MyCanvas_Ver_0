@@ -341,20 +341,31 @@ final class macOSBoardCollectionItem: NSCollectionViewItem, NSTextFieldDelegate 
             view.bounds,
             from: view
         )
-        let previewRect: CGRect?
-        if previewView.isHidden {
-            previewRect = nil
-        } else {
-            previewRect = coordinateSpaceView.convert(
+
+        return BoardListCanvasTransitionSourceGeometry(
+            cardRect: cardRect,
+            focusRect: transitionFocusRect(in: coordinateSpaceView)
+        )
+    }
+
+    private func transitionFocusRect(
+        in coordinateSpaceView: NSView
+    ) -> CGRect? {
+        if previewView.isHidden == false {
+            return coordinateSpaceView.convert(
                 previewView.bounds,
                 from: previewView
             )
         }
 
-        return BoardListCanvasTransitionSourceGeometry(
-            cardRect: cardRect,
-            previewRect: previewRect
-        )
+        if placeholderIconView.isHidden == false {
+            return coordinateSpaceView.convert(
+                placeholderIconView.bounds,
+                from: placeholderIconView
+            )
+        }
+
+        return nil
     }
 
     private func setupView() {

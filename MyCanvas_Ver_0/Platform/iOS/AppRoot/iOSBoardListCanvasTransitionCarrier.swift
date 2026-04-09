@@ -102,7 +102,7 @@ final class iOSSnapshotShellCarrier: iOSBoardListCanvasTransitionCarrying {
         guard
             let overlayHostView,
             let sourceViewController,
-            let sourceRect = context.sourceGeometry.cardRect
+            let sourceRect = context.sourceGeometry.preferredRect
         else {
             return
         }
@@ -310,7 +310,7 @@ final class iOSSnapshotShellCarrier: iOSBoardListCanvasTransitionCarrying {
     ) -> CGRect? {
         guard
             let destinationView = destinationViewController?.view,
-            let targetRect = currentContext?.targetGeometry.cardRect
+            let targetRect = currentContext?.targetGeometry.preferredRect
         else {
             return nil
         }

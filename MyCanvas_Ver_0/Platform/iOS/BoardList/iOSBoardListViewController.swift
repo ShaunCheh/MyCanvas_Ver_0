@@ -712,6 +712,7 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
     private func logClosingGuardSummary(
         boardID: UUID,
         hasCardRect: Bool,
+        hasFocusRect: Bool,
         usedFallbackGeometry: Bool? = nil
     ) {
         guard let state = closingTransitionTimingState else {
@@ -732,7 +733,8 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
                 "reloadCount=\(state.reloadInvocationCount) " +
                 "targetReadyReloadCount=\(state.reloadDuringTargetResolutionCount) " +
                 "revealDispatchDelay=\(revealDispatchDelaySummary) " +
-                "hasCardRect=\(hasCardRect)" +
+                "hasCardRect=\(hasCardRect) " +
+                "hasFocusRect=\(hasFocusRect)" +
                 fallbackSuffix
         )
     }
@@ -1156,8 +1158,13 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
             return cell.transitionGeometry(in: view)
         }
 
+        let cardRect = transitionCardRect(at: indexPath)
         return BoardListCanvasTransitionSourceGeometry(
-            cardRect: transitionCardRect(at: indexPath)
+            cardRect: cardRect,
+            focusRect: transitionFocusRect(
+                at: indexPath,
+                cardRect: cardRect
+            )
         )
     }
 
@@ -1173,13 +1180,20 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
         if let cell = collectionView.cellForItem(
             at: resolvedIndexPath
         ) as? iOSBoardCollectionViewCell {
+            let cellGeometry = cell.transitionGeometry(in: view)
             geometry = BoardListCanvasTransitionTargetGeometry(
-                cardRect: cell.transitionGeometry(in: view).cardRect
+                cardRect: cellGeometry.cardRect,
+                focusRect: cellGeometry.focusRect
             )
             usedFallbackGeometry = false
         } else {
+            let cardRect = transitionCardRect(at: resolvedIndexPath)
             geometry = BoardListCanvasTransitionTargetGeometry(
-                cardRect: transitionCardRect(at: resolvedIndexPath)
+                cardRect: cardRect,
+                focusRect: transitionFocusRect(
+                    at: resolvedIndexPath,
+                    cardRect: cardRect
+                )
             )
             usedFallbackGeometry = true
         }
@@ -1190,7 +1204,8 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
                 "boardID=\(boardID.uuidString) " +
                 "indexPath=[section=\(resolvedIndexPath.section),item=\(resolvedIndexPath.item)] " +
                 "usedFallbackGeometry=\(usedFallbackGeometry) " +
-                "hasCardRect=\(geometry.cardRect != nil)"
+                "hasCardRect=\(geometry.cardRect != nil) " +
+                "hasFocusRect=\(geometry.focusRect != nil)"
         )
         return BoardListClosingTargetPreparationResult(
             boardID: boardID,
@@ -1212,6 +1227,21 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
         )
     }
 
+    private func transitionFocusRect(
+        at indexPath: IndexPath,
+        cardRect: CGRect? = nil
+    ) -> CGRect? {
+        guard let entry = entry(at: indexPath) else {
+            return nil
+        }
+
+        return BoardListCanvasTransitionFocusRectResolver.focusRect(
+            in: cardRect ?? transitionCardRect(at: indexPath),
+            displayMode: displayMode,
+            isPlaceholder: entry.isPlaceholder
+        )
+    }
+
     private func finishPendingTransitionTargetResolution(
         for boardID: UUID,
         geometry: BoardListCanvasTransitionTargetGeometry
@@ -1228,11 +1258,13 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
             localDuration: resolutionDuration,
             extra:
                 "boardID=\(boardID.uuidString) " +
-                "hasCardRect=\(geometry.cardRect != nil)"
+                "hasCardRect=\(geometry.cardRect != nil) " +
+                "hasFocusRect=\(geometry.focusRect != nil)"
         )
         logClosingGuardSummary(
             boardID: boardID,
-            hasCardRect: geometry.cardRect != nil
+            hasCardRect: geometry.cardRect != nil,
+            hasFocusRect: geometry.focusRect != nil
         )
         let completion = pendingTransitionTargetResolution?.completion
         pendingTransitionTargetResolution = nil
@@ -1259,11 +1291,13 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
                 "boardID=\(preparationResult.boardID.uuidString) " +
                 "indexPath=[section=\(preparationResult.resolvedIndexPath.section),item=\(preparationResult.resolvedIndexPath.item)] " +
                 "usedFallbackGeometry=\(preparationResult.usedFallbackGeometry) " +
-                "hasCardRect=\(preparationResult.geometry.cardRect != nil)"
+                "hasCardRect=\(preparationResult.geometry.cardRect != nil) " +
+                "hasFocusRect=\(preparationResult.geometry.focusRect != nil)"
         )
         logClosingGuardSummary(
             boardID: preparationResult.boardID,
             hasCardRect: preparationResult.geometry.cardRect != nil,
+            hasFocusRect: preparationResult.geometry.focusRect != nil,
             usedFallbackGeometry: preparationResult.usedFallbackGeometry
         )
         let completion = pendingTransitionTargetResolution?.completion

@@ -234,20 +234,31 @@ final class iOSBoardCollectionViewCell: UICollectionViewCell, UITextFieldDelegat
             contentView.bounds,
             from: contentView
         )
-        let previewRect: CGRect?
-        if previewView.isHidden {
-            previewRect = nil
-        } else {
-            previewRect = coordinateSpaceView.convert(
+
+        return BoardListCanvasTransitionSourceGeometry(
+            cardRect: cardRect,
+            focusRect: transitionFocusRect(in: coordinateSpaceView)
+        )
+    }
+
+    private func transitionFocusRect(
+        in coordinateSpaceView: UIView
+    ) -> CGRect? {
+        if previewView.isHidden == false {
+            return coordinateSpaceView.convert(
                 previewView.bounds,
                 from: previewView
             )
         }
 
-        return BoardListCanvasTransitionSourceGeometry(
-            cardRect: cardRect,
-            previewRect: previewRect
-        )
+        if placeholderIconView.isHidden == false {
+            return coordinateSpaceView.convert(
+                placeholderIconView.bounds,
+                from: placeholderIconView
+            )
+        }
+
+        return nil
     }
 
     private func setupView() {

@@ -268,6 +268,7 @@ final class iOSAppRootViewController: UIViewController {
                 localDuration: targetResolutionDuration,
                 extra:
                     "hasCardRect=\(geometry.cardRect != nil) " +
+                    "hasFocusRect=\(geometry.focusRect != nil) " +
                     "expectedBoardID=\(expectedBoardID?.uuidString ?? "nil")"
             )
         }
@@ -298,6 +299,7 @@ final class iOSAppRootViewController: UIViewController {
                 phase: "carrierAnimateBegin",
                 extra:
                     "hasCardRect=\(geometry.cardRect != nil) " +
+                    "hasFocusRect=\(geometry.focusRect != nil) " +
                     "backButtonToCarrierAnimate=\(backButtonToCarrierAnimateSummary) " +
                     "requestTargetGeometryToResolved=\(requestTargetGeometryToResolvedSummary)"
             )

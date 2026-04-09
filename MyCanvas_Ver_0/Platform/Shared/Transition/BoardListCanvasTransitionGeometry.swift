@@ -3,28 +3,43 @@ import Foundation
 
 struct BoardListCanvasTransitionSourceGeometry: Hashable, Sendable {
     var cardRect: CGRect?
-    var previewRect: CGRect?
+    var focusRect: CGRect?
 
     init(
         cardRect: CGRect? = nil,
-        previewRect: CGRect? = nil
+        focusRect: CGRect? = nil
     ) {
         self.cardRect = BoardListCanvasTransitionGeometry.sanitizedRect(
             cardRect
         )
-        self.previewRect = BoardListCanvasTransitionGeometry.sanitizedRect(
-            previewRect
+        self.focusRect = BoardListCanvasTransitionGeometry.sanitizedRect(
+            focusRect
         )
+    }
+
+    var preferredRect: CGRect? {
+        focusRect ?? cardRect
     }
 }
 
 struct BoardListCanvasTransitionTargetGeometry: Hashable, Sendable {
     var cardRect: CGRect?
+    var focusRect: CGRect?
 
-    init(cardRect: CGRect? = nil) {
+    init(
+        cardRect: CGRect? = nil,
+        focusRect: CGRect? = nil
+    ) {
         self.cardRect = BoardListCanvasTransitionGeometry.sanitizedRect(
             cardRect
         )
+        self.focusRect = BoardListCanvasTransitionGeometry.sanitizedRect(
+            focusRect
+        )
+    }
+
+    var preferredRect: CGRect? {
+        focusRect ?? cardRect
     }
 }
 
