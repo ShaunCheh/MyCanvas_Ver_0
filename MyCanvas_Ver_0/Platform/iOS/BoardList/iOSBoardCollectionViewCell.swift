@@ -218,6 +218,30 @@ final class iOSBoardCollectionViewCell: UICollectionViewCell, UITextFieldDelegat
         }
     }
 
+    func transitionGeometry(
+        in coordinateSpaceView: UIView
+    ) -> BoardListCanvasTransitionSourceGeometry {
+        contentView.layoutIfNeeded()
+        let cardRect = coordinateSpaceView.convert(
+            contentView.bounds,
+            from: contentView
+        )
+        let previewRect: CGRect?
+        if previewView.isHidden {
+            previewRect = nil
+        } else {
+            previewRect = coordinateSpaceView.convert(
+                previewView.bounds,
+                from: previewView
+            )
+        }
+
+        return BoardListCanvasTransitionSourceGeometry(
+            cardRect: cardRect,
+            previewRect: previewRect
+        )
+    }
+
     private func setupView() {
         contentView.layer.cornerRadius = 12
         contentView.layer.masksToBounds = true

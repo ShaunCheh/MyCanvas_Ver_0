@@ -333,6 +333,30 @@ final class macOSBoardCollectionItem: NSCollectionViewItem, NSTextFieldDelegate 
         }
     }
 
+    func transitionGeometry(
+        in coordinateSpaceView: NSView
+    ) -> BoardListCanvasTransitionSourceGeometry {
+        view.layoutSubtreeIfNeeded()
+        let cardRect = coordinateSpaceView.convert(
+            view.bounds,
+            from: view
+        )
+        let previewRect: CGRect?
+        if previewView.isHidden {
+            previewRect = nil
+        } else {
+            previewRect = coordinateSpaceView.convert(
+                previewView.bounds,
+                from: previewView
+            )
+        }
+
+        return BoardListCanvasTransitionSourceGeometry(
+            cardRect: cardRect,
+            previewRect: previewRect
+        )
+    }
+
     private func setupView() {
         view.wantsLayer = true
         view.layer?.cornerRadius = 12

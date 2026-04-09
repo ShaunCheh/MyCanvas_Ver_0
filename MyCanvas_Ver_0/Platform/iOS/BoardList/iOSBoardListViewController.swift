@@ -14,6 +14,13 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
         static let itemSpacing: CGFloat = 16
     }
 
+    private typealias TransitionTargetGeometryHandler = (BoardListCanvasTransitionTargetGeometry) -> Void
+
+    private struct PendingTransitionTargetResolution {
+        let boardID: UUID
+        let completion: TransitionTargetGeometryHandler
+    }
+
     private let folderPicker = FolderPicker()
     var onOpenCanvas: ((BoardListCanvasOpenRequest) -> Void)?
 
@@ -55,6 +62,7 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
             )
         }
     }
+    private var pendingTransitionTargetResolution: PendingTransitionTargetResolution?
     private var displayMode: BoardListDisplayMode = .grid {
         didSet {
             guard oldValue != displayMode else {
@@ -204,6 +212,41 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
 
     func prepareForDisplay() {
         guard isViewLoaded else {
+            return
+        }
+
+        refreshBookmarkStatus()
+    }
+
+    func transitionSourceGeometry(
+        for entryID: BoardListEntryID
+    ) -> BoardListCanvasTransitionSourceGeometry {
+        guard let indexPath = indexPath(for: entryID) else {
+            return .init()
+        }
+
+        return transitionSourceGeometry(at: indexPath)
+    }
+
+    func prepareTransitionTargetGeometry(
+        for boardID: UUID?,
+        completion: @escaping (BoardListCanvasTransitionTargetGeometry) -> Void
+    ) {
+        pendingTransitionTargetResolution = nil
+
+        guard let boardID else {
+            pendingRevealBoardID = nil
+            completion(.init())
+            return
+        }
+
+        pendingRevealBoardID = boardID
+        pendingTransitionTargetResolution = PendingTransitionTargetResolution(
+            boardID: boardID,
+            completion: completion
+        )
+
+        guard isViewLoaded, view.window != nil else {
             return
         }
 
@@ -476,12 +519,76 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
         syncCollectionSelection()
     }
 
+    private func indexPath(for entryID: BoardListEntryID) -> IndexPath? {
+        guard let index = entries.firstIndex(where: { $0.id == entryID }) else {
+            return nil
+        }
+
+        return IndexPath(item: index, section: 0)
+    }
+
     private func entry(at indexPath: IndexPath) -> BoardListEntry? {
         guard entries.indices.contains(indexPath.item) else {
             return nil
         }
 
         return entries[indexPath.item]
+    }
+
+    private func transitionSourceGeometry(
+        at indexPath: IndexPath
+    ) -> BoardListCanvasTransitionSourceGeometry {
+        collectionView.layoutIfNeeded()
+        if let cell = collectionView.cellForItem(at: indexPath) as? iOSBoardCollectionViewCell {
+            return cell.transitionGeometry(in: view)
+        }
+
+        return BoardListCanvasTransitionSourceGeometry(
+            cardRect: transitionCardRect(at: indexPath)
+        )
+    }
+
+    private func transitionTargetGeometry(
+        for boardID: UUID
+    ) -> BoardListCanvasTransitionTargetGeometry {
+        guard let indexPath = indexPath(for: boardID) else {
+            return .init()
+        }
+
+        if let cell = collectionView.cellForItem(at: indexPath) as? iOSBoardCollectionViewCell {
+            return BoardListCanvasTransitionTargetGeometry(
+                cardRect: cell.transitionGeometry(in: view).cardRect
+            )
+        }
+
+        return BoardListCanvasTransitionTargetGeometry(
+            cardRect: transitionCardRect(at: indexPath)
+        )
+    }
+
+    private func transitionCardRect(at indexPath: IndexPath) -> CGRect? {
+        collectionView.layoutIfNeeded()
+        guard let layoutAttributes = collectionView.layoutAttributesForItem(at: indexPath) else {
+            return nil
+        }
+
+        return view.convert(
+            layoutAttributes.frame,
+            from: collectionView
+        )
+    }
+
+    private func finishPendingTransitionTargetResolution(
+        for boardID: UUID,
+        geometry: BoardListCanvasTransitionTargetGeometry
+    ) {
+        guard pendingTransitionTargetResolution?.boardID == boardID else {
+            return
+        }
+
+        let completion = pendingTransitionTargetResolution?.completion
+        pendingTransitionTargetResolution = nil
+        completion?(geometry)
     }
 
     private func indexPath(for boardID: UUID) -> IndexPath? {
@@ -528,11 +635,15 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
     private func makeOpenRequest(
         for entry: BoardListEntry
     ) -> BoardListCanvasOpenRequest {
+        let sourceGeometry = transitionSourceGeometry(for: entry.id)
         switch entry {
         case .newBoardPlaceholder:
-            return .newBoardPlaceholder()
+            return .newBoardPlaceholder(geometry: sourceGeometry)
         case let .board(item):
-            return .existingBoard(boardID: item.boardID)
+            return .existingBoard(
+                boardID: item.boardID,
+                geometry: sourceGeometry
+            )
         }
     }
 
@@ -789,6 +900,10 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
                 "revealPendingBoardMissingIndexPath",
                 extra: "boardID=\(pendingRevealBoardID.uuidString)"
             )
+            finishPendingTransitionTargetResolution(
+                for: pendingRevealBoardID,
+                geometry: .init()
+            )
             self.pendingRevealBoardID = nil
             return
         }
@@ -822,6 +937,11 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
             at: indexPath,
             at: .top,
             animated: false
+        )
+        collectionView.layoutIfNeeded()
+        finishPendingTransitionTargetResolution(
+            for: boardID,
+            geometry: transitionTargetGeometry(for: boardID)
         )
         pendingRevealBoardID = nil
     }

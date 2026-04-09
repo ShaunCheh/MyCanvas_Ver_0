@@ -65,7 +65,32 @@ final class iOSAppRootViewController: UIViewController {
         _ request: BoardListCanvasReturnRequest
     ) {
         currentBoardListCanvasTransitionContext = request.transitionContext
+        let targetBoardID = request.transitionContext.targetBoardID
+        boardListViewController.prepareTransitionTargetGeometry(
+            for: targetBoardID
+        ) { [weak self] geometry in
+            self?.updateCurrentTransitionTargetGeometry(
+                geometry,
+                expectedBoardID: targetBoardID
+            )
+        }
         display(.boardList)
+    }
+
+    private func updateCurrentTransitionTargetGeometry(
+        _ geometry: BoardListCanvasTransitionTargetGeometry,
+        expectedBoardID: UUID?
+    ) {
+        guard
+            var context = currentBoardListCanvasTransitionContext,
+            context.direction == .closing,
+            context.targetBoardID == expectedBoardID
+        else {
+            return
+        }
+
+        context.targetGeometry = geometry
+        currentBoardListCanvasTransitionContext = context
     }
 
     private func setCurrentViewController(_ viewController: UIViewController) {
