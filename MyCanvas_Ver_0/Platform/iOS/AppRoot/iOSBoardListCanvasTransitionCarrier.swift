@@ -19,20 +19,78 @@ protocol iOSBoardListCanvasTransitionCarrying: AnyObject {
 struct iOSLiveCanvasCarrierRequirements {
     let canvasViewProvider: () -> UIView?
     let canvasContainerViewProvider: () -> UIView?
+    let isTransitionChromeHidden: () -> Bool
+    let setTransitionChromeHidden: (Bool) -> Void
 }
 
 enum iOSBoardListCanvasTransitionCarrierFactory {
     static func makeCarrier(
-        preferredKind: BoardListCanvasTransitionCarrierKind
+        preferredKind: BoardListCanvasTransitionCarrierKind,
+        liveCanvasRequirements: iOSLiveCanvasCarrierRequirements? = nil
     ) -> any iOSBoardListCanvasTransitionCarrying {
         switch preferredKind {
         case .snapshotShell:
             return iOSSnapshotShellCarrier()
         case .liveCanvas:
-            // Phase 3 keeps the live carrier boundary explicit while
-            // still routing through the snapshot shell implementation.
-            return iOSSnapshotShellCarrier()
+            guard let liveCanvasRequirements else {
+                return iOSSnapshotShellCarrier()
+            }
+            return iOSLiveCanvasCarrier(
+                requirements: liveCanvasRequirements
+            )
         }
+    }
+}
+
+final class iOSLiveCanvasCarrier: iOSBoardListCanvasTransitionCarrying {
+    private let requirements: iOSLiveCanvasCarrierRequirements
+    private let snapshotFallbackCarrier: iOSSnapshotShellCarrier
+
+    init(
+        requirements: iOSLiveCanvasCarrierRequirements,
+        snapshotFallbackCarrier: iOSSnapshotShellCarrier = iOSSnapshotShellCarrier()
+    ) {
+        self.requirements = requirements
+        self.snapshotFallbackCarrier = snapshotFallbackCarrier
+    }
+
+    var kind: BoardListCanvasTransitionCarrierKind {
+        .liveCanvas
+    }
+
+    func install(in overlayHostView: UIView) {
+        snapshotFallbackCarrier.install(in: overlayHostView)
+    }
+
+    func prepareTransition(
+        with context: BoardListCanvasTransitionContext,
+        sourceViewController: UIViewController?,
+        destinationViewController: UIViewController?
+    ) {
+        let _ = requirements.canvasViewProvider()
+        let _ = requirements.canvasContainerViewProvider()
+        let _ = requirements.isTransitionChromeHidden()
+        snapshotFallbackCarrier.prepareTransition(
+            with: context,
+            sourceViewController: sourceViewController,
+            destinationViewController: destinationViewController
+        )
+    }
+
+    func animateTransition(completion: @escaping () -> Void) {
+        snapshotFallbackCarrier.animateTransition(completion: completion)
+    }
+
+    func updateTransitionContext(_ context: BoardListCanvasTransitionContext) {
+        snapshotFallbackCarrier.updateTransitionContext(context)
+    }
+
+    func completeTransition() {
+        snapshotFallbackCarrier.completeTransition()
+    }
+
+    func cancelTransition() {
+        snapshotFallbackCarrier.cancelTransition()
     }
 }
 

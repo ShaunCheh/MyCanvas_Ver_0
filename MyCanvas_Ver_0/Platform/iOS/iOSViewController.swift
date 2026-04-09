@@ -8,7 +8,15 @@
 import PhotosUI
 import UIKit
 
-final class iOSViewController: UIViewController, PHPickerViewControllerDelegate, UIDropInteractionDelegate, UITextViewDelegate, iOSBoardListCanvasTransitionInteractionControlling {
+protocol CanvasTransitionLiveContentProviding: AnyObject {
+    var transitionCanvasViewportView: UIView { get }
+    var transitionCanvasHostView: UIView { get }
+    var isTransitionChromeHidden: Bool { get }
+
+    func setTransitionChromeHidden(_ isHidden: Bool)
+}
+
+final class iOSViewController: UIViewController, PHPickerViewControllerDelegate, UIDropInteractionDelegate, UITextViewDelegate, iOSBoardListCanvasTransitionInteractionControlling, CanvasTransitionLiveContentProviding {
     private struct PointerResizeState {
         let itemID: CanvasItemID
         let handleRole: CanvasSelectionHandleRole
@@ -213,6 +221,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     private var pendingRefreshReason: String?
     private var pointerDragState: PointerDragState = .idle
     private var isTransitionInteractionFrozen = false
+    private var transitionChromeHidden = false
     private var lastZoomDispatchTimestamp: TimeInterval?
     private var lastZoomRefreshTimestamp: TimeInterval?
     private var didMutateCameraDuringZoomGesture = false
@@ -356,6 +365,14 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             dismissContextMenu()
             handlePrimaryPointerCancel()
         }
+        applyTransitionChromeVisibility()
+    }
+
+    private func applyTransitionChromeVisibility() {
+        chromeOverlayView.alpha = transitionChromeHidden ? 0 : 1
+        chromeOverlayView.isUserInteractionEnabled =
+            transitionChromeHidden == false &&
+            isTransitionInteractionFrozen == false
     }
 
     private func presentContextMenu(
@@ -4152,6 +4169,33 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             "occupiedRects=[\(occupiedRectsDescription)] " +
             "actionIDs=[\(actionIDsDescription)]"
         )
+    }
+}
+
+extension iOSViewController {
+    var transitionCanvasViewportView: UIView {
+        canvasViewportView
+    }
+
+    var transitionCanvasHostView: UIView {
+        canvasHostView
+    }
+
+    var isTransitionChromeHidden: Bool {
+        transitionChromeHidden
+    }
+
+    func setTransitionChromeHidden(_ isHidden: Bool) {
+        guard transitionChromeHidden != isHidden else {
+            return
+        }
+
+        transitionChromeHidden = isHidden
+        guard isViewLoaded else {
+            return
+        }
+
+        applyTransitionChromeVisibility()
     }
 }
 

@@ -112,8 +112,17 @@ final class iOSAppRootViewController: UIViewController {
         let destinationViewController = makeCanvasViewController(
             for: request.launchContext
         )
+        mountViewController(destinationViewController, hidden: true)
+        view.layoutIfNeeded()
+        let liveCanvasRequirements = resolveLiveCanvasCarrierRequirements(
+            from: destinationViewController,
+            preferredKind: request.preferredCarrierKind,
+            transitionPhase: "opening",
+            providerRole: "destination"
+        )
         let carrier = iOSBoardListCanvasTransitionCarrierFactory.makeCarrier(
-            preferredKind: request.preferredCarrierKind
+            preferredKind: request.preferredCarrierKind,
+            liveCanvasRequirements: liveCanvasRequirements
         )
         let session = iOSBoardListCanvasTransitionSession(
             context: request.transitionContext,
@@ -128,8 +137,6 @@ final class iOSAppRootViewController: UIViewController {
         setTransitionInteractionFrozen(true, for: destinationViewController)
         activateTransitionOverlay()
         carrier.install(in: overlayHostView)
-        mountViewController(destinationViewController, hidden: true)
-        view.layoutIfNeeded()
         carrier.prepareTransition(
             with: session.context,
             sourceViewController: sourceViewController,
@@ -174,8 +181,17 @@ final class iOSAppRootViewController: UIViewController {
 
         let sourceViewController = currentViewController
         let destinationViewController = boardListViewController
+        mountViewController(destinationViewController, hidden: true)
+        view.layoutIfNeeded()
+        let liveCanvasRequirements = resolveLiveCanvasCarrierRequirements(
+            from: sourceViewController,
+            preferredKind: request.preferredCarrierKind,
+            transitionPhase: "closing",
+            providerRole: "source"
+        )
         let carrier = iOSBoardListCanvasTransitionCarrierFactory.makeCarrier(
-            preferredKind: request.preferredCarrierKind
+            preferredKind: request.preferredCarrierKind,
+            liveCanvasRequirements: liveCanvasRequirements
         )
         let session = iOSBoardListCanvasTransitionSession(
             context: request.transitionContext,
@@ -191,7 +207,6 @@ final class iOSAppRootViewController: UIViewController {
         setTransitionInteractionFrozen(true, for: destinationViewController)
         activateTransitionOverlay()
         carrier.install(in: overlayHostView)
-        mountViewController(destinationViewController, hidden: true)
         destinationViewController.setClosingTransitionTimingTrace(session.debugTrace)
 
         if let trace = session.debugTrace {
@@ -385,6 +400,66 @@ final class iOSAppRootViewController: UIViewController {
             self?.handleCanvasReturnRequest(request)
         }
         return viewController
+    }
+
+    private func resolveLiveCanvasCarrierRequirements(
+        from viewController: UIViewController?,
+        preferredKind: BoardListCanvasTransitionCarrierKind,
+        transitionPhase: String,
+        providerRole: String
+    ) -> iOSLiveCanvasCarrierRequirements? {
+        guard let viewController else {
+            logLiveCanvasCarrierFallbackIfNeeded(
+                preferredKind: preferredKind,
+                transitionPhase: transitionPhase,
+                reason: "\(providerRole)ViewControllerMissing"
+            )
+            return nil
+        }
+
+        viewController.loadViewIfNeeded()
+        viewController.view.layoutIfNeeded()
+
+        guard let provider = viewController as? CanvasTransitionLiveContentProviding else {
+            logLiveCanvasCarrierFallbackIfNeeded(
+                preferredKind: preferredKind,
+                transitionPhase: transitionPhase,
+                reason: "\(providerRole)ProviderMissing"
+            )
+            return nil
+        }
+
+        return iOSLiveCanvasCarrierRequirements(
+            canvasViewProvider: { [weak provider] in
+                provider?.transitionCanvasViewportView
+            },
+            canvasContainerViewProvider: { [weak provider] in
+                provider?.transitionCanvasHostView
+            },
+            isTransitionChromeHidden: { [weak provider] in
+                provider?.isTransitionChromeHidden ?? false
+            },
+            setTransitionChromeHidden: { [weak provider] isHidden in
+                provider?.setTransitionChromeHidden(isHidden)
+            }
+        )
+    }
+
+    private func logLiveCanvasCarrierFallbackIfNeeded(
+        preferredKind: BoardListCanvasTransitionCarrierKind,
+        transitionPhase: String,
+        reason: String
+    ) {
+        guard preferredKind == .liveCanvas else {
+            return
+        }
+
+        print(
+            "[BoardListCanvasTransition][iOS][AppRoot] " +
+                "phase=liveCanvasCarrierFallback " +
+                "transitionPhase=\(transitionPhase) " +
+                "reason=\(reason)"
+        )
     }
 
     private func setupTransitionInfrastructure() {
