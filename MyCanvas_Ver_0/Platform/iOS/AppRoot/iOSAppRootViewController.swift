@@ -65,6 +65,15 @@ final class iOSAppRootViewController: UIViewController {
         _ request: BoardListCanvasOpenRequest
     ) {
         currentBoardListCanvasTransitionContext = request.transitionContext
+        if let trace = request.debugTrace {
+            logOpeningTransitionTrace(
+                trace,
+                phase: "handleCanvasOpenRequest",
+                extra:
+                    "targetBoardID=\(request.transitionContext.targetBoardID?.uuidString ?? "nil") " +
+                    "preferredCarrierKind=\(describeCarrierKind(request.preferredCarrierKind))"
+            )
+        }
         beginOpeningTransition(with: request)
     }
 
@@ -108,6 +117,16 @@ final class iOSAppRootViewController: UIViewController {
             return
         }
 
+        if let trace = request.debugTrace {
+            logOpeningTransitionTrace(
+                trace,
+                phase: "beginOpeningTransition",
+                extra:
+                    "targetBoardID=\(request.transitionContext.targetBoardID?.uuidString ?? "nil") " +
+                    "preferredCarrierKind=\(describeCarrierKind(request.preferredCarrierKind))"
+            )
+        }
+
         let sourceViewController = currentViewController ?? boardListViewController
         let destinationViewController = makeCanvasViewController(
             for: request.launchContext
@@ -118,17 +137,27 @@ final class iOSAppRootViewController: UIViewController {
             from: destinationViewController,
             preferredKind: request.preferredCarrierKind,
             transitionPhase: "opening",
-            providerRole: "destination"
+            providerRole: "destination",
+            debugTrace: request.debugTrace
         )
         let carrier = iOSBoardListCanvasTransitionCarrierFactory.makeCarrier(
             preferredKind: request.preferredCarrierKind,
-            liveCanvasRequirements: liveCanvasRequirements
+            liveCanvasRequirements: liveCanvasRequirements,
+            debugTrace: request.debugTrace
+        )
+        logCarrierSelectionTraceIfNeeded(
+            request.debugTrace,
+            transitionPhase: "opening",
+            requestedKind: request.preferredCarrierKind,
+            resolvedKind: carrier.kind,
+            hasLiveCanvasRequirements: liveCanvasRequirements != nil
         )
         let session = iOSBoardListCanvasTransitionSession(
             context: request.transitionContext,
             carrier: carrier,
             sourceViewController: sourceViewController,
-            destinationViewController: destinationViewController
+            destinationViewController: destinationViewController,
+            debugTrace: request.debugTrace
         )
 
         activeTransitionSession = session
@@ -137,11 +166,28 @@ final class iOSAppRootViewController: UIViewController {
         setTransitionInteractionFrozen(true, for: destinationViewController)
         activateTransitionOverlay()
         carrier.install(in: overlayHostView)
+        let carrierPreparationStart = BoardListCanvasTransitionDebugLogger.now()
         carrier.prepareTransition(
             with: session.context,
             sourceViewController: sourceViewController,
             destinationViewController: destinationViewController
         )
+        if let trace = session.debugTrace {
+            logOpeningTransitionTrace(
+                trace,
+                phase: "carrierPrepareFinished",
+                localDuration: BoardListCanvasTransitionDebugLogger.now() - carrierPreparationStart,
+                extra: "carrierKind=\(describeCarrierKind(carrier.kind))"
+            )
+        }
+        session.openingAnimationStartedAt = BoardListCanvasTransitionDebugLogger.now()
+        if let trace = session.debugTrace {
+            logOpeningTransitionTrace(
+                trace,
+                phase: "carrierAnimateBegin",
+                extra: "carrierKind=\(describeCarrierKind(carrier.kind))"
+            )
+        }
         carrier.animateTransition { [weak self] in
             self?.completeOpeningTransition(sessionID: session.id)
         }
@@ -166,6 +212,22 @@ final class iOSAppRootViewController: UIViewController {
         setTransitionInteractionFrozen(false, for: destinationViewController)
         currentViewController = destinationViewController
         session.carrier.completeTransition()
+        if let trace = session.debugTrace {
+            let animationDuration = session.openingAnimationStartedAt.map {
+                BoardListCanvasTransitionDebugLogger.now() - $0
+            }
+            let animationDurationSummary = animationDuration.map {
+                BoardListCanvasTransitionDebugLogger.durationString($0)
+            } ?? "nil"
+            logOpeningTransitionTrace(
+                trace,
+                phase: "completeOpeningTransition",
+                localDuration: animationDuration,
+                extra:
+                    "carrierKind=\(describeCarrierKind(session.carrier.kind)) " +
+                    "animationDuration=\(animationDurationSummary)"
+            )
+        }
         activeTransitionSession = nil
         transitionPhase = .steadyCanvas
         deactivateTransitionOverlay()
@@ -187,11 +249,20 @@ final class iOSAppRootViewController: UIViewController {
             from: sourceViewController,
             preferredKind: request.preferredCarrierKind,
             transitionPhase: "closing",
-            providerRole: "source"
+            providerRole: "source",
+            debugTrace: request.debugTrace
         )
         let carrier = iOSBoardListCanvasTransitionCarrierFactory.makeCarrier(
             preferredKind: request.preferredCarrierKind,
-            liveCanvasRequirements: liveCanvasRequirements
+            liveCanvasRequirements: liveCanvasRequirements,
+            debugTrace: request.debugTrace
+        )
+        logCarrierSelectionTraceIfNeeded(
+            request.debugTrace,
+            transitionPhase: "closing",
+            requestedKind: request.preferredCarrierKind,
+            resolvedKind: carrier.kind,
+            hasLiveCanvasRequirements: liveCanvasRequirements != nil
         )
         let session = iOSBoardListCanvasTransitionSession(
             context: request.transitionContext,
@@ -406,13 +477,15 @@ final class iOSAppRootViewController: UIViewController {
         from viewController: UIViewController?,
         preferredKind: BoardListCanvasTransitionCarrierKind,
         transitionPhase: String,
-        providerRole: String
+        providerRole: String,
+        debugTrace: BoardListCanvasTransitionDebugTrace?
     ) -> iOSLiveCanvasCarrierRequirements? {
         guard let viewController else {
             logLiveCanvasCarrierFallbackIfNeeded(
                 preferredKind: preferredKind,
                 transitionPhase: transitionPhase,
-                reason: "\(providerRole)ViewControllerMissing"
+                reason: "\(providerRole)ViewControllerMissing",
+                debugTrace: debugTrace
             )
             return nil
         }
@@ -424,9 +497,20 @@ final class iOSAppRootViewController: UIViewController {
             logLiveCanvasCarrierFallbackIfNeeded(
                 preferredKind: preferredKind,
                 transitionPhase: transitionPhase,
-                reason: "\(providerRole)ProviderMissing"
+                reason: "\(providerRole)ProviderMissing",
+                debugTrace: debugTrace
             )
             return nil
+        }
+
+        if preferredKind == .liveCanvas, let debugTrace {
+            logTransitionTrace(
+                debugTrace,
+                phase: "liveRequirementsReady",
+                extra:
+                    "transitionPhase=\(transitionPhase) " +
+                    "providerRole=\(providerRole)"
+            )
         }
 
         return iOSLiveCanvasCarrierRequirements(
@@ -448,7 +532,8 @@ final class iOSAppRootViewController: UIViewController {
     private func logLiveCanvasCarrierFallbackIfNeeded(
         preferredKind: BoardListCanvasTransitionCarrierKind,
         transitionPhase: String,
-        reason: String
+        reason: String,
+        debugTrace: BoardListCanvasTransitionDebugTrace?
     ) {
         guard preferredKind == .liveCanvas else {
             return
@@ -460,6 +545,16 @@ final class iOSAppRootViewController: UIViewController {
                 "transitionPhase=\(transitionPhase) " +
                 "reason=\(reason)"
         )
+        if let debugTrace {
+            logTransitionTrace(
+                debugTrace,
+                phase: "liveFallbackTriggered",
+                extra:
+                    "transitionPhase=\(transitionPhase) " +
+                    "source=appRootRequirements " +
+                    "reason=\(reason)"
+            )
+        }
     }
 
     private func setupTransitionInfrastructure() {
@@ -535,6 +630,15 @@ final class iOSAppRootViewController: UIViewController {
             return
         }
 
+        if let trace = session.debugTrace {
+            logTransitionTrace(
+                trace,
+                phase: "discardActiveTransition",
+                extra:
+                    "transitionPhase=\(transitionPhase.rawValue) " +
+                    "carrierKind=\(describeCarrierKind(session.carrier.kind))"
+            )
+        }
         session.carrier.cancelTransition()
         if let boardListViewController = session.destinationViewController as? iOSBoardListViewController {
             boardListViewController.setClosingTransitionTimingTrace(nil)
@@ -570,7 +674,7 @@ final class iOSAppRootViewController: UIViewController {
             .setTransitionInteractionFrozen(isFrozen)
     }
 
-    private func logClosingTransitionTrace(
+    private func logTransitionTrace(
         _ trace: BoardListCanvasTransitionDebugTrace,
         phase: String,
         localDuration: TimeInterval? = nil,
@@ -584,6 +688,67 @@ final class iOSAppRootViewController: UIViewController {
             localDuration: localDuration,
             extra: extra
         )
+    }
+
+    private func logOpeningTransitionTrace(
+        _ trace: BoardListCanvasTransitionDebugTrace,
+        phase: String,
+        localDuration: TimeInterval? = nil,
+        extra: String = ""
+    ) {
+        logTransitionTrace(
+            trace,
+            phase: phase,
+            localDuration: localDuration,
+            extra: extra
+        )
+    }
+
+    private func logCarrierSelectionTraceIfNeeded(
+        _ trace: BoardListCanvasTransitionDebugTrace?,
+        transitionPhase: String,
+        requestedKind: BoardListCanvasTransitionCarrierKind,
+        resolvedKind: BoardListCanvasTransitionCarrierKind,
+        hasLiveCanvasRequirements: Bool
+    ) {
+        guard let trace else {
+            return
+        }
+
+        logTransitionTrace(
+            trace,
+            phase: "carrierSelected",
+            extra:
+                "transitionPhase=\(transitionPhase) " +
+                "requestedKind=\(describeCarrierKind(requestedKind)) " +
+                "resolvedKind=\(describeCarrierKind(resolvedKind)) " +
+                "hasLiveCanvasRequirements=\(hasLiveCanvasRequirements)"
+        )
+    }
+
+    private func logClosingTransitionTrace(
+        _ trace: BoardListCanvasTransitionDebugTrace,
+        phase: String,
+        localDuration: TimeInterval? = nil,
+        extra: String = ""
+    ) {
+        logTransitionTrace(
+            trace,
+            phase: phase,
+            localDuration: localDuration,
+            extra: extra
+        )
+    }
+
+    private func describeCarrierKind(
+        _ carrierKind: BoardListCanvasTransitionCarrierKind
+    ) -> String {
+        switch carrierKind {
+        case .snapshotShell:
+            return "snapshotShell"
+        case .liveCanvas:
+            return "liveCanvas"
+        }
     }
 
     private func steadyPhase(

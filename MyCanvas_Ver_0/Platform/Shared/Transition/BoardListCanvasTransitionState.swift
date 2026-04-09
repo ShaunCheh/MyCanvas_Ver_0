@@ -11,6 +11,14 @@ enum BoardListCanvasTransitionCarrierKind: Hashable, Sendable {
     case liveCanvas
 }
 
+enum BoardListCanvasTransitionRollout {
+    static let liveCanvasRequestOverrideEnabled = true
+
+    static var iOSRequestPreferredCarrierKind: BoardListCanvasTransitionCarrierKind {
+        liveCanvasRequestOverrideEnabled ? .liveCanvas : .snapshotShell
+    }
+}
+
 enum BoardListCanvasOpenSourceKind: Hashable, Sendable {
     case existingBoardCard
     case newBoardPlaceholder
@@ -27,11 +35,13 @@ struct BoardListCanvasOpenRequest: Hashable, Sendable {
     var launchContext: CanvasLaunchContext
     var source: BoardListCanvasOpenSource
     var preferredCarrierKind: BoardListCanvasTransitionCarrierKind
+    var debugTrace: BoardListCanvasTransitionDebugTrace?
 
     static func existingBoard(
         boardID: UUID,
         geometry: BoardListCanvasTransitionSourceGeometry = .init(),
-        preferredCarrierKind: BoardListCanvasTransitionCarrierKind = .snapshotShell
+        preferredCarrierKind: BoardListCanvasTransitionCarrierKind = .snapshotShell,
+        debugTrace: BoardListCanvasTransitionDebugTrace? = nil
     ) -> Self {
         BoardListCanvasOpenRequest(
             launchContext: .existing(boardID: boardID),
@@ -41,13 +51,15 @@ struct BoardListCanvasOpenRequest: Hashable, Sendable {
                 boardID: boardID,
                 geometry: geometry
             ),
-            preferredCarrierKind: preferredCarrierKind
+            preferredCarrierKind: preferredCarrierKind,
+            debugTrace: debugTrace
         )
     }
 
     static func newBoardPlaceholder(
         geometry: BoardListCanvasTransitionSourceGeometry = .init(),
-        preferredCarrierKind: BoardListCanvasTransitionCarrierKind = .snapshotShell
+        preferredCarrierKind: BoardListCanvasTransitionCarrierKind = .snapshotShell,
+        debugTrace: BoardListCanvasTransitionDebugTrace? = nil
     ) -> Self {
         BoardListCanvasOpenRequest(
             launchContext: .newBoard,
@@ -57,7 +69,8 @@ struct BoardListCanvasOpenRequest: Hashable, Sendable {
                 boardID: nil,
                 geometry: geometry
             ),
-            preferredCarrierKind: preferredCarrierKind
+            preferredCarrierKind: preferredCarrierKind,
+            debugTrace: debugTrace
         )
     }
 

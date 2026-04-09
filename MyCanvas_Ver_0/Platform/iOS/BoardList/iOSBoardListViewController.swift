@@ -690,6 +690,22 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
         )
     }
 
+    private func logOpeningTransitionTrace(
+        _ trace: BoardListCanvasTransitionDebugTrace,
+        phase: String,
+        localDuration: TimeInterval? = nil,
+        extra: String = ""
+    ) {
+        BoardListCanvasTransitionDebugLogger.log(
+            platform: "iOS",
+            component: "BoardList",
+            trace: trace,
+            phase: phase,
+            localDuration: localDuration,
+            extra: extra
+        )
+    }
+
     private func currentPreviewWorkPolicy() -> BoardListPreviewWorkPolicy {
         previewWorkPolicy
     }
@@ -1427,24 +1443,54 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
             return
         }
 
-        onOpenCanvas?(makeOpenRequest(for: entry))
+        let trace = BoardListCanvasTransitionDebugTrace()
+        logOpeningTransitionTrace(
+            trace,
+            phase: "primaryActionTap",
+            extra:
+                "entryID=\(describeRenameTraceEntryID(entry.id)) " +
+                "isPlaceholder=\(entry.isPlaceholder)"
+        )
+        let request = makeOpenRequest(for: entry, debugTrace: trace)
+        logOpeningTransitionTrace(
+            trace,
+            phase: "openRequestBuilt",
+            extra:
+                "entryID=\(describeRenameTraceEntryID(entry.id)) " +
+                "preferredCarrierKind=\(String(describing: request.preferredCarrierKind)) " +
+                "hasCardRect=\(request.source.geometry.cardRect != nil) " +
+                "hasFocusRect=\(request.source.geometry.focusRect != nil)"
+        )
+        logOpeningTransitionTrace(
+            trace,
+            phase: "emitOpenRequest",
+            extra:
+                "entryID=\(describeRenameTraceEntryID(entry.id)) " +
+                "preferredCarrierKind=\(String(describing: request.preferredCarrierKind))"
+        )
+        onOpenCanvas?(request)
     }
 
     private func makeOpenRequest(
-        for entry: BoardListEntry
+        for entry: BoardListEntry,
+        debugTrace: BoardListCanvasTransitionDebugTrace? = nil
     ) -> BoardListCanvasOpenRequest {
         let sourceGeometry = transitionSourceGeometry(for: entry.id)
+        let preferredCarrierKind = BoardListCanvasTransitionRollout
+            .iOSRequestPreferredCarrierKind
         switch entry {
         case .newBoardPlaceholder:
             return .newBoardPlaceholder(
                 geometry: sourceGeometry,
-                preferredCarrierKind: .liveCanvas
+                preferredCarrierKind: preferredCarrierKind,
+                debugTrace: debugTrace
             )
         case let .board(item):
             return .existingBoard(
                 boardID: item.boardID,
                 geometry: sourceGeometry,
-                preferredCarrierKind: .liveCanvas
+                preferredCarrierKind: preferredCarrierKind,
+                debugTrace: debugTrace
             )
         }
     }

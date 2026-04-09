@@ -1714,10 +1714,12 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     private func makeReturnToBoardListRequest(
         debugTrace: BoardListCanvasTransitionDebugTrace? = nil
     ) -> BoardListCanvasReturnRequest {
-        .backButton(
+        let preferredCarrierKind = BoardListCanvasTransitionRollout
+            .iOSRequestPreferredCarrierKind
+        return .backButton(
             boardID: editorSession.activeBoardID,
             launchContext: launchContext,
-            preferredCarrierKind: .liveCanvas,
+            preferredCarrierKind: preferredCarrierKind,
             debugTrace: debugTrace
         )
     }
@@ -1756,6 +1758,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             phase: "returnRequestBuilt",
             extra:
                 "boardID=\(request.boardID?.uuidString ?? "nil") " +
+                "preferredCarrierKind=\(String(describing: request.preferredCarrierKind)) " +
                 "requiresPersistence=\(request.requiresBoardPersistence)"
         )
         guard request.requiresBoardPersistence else {
