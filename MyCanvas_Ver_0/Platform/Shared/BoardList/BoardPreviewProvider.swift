@@ -1,6 +1,33 @@
 import CoreGraphics
 import Foundation
 
+private enum BoardPreviewTracePolicy: String {
+    case disabled = "disabled"
+    case metadataOnly = "metadata-only"
+    case verbose = "verbose"
+
+    private static let userDefaultsKey = "BoardPreviewTracePolicy"
+
+    init(userDefaults: UserDefaults) {
+        let rawValue = userDefaults.string(
+            forKey: Self.userDefaultsKey
+        )?
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+        .lowercased()
+
+        switch rawValue {
+        case Self.disabled.rawValue:
+            self = .disabled
+        case Self.verbose.rawValue:
+            self = .verbose
+        case Self.metadataOnly.rawValue, "metadataonly", "metadata_only", nil, "":
+            self = .metadataOnly
+        default:
+            self = .metadataOnly
+        }
+    }
+}
+
 final class BoardPreviewProvider {
     private let thumbnailCache: BoardThumbnailCache
     private let thumbnailRenderer: BoardThumbnailRenderer
@@ -56,6 +83,7 @@ final class BoardPreviewProvider {
                 item: item,
                 targetPixelSize: targetPixelSize,
                 cachedImage: cachedImage,
+                tracePolicy: currentTracePolicy(),
                 mediaPosterImageResolver: mediaPosterImageResolver,
                 userDefaults: userDefaults
             )
@@ -140,6 +168,7 @@ final class BoardPreviewProvider {
                 item: item,
                 targetPixelSize: targetPixelSize,
                 cachedImage: cachedImage,
+                tracePolicy: currentTracePolicy(),
                 mediaPosterImageResolver: mediaPosterImageResolver,
                 userDefaults: self.userDefaults
             )
@@ -386,6 +415,10 @@ final class BoardPreviewProvider {
             try body()
         }
     }
+
+    private func currentTracePolicy() -> BoardPreviewTracePolicy {
+        BoardPreviewTracePolicy(userDefaults: userDefaults)
+    }
 }
 
 private func logBoardPreviewProviderCacheHit(
@@ -393,34 +426,74 @@ private func logBoardPreviewProviderCacheHit(
     item: BoardCatalogItem,
     targetPixelSize: CGSize,
     cachedImage: CGImage,
+    tracePolicy: BoardPreviewTracePolicy,
     mediaPosterImageResolver: BoardMediaPosterImageResolver,
     userDefaults: UserDefaults
 ) {
-    logBoardThumbnailTraceImageRegions(
-        phase: phase,
-        mode: "provider-cache-hit",
-        boardID: item.boardID,
-        previewSeed: item.previewSeed,
-        targetPixelSize: targetPixelSize,
-        contentInset: 10,
-        image: cachedImage
-    )
+    switch tracePolicy {
+    case .disabled:
+        return
+    case .metadataOnly:
+        logBoardPreviewProviderCacheHitMetadata(
+            phase: phase,
+            item: item,
+            targetPixelSize: targetPixelSize,
+            cachedImage: cachedImage,
+            tracePolicy: tracePolicy
+        )
+    case .verbose:
+        logBoardThumbnailTraceImageRegions(
+            phase: phase,
+            mode: "provider-cache-hit",
+            boardID: item.boardID,
+            previewSeed: item.previewSeed,
+            targetPixelSize: targetPixelSize,
+            contentInset: 10,
+            image: cachedImage
+        )
+    }
+
     logBoardPreviewProviderSourceImagesIfNeeded(
         phase: phase,
         item: item,
+        tracePolicy: tracePolicy,
         mediaPosterImageResolver: mediaPosterImageResolver,
         userDefaults: userDefaults
+    )
+}
+
+private func logBoardPreviewProviderCacheHitMetadata(
+    phase: String,
+    item: BoardCatalogItem,
+    targetPixelSize: CGSize,
+    cachedImage: CGImage,
+    tracePolicy: BoardPreviewTracePolicy
+) {
+    print(
+        "[BoardList][ThumbnailTrace][CacheHit] " +
+            "phase=\(phase) " +
+            "boardID=\(item.boardID.uuidString) " +
+            "tracePolicy=\(tracePolicy.rawValue) " +
+            "targetPixelSize=\(describeBoardPreviewProviderSize(targetPixelSize)) " +
+            "cachedPixels={\(cachedImage.width), \(cachedImage.height)} " +
+            "imageItemCount=\(item.document.imageItemRecords.count) " +
+            "textItemCount=\(item.document.textItemRecords.count)"
     )
 }
 
 private func logBoardPreviewProviderSourceImagesIfNeeded(
     phase: String,
     item: BoardCatalogItem,
+    tracePolicy: BoardPreviewTracePolicy,
     mediaPosterImageResolver: BoardMediaPosterImageResolver,
     userDefaults: UserDefaults,
     maxImageCount: Int = 8,
     maxPixelSize: Int = 128
 ) {
+    guard tracePolicy == .verbose else {
+        return
+    }
+
     let imageItemRecords = item.document.imageItemRecords
     guard imageItemRecords.count <= maxImageCount else {
         print(
