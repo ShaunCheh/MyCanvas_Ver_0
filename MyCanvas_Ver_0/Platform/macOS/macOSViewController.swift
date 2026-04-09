@@ -897,8 +897,14 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             return
         }
 
-        if toolbarHostView.frame != toolbarFrame {
-            toolbarHostView.frame = toolbarFrame
+        guard let sanitizedToolbarFrame = CanvasChromeLayoutGeometry.sanitizedRect(
+            toolbarFrame
+        ) else {
+            return
+        }
+
+        if toolbarHostView.frame != sanitizedToolbarFrame {
+            toolbarHostView.frame = sanitizedToolbarFrame
         }
     }
 
