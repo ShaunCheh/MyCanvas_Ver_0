@@ -1717,6 +1717,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         .backButton(
             boardID: editorSession.activeBoardID,
             launchContext: launchContext,
+            preferredCarrierKind: .liveCanvas,
             debugTrace: debugTrace
         )
     }

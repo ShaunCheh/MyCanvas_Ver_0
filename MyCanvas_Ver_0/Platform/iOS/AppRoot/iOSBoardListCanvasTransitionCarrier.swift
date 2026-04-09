@@ -45,10 +45,11 @@ enum iOSBoardListCanvasTransitionCarrierFactory {
 final class iOSLiveCanvasCarrier: iOSBoardListCanvasTransitionCarrying {
     private enum Strategy {
         case liveOpening
+        case liveClosing
         case snapshotFallback
     }
 
-    private static let openingPreviewCornerRadius: CGFloat = 10
+    private static let previewCornerRadius: CGFloat = 10
 
     private let requirements: iOSLiveCanvasCarrierRequirements
     private let snapshotFallbackCarrier: iOSSnapshotShellCarrier
@@ -88,9 +89,11 @@ final class iOSLiveCanvasCarrier: iOSBoardListCanvasTransitionCarrying {
         sourceViewController: UIViewController?,
         destinationViewController: UIViewController?
     ) {
-        cleanupLiveOpeningArtifacts(
+        cleanupLiveTransitionArtifacts(
             restoreCanvasToHost: true,
-            restoreChromeVisibility: true
+            restoreChromeVisibility: true,
+            removeLiveCanvasFromHierarchy: false,
+            clearContext: true
         )
         snapshotFallbackCarrier.cancelTransition()
 
@@ -108,7 +111,7 @@ final class iOSLiveCanvasCarrier: iOSBoardListCanvasTransitionCarrying {
                     destinationViewController: destinationViewController
                 )
             else {
-                snapshotFallbackCarrier.prepareTransition(
+                prepareSnapshotFallback(
                     with: context,
                     sourceViewController: sourceViewController,
                     destinationViewController: destinationViewController
@@ -118,12 +121,21 @@ final class iOSLiveCanvasCarrier: iOSBoardListCanvasTransitionCarrying {
 
             liveStrategy = .liveOpening
         case .closing:
-            logLiveOpeningFallback(reason: "closingLiveNotImplemented")
-            snapshotFallbackCarrier.prepareTransition(
-                with: context,
-                sourceViewController: sourceViewController,
-                destinationViewController: destinationViewController
-            )
+            guard
+                prepareClosingLiveTransition(
+                    with: context,
+                    sourceViewController: sourceViewController
+                )
+            else {
+                prepareSnapshotFallback(
+                    with: context,
+                    sourceViewController: sourceViewController,
+                    destinationViewController: destinationViewController
+                )
+                return
+            }
+
+            liveStrategy = .liveClosing
         }
     }
 
@@ -136,47 +148,70 @@ final class iOSLiveCanvasCarrier: iOSBoardListCanvasTransitionCarrying {
         switch (context.direction, liveStrategy) {
         case (.opening, .liveOpening):
             animateLiveOpeningTransition(completion: completion)
-        case (.opening, .snapshotFallback), (.closing, _):
+        case (.closing, .liveClosing):
+            animateLiveClosingTransition(completion: completion)
+        case (.opening, .snapshotFallback), (.closing, .snapshotFallback):
             snapshotFallbackCarrier.animateTransition(completion: completion)
+        default:
+            completion()
         }
     }
 
     func updateTransitionContext(_ context: BoardListCanvasTransitionContext) {
         currentContext = context
-        guard liveStrategy == .snapshotFallback else {
-            return
+        switch liveStrategy {
+        case .liveClosing:
+            liveTargetFrame = resolveLiveClosingTargetFrame(using: context)
+        case .snapshotFallback:
+            snapshotFallbackCarrier.updateTransitionContext(context)
+        case .liveOpening:
+            break
         }
-        snapshotFallbackCarrier.updateTransitionContext(context)
     }
 
     func completeTransition() {
         switch liveStrategy {
         case .liveOpening:
-            cleanupLiveOpeningArtifacts(
+            cleanupLiveTransitionArtifacts(
                 restoreCanvasToHost: true,
-                restoreChromeVisibility: true
+                restoreChromeVisibility: true,
+                removeLiveCanvasFromHierarchy: false,
+                clearContext: true
+            )
+        case .liveClosing:
+            cleanupLiveTransitionArtifacts(
+                restoreCanvasToHost: false,
+                restoreChromeVisibility: false,
+                removeLiveCanvasFromHierarchy: true,
+                clearContext: true
             )
         case .snapshotFallback:
             snapshotFallbackCarrier.completeTransition()
-            cleanupLiveOpeningArtifacts(
+            cleanupLiveTransitionArtifacts(
                 restoreCanvasToHost: false,
-                restoreChromeVisibility: false
+                restoreChromeVisibility: false,
+                removeLiveCanvasFromHierarchy: false,
+                clearContext: true
             )
         }
     }
 
     func cancelTransition() {
         switch liveStrategy {
-        case .liveOpening:
-            cleanupLiveOpeningArtifacts(
+        case .liveOpening, .liveClosing:
+            cleanupLiveTransitionArtifacts(
                 restoreCanvasToHost: true,
-                restoreChromeVisibility: true
+                restoreChromeVisibility: true,
+                removeLiveCanvasFromHierarchy: false,
+                clearContext: true
             )
         case .snapshotFallback:
             snapshotFallbackCarrier.cancelTransition()
-            cleanupLiveOpeningArtifacts(
+            cleanupLiveTransitionArtifacts(
                 restoreCanvasToHost: false,
-                restoreChromeVisibility: false
+                restoreChromeVisibility: false,
+                removeLiveCanvasFromHierarchy: false,
+                clearContext: true
             )
         }
     }
@@ -187,31 +222,52 @@ final class iOSLiveCanvasCarrier: iOSBoardListCanvasTransitionCarrying {
         destinationViewController: UIViewController?
     ) -> Bool {
         guard let overlayHostView else {
-            logLiveOpeningFallback(reason: "overlayHostViewMissing")
+            logLiveCarrierFallback(
+                phase: "openingLiveFallback",
+                reason: "overlayHostViewMissing"
+            )
             return false
         }
         guard let sourceViewController else {
-            logLiveOpeningFallback(reason: "sourceViewControllerMissing")
+            logLiveCarrierFallback(
+                phase: "openingLiveFallback",
+                reason: "sourceViewControllerMissing"
+            )
             return false
         }
         guard let destinationViewController else {
-            logLiveOpeningFallback(reason: "destinationViewControllerMissing")
+            logLiveCarrierFallback(
+                phase: "openingLiveFallback",
+                reason: "destinationViewControllerMissing"
+            )
             return false
         }
         guard let sourceFocusRect = context.sourceGeometry.focusRect else {
-            logLiveOpeningFallback(reason: "sourceFocusRectMissing")
+            logLiveCarrierFallback(
+                phase: "openingLiveFallback",
+                reason: "sourceFocusRectMissing"
+            )
             return false
         }
         guard let liveCanvasView = requirements.canvasViewProvider() else {
-            logLiveOpeningFallback(reason: "destinationCanvasViewMissing")
+            logLiveCarrierFallback(
+                phase: "openingLiveFallback",
+                reason: "destinationCanvasViewMissing"
+            )
             return false
         }
         guard let liveCanvasHostView = requirements.canvasContainerViewProvider() else {
-            logLiveOpeningFallback(reason: "destinationCanvasHostViewMissing")
+            logLiveCarrierFallback(
+                phase: "openingLiveFallback",
+                reason: "destinationCanvasHostViewMissing"
+            )
             return false
         }
         guard liveCanvasView.isDescendant(of: liveCanvasHostView) else {
-            logLiveOpeningFallback(reason: "destinationCanvasViewNotHosted")
+            logLiveCarrierFallback(
+                phase: "openingLiveFallback",
+                reason: "destinationCanvasViewNotHosted"
+            )
             return false
         }
 
@@ -230,11 +286,17 @@ final class iOSLiveCanvasCarrier: iOSBoardListCanvasTransitionCarrying {
             from: liveCanvasHostView
         ).standardized
         guard sourceFrame.isEmpty == false else {
-            logLiveOpeningFallback(reason: "sourceFrameInvalid")
+            logLiveCarrierFallback(
+                phase: "openingLiveFallback",
+                reason: "sourceFrameInvalid"
+            )
             return false
         }
         guard targetFrame.isEmpty == false else {
-            logLiveOpeningFallback(reason: "targetFrameInvalid")
+            logLiveCarrierFallback(
+                phase: "openingLiveFallback",
+                reason: "targetFrameInvalid"
+            )
             return false
         }
 
@@ -245,7 +307,7 @@ final class iOSLiveCanvasCarrier: iOSBoardListCanvasTransitionCarrying {
         liveContainerView.backgroundColor = .clear
         liveContainerView.isUserInteractionEnabled = false
         liveContainerView.clipsToBounds = true
-        liveContainerView.layer.cornerRadius = openingCornerRadius(
+        liveContainerView.layer.cornerRadius = previewCornerRadius(
             for: sourceFrame
         )
         liveContainerView.center = CGPoint(
@@ -257,7 +319,7 @@ final class iOSLiveCanvasCarrier: iOSBoardListCanvasTransitionCarrying {
             targetFrame: targetFrame
         )
 
-        attachLiveCanvasViewToOverlay(
+        attachLiveCanvasViewToContainer(
             liveCanvasView,
             containerView: liveContainerView
         )
@@ -269,11 +331,95 @@ final class iOSLiveCanvasCarrier: iOSBoardListCanvasTransitionCarrying {
         self.liveTargetFrame = targetFrame
         isCanvasMountedInOverlay = true
 
-        logLiveOpeningEvent(
-            phase: "prepareFinished",
+        logLiveCarrierEvent(
+            phase: "openingPrepareFinished",
             extra:
                 "sourceFrame=\(describe(rect: sourceFrame)) " +
                 "targetFrame=\(describe(rect: targetFrame))"
+        )
+        return true
+    }
+
+    private func prepareClosingLiveTransition(
+        with context: BoardListCanvasTransitionContext,
+        sourceViewController: UIViewController?
+    ) -> Bool {
+        guard let overlayHostView else {
+            logLiveCarrierFallback(
+                phase: "closingLiveFallback",
+                reason: "overlayHostViewMissing"
+            )
+            return false
+        }
+        guard let sourceViewController else {
+            logLiveCarrierFallback(
+                phase: "closingLiveFallback",
+                reason: "sourceViewControllerMissing"
+            )
+            return false
+        }
+        guard let liveCanvasView = requirements.canvasViewProvider() else {
+            logLiveCarrierFallback(
+                phase: "closingLiveFallback",
+                reason: "sourceCanvasViewMissing"
+            )
+            return false
+        }
+        guard let liveCanvasHostView = requirements.canvasContainerViewProvider() else {
+            logLiveCarrierFallback(
+                phase: "closingLiveFallback",
+                reason: "sourceCanvasHostViewMissing"
+            )
+            return false
+        }
+        guard liveCanvasView.isDescendant(of: liveCanvasHostView) else {
+            logLiveCarrierFallback(
+                phase: "closingLiveFallback",
+                reason: "sourceCanvasViewNotHosted"
+            )
+            return false
+        }
+
+        overlayHostView.layoutIfNeeded()
+        sourceViewController.view.layoutIfNeeded()
+        liveCanvasHostView.layoutIfNeeded()
+
+        let sourceFrame = overlayHostView.convert(
+            liveCanvasHostView.bounds,
+            from: liveCanvasHostView
+        ).standardized
+        guard sourceFrame.isEmpty == false else {
+            logLiveCarrierFallback(
+                phase: "closingLiveFallback",
+                reason: "sourceFrameInvalid"
+            )
+            return false
+        }
+
+        originalChromeHiddenState = requirements.isTransitionChromeHidden()
+        requirements.setTransitionChromeHidden(true)
+
+        let liveContainerView = UIView(frame: sourceFrame)
+        liveContainerView.backgroundColor = .clear
+        liveContainerView.isUserInteractionEnabled = false
+        liveContainerView.clipsToBounds = true
+        liveContainerView.layer.cornerRadius = 0
+
+        attachLiveCanvasViewToContainer(
+            liveCanvasView,
+            containerView: liveContainerView
+        )
+        overlayHostView.addSubview(liveContainerView)
+
+        self.liveCanvasView = liveCanvasView
+        self.liveCanvasHostView = liveCanvasHostView
+        self.liveContainerView = liveContainerView
+        self.liveTargetFrame = resolveLiveClosingTargetFrame(using: context)
+        isCanvasMountedInOverlay = true
+
+        logLiveCarrierEvent(
+            phase: "closingPrepareFinished",
+            extra: "sourceFrame=\(describe(rect: sourceFrame))"
         )
         return true
     }
@@ -283,7 +429,10 @@ final class iOSLiveCanvasCarrier: iOSBoardListCanvasTransitionCarrying {
             let liveContainerView,
             let liveTargetFrame
         else {
-            logLiveOpeningFallback(reason: "liveContainerUnavailable")
+            logLiveCarrierFallback(
+                phase: "openingLiveFallback",
+                reason: "liveContainerUnavailable"
+            )
             destinationViewController?.view.isHidden = false
             destinationViewController?.view.alpha = 1
             restoreLiveCanvasToHostIfNeeded()
@@ -316,6 +465,66 @@ final class iOSLiveCanvasCarrier: iOSBoardListCanvasTransitionCarrying {
         }
     }
 
+    private func animateLiveClosingTransition(completion: @escaping () -> Void) {
+        guard let destinationView = destinationViewController?.view else {
+            fallbackToSnapshotClosing(
+                reason: "destinationViewMissing",
+                completion: completion
+            )
+            return
+        }
+        destinationView.isHidden = false
+        destinationView.alpha = 1
+        destinationView.superview?.layoutIfNeeded()
+
+        guard let liveContainerView else {
+            fallbackToSnapshotClosing(
+                reason: "liveContainerUnavailable",
+                completion: completion
+            )
+            return
+        }
+        let targetFrame = liveTargetFrame ?? {
+            guard let currentContext else {
+                return nil
+            }
+            return resolveLiveClosingTargetFrame(using: currentContext)
+        }()
+        guard let targetFrame else {
+            let fallbackReason =
+                currentContext?.targetGeometry.focusRect == nil
+                ? "targetFocusRectMissing"
+                : "targetFrameInvalid"
+            fallbackToSnapshotClosing(
+                reason: fallbackReason,
+                completion: completion
+            )
+            return
+        }
+
+        logLiveCarrierEvent(
+            phase: "closingAnimateBegin",
+            extra: "targetFrame=\(describe(rect: targetFrame))"
+        )
+        UIView.animate(
+            withDuration: BoardListCanvasTransitionConfiguration.closingAnimation.duration,
+            delay: 0,
+            options: [
+                .beginFromCurrentState,
+                Self.animationOptions(
+                    for: BoardListCanvasTransitionConfiguration.closingAnimation.curve
+                )
+            ]
+        ) {
+            liveContainerView.frame = targetFrame
+            liveContainerView.layer.cornerRadius = self.previewCornerRadius(
+                for: targetFrame
+            )
+        } completion: { [weak self] _ in
+            self?.performLiveClosingHandoff(completion: completion)
+        }
+    }
+
     private func performLiveOpeningHandoff(completion: @escaping () -> Void) {
         destinationViewController?.view.isHidden = false
         destinationViewController?.view.alpha = 1
@@ -326,14 +535,65 @@ final class iOSLiveCanvasCarrier: iOSBoardListCanvasTransitionCarrying {
         liveContainerView = nil
         liveTargetFrame = nil
 
-        logLiveOpeningEvent(phase: "handoffBegin")
+        logLiveCarrierEvent(phase: "openingHandoffBegin")
         restoreChromeVisibilityIfNeeded(animated: true) { [weak self] in
-            self?.logLiveOpeningEvent(phase: "handoffFinished")
+            self?.logLiveCarrierEvent(phase: "openingHandoffFinished")
             completion()
         }
     }
 
-    private func attachLiveCanvasViewToOverlay(
+    private func performLiveClosingHandoff(completion: @escaping () -> Void) {
+        liveContainerView?.removeFromSuperview()
+        liveContainerView = nil
+        liveTargetFrame = nil
+        isCanvasMountedInOverlay = false
+        logLiveCarrierEvent(phase: "closingHandoffFinished")
+        completion()
+    }
+
+    private func prepareSnapshotFallback(
+        with context: BoardListCanvasTransitionContext,
+        sourceViewController: UIViewController?,
+        destinationViewController: UIViewController?
+    ) {
+        liveStrategy = .snapshotFallback
+        snapshotFallbackCarrier.prepareTransition(
+            with: context,
+            sourceViewController: sourceViewController,
+            destinationViewController: destinationViewController
+        )
+    }
+
+    private func fallbackToSnapshotClosing(
+        reason: String,
+        completion: @escaping () -> Void
+    ) {
+        guard let context = currentContext else {
+            completion()
+            return
+        }
+
+        logLiveCarrierFallback(
+            phase: "closingLiveFallback",
+            reason: reason
+        )
+        cleanupLiveTransitionArtifacts(
+            restoreCanvasToHost: true,
+            restoreChromeVisibility: true,
+            removeLiveCanvasFromHierarchy: false,
+            clearContext: false
+        )
+        sourceViewController?.view.layoutIfNeeded()
+        destinationViewController?.view.layoutIfNeeded()
+        prepareSnapshotFallback(
+            with: context,
+            sourceViewController: sourceViewController,
+            destinationViewController: destinationViewController
+        )
+        snapshotFallbackCarrier.animateTransition(completion: completion)
+    }
+
+    private func attachLiveCanvasViewToContainer(
         _ liveCanvasView: UIView,
         containerView: UIView
     ) {
@@ -404,13 +664,18 @@ final class iOSLiveCanvasCarrier: iOSBoardListCanvasTransitionCarrying {
         completion()
     }
 
-    private func cleanupLiveOpeningArtifacts(
+    private func cleanupLiveTransitionArtifacts(
         restoreCanvasToHost: Bool,
-        restoreChromeVisibility: Bool
+        restoreChromeVisibility: Bool,
+        removeLiveCanvasFromHierarchy: Bool,
+        clearContext: Bool
     ) {
         if restoreCanvasToHost {
             restoreLiveCanvasToHostIfNeeded()
+        } else if removeLiveCanvasFromHierarchy {
+            liveCanvasView?.removeFromSuperview()
         }
+
         liveContainerView?.removeFromSuperview()
         liveContainerView = nil
         liveTargetFrame = nil
@@ -423,17 +688,42 @@ final class iOSLiveCanvasCarrier: iOSBoardListCanvasTransitionCarrying {
 
         liveCanvasView = nil
         liveCanvasHostView = nil
-        currentContext = nil
-        sourceViewController = nil
-        destinationViewController = nil
         liveStrategy = .snapshotFallback
         isCanvasMountedInOverlay = false
+
+        if clearContext {
+            currentContext = nil
+            sourceViewController = nil
+            destinationViewController = nil
+        }
     }
 
-    private func openingCornerRadius(for sourceFrame: CGRect) -> CGFloat {
+    private func resolveLiveClosingTargetFrame(
+        using context: BoardListCanvasTransitionContext
+    ) -> CGRect? {
+        guard
+            let overlayHostView,
+            let destinationView = destinationViewController?.view,
+            let targetFocusRect = context.targetGeometry.focusRect
+        else {
+            return nil
+        }
+
+        let convertedTargetRect = overlayHostView.convert(
+            targetFocusRect,
+            from: destinationView
+        ).standardized
+        guard convertedTargetRect.isEmpty == false else {
+            return nil
+        }
+
+        return convertedTargetRect
+    }
+
+    private func previewCornerRadius(for rect: CGRect) -> CGFloat {
         min(
-            Self.openingPreviewCornerRadius,
-            min(sourceFrame.width, sourceFrame.height) / 2
+            Self.previewCornerRadius,
+            min(rect.width, rect.height) / 2
         )
     }
 
@@ -458,15 +748,18 @@ final class iOSLiveCanvasCarrier: iOSBoardListCanvasTransitionCarrying {
         }
     }
 
-    private func logLiveOpeningFallback(reason: String) {
+    private func logLiveCarrierFallback(
+        phase: String,
+        reason: String
+    ) {
         print(
             "[BoardListCanvasTransition][iOS][LiveCarrier] " +
-                "phase=openingLiveFallback " +
+                "phase=\(phase) " +
                 "reason=\(reason)"
         )
     }
 
-    private func logLiveOpeningEvent(
+    private func logLiveCarrierEvent(
         phase: String,
         extra: String = ""
     ) {
