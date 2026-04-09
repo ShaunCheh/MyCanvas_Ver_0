@@ -10,6 +10,19 @@ private enum BoardListPreparationMode {
     case closingTarget(boardID: UUID)
 }
 
+private enum BoardListCatalogMutationChangeKind: String {
+    case inserted
+    case updated
+    case moved
+    case unchanged
+}
+
+private struct BoardListCatalogMutationResult {
+    let resolvedIndexPath: IndexPath
+    let previousIndexPath: IndexPath?
+    let changeKind: BoardListCatalogMutationChangeKind
+}
+
 final class iOSBoardListViewController: UIViewController, UICollectionViewDataSource, UICollectionViewDelegateFlowLayout, iOSBoardListCanvasTransitionInteractionControlling {
     private enum Layout {
         static let listItemHeight: CGFloat = 96
@@ -37,7 +50,12 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
 
     private let catalogLoader = BoardCatalogLoader()
     private let previewProvider = BoardPreviewProvider()
-    private var availableBoards: [BoardCatalogItem] = []
+    private var availableBoards: [BoardCatalogItem] = [] {
+        didSet {
+            rebuildAvailableBoardIndexByID()
+        }
+    }
+    private var availableBoardIndexByID: [UUID: Int] = [:]
     private var selectedEntryID: BoardListEntryID?
     private var actionPanelState: BoardListActionPanelState? {
         didSet {
@@ -326,13 +344,96 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
         case .fullDisplay:
             refreshBookmarkStatus()
         case let .closingTarget(boardID):
-            // Phase 1 keeps closing target prep on the existing refresh path.
-            // Later phases will swap this branch to targeted single-board sync.
+            syncClosingTargetBoard(boardID: boardID)
+        }
+    }
+
+    private func syncClosingTargetBoard(
+        boardID: UUID
+    ) {
+        logClosingTransitionTiming(
+            phase: "performBoardListSync",
+            extra:
+                "mode=closingTarget " +
+                "boardID=\(boardID.uuidString)"
+        )
+        dismissActionPanel()
+        let bookmarkStatus = FolderBookmarkStore.bookmarkStatus()
+
+        do {
+            let loadCatalogItemStart = BoardListCanvasTransitionDebugLogger.now()
+            guard let boardItem = try catalogLoader.loadCatalogItem(boardID: boardID) else {
+                logClosingTransitionTiming(
+                    phase: "loadCatalogItemMissing",
+                    extra: "boardID=\(boardID.uuidString)"
+                )
+                refreshBookmarkStatus()
+                return
+            }
+
             logClosingTransitionTiming(
-                phase: "performBoardListSync",
+                phase: "loadCatalogItemSuccess",
+                localDuration: BoardListCanvasTransitionDebugLogger.now() - loadCatalogItemStart,
                 extra:
-                    "mode=closingTarget " +
-                    "boardID=\(boardID.uuidString)"
+                    "boardID=\(boardID.uuidString) " +
+                    "boardCount=\(availableBoards.count)"
+            )
+
+            let mutationResult = upsertBoardCatalogItem(boardItem)
+            let previousIndexPathDescription = mutationResult.previousIndexPath.map {
+                "[section=\($0.section),item=\($0.item)]"
+            } ?? "nil"
+            let resolvedIndexPathDescription =
+                "[section=\(mutationResult.resolvedIndexPath.section),item=\(mutationResult.resolvedIndexPath.item)]"
+            logClosingTransitionTiming(
+                phase: "upsertBoardCatalogItem",
+                extra:
+                    "boardID=\(boardID.uuidString) " +
+                    "changeKind=\(mutationResult.changeKind.rawValue) " +
+                    "previousIndexPath=\(previousIndexPathDescription) " +
+                    "resolvedIndexPath=\(resolvedIndexPathDescription)"
+            )
+
+            hasSelectedFolder = true
+            storageErrorMessage = nil
+            selectedEntryID = .board(boardID)
+            ensureValidSelection()
+            applyHeaderState(
+                BoardListHeaderStateBuilder.make(
+                    bookmarkStatus: bookmarkStatus,
+                    boardCount: availableBoards.count
+                )
+            )
+
+            let reloadStart = BoardListCanvasTransitionDebugLogger.now()
+            reloadBoardList()
+            logClosingTransitionTiming(
+                phase: "reloadBoardListAfterClosingTargetSync",
+                localDuration: BoardListCanvasTransitionDebugLogger.now() - reloadStart,
+                extra: "entryCount=\(entries.count)"
+            )
+        } catch FolderBookmarkStoreError.missingBookmarkData {
+            replaceAvailableBoards(with: [])
+            selectedEntryID = nil
+            hasSelectedFolder = false
+            storageErrorMessage = nil
+            applyHeaderState(
+                BoardListHeaderStateBuilder.make(
+                    bookmarkStatus: bookmarkStatus
+                )
+            )
+            let reloadStart = BoardListCanvasTransitionDebugLogger.now()
+            reloadBoardList()
+            logClosingTransitionTiming(
+                phase: "reloadBoardListAfterClosingTargetMissingBookmark",
+                localDuration: BoardListCanvasTransitionDebugLogger.now() - reloadStart
+            )
+        } catch {
+            logClosingTransitionTiming(
+                phase: "loadCatalogItemFailed",
+                extra:
+                    "boardID=\(boardID.uuidString) " +
+                    "error=\"\(error.localizedDescription)\""
             )
             refreshBookmarkStatus()
         }
@@ -477,6 +578,92 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
         )
     }
 
+    private func replaceAvailableBoards(
+        with boards: [BoardCatalogItem]
+    ) {
+        availableBoards = Self.orderedBoardCatalogItems(boards)
+    }
+
+    private func upsertBoardCatalogItem(
+        _ item: BoardCatalogItem
+    ) -> BoardListCatalogMutationResult {
+        let previousBoardIndex = availableBoardIndexByID[item.boardID]
+        let previousItem = previousBoardIndex.flatMap { boardIndex in
+            guard availableBoards.indices.contains(boardIndex) else {
+                return nil
+            }
+            return availableBoards[boardIndex]
+        }
+
+        if let previousBoardIndex,
+           availableBoards.indices.contains(previousBoardIndex) {
+            availableBoards.remove(at: previousBoardIndex)
+        }
+
+        let resolvedBoardIndex = insertionIndexForBoardCatalogItem(item)
+        availableBoards.insert(item, at: resolvedBoardIndex)
+
+        let resolvedIndexPath = catalogEntryIndexPath(
+            forBoardIndex: resolvedBoardIndex
+        )
+        let previousIndexPath = previousBoardIndex.map {
+            catalogEntryIndexPath(forBoardIndex: $0)
+        }
+        let changeKind: BoardListCatalogMutationChangeKind
+        if let previousItem,
+           let previousBoardIndex {
+            if previousBoardIndex == resolvedBoardIndex {
+                changeKind =
+                    previousItem.revisionToken == item.revisionToken
+                    ? .unchanged
+                    : .updated
+            } else {
+                changeKind = .moved
+            }
+        } else {
+            changeKind = .inserted
+        }
+
+        return BoardListCatalogMutationResult(
+            resolvedIndexPath: resolvedIndexPath,
+            previousIndexPath: previousIndexPath,
+            changeKind: changeKind
+        )
+    }
+
+    private func rebuildAvailableBoardIndexByID() {
+        availableBoardIndexByID = Dictionary(
+            uniqueKeysWithValues: availableBoards.enumerated().map { index, item in
+                (item.boardID, index)
+            }
+        )
+    }
+
+    private static func orderedBoardCatalogItems(
+        _ boards: [BoardCatalogItem]
+    ) -> [BoardCatalogItem] {
+        boards.sorted(by: Self.boardCatalogItemSortsBefore)
+    }
+
+    private func insertionIndexForBoardCatalogItem(
+        _ item: BoardCatalogItem
+    ) -> Int {
+        availableBoards.firstIndex(where: { existingItem in
+            Self.boardCatalogItemSortsBefore(item, existingItem)
+        }) ?? availableBoards.count
+    }
+
+    private static func boardCatalogItemSortsBefore(
+        _ lhs: BoardCatalogItem,
+        _ rhs: BoardCatalogItem
+    ) -> Bool {
+        if lhs.updatedAt == rhs.updatedAt {
+            return lhs.boardID.uuidString < rhs.boardID.uuidString
+        }
+
+        return lhs.updatedAt > rhs.updatedAt
+    }
+
     private func refreshBookmarkStatus() {
         logRenameTrace("refreshBookmarkStatusBegin")
         let refreshStart = BoardListCanvasTransitionDebugLogger.now()
@@ -491,7 +678,7 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
                 localDuration: BoardListCanvasTransitionDebugLogger.now() - loadCatalogStart,
                 extra: "boardCount=\(boards.count)"
             )
-            availableBoards = boards
+            replaceAvailableBoards(with: boards)
             hasSelectedFolder = true
             storageErrorMessage = nil
             ensureValidSelection()
@@ -509,7 +696,7 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
                 extra: "entryCount=\(entries.count)"
             )
         } catch FolderBookmarkStoreError.missingBookmarkData {
-            availableBoards = []
+            replaceAvailableBoards(with: [])
             selectedEntryID = nil
             hasSelectedFolder = false
             storageErrorMessage = nil
@@ -529,7 +716,7 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
                 phase: "loadCatalogFailed",
                 extra: "error=\"\(error.localizedDescription)\""
             )
-            availableBoards = []
+            replaceAvailableBoards(with: [])
             selectedEntryID = nil
             hasSelectedFolder = bookmarkStatus.hasSelectedFolder
             storageErrorMessage = error.localizedDescription
@@ -779,16 +966,33 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
         completion?(geometry)
     }
 
+    private func catalogEntryIndexPath(
+        forBoardIndex boardIndex: Int
+    ) -> IndexPath {
+        IndexPath(item: boardIndex + 1, section: 0)
+    }
+
     private func indexPath(for boardID: UUID) -> IndexPath? {
-        guard let index = entries.firstIndex(where: { $0.boardID == boardID }) else {
+        guard
+            hasSelectedFolder,
+            storageErrorMessage == nil,
+            let boardIndex = availableBoardIndexByID[boardID]
+        else {
             return nil
         }
 
-        return IndexPath(item: index, section: 0)
+        return catalogEntryIndexPath(forBoardIndex: boardIndex)
     }
 
     private func boardTitle(for boardID: UUID) -> String? {
-        availableBoards.first(where: { $0.boardID == boardID })?.title
+        guard
+            let boardIndex = availableBoardIndexByID[boardID],
+            availableBoards.indices.contains(boardIndex)
+        else {
+            return nil
+        }
+
+        return availableBoards[boardIndex].title
     }
 
     private func normalizedBoardTitle(_ title: String) -> String {
@@ -1010,7 +1214,38 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
             editingBoardID = nil
             selectedEntryID = .board(boardID)
             pendingRevealBoardID = boardID
-            refreshBookmarkStatus()
+            if let catalogItem = try catalogLoader.loadCatalogItem(boardID: boardID) {
+                let mutationResult = upsertBoardCatalogItem(catalogItem)
+                let previousIndexPathDescription = mutationResult.previousIndexPath.map {
+                    "[section=\($0.section),item=\($0.item)]"
+                } ?? "nil"
+                let resolvedIndexPathDescription =
+                    "[section=\(mutationResult.resolvedIndexPath.section),item=\(mutationResult.resolvedIndexPath.item)]"
+                hasSelectedFolder = true
+                storageErrorMessage = nil
+                ensureValidSelection()
+                applyHeaderState(
+                    BoardListHeaderStateBuilder.make(
+                        bookmarkStatus: FolderBookmarkStore.bookmarkStatus(),
+                        boardCount: availableBoards.count
+                    )
+                )
+                logRenameTrace(
+                    "commitRenameAppliedCatalogMutation",
+                    extra:
+                        "boardID=\(boardID.uuidString) " +
+                        "changeKind=\(mutationResult.changeKind.rawValue) " +
+                        "previousIndexPath=\(previousIndexPathDescription) " +
+                        "resolvedIndexPath=\(resolvedIndexPathDescription)"
+                )
+                reloadBoardList()
+            } else {
+                logRenameTrace(
+                    "commitRenameCatalogItemMissing",
+                    extra: "boardID=\(boardID.uuidString)"
+                )
+                refreshBookmarkStatus()
+            }
         } catch {
             logRenameTrace(
                 "commitRenameFailed",
