@@ -72,12 +72,103 @@ isProject: false
   - 对应 index path 的布局和 `cardRect` 可解析
 - preview 和 trace 只服务“视觉内容”，不再阻塞“几何就绪”
 
+## 核心时序逻辑
+
+### 当前时序问题
+
+- 现在的 closing 实际时序是：
+  1. `CanvasVC.handleBackButtonTap()` 发出 `BoardListCanvasReturnRequest`
+  2. `AppRoot.beginClosingTransition(with:)` 挂载 `boardListViewController`
+  3. `BoardList.prepareForDisplay()` 触发第一轮 `refreshBookmarkStatus() -> loadCatalog() -> reloadBoardList()`
+  4. `carrier.prepareTransition(...)` 期间，BoardList mount 后的布局与 cell 配置继续消耗主线程
+  5. `BoardList.prepareTransitionTargetGeometry(...)` 又触发第二轮 `refreshBookmarkStatus() -> loadCatalog() -> reloadBoardList()`
+  6. `revealPendingBoardIfNeeded() -> DispatchQueue.main.async -> revealBoard(...)`
+  7. `finishPendingTransitionTargetResolution(...)`
+  8. `AppRoot.handleResolvedClosingTargetGeometry(...) -> carrier.animateTransition(...)`
+- 真正的问题发生在步骤 `3` 到 `7` 之间：动画开始前，target-ready 被全量 catalog、全量 reload 和同步 preview 塞满了。
+
+### 目标时序
+
+```mermaid
+sequenceDiagram
+    participant CanvasVC as "CanvasVC"
+    participant AppRootVC as "AppRootVC"
+    participant BoardListVC as "BoardListVC"
+    participant CatalogLoader as "BoardCatalogLoader"
+    participant BoardStore as "BoardStore"
+
+    CanvasVC->>AppRootVC: "onReturnToBoardList(returnRequest)"
+    AppRootVC->>AppRootVC: "beginClosingTransition(with:)"
+    AppRootVC->>BoardListVC: "prepareTransitionTargetGeometry(for:completion:)"
+    BoardListVC->>BoardListVC: "performBoardListSync(mode: .closingTarget(boardID))"
+    BoardListVC->>CatalogLoader: "loadCatalogItem(boardID:)"
+    CatalogLoader->>BoardStore: "loadBoardDocumentEntry(id:userDefaults:)"
+    BoardStore-->>CatalogLoader: "BoardDocumentCatalogEntry"
+    CatalogLoader-->>BoardListVC: "BoardCatalogItem"
+    BoardListVC->>BoardListVC: "upsertBoardCatalogItem(_:) / resolveTransitionTargetGeometry(for:)"
+    BoardListVC-->>AppRootVC: "BoardListCanvasTransitionTargetGeometry"
+    AppRootVC->>AppRootVC: "handleResolvedClosingTargetGeometry(...)"
+    AppRootVC->>AppRootVC: "carrierAnimateBegin"
+```
+
+
+
+### 目标时序的硬约束
+
+- `beginClosingTransition(with:)` 进入 closing 后，到 `carrierAnimateBegin` 之前，只允许出现一次 target-ready 数据同步。
+- `prepareForDisplay()` 不再参与 closing target-ready；closing 前置只允许走 `prepareTransitionTargetGeometry(for:completion:)`。
+- `performBoardListSync(mode: .closingTarget(boardID))` 只能做单板读取、单板 upsert、局部布局和目标 reveal，不能调用全量 `reloadBoardList()`。
+- `finishPendingTransitionTargetResolution(...)` 的 completion 只依赖目标板数据、排序和 `cardRect`，不依赖 preview 是否完成。
+- `carrierAnimateBegin` 一旦拿到 geometry，就立即开始；closing 链里不再夹杂第二轮 `loadCatalog()` 或无关卡片的 preview 工作。
+
+## 核心数据结构与函数约定
+
+### 统一数据结构
+
+
+| 层级        | 名称                                        | 关键内容                                                                            | 首次落地阶段  |
+| --------- | ----------------------------------------- | ------------------------------------------------------------------------------- | ------- |
+| BoardList | `BoardListPreparationMode`                | `.fullDisplay`、`.closingTarget(boardID: UUID)`，区分全量显示同步和 closing target-only 同步 | Phase 1 |
+| BoardList | `BoardListCatalogMutationChangeKind`      | `.inserted`、`.updated`、`.moved`、`.unchanged`                                    | Phase 3 |
+| BoardList | `BoardListCatalogMutationResult`          | `resolvedIndexPath`、`previousIndexPath`、`changeKind`                            | Phase 3 |
+| BoardList | `BoardListPreviewWorkPolicy`              | `.normal`、`.geometryOnly`，控制 target-ready 期间的 preview 策略                        | Phase 4 |
+| BoardList | `BoardListClosingTargetPreparationResult` | `boardID`、`resolvedIndexPath`、`geometry`、`usedFallbackGeometry`                 | Phase 4 |
+| Preview   | `BoardPreviewTracePolicy`                 | `.disabled`、`.metadataOnly`、`.verbose`，控制 trace 是否允许读取源图                        | Phase 5 |
+
+
+### 统一函数约定
+
+
+| 文件                                                                                                         | 函数                                                 | 角色                                                                |
+| ---------------------------------------------------------------------------------------------------------- | -------------------------------------------------- | ----------------------------------------------------------------- |
+| [iOSAppRootViewController.swift](MyCanvas_Ver_0/Platform/iOS/AppRoot/iOSAppRootViewController.swift)       | `beginClosingTransition(with:)`                    | closing 容器入口；Phase 1 后不再显式调用 `prepareForDisplay()`                |
+| [iOSBoardListViewController.swift](MyCanvas_Ver_0/Platform/iOS/BoardList/iOSBoardListViewController.swift) | `prepareForDisplay()`                              | 保留为“页面显示准备”入口，不承担 closing target-ready                            |
+| [iOSBoardListViewController.swift](MyCanvas_Ver_0/Platform/iOS/BoardList/iOSBoardListViewController.swift) | `prepareTransitionTargetGeometry(for:completion:)` | 保留为对外 contract；内部转调 closing target-only 准备链                       |
+| [iOSBoardListViewController.swift](MyCanvas_Ver_0/Platform/iOS/BoardList/iOSBoardListViewController.swift) | `performBoardListSync(mode:)`                      | 统一收口 BoardList 的同步入口，内部按 `BoardListPreparationMode` 分流            |
+| [BoardStore.swift](MyCanvas_Ver_0/Canvas/Storage/BoardStore.swift)                                         | `loadBoardDocumentEntry(id:userDefaults:)`         | 只读单个 `BoardDocumentCatalogEntry`，不做全量目录扫描                         |
+| [BoardCatalogLoader.swift](MyCanvas_Ver_0/Platform/Shared/BoardList/BoardCatalogLoader.swift)              | `loadCatalogItem(boardID:)`                        | 把单板 entry 映射为 `BoardCatalogItem`                                  |
+| [iOSBoardListViewController.swift](MyCanvas_Ver_0/Platform/iOS/BoardList/iOSBoardListViewController.swift) | `upsertBoardCatalogItem(_:)`                       | returning board 的单条 mutation，返回 `BoardListCatalogMutationResult`  |
+| [iOSBoardListViewController.swift](MyCanvas_Ver_0/Platform/iOS/BoardList/iOSBoardListViewController.swift) | `resolveTransitionTargetGeometry(for:)`            | 根据目标 index path / cell / layoutAttributes 解析最终 `geometry`         |
+| [iOSBoardListViewController.swift](MyCanvas_Ver_0/Platform/iOS/BoardList/iOSBoardListViewController.swift) | `currentPreviewWorkPolicy()`                       | 根据当前是否处于 closing target-resolution，决定 `.normal` 或 `.geometryOnly` |
+| [BoardPreviewProvider.swift](MyCanvas_Ver_0/Platform/Shared/BoardList/BoardPreviewProvider.swift)          | `currentTracePolicy()` 或等价 helper                  | 控制 trace 是否允许进入源图读取与重日志路径                                         |
+
+
+### 对外 contract 保持稳定
+
+- `BoardListCanvasReturnRequest`
+- `BoardListCanvasTransitionTargetGeometry`
+- `iOSAppRootViewController.beginClosingTransition(with:)`
+- `iOSBoardListViewController.prepareTransitionTargetGeometry(for:completion:)`
+
+以上对外 contract 本轮尽量不改；真正新增的逻辑优先收敛在 BoardList 内部 helper 和存储 / loader 层扩展函数里。
+
 ## Phase 1：收口 closing 前置入口，消除双 refresh
 
 - 修改点：
   - 在 [iOSAppRootViewController.swift](MyCanvas_Ver_0/Platform/iOS/AppRoot/iOSAppRootViewController.swift) 的 `beginClosingTransition(with:)` 中，移除 closing 期间对 `destinationViewController.prepareForDisplay()` 的同步前置调用。
   - 保留 `prepareTransitionTargetGeometry(...)` 作为 closing 阶段唯一的前置数据同步入口。
   - 明确 `prepareForDisplay()` 只负责“页面显示准备”，不再承担“closing target-ready”职责。
+  - 在 [iOSBoardListViewController.swift](MyCanvas_Ver_0/Platform/iOS/BoardList/iOSBoardListViewController.swift) 中引入 `BoardListPreparationMode` 与 `performBoardListSync(mode:)` 的壳，让后续 Phase 2-4 的时序都挂在同一个入口上，而不是继续散落在 `refreshBookmarkStatus()` 和 `prepareTransitionTargetGeometry(...)` 中。
 - 关键文件：
   - [iOSAppRootViewController.swift](MyCanvas_Ver_0/Platform/iOS/AppRoot/iOSAppRootViewController.swift)
   - [iOSBoardListViewController.swift](MyCanvas_Ver_0/Platform/iOS/BoardList/iOSBoardListViewController.swift)
@@ -109,9 +200,9 @@ isProject: false
 - 修改点：
   - 在 [iOSBoardListViewController.swift](MyCanvas_Ver_0/Platform/iOS/BoardList/iOSBoardListViewController.swift) 中，把 `availableBoards` 视为长生命周期缓存，不再把每次 return 都当成“重建整个列表”。
   - 新增针对 `BoardCatalogItem` 的本地 mutation 能力：
-    - `upsert`
-    - 重排
-    - 删除
+    - `upsertBoardCatalogItem(_:)`
+    - `BoardListCatalogMutationResult`
+    - `BoardListCatalogMutationChangeKind`
     - 根据 `boardID` 快速定位 index
   - returning board 回来时，只更新这一条数据，并维持与现有 `updatedAt` 排序逻辑一致。
   - 保持 `pendingRevealBoardID -> revealPendingBoardIfNeeded()` 仍然是唯一的 target reveal 入口。
@@ -132,9 +223,10 @@ isProject: false
     - 加载 returning board 的单条 `BoardCatalogItem`
     - `availableBoards` 中的 targeted upsert / 排序
     - 目标 item 的插入、移动或局部刷新
-    - `layoutIfNeeded()` 后解析 `transitionCardRect(at:)`
+    - `layoutIfNeeded()` 后通过 `resolveTransitionTargetGeometry(for:)` 解析 `transitionCardRect(at:)`
   - 避免在 target-ready 路径中调用 `reloadBoardList()` 和 `collectionView.reloadData()`。
   - 对 geometry 解析优先使用 `layoutAttributesForItem(at:)` 和目标 cell 的 `transitionGeometry(in:)`，不依赖 preview 是否已经到位。
+  - 引入 `BoardListClosingTargetPreparationResult` 和 `BoardListPreviewWorkPolicy`，让 closing 期间的“目标几何准备”和“预览策略”都变成显式状态，而不是隐含在 `pendingRevealBoardID` 附近。
 - 关键文件：
   - [iOSBoardListViewController.swift](MyCanvas_Ver_0/Platform/iOS/BoardList/iOSBoardListViewController.swift)
   - [iOSBoardCollectionViewCell.swift](MyCanvas_Ver_0/Platform/iOS/BoardList/iOSBoardCollectionViewCell.swift)
@@ -149,8 +241,8 @@ isProject: false
 ## Phase 5：把 preview 和 trace 的副作用从主线程路径剥离
 
 - 修改点：
-  - 在 [BoardPreviewProvider.swift](MyCanvas_Ver_0/Platform/Shared/BoardList/BoardPreviewProvider.swift) 中，把 `logBoardPreviewProviderCacheHit()`、`logBoardPreviewProviderSourceImagesIfNeeded()` 改成显式 debug 开关控制，或者改造成纯 metadata 日志，不再读取源图。
-  - 在 closing target-resolution 模式下，对无关卡片直接使用 `.geometry(item.previewSeed)`，跳过 `immediatePreview(...)` 和 `requestThumbnail(...)`。
+  - 在 [BoardPreviewProvider.swift](MyCanvas_Ver_0/Platform/Shared/BoardList/BoardPreviewProvider.swift) 中，把 `logBoardPreviewProviderCacheHit()`、`logBoardPreviewProviderSourceImagesIfNeeded()` 改成 `BoardPreviewTracePolicy` 驱动，默认只允许 `.metadataOnly`，不再读取源图。
+  - 在 closing target-resolution 模式下，根据 `BoardListPreviewWorkPolicy.geometryOnly`，对无关卡片直接使用 `.geometry(item.previewSeed)`，跳过 `immediatePreview(...)` 和 `requestThumbnail(...)`。
   - 让 preview 的补齐变成动画开始后或 closing 完成后的低优先级工作，而不是 target-ready 的前置依赖。
 - 关键文件：
   - [BoardPreviewProvider.swift](MyCanvas_Ver_0/Platform/Shared/BoardList/BoardPreviewProvider.swift)
