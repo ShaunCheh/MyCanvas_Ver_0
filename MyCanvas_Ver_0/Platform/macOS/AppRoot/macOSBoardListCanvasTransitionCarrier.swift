@@ -44,8 +44,13 @@ final class macOSSnapshotShellCarrier: macOSBoardListCanvasTransitionCarrying {
     private var shellShadowView: NSView?
     private var shellContentView: NSView?
     private static let openingDuration: TimeInterval = 0.38
+    private static let closingDuration: TimeInterval = 0.32
     private static let handoffDuration: TimeInterval = 0.14
-    private static let openingCornerRadius: CGFloat = 12
+    private static let shellCornerRadius: CGFloat = 12
+    private static let shellShadowOpacity: Float = 0.08
+    private static let shellShadowRadius: CGFloat = 16
+    private static let shellShadowOffset = CGSize(width: 0, height: -8)
+    private static let fallbackClosingScale: CGFloat = 0.82
 
     var kind: BoardListCanvasTransitionCarrierKind {
         .snapshotShell
@@ -66,11 +71,12 @@ final class macOSSnapshotShellCarrier: macOSBoardListCanvasTransitionCarrying {
         currentContext = context
         self.sourceViewController = sourceViewController
         self.destinationViewController = destinationViewController
-        guard context.direction == .opening else {
-            return
+        switch context.direction {
+        case .opening:
+            prepareOpeningShell(using: context)
+        case .closing:
+            prepareClosingShell()
         }
-
-        prepareOpeningShell(using: context)
     }
 
     func animateTransition(completion: @escaping () -> Void) {
@@ -83,7 +89,7 @@ final class macOSSnapshotShellCarrier: macOSBoardListCanvasTransitionCarrying {
         case .opening:
             animateOpeningTransition(completion: completion)
         case .closing:
-            completion()
+            animateClosingTransition(completion: completion)
         }
     }
 
@@ -121,23 +127,58 @@ final class macOSSnapshotShellCarrier: macOSBoardListCanvasTransitionCarrying {
         }
 
         let shadowView = NSView(frame: convertedSourceRect)
-        shadowView.wantsLayer = true
-        shadowView.layer?.backgroundColor = NSColor.clear.cgColor
-        shadowView.layer?.shadowColor = NSColor.black.cgColor
-        shadowView.layer?.shadowOpacity = 0.08
-        shadowView.layer?.shadowRadius = 16
-        shadowView.layer?.shadowOffset = CGSize(width: 0, height: -8)
-
-        let contentView = NSView(frame: shadowView.bounds)
-        contentView.autoresizingMask = [.width, .height]
-        contentView.wantsLayer = true
-        contentView.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
-        contentView.layer?.cornerRadius = Self.openingCornerRadius
-        contentView.layer?.masksToBounds = true
+        let contentView = makeShellContentView(
+            frame: shadowView.bounds,
+            cornerRadius: Self.shellCornerRadius
+        )
+        configureShadow(
+            for: shadowView,
+            opacity: Self.shellShadowOpacity
+        )
 
         if let snapshotView = makeSnapshotView(
             from: sourceViewController.view,
             rect: sourceRect
+        ) {
+            snapshotView.frame = contentView.bounds
+            snapshotView.autoresizingMask = [.width, .height]
+            contentView.addSubview(snapshotView)
+        }
+
+        shadowView.addSubview(contentView)
+        overlayHostView.addSubview(shadowView)
+        shellShadowView = shadowView
+        shellContentView = contentView
+    }
+
+    private func prepareClosingShell() {
+        removeShellViews()
+        guard
+            let overlayHostView,
+            let sourceView = sourceViewController?.view
+        else {
+            return
+        }
+
+        overlayHostView.layoutSubtreeIfNeeded()
+        sourceView.layoutSubtreeIfNeeded()
+        sourceView.superview?.layoutSubtreeIfNeeded()
+
+        let fullscreenFrame = overlayHostView.bounds.standardized
+        guard fullscreenFrame.isEmpty == false else {
+            return
+        }
+
+        let shadowView = NSView(frame: fullscreenFrame)
+        let contentView = makeShellContentView(
+            frame: shadowView.bounds,
+            cornerRadius: 0
+        )
+        configureShadow(for: shadowView, opacity: 0)
+
+        if let snapshotView = makeSnapshotView(
+            from: sourceView,
+            rect: sourceView.bounds
         ) {
             snapshotView.frame = contentView.bounds
             snapshotView.autoresizingMask = [.width, .height]
@@ -198,6 +239,64 @@ final class macOSSnapshotShellCarrier: macOSBoardListCanvasTransitionCarrying {
         }
     }
 
+    private func animateClosingTransition(completion: @escaping () -> Void) {
+        guard
+            let overlayHostView,
+            let destinationView = destinationViewController?.view
+        else {
+            completion()
+            return
+        }
+
+        overlayHostView.layoutSubtreeIfNeeded()
+        destinationView.isHidden = false
+        destinationView.alphaValue = 1
+        destinationView.superview?.layoutSubtreeIfNeeded()
+
+        guard let shellShadowView else {
+            completion()
+            return
+        }
+
+        shellShadowView.isHidden = false
+        shellShadowView.alphaValue = 1
+
+        let targetFrame = resolvedClosingTargetFrame(in: overlayHostView)
+        let fallbackFrame = fallbackClosingFrame(in: overlayHostView)
+
+        if let targetFrame {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = Self.closingDuration
+                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                shellShadowView.animator().frame = targetFrame
+                shellShadowView.layer?.shadowOpacity = Self.shellShadowOpacity
+                shellContentView?.layer?.cornerRadius = Self.shellCornerRadius
+            } completionHandler: {
+                NSAnimationContext.runAnimationGroup { context in
+                    context.duration = Self.handoffDuration
+                    context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                    shellShadowView.animator().alphaValue = 0
+                } completionHandler: {
+                    completion()
+                }
+            }
+            return
+        }
+
+        destinationView.alphaValue = 0
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = Self.closingDuration
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            shellShadowView.animator().frame = fallbackFrame
+            shellShadowView.animator().alphaValue = 0
+            shellShadowView.layer?.shadowOpacity = Self.shellShadowOpacity
+            shellContentView?.layer?.cornerRadius = Self.shellCornerRadius
+            destinationView.animator().alphaValue = 1
+        } completionHandler: {
+            completion()
+        }
+    }
+
     private func makeSnapshotView(from sourceView: NSView, rect: CGRect) -> NSImageView? {
         let clippedRect = rect.standardized.intersection(sourceView.bounds)
         guard clippedRect.isEmpty == false else {
@@ -216,6 +315,64 @@ final class macOSSnapshotShellCarrier: macOSBoardListCanvasTransitionCarrying {
         imageView.image = image
         imageView.imageScaling = .scaleAxesIndependently
         return imageView
+    }
+
+    private func resolvedClosingTargetFrame(
+        in overlayHostView: NSView
+    ) -> CGRect? {
+        guard
+            let destinationView = destinationViewController?.view,
+            let targetRect = currentContext?.targetGeometry.cardRect
+        else {
+            return nil
+        }
+
+        let convertedTargetRect = overlayHostView.convert(
+            targetRect,
+            from: destinationView
+        ).standardized
+        guard convertedTargetRect.isEmpty == false else {
+            return nil
+        }
+
+        return convertedTargetRect
+    }
+
+    private func fallbackClosingFrame(in overlayHostView: NSView) -> CGRect {
+        let bounds = overlayHostView.bounds.standardized
+        let scaledWidth = bounds.width * Self.fallbackClosingScale
+        let scaledHeight = bounds.height * Self.fallbackClosingScale
+        return CGRect(
+            x: bounds.midX - (scaledWidth / 2),
+            y: bounds.midY - (scaledHeight / 2),
+            width: scaledWidth,
+            height: scaledHeight
+        ).integral
+    }
+
+    private func makeShellContentView(
+        frame: CGRect,
+        cornerRadius: CGFloat
+    ) -> NSView {
+        let contentView = NSView(frame: frame)
+        contentView.autoresizingMask = [.width, .height]
+        contentView.wantsLayer = true
+        contentView.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        contentView.layer?.cornerRadius = cornerRadius
+        contentView.layer?.masksToBounds = true
+        return contentView
+    }
+
+    private func configureShadow(
+        for shadowView: NSView,
+        opacity: Float
+    ) {
+        shadowView.wantsLayer = true
+        shadowView.layer?.backgroundColor = NSColor.clear.cgColor
+        shadowView.layer?.shadowColor = NSColor.black.cgColor
+        shadowView.layer?.shadowOpacity = opacity
+        shadowView.layer?.shadowRadius = Self.shellShadowRadius
+        shadowView.layer?.shadowOffset = Self.shellShadowOffset
     }
 
     private func removeShellViews() {

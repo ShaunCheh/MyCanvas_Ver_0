@@ -1744,20 +1744,10 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
                 return
             }
 
-            switch result {
-            case .success:
-                self.showSaveButtonFeedback(.success)
-            case let .failure(error):
-                if case FolderBookmarkStoreError.missingBookmarkData = error {
-                    self.showSaveButtonFeedback(.missingFolder)
-                    self.presentSaveError(
-                        message: "Select a folder from the board list before saving."
-                    )
-                } else {
-                    self.showSaveButtonFeedback(.failure)
-                    self.presentSaveError(message: error.localizedDescription)
-                }
-            }
+            self.handleImmediateBoardSaveResult(
+                result,
+                missingFolderMessage: "Select a folder from the board list before saving."
+            )
         }
     }
 
@@ -1786,7 +1776,36 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     private func handleBackButtonClick() {
         commitActiveTextEditIfNeeded()
         dismissContextMenu()
-        onReturnToBoardList?(makeReturnToBoardListRequest())
+        requestReturnToBoardList()
+    }
+
+    private func requestReturnToBoardList() {
+        let request = makeReturnToBoardListRequest()
+        guard request.requiresBoardPersistence else {
+            onReturnToBoardList?(request)
+            return
+        }
+
+        beginSaveButtonSaveState()
+        saveBoardNow(
+            reason: "return to board list",
+            createBoardIfNeeded: true
+        ) { [weak self] result in
+            guard let self else {
+                return
+            }
+
+            self.handleImmediateBoardSaveResult(
+                result,
+                missingFolderMessage: "Select a folder from the board list before returning so the new board can be saved."
+            ) { [weak self] in
+                guard let self else {
+                    return
+                }
+
+                self.onReturnToBoardList?(self.makeReturnToBoardListRequest())
+            }
+        }
     }
 
     @objc
@@ -3657,6 +3676,26 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             createBoardIfNeeded: createBoardIfNeeded,
             completion: completion
         )
+    }
+
+    private func handleImmediateBoardSaveResult(
+        _ result: Result<Void, Error>,
+        missingFolderMessage: String,
+        onSuccess: (() -> Void)? = nil
+    ) {
+        switch result {
+        case .success:
+            showSaveButtonFeedback(.success)
+            onSuccess?()
+        case let .failure(error):
+            if case FolderBookmarkStoreError.missingBookmarkData = error {
+                showSaveButtonFeedback(.missingFolder)
+                presentSaveError(message: missingFolderMessage)
+            } else {
+                showSaveButtonFeedback(.failure)
+                presentSaveError(message: error.localizedDescription)
+            }
+        }
     }
 
     private func beginSaveButtonSaveState() {
