@@ -202,16 +202,6 @@ final class iOSAppRootViewController: UIViewController {
             )
         }
 
-        let prepareForDisplayStart = BoardListCanvasTransitionDebugLogger.now()
-        destinationViewController.prepareForDisplay()
-        if let trace = session.debugTrace {
-            logClosingTransitionTrace(
-                trace,
-                phase: "boardListPrepareForDisplayFinished",
-                localDuration: BoardListCanvasTransitionDebugLogger.now() - prepareForDisplayStart
-            )
-        }
-
         let carrierPreparationStart = BoardListCanvasTransitionDebugLogger.now()
         view.layoutIfNeeded()
         carrier.prepareTransition(

@@ -5,6 +5,11 @@ private func iOSBoardListRenameTraceTimestamp() -> String {
     String(format: "%.3f", ProcessInfo.processInfo.systemUptime)
 }
 
+private enum BoardListPreparationMode {
+    case fullDisplay
+    case closingTarget(boardID: UUID)
+}
+
 final class iOSBoardListViewController: UIViewController, UICollectionViewDataSource, UICollectionViewDelegateFlowLayout, iOSBoardListCanvasTransitionInteractionControlling {
     private enum Layout {
         static let listItemHeight: CGFloat = 96
@@ -216,7 +221,7 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
         setupConstraints()
         setupActions()
         setupActionPanelHostView()
-        refreshBookmarkStatus()
+        performBoardListSync(mode: .fullDisplay)
         applyTransitionInteractionFreeze()
     }
 
@@ -231,19 +236,7 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
             return
         }
 
-        if closingTransitionTimingState != nil {
-            let prepareStart = BoardListCanvasTransitionDebugLogger.now()
-            logClosingTransitionTiming(phase: "prepareForDisplayBegin")
-            refreshBookmarkStatus()
-            logClosingTransitionTiming(
-                phase: "prepareForDisplayEnd",
-                localDuration: BoardListCanvasTransitionDebugLogger.now() - prepareStart,
-                extra: "boardCount=\(availableBoards.count)"
-            )
-            return
-        }
-
-        refreshBookmarkStatus()
+        performBoardListSync(mode: .fullDisplay)
     }
 
     func setClosingTransitionTimingTrace(
@@ -323,7 +316,26 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
             return
         }
 
-        refreshBookmarkStatus()
+        performBoardListSync(mode: .closingTarget(boardID: boardID))
+    }
+
+    private func performBoardListSync(
+        mode: BoardListPreparationMode
+    ) {
+        switch mode {
+        case .fullDisplay:
+            refreshBookmarkStatus()
+        case let .closingTarget(boardID):
+            // Phase 1 keeps closing target prep on the existing refresh path.
+            // Later phases will swap this branch to targeted single-board sync.
+            logClosingTransitionTiming(
+                phase: "performBoardListSync",
+                extra:
+                    "mode=closingTarget " +
+                    "boardID=\(boardID.uuidString)"
+            )
+            refreshBookmarkStatus()
+        }
     }
 
     private func setupViewHierarchy() {
