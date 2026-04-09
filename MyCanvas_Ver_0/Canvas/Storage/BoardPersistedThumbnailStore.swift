@@ -75,14 +75,14 @@ enum BoardPersistedThumbnailStore {
 
     static func loadThumbnailIfFresh(
         at thumbnailURL: URL,
-        updatedAt: Date,
+        contentUpdatedAt: Date,
         boardID: UUID? = nil,
         maxPixelSize: Int
     ) throws -> BoardPersistedThumbnailStoreLoadResult {
         guard
             try isFreshThumbnail(
                 at: thumbnailURL,
-                updatedAt: updatedAt
+                contentUpdatedAt: contentUpdatedAt
             )
         else {
             return .missingOrStale
@@ -142,7 +142,7 @@ enum BoardPersistedThumbnailStore {
 
     private static func isFreshThumbnail(
         at thumbnailURL: URL,
-        updatedAt: Date
+        contentUpdatedAt: Date
     ) throws -> Bool {
         guard
             let modificationDate = try CoordinatedFileIO.modificationDate(
@@ -152,7 +152,7 @@ enum BoardPersistedThumbnailStore {
             return false
         }
 
-        return modificationDate.timeIntervalSince(updatedAt) >= -freshnessTolerance
+        return modificationDate.timeIntervalSince(contentUpdatedAt) >= -freshnessTolerance
     }
 
     private static func makePNGData(

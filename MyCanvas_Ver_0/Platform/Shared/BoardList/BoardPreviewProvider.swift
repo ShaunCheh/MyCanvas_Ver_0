@@ -358,7 +358,7 @@ final class BoardPreviewProvider {
         )
         let persistedThumbnailResult = try BoardPersistedThumbnailStore.loadThumbnailIfFresh(
             at: item.persistedThumbnailURL,
-            updatedAt: item.updatedAt,
+            contentUpdatedAt: item.contentUpdatedAt,
             boardID: item.boardID,
             maxPixelSize: decodeMaxPixelSize
         )

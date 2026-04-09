@@ -1321,7 +1321,10 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         )
 
         if didConfigureBoardState {
-            scheduleAutosave(reason: "configure board state")
+            scheduleAutosave(
+                reason: "configure board state",
+                updateKind: .viewStateOnly
+            )
         }
     }
 
@@ -1696,7 +1699,10 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
 
         camera.pan(by: translation)
         refreshCanvas()
-        scheduleAutosave(reason: "pan canvas")
+        scheduleAutosave(
+            reason: "pan canvas",
+            updateKind: .viewStateOnly
+        )
     }
 
     private func handleZoom(_ scaleDelta: CGFloat, around anchor: CGPoint) {
@@ -1707,7 +1713,10 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
 
         camera.zoom(by: scaleDelta, around: anchor)
         refreshCanvas()
-        scheduleAutosave(reason: "zoom canvas")
+        scheduleAutosave(
+            reason: "zoom canvas",
+            updateKind: .viewStateOnly
+        )
     }
 
     private func refreshCanvas(reason: String = "unspecified") {
@@ -1761,7 +1770,10 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
 
         camera.center = worldPoint
         refreshCanvas()
-        scheduleAutosave(reason: "navigate canvas via minimap")
+        scheduleAutosave(
+            reason: "navigate canvas via minimap",
+            updateKind: .viewStateOnly
+        )
     }
 
     @objc
@@ -2166,7 +2178,10 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         updateWorkspaceModeButtonAppearance()
         syncTextEditorPresentation()
         refreshCanvas(reason: "toggle workspace mode")
-        scheduleAutosave(reason: "toggle workspace mode")
+        scheduleAutosave(
+            reason: "toggle workspace mode",
+            updateKind: .viewStateOnly
+        )
     }
 
     private func toolbarTargetWorkspaceMode(
@@ -3556,7 +3571,10 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
 
         camera.pan(by: translation)
         refreshCanvas()
-        scheduleAutosave(reason: "drag canvas")
+        scheduleAutosave(
+            reason: "drag canvas",
+            updateKind: .viewStateOnly
+        )
     }
 
     private func expandBoardIfNeeded(toInclude worldFrame: CGRect) {
@@ -3744,8 +3762,14 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         editorSession.isInlineTextModeActive
     }
 
-    private func scheduleAutosave(reason: String) {
-        editorSession.scheduleAutosave(reason: reason)
+    private func scheduleAutosave(
+        reason: String,
+        updateKind: BoardPersistenceUpdateKind = .contentAndViewState
+    ) {
+        editorSession.scheduleAutosave(
+            reason: reason,
+            updateKind: updateKind
+        )
     }
 
     private func saveBoardNow(

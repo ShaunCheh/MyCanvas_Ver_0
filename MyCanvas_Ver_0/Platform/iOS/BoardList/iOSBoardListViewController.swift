@@ -879,11 +879,11 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
         _ lhs: BoardCatalogItem,
         _ rhs: BoardCatalogItem
     ) -> Bool {
-        if lhs.updatedAt == rhs.updatedAt {
+        if lhs.contentUpdatedAt == rhs.contentUpdatedAt {
             return lhs.boardID.uuidString < rhs.boardID.uuidString
         }
 
-        return lhs.updatedAt > rhs.updatedAt
+        return lhs.contentUpdatedAt > rhs.contentUpdatedAt
     }
 
     private func refreshBookmarkStatus() {

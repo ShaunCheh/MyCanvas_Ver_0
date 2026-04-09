@@ -1137,7 +1137,10 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             return
         }
 
-        scheduleAutosave(reason: "zoom canvas")
+        scheduleAutosave(
+            reason: "zoom canvas",
+            updateKind: .viewStateOnly
+        )
         didMutateCameraDuringZoomGesture = false
     }
 
@@ -1173,7 +1176,10 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         }
 
         if didConfigureBoardState {
-            scheduleAutosave(reason: "configure board state")
+            scheduleAutosave(
+                reason: "configure board state",
+                updateKind: .viewStateOnly
+            )
         }
     }
 
@@ -1649,7 +1655,10 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
 
         camera.center = worldPoint
         requestCanvasRefresh(reason: "navigate minimap to \(describe(point: worldPoint))")
-        scheduleAutosave(reason: "navigate canvas via minimap")
+        scheduleAutosave(
+            reason: "navigate canvas via minimap",
+            updateKind: .viewStateOnly
+        )
     }
 
     @objc
@@ -2134,7 +2143,10 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         updateHistoryButtonsAppearance()
         syncTextEditorPresentation()
         requestCanvasRefresh(reason: "toggle workspace mode")
-        scheduleAutosave(reason: "toggle workspace mode")
+        scheduleAutosave(
+            reason: "toggle workspace mode",
+            updateKind: .viewStateOnly
+        )
     }
 
     private func toolbarTargetWorkspaceMode(
@@ -3594,7 +3606,10 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             cameraCenterAfterPan: camera.center
         )
         requestCanvasRefresh(reason: refreshReason)
-        scheduleAutosave(reason: "pan canvas")
+        scheduleAutosave(
+            reason: "pan canvas",
+            updateKind: .viewStateOnly
+        )
     }
 
     private func expandBoardIfNeeded(toInclude worldFrame: CGRect) {
@@ -3721,8 +3736,14 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         editorSession.isInlineTextModeActive
     }
 
-    private func scheduleAutosave(reason: String) {
-        editorSession.scheduleAutosave(reason: reason)
+    private func scheduleAutosave(
+        reason: String,
+        updateKind: BoardPersistenceUpdateKind = .contentAndViewState
+    ) {
+        editorSession.scheduleAutosave(
+            reason: reason,
+            updateKind: updateKind
+        )
     }
 
     private func saveBoardNow(

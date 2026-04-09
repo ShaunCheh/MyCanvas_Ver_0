@@ -150,54 +150,92 @@ enum BoardStore {
             try CoordinatedFileIO.ensureDirectory(at: boardDirectoryURL)
             try CoordinatedFileIO.ensureDirectory(at: assetsDirectoryURL)
 
-            var persistedState = snapshot.runtimeState
-            persistedState.updatedAt = Date()
-            let persistedSnapshot = BoardSaveSnapshot(
-                runtimeState: persistedState,
-                transientImageAssetPayloads: snapshot.transientImageAssetPayloads
+            let boardDocumentURL = boardDirectoryURL.appendingPathComponent(
+                boardDocumentFilename
             )
-            let document = BoardDocumentMapper.makeDocument(from: persistedState)
+            let existingDocument: BoardDocument?
+            if FileManager.default.fileExists(atPath: boardDocumentURL.path) {
+                existingDocument = try readBoardDocument(at: boardDocumentURL)
+            } else {
+                existingDocument = nil
+            }
 
-            var writtenPosterAssetFilenames: Set<String> = []
-            var validatedVideoAssetFilenames: Set<String> = []
-            for item in persistedState.imageItems {
-                let posterAssetFilename = item.assetReference.stableAssetFilename
-                if writtenPosterAssetFilenames.insert(posterAssetFilename).inserted {
-                    let assetURL = assetsDirectoryURL.appendingPathComponent(
-                        posterAssetFilename
-                    )
-                    try persistImageAssetIfNeeded(
-                        for: item,
-                        snapshot: persistedSnapshot,
-                        to: assetURL
-                    )
+            var document = BoardDocumentMapper.makeDocument(from: snapshot.runtimeState)
+            if let existingDocument {
+                if snapshot.updateKind.affectsContent == false {
+                    document.replaceContentState(with: existingDocument)
                 }
-
-                if let sourceVideoFilename = item.sourceVideoFilename,
-                   validatedVideoAssetFilenames.insert(sourceVideoFilename).inserted
-                {
-                    let videoAssetURL = assetsDirectoryURL.appendingPathComponent(
-                        sourceVideoFilename
-                    )
-                    try validateVideoAssetExists(
-                        at: videoAssetURL,
-                        filename: sourceVideoFilename
-                    )
+                if snapshot.updateKind.affectsViewState == false {
+                    document.replaceViewState(with: existingDocument)
                 }
             }
 
-            try removeOrphanedAssets(
-                keeping: document.referencedAssetFilenames,
-                in: assetsDirectoryURL
+            let now = Date()
+            let contentChanged = existingDocument.map {
+                document.contentState != $0.contentState
+            } ?? true
+            let viewStateChanged = existingDocument.map {
+                document.viewState != $0.viewState
+            } ?? true
+            document.contentUpdatedAt = existingDocument.map {
+                contentChanged ? now : $0.contentUpdatedAt
+            } ?? now
+            document.viewStateUpdatedAt = existingDocument.map {
+                viewStateChanged ? now : $0.viewStateUpdatedAt
+            } ?? now
+
+            var persistedState = snapshot.runtimeState
+            persistedState.contentUpdatedAt = document.contentUpdatedAt
+            persistedState.viewStateUpdatedAt = document.viewStateUpdatedAt
+            let persistedSnapshot = BoardSaveSnapshot(
+                runtimeState: persistedState,
+                transientImageAssetPayloads: snapshot.transientImageAssetPayloads,
+                updateKind: snapshot.updateKind
             )
 
-            let boardDocumentURL = boardDirectoryURL.appendingPathComponent(boardDocumentFilename)
+            if contentChanged {
+                var writtenPosterAssetFilenames: Set<String> = []
+                var validatedVideoAssetFilenames: Set<String> = []
+                for item in persistedState.imageItems {
+                    let posterAssetFilename = item.assetReference.stableAssetFilename
+                    if writtenPosterAssetFilenames.insert(posterAssetFilename).inserted {
+                        let assetURL = assetsDirectoryURL.appendingPathComponent(
+                            posterAssetFilename
+                        )
+                        try persistImageAssetIfNeeded(
+                            for: item,
+                            snapshot: persistedSnapshot,
+                            to: assetURL
+                        )
+                    }
+
+                    if let sourceVideoFilename = item.sourceVideoFilename,
+                       validatedVideoAssetFilenames.insert(sourceVideoFilename).inserted
+                    {
+                        let videoAssetURL = assetsDirectoryURL.appendingPathComponent(
+                            sourceVideoFilename
+                        )
+                        try validateVideoAssetExists(
+                            at: videoAssetURL,
+                            filename: sourceVideoFilename
+                        )
+                    }
+                }
+
+                try removeOrphanedAssets(
+                    keeping: document.referencedAssetFilenames,
+                    in: assetsDirectoryURL
+                )
+            }
+
             let encodedDocument = try makeDocumentData(for: document)
             try CoordinatedFileIO.writeData(encodedDocument, to: boardDocumentURL)
-            persistBoardThumbnailIfPossible(
-                from: persistedState,
-                boardDirectoryURL: boardDirectoryURL
-            )
+            if contentChanged {
+                persistBoardThumbnailIfPossible(
+                    from: persistedState,
+                    boardDirectoryURL: boardDirectoryURL
+                )
+            }
         }
     }
 
@@ -227,7 +265,7 @@ enum BoardStore {
             var document = try readBoardDocument(at: boardDocumentURL)
             let normalizedTitle = normalizedBoardTitle(title)
             document.title = normalizedTitle
-            document.updatedAt = Date()
+            document.contentUpdatedAt = Date()
 
             let encodedDocument = try makeDocumentData(for: document)
             try CoordinatedFileIO.writeData(encodedDocument, to: boardDocumentURL)
@@ -302,11 +340,11 @@ enum BoardStore {
             }
 
             return entries.sorted { lhs, rhs in
-                if lhs.document.updatedAt == rhs.document.updatedAt {
+                if lhs.document.contentUpdatedAt == rhs.document.contentUpdatedAt {
                     return lhs.document.boardID.uuidString < rhs.document.boardID.uuidString
                 }
 
-                return lhs.document.updatedAt > rhs.document.updatedAt
+                return lhs.document.contentUpdatedAt > rhs.document.contentUpdatedAt
             }
         }
     }

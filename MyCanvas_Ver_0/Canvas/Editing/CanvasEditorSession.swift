@@ -36,6 +36,8 @@ final class CanvasEditorSession {
     private(set) var lastRenderSnapshot: CanvasRenderSnapshot = .empty
     private(set) var activeBoardID: UUID?
     private(set) var activeBoardCreatedAt: Date?
+    private(set) var activeBoardContentUpdatedAt: Date?
+    private(set) var activeBoardViewStateUpdatedAt: Date?
     var activeBoardTitle = BoardDocument.defaultTitle
 
     private let renderer = CanvasRenderer()
@@ -349,6 +351,8 @@ final class CanvasEditorSession {
         activeBoardID = runtimeState.boardID
         activeBoardTitle = runtimeState.title
         activeBoardCreatedAt = runtimeState.createdAt
+        activeBoardContentUpdatedAt = runtimeState.contentUpdatedAt
+        activeBoardViewStateUpdatedAt = runtimeState.viewStateUpdatedAt
         scene.setItems(runtimeState.items)
         boardState = runtimeState.boardState
         camera = runtimeState.camera
@@ -1123,8 +1127,11 @@ final class CanvasEditorSession {
         return true
     }
 
-    func scheduleAutosave(reason: String) {
-        guard let snapshot = currentBoardSaveSnapshot() else {
+    func scheduleAutosave(
+        reason: String,
+        updateKind: BoardPersistenceUpdateKind = .contentAndViewState
+    ) {
+        guard let snapshot = currentBoardSaveSnapshot(updateKind: updateKind) else {
             return
         }
 
@@ -1137,9 +1144,13 @@ final class CanvasEditorSession {
     func saveBoardNow(
         reason: String,
         createBoardIfNeeded: Bool = false,
+        updateKind: BoardPersistenceUpdateKind = .contentAndViewState,
         completion: @escaping (Result<Void, Error>) -> Void
     ) {
-        guard let snapshot = currentBoardSaveSnapshot(createBoardIfNeeded: createBoardIfNeeded) else {
+        guard let snapshot = currentBoardSaveSnapshot(
+            createBoardIfNeeded: createBoardIfNeeded,
+            updateKind: updateKind
+        ) else {
             completion(.failure(FolderBookmarkStoreError.missingBookmarkData))
             return
         }
@@ -1160,7 +1171,9 @@ final class CanvasEditorSession {
 
         guard
             let activeBoardID,
-            let activeBoardCreatedAt
+            let activeBoardCreatedAt,
+            let activeBoardContentUpdatedAt,
+            let activeBoardViewStateUpdatedAt
         else {
             return nil
         }
@@ -1169,7 +1182,8 @@ final class CanvasEditorSession {
             boardID: activeBoardID,
             title: activeBoardTitle,
             createdAt: activeBoardCreatedAt,
-            updatedAt: Date(),
+            contentUpdatedAt: activeBoardContentUpdatedAt,
+            viewStateUpdatedAt: activeBoardViewStateUpdatedAt,
             items: scene.orderedBoardItems(),
             boardState: boardState,
             camera: camera,
@@ -1179,7 +1193,8 @@ final class CanvasEditorSession {
     }
 
     func currentBoardSaveSnapshot(
-        createBoardIfNeeded: Bool = false
+        createBoardIfNeeded: Bool = false,
+        updateKind: BoardPersistenceUpdateKind = .contentAndViewState
     ) -> BoardSaveSnapshot? {
         guard let runtimeState = currentBoardRuntimeState(
             createBoardIfNeeded: createBoardIfNeeded
@@ -1197,13 +1212,19 @@ final class CanvasEditorSession {
         )
         return BoardSaveSnapshot(
             runtimeState: runtimeState,
-            transientImageAssetPayloads: payloads
+            transientImageAssetPayloads: payloads,
+            updateKind: updateKind
         )
     }
 
     @discardableResult
     func ensureActiveBoardIdentityIfNeeded() -> Bool {
-        guard activeBoardID == nil || activeBoardCreatedAt == nil else {
+        guard
+            activeBoardID == nil ||
+            activeBoardCreatedAt == nil ||
+            activeBoardContentUpdatedAt == nil ||
+            activeBoardViewStateUpdatedAt == nil
+        else {
             return true
         }
 
@@ -1214,6 +1235,8 @@ final class CanvasEditorSession {
         let now = Date()
         activeBoardID = activeBoardID ?? UUID()
         activeBoardCreatedAt = activeBoardCreatedAt ?? now
+        activeBoardContentUpdatedAt = activeBoardContentUpdatedAt ?? now
+        activeBoardViewStateUpdatedAt = activeBoardViewStateUpdatedAt ?? now
         if activeBoardTitle.isEmpty {
             activeBoardTitle = BoardDocument.defaultTitle
         }

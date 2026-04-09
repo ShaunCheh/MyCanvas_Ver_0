@@ -5,19 +5,29 @@ struct BoardSummary {
     let boardID: UUID
     let title: String
     let createdAt: Date
-    let updatedAt: Date
+    let contentUpdatedAt: Date
+    let viewStateUpdatedAt: Date
+
+    var updatedAt: Date {
+        contentUpdatedAt
+    }
 }
 
 struct BoardRuntimeState {
     let boardID: UUID
     var title: String
     let createdAt: Date
-    var updatedAt: Date
+    var contentUpdatedAt: Date
+    var viewStateUpdatedAt: Date
     var items: [CanvasBoardItem]
     var boardState: CanvasBoardState?
     var camera: CanvasCamera
     var interactionState: CanvasInteractionState
     var workspaceMode: CanvasWorkspaceMode
+
+    var updatedAt: Date {
+        contentUpdatedAt
+    }
 
     static func makeEmpty(
         boardID: UUID = UUID(),
@@ -28,7 +38,8 @@ struct BoardRuntimeState {
             boardID: boardID,
             title: title,
             createdAt: now,
-            updatedAt: now,
+            contentUpdatedAt: now,
+            viewStateUpdatedAt: now,
             items: [],
             boardState: nil,
             camera: CanvasCamera(),
@@ -42,7 +53,8 @@ struct BoardRuntimeState {
             boardID: boardID,
             title: title,
             createdAt: createdAt,
-            updatedAt: updatedAt
+            contentUpdatedAt: contentUpdatedAt,
+            viewStateUpdatedAt: viewStateUpdatedAt
         )
     }
 
@@ -67,7 +79,8 @@ struct BoardDocument: Codable {
     let boardID: UUID
     var title: String
     let createdAt: Date
-    var updatedAt: Date
+    var contentUpdatedAt: Date
+    var viewStateUpdatedAt: Date
     var boardBaseSize: BoardSizeRecord?
     var boardRect: BoardRectRecord?
     var cameraCenter: BoardPointRecord
@@ -76,12 +89,47 @@ struct BoardDocument: Codable {
     var workspaceMode: CanvasWorkspaceMode?
     var items: [BoardItemRecord]
 
+    var updatedAt: Date {
+        contentUpdatedAt
+    }
+
+    init(
+        formatVersion: Int,
+        boardID: UUID,
+        title: String,
+        createdAt: Date,
+        contentUpdatedAt: Date,
+        viewStateUpdatedAt: Date,
+        boardBaseSize: BoardSizeRecord?,
+        boardRect: BoardRectRecord?,
+        cameraCenter: BoardPointRecord,
+        cameraZoomScale: Double,
+        selectedItemID: UUID?,
+        workspaceMode: CanvasWorkspaceMode?,
+        items: [BoardItemRecord]
+    ) {
+        self.formatVersion = formatVersion
+        self.boardID = boardID
+        self.title = title
+        self.createdAt = createdAt
+        self.contentUpdatedAt = contentUpdatedAt
+        self.viewStateUpdatedAt = viewStateUpdatedAt
+        self.boardBaseSize = boardBaseSize
+        self.boardRect = boardRect
+        self.cameraCenter = cameraCenter
+        self.cameraZoomScale = cameraZoomScale
+        self.selectedItemID = selectedItemID
+        self.workspaceMode = workspaceMode
+        self.items = items
+    }
+
     var summary: BoardSummary {
         BoardSummary(
             boardID: boardID,
             title: title,
             createdAt: createdAt,
-            updatedAt: updatedAt
+            contentUpdatedAt: contentUpdatedAt,
+            viewStateUpdatedAt: viewStateUpdatedAt
         )
     }
 
@@ -98,9 +146,135 @@ struct BoardDocument: Codable {
     var textItemRecords: [BoardTextItemRecord] {
         items.compactMap(\.textItemRecord)
     }
+
+    var contentState: BoardDocumentContentState {
+        BoardDocumentContentState(
+            title: title,
+            boardRect: boardRect,
+            items: items
+        )
+    }
+
+    var viewState: BoardDocumentViewState {
+        BoardDocumentViewState(
+            boardBaseSize: boardBaseSize,
+            cameraCenter: cameraCenter,
+            cameraZoomScale: cameraZoomScale,
+            selectedItemID: selectedItemID,
+            workspaceMode: workspaceMode
+        )
+    }
+
+    mutating func replaceContentState(with other: BoardDocument) {
+        title = other.title
+        boardRect = other.boardRect
+        items = other.items
+    }
+
+    mutating func replaceViewState(with other: BoardDocument) {
+        boardBaseSize = other.boardBaseSize
+        cameraCenter = other.cameraCenter
+        cameraZoomScale = other.cameraZoomScale
+        selectedItemID = other.selectedItemID
+        workspaceMode = other.workspaceMode
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case formatVersion
+        case boardID
+        case title
+        case createdAt
+        case updatedAt
+        case contentUpdatedAt
+        case viewStateUpdatedAt
+        case boardBaseSize
+        case boardRect
+        case cameraCenter
+        case cameraZoomScale
+        case selectedItemID
+        case workspaceMode
+        case items
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        formatVersion = try container.decode(Int.self, forKey: .formatVersion)
+        boardID = try container.decode(UUID.self, forKey: .boardID)
+        title = try container.decode(String.self, forKey: .title)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        let legacyUpdatedAt = try container.decodeIfPresent(
+            Date.self,
+            forKey: .updatedAt
+        ) ?? createdAt
+        contentUpdatedAt = try container.decodeIfPresent(
+            Date.self,
+            forKey: .contentUpdatedAt
+        ) ?? legacyUpdatedAt
+        viewStateUpdatedAt = try container.decodeIfPresent(
+            Date.self,
+            forKey: .viewStateUpdatedAt
+        ) ?? legacyUpdatedAt
+        boardBaseSize = try container.decodeIfPresent(
+            BoardSizeRecord.self,
+            forKey: .boardBaseSize
+        )
+        boardRect = try container.decodeIfPresent(
+            BoardRectRecord.self,
+            forKey: .boardRect
+        )
+        cameraCenter = try container.decode(
+            BoardPointRecord.self,
+            forKey: .cameraCenter
+        )
+        cameraZoomScale = try container.decode(
+            Double.self,
+            forKey: .cameraZoomScale
+        )
+        selectedItemID = try container.decodeIfPresent(
+            UUID.self,
+            forKey: .selectedItemID
+        )
+        workspaceMode = try container.decodeIfPresent(
+            CanvasWorkspaceMode.self,
+            forKey: .workspaceMode
+        )
+        items = try container.decode([BoardItemRecord].self, forKey: .items)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(formatVersion, forKey: .formatVersion)
+        try container.encode(boardID, forKey: .boardID)
+        try container.encode(title, forKey: .title)
+        try container.encode(createdAt, forKey: .createdAt)
+        try container.encode(contentUpdatedAt, forKey: .updatedAt)
+        try container.encode(contentUpdatedAt, forKey: .contentUpdatedAt)
+        try container.encode(viewStateUpdatedAt, forKey: .viewStateUpdatedAt)
+        try container.encodeIfPresent(boardBaseSize, forKey: .boardBaseSize)
+        try container.encodeIfPresent(boardRect, forKey: .boardRect)
+        try container.encode(cameraCenter, forKey: .cameraCenter)
+        try container.encode(cameraZoomScale, forKey: .cameraZoomScale)
+        try container.encodeIfPresent(selectedItemID, forKey: .selectedItemID)
+        try container.encodeIfPresent(workspaceMode, forKey: .workspaceMode)
+        try container.encode(items, forKey: .items)
+    }
 }
 
-struct BoardImageItemRecord: Codable {
+struct BoardDocumentContentState: Equatable {
+    var title: String
+    var boardRect: BoardRectRecord?
+    var items: [BoardItemRecord]
+}
+
+struct BoardDocumentViewState: Equatable {
+    var boardBaseSize: BoardSizeRecord?
+    var cameraCenter: BoardPointRecord
+    var cameraZoomScale: Double
+    var selectedItemID: UUID?
+    var workspaceMode: CanvasWorkspaceMode?
+}
+
+struct BoardImageItemRecord: Codable, Equatable {
     let id: UUID
     var center: BoardPointRecord
     var size: BoardSizeRecord
@@ -310,7 +484,7 @@ struct BoardImageItemRecord: Codable {
     }
 }
 
-struct BoardTextColorRecord: Codable {
+struct BoardTextColorRecord: Codable, Equatable {
     var red: Double
     var green: Double
     var blue: Double
@@ -347,7 +521,7 @@ struct BoardTextColorRecord: Codable {
     }
 }
 
-struct BoardTextStyleRecord: Codable {
+struct BoardTextStyleRecord: Codable, Equatable {
     var fontName: String
     var fontSize: Double
     var color: BoardTextColorRecord
@@ -379,7 +553,7 @@ struct BoardTextStyleRecord: Codable {
     }
 }
 
-struct BoardTextItemRecord: Codable {
+struct BoardTextItemRecord: Codable, Equatable {
     let id: UUID
     var center: BoardPointRecord
     var size: BoardSizeRecord
@@ -389,7 +563,7 @@ struct BoardTextItemRecord: Codable {
     var rotationRadians: Double?
 }
 
-enum BoardItemRecord: Codable {
+enum BoardItemRecord: Codable, Equatable {
     case image(BoardImageItemRecord)
     case text(BoardTextItemRecord)
 
@@ -477,7 +651,7 @@ enum BoardItemRecord: Codable {
     }
 }
 
-struct BoardImageCropRecord: Codable {
+struct BoardImageCropRecord: Codable, Equatable {
     var x: Double
     var y: Double
     var width: Double
@@ -517,7 +691,7 @@ struct BoardImageCropRecord: Codable {
     }
 }
 
-struct BoardPointRecord: Codable {
+struct BoardPointRecord: Codable, Equatable {
     var x: Double
     var y: Double
 
@@ -541,7 +715,7 @@ struct BoardPointRecord: Codable {
     }
 }
 
-struct BoardSizeRecord: Codable {
+struct BoardSizeRecord: Codable, Equatable {
     var width: Double
     var height: Double
 
@@ -565,7 +739,7 @@ struct BoardSizeRecord: Codable {
     }
 }
 
-struct BoardRectRecord: Codable {
+struct BoardRectRecord: Codable, Equatable {
     var origin: BoardPointRecord
     var size: BoardSizeRecord
 

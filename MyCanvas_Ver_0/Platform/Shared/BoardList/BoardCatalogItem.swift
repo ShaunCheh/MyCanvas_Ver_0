@@ -18,8 +18,16 @@ struct BoardCatalogItem {
         document.createdAt
     }
 
+    var contentUpdatedAt: Date {
+        document.contentUpdatedAt
+    }
+
+    var viewStateUpdatedAt: Date {
+        document.viewStateUpdatedAt
+    }
+
     var updatedAt: Date {
-        document.updatedAt
+        contentUpdatedAt
     }
 
     var summary: BoardSummary {
@@ -27,6 +35,6 @@ struct BoardCatalogItem {
     }
 
     var revisionToken: String {
-        "\(boardID.uuidString)-\(updatedAt.timeIntervalSince1970)"
+        "\(boardID.uuidString)-\(contentUpdatedAt.timeIntervalSince1970)"
     }
 }

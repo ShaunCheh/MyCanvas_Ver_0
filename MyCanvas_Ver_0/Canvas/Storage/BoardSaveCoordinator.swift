@@ -1,15 +1,42 @@
 import Foundation
 
+enum BoardPersistenceUpdateKind {
+    case contentOnly
+    case viewStateOnly
+    case contentAndViewState
+
+    var affectsContent: Bool {
+        switch self {
+        case .contentOnly, .contentAndViewState:
+            return true
+        case .viewStateOnly:
+            return false
+        }
+    }
+
+    var affectsViewState: Bool {
+        switch self {
+        case .viewStateOnly, .contentAndViewState:
+            return true
+        case .contentOnly:
+            return false
+        }
+    }
+}
+
 struct BoardSaveSnapshot {
     let runtimeState: BoardRuntimeState
     let transientImageAssetPayloads: [CanvasImageAssetReference: CanvasTransientImageAssetPayload]
+    let updateKind: BoardPersistenceUpdateKind
 
     init(
         runtimeState: BoardRuntimeState,
-        transientImageAssetPayloads: [CanvasImageAssetReference: CanvasTransientImageAssetPayload] = [:]
+        transientImageAssetPayloads: [CanvasImageAssetReference: CanvasTransientImageAssetPayload] = [:],
+        updateKind: BoardPersistenceUpdateKind = .contentAndViewState
     ) {
         self.runtimeState = runtimeState
         self.transientImageAssetPayloads = transientImageAssetPayloads
+        self.updateKind = updateKind
     }
 
     func transientImageAssetPayload(

@@ -4,16 +4,16 @@ overview: 将单一 `updatedAt` 拆成 `contentUpdatedAt` 与 `viewStateUpdatedA
 todos:
   - id: split-model-compat
     content: 拆分文档与运行时模型中的单一更新时间，并补旧文档兼容解码
-    status: pending
+    status: completed
   - id: classify-save-kinds
     content: 为保存链路引入内容/视图状态的显式分类，替换现在的统一 updatedAt 刷新
-    status: pending
+    status: completed
   - id: migrate-consumers
     content: 把 boardlist 排序、catalog upsert、revisionToken、thumbnail freshness 迁移到 contentUpdatedAt 语义
-    status: pending
+    status: completed
   - id: verify-behavior
     content: 用现有 trace 与手动回归验证“视图状态不再改顺序，内容改动仍会前移”
-    status: pending
+    status: in_progress
 isProject: false
 ---
 

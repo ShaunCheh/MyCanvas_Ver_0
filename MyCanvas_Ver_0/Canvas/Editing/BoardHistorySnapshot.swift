@@ -67,13 +67,15 @@ extension BoardRuntimeState {
 
     func replacingDocumentState(
         with snapshot: BoardHistorySnapshot,
-        updatedAt: Date = Date()
+        contentUpdatedAt: Date? = nil,
+        viewStateUpdatedAt: Date? = nil
     ) -> BoardRuntimeState {
         BoardRuntimeState(
             boardID: boardID,
             title: title,
             createdAt: createdAt,
-            updatedAt: updatedAt,
+            contentUpdatedAt: contentUpdatedAt ?? self.contentUpdatedAt,
+            viewStateUpdatedAt: viewStateUpdatedAt ?? self.viewStateUpdatedAt,
             items: snapshot.items,
             boardState: snapshot.boardState,
             camera: camera,
