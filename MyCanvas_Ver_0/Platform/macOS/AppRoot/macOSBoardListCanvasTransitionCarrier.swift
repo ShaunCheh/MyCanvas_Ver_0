@@ -43,14 +43,6 @@ final class macOSSnapshotShellCarrier: macOSBoardListCanvasTransitionCarrying {
     private var currentContext: BoardListCanvasTransitionContext?
     private var shellShadowView: NSView?
     private var shellContentView: NSView?
-    private static let openingDuration: TimeInterval = 0.38
-    private static let closingDuration: TimeInterval = 0.32
-    private static let handoffDuration: TimeInterval = 0.14
-    private static let shellCornerRadius: CGFloat = 12
-    private static let shellShadowOpacity: Float = 0.08
-    private static let shellShadowRadius: CGFloat = 16
-    private static let shellShadowOffset = CGSize(width: 0, height: -8)
-    private static let fallbackClosingScale: CGFloat = 0.82
 
     var kind: BoardListCanvasTransitionCarrierKind {
         .snapshotShell
@@ -129,11 +121,11 @@ final class macOSSnapshotShellCarrier: macOSBoardListCanvasTransitionCarrying {
         let shadowView = NSView(frame: convertedSourceRect)
         let contentView = makeShellContentView(
             frame: shadowView.bounds,
-            cornerRadius: Self.shellCornerRadius
+            cornerRadius: BoardListCanvasTransitionConfiguration.shellCornerRadius
         )
         configureShadow(
             for: shadowView,
-            opacity: Self.shellShadowOpacity
+            opacity: BoardListCanvasTransitionConfiguration.shellShadowOpacity
         )
 
         if let snapshotView = makeSnapshotView(
@@ -207,8 +199,10 @@ final class macOSSnapshotShellCarrier: macOSBoardListCanvasTransitionCarrying {
             destinationView.isHidden = false
             destinationView.alphaValue = 0
             NSAnimationContext.runAnimationGroup { context in
-                context.duration = Self.handoffDuration
-                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                context.duration = BoardListCanvasTransitionConfiguration.handoffAnimation.duration
+                context.timingFunction = CAMediaTimingFunction(
+                    name: timingFunctionName(for: BoardListCanvasTransitionConfiguration.handoffAnimation.curve)
+                )
                 destinationView.animator().alphaValue = 1
             } completionHandler: {
                 completion()
@@ -219,8 +213,10 @@ final class macOSSnapshotShellCarrier: macOSBoardListCanvasTransitionCarrying {
         let targetFrame = overlayHostView.bounds.standardized
         shellShadowView.isHidden = false
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = Self.openingDuration
-            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            context.duration = BoardListCanvasTransitionConfiguration.openingAnimation.duration
+            context.timingFunction = CAMediaTimingFunction(
+                name: timingFunctionName(for: BoardListCanvasTransitionConfiguration.openingAnimation.curve)
+            )
             shellShadowView.animator().frame = targetFrame
             shellShadowView.layer?.shadowOpacity = 0
             shellContentView?.layer?.cornerRadius = 0
@@ -229,8 +225,10 @@ final class macOSSnapshotShellCarrier: macOSBoardListCanvasTransitionCarrying {
             destinationView.alphaValue = 0
             destinationView.superview?.layoutSubtreeIfNeeded()
             NSAnimationContext.runAnimationGroup { context in
-                context.duration = Self.handoffDuration
-                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                context.duration = BoardListCanvasTransitionConfiguration.handoffAnimation.duration
+                context.timingFunction = CAMediaTimingFunction(
+                    name: timingFunctionName(for: BoardListCanvasTransitionConfiguration.handoffAnimation.curve)
+                )
                 destinationView.animator().alphaValue = 1
                 shellShadowView.animator().alphaValue = 0
             } completionHandler: {
@@ -266,15 +264,19 @@ final class macOSSnapshotShellCarrier: macOSBoardListCanvasTransitionCarrying {
 
         if let targetFrame {
             NSAnimationContext.runAnimationGroup { context in
-                context.duration = Self.closingDuration
-                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                context.duration = BoardListCanvasTransitionConfiguration.closingAnimation.duration
+                context.timingFunction = CAMediaTimingFunction(
+                    name: timingFunctionName(for: BoardListCanvasTransitionConfiguration.closingAnimation.curve)
+                )
                 shellShadowView.animator().frame = targetFrame
-                shellShadowView.layer?.shadowOpacity = Self.shellShadowOpacity
-                shellContentView?.layer?.cornerRadius = Self.shellCornerRadius
+                shellShadowView.layer?.shadowOpacity = BoardListCanvasTransitionConfiguration.shellShadowOpacity
+                shellContentView?.layer?.cornerRadius = BoardListCanvasTransitionConfiguration.shellCornerRadius
             } completionHandler: {
                 NSAnimationContext.runAnimationGroup { context in
-                    context.duration = Self.handoffDuration
-                    context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                    context.duration = BoardListCanvasTransitionConfiguration.handoffAnimation.duration
+                    context.timingFunction = CAMediaTimingFunction(
+                        name: timingFunctionName(for: BoardListCanvasTransitionConfiguration.handoffAnimation.curve)
+                    )
                     shellShadowView.animator().alphaValue = 0
                 } completionHandler: {
                     completion()
@@ -285,12 +287,14 @@ final class macOSSnapshotShellCarrier: macOSBoardListCanvasTransitionCarrying {
 
         destinationView.alphaValue = 0
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = Self.closingDuration
-            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            context.duration = BoardListCanvasTransitionConfiguration.closingAnimation.duration
+            context.timingFunction = CAMediaTimingFunction(
+                name: timingFunctionName(for: BoardListCanvasTransitionConfiguration.closingAnimation.curve)
+            )
             shellShadowView.animator().frame = fallbackFrame
             shellShadowView.animator().alphaValue = 0
-            shellShadowView.layer?.shadowOpacity = Self.shellShadowOpacity
-            shellContentView?.layer?.cornerRadius = Self.shellCornerRadius
+            shellShadowView.layer?.shadowOpacity = BoardListCanvasTransitionConfiguration.shellShadowOpacity
+            shellContentView?.layer?.cornerRadius = BoardListCanvasTransitionConfiguration.shellCornerRadius
             destinationView.animator().alphaValue = 1
         } completionHandler: {
             completion()
@@ -340,8 +344,8 @@ final class macOSSnapshotShellCarrier: macOSBoardListCanvasTransitionCarrying {
 
     private func fallbackClosingFrame(in overlayHostView: NSView) -> CGRect {
         let bounds = overlayHostView.bounds.standardized
-        let scaledWidth = bounds.width * Self.fallbackClosingScale
-        let scaledHeight = bounds.height * Self.fallbackClosingScale
+        let scaledWidth = bounds.width * BoardListCanvasTransitionConfiguration.fallbackClosingScale
+        let scaledHeight = bounds.height * BoardListCanvasTransitionConfiguration.fallbackClosingScale
         return CGRect(
             x: bounds.midX - (scaledWidth / 2),
             y: bounds.midY - (scaledHeight / 2),
@@ -371,8 +375,19 @@ final class macOSSnapshotShellCarrier: macOSBoardListCanvasTransitionCarrying {
         shadowView.layer?.backgroundColor = NSColor.clear.cgColor
         shadowView.layer?.shadowColor = NSColor.black.cgColor
         shadowView.layer?.shadowOpacity = opacity
-        shadowView.layer?.shadowRadius = Self.shellShadowRadius
-        shadowView.layer?.shadowOffset = Self.shellShadowOffset
+        shadowView.layer?.shadowRadius = BoardListCanvasTransitionConfiguration.shellShadowRadius
+        shadowView.layer?.shadowOffset = BoardListCanvasTransitionConfiguration.macOSShellShadowOffset
+    }
+
+    private func timingFunctionName(
+        for curve: BoardListCanvasTransitionTimingCurve
+    ) -> CAMediaTimingFunctionName {
+        switch curve {
+        case .easeInOut:
+            return .easeInEaseOut
+        case .easeOut:
+            return .easeOut
+        }
     }
 
     private func removeShellViews() {

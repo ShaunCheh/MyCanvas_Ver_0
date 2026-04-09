@@ -1,7 +1,7 @@
 #if os(macOS)
 import AppKit
 
-final class macOSBoardListViewController: NSViewController, NSCollectionViewDataSource, NSCollectionViewDelegate {
+final class macOSBoardListViewController: NSViewController, NSCollectionViewDataSource, NSCollectionViewDelegate, macOSBoardListCanvasTransitionInteractionControlling {
     private enum Layout {
         static let listItemHeight: CGFloat = 96
         static let gridItemHeight: CGFloat = 184
@@ -62,6 +62,7 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
         }
     }
     private var pendingTransitionTargetResolution: PendingTransitionTargetResolution?
+    private var isTransitionInteractionFrozen = false
     private var displayMode: BoardListDisplayMode = .grid {
         didSet {
             guard oldValue != displayMode else {
@@ -151,6 +152,7 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
         return view
     }()
     private let actionPanelHostView = BoardListActionPanelHostView()
+    private let transitionInteractionShieldView = macOSTransitionInteractionShieldView()
 
     private let bookmarkTitleLabel: NSTextField = {
         let label = NSTextField(labelWithString: "")
@@ -244,6 +246,7 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
         setupCollectionScrollObservation()
         setupMouseEventLogging()
         refreshBookmarkStatus()
+        applyTransitionInteractionFreeze()
     }
 
     override func viewDidLayout() {
@@ -258,6 +261,19 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
         }
 
         refreshBookmarkStatus()
+    }
+
+    func setTransitionInteractionFrozen(_ isFrozen: Bool) {
+        guard isTransitionInteractionFrozen != isFrozen else {
+            return
+        }
+
+        isTransitionInteractionFrozen = isFrozen
+        guard isViewLoaded else {
+            return
+        }
+
+        applyTransitionInteractionFreeze()
     }
 
     func transitionSourceGeometry(
@@ -516,6 +532,7 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
         view.addSubview(bookmarkDetailLabel)
         view.addSubview(contentContainerView)
         view.addSubview(actionPanelHostView)
+        view.addSubview(transitionInteractionShieldView)
 
         contentContainerView.addSubview(collectionScrollView)
         contentContainerView.addSubview(emptyStateLabel)
@@ -545,6 +562,10 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
             actionPanelHostView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             actionPanelHostView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             actionPanelHostView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            transitionInteractionShieldView.topAnchor.constraint(equalTo: view.topAnchor),
+            transitionInteractionShieldView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            transitionInteractionShieldView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            transitionInteractionShieldView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             collectionScrollView.topAnchor.constraint(equalTo: contentContainerView.topAnchor),
             collectionScrollView.leadingAnchor.constraint(equalTo: contentContainerView.leadingAnchor),
             collectionScrollView.trailingAnchor.constraint(equalTo: contentContainerView.trailingAnchor),
@@ -685,7 +706,18 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
     private func updateDisplayModeControlState() {
         displayModeControl.isEnabled =
             hasSelectedFolder &&
-            storageErrorMessage == nil
+            storageErrorMessage == nil &&
+            isTransitionInteractionFrozen == false
+    }
+
+    private func applyTransitionInteractionFreeze() {
+        transitionInteractionShieldView.isHidden = isTransitionInteractionFrozen == false
+        selectFolderButton.isEnabled = isTransitionInteractionFrozen == false
+        collectionView.isSelectable = isTransitionInteractionFrozen == false
+        if isTransitionInteractionFrozen {
+            dismissActionPanel()
+        }
+        updateDisplayModeControlState()
     }
 
     private func updateCollectionVisibility() {
@@ -892,6 +924,10 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
     }
 
     private func performPrimaryAction(for entry: BoardListEntry) {
+        guard isTransitionInteractionFrozen == false else {
+            return
+        }
+
         dismissActionPanel()
         guard
             hasSelectedFolder,
@@ -928,6 +964,10 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
 
     @objc
     private func handleSelectFolderButtonClick() {
+        guard isTransitionInteractionFrozen == false else {
+            return
+        }
+
         dismissActionPanel()
         do {
             guard let bookmarkData = try FilePickerManager.selectFolder() else {
@@ -945,6 +985,10 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
 
     @objc
     private func handleDisplayModeChange() {
+        guard isTransitionInteractionFrozen == false else {
+            return
+        }
+
         dismissActionPanel()
         let requestedDisplayMode = BoardListDisplayMode(
             segmentIndex: displayModeControl.selectedSegment
@@ -1049,6 +1093,10 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
     }
 
     private func performBoardAction(_ actionID: BoardListActionID) {
+        guard isTransitionInteractionFrozen == false else {
+            return
+        }
+
         let boardID = actionPanelState?.boardID
         logRenameTrace(
             "performBoardAction",
@@ -1261,6 +1309,7 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
     @objc
     private func handleCollectionViewDoubleClick(_ gestureRecognizer: NSClickGestureRecognizer) {
         guard
+            isTransitionInteractionFrozen == false,
             gestureRecognizer.state == .ended
         else {
             return
@@ -1464,6 +1513,7 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
         didSelectItemsAt indexPaths: Set<IndexPath>
     ) {
         guard
+            isTransitionInteractionFrozen == false,
             isSyncingSelection == false,
             let indexPath = indexPaths.first,
             let entry = entry(at: indexPath)

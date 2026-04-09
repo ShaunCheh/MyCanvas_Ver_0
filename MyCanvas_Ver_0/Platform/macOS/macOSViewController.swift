@@ -11,7 +11,7 @@ import AppKit
 import QuartzCore
 import UniformTypeIdentifiers
 
-final class macOSViewController: NSViewController, NSUserInterfaceValidations, NSTextViewDelegate {
+final class macOSViewController: NSViewController, NSUserInterfaceValidations, NSTextViewDelegate, macOSBoardListCanvasTransitionInteractionControlling {
     private struct PointerResizeState {
         let itemID: CanvasItemID
         let handleRole: CanvasSelectionHandleRole
@@ -90,6 +90,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         view.translatesAutoresizingMaskIntoConstraints = false
         return view
     }()
+    private let transitionInteractionShieldView = macOSTransitionInteractionShieldView()
     private let backButton: NSButton = {
         let button = NSButton()
         button.translatesAutoresizingMaskIntoConstraints = false
@@ -195,6 +196,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     private var canvasContentView: NSView?
     private var pendingRefreshReason: String?
     private var pointerDragState: PointerDragState = .idle
+    private var isTransitionInteractionFrozen = false
     private var saveButtonResetWorkItem: DispatchWorkItem?
     private var saveButtonState: CanvasSaveState = .idle {
         didSet {
@@ -294,6 +296,10 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     }
 
     private func performCommand(_ command: CanvasCommand) {
+        guard isTransitionInteractionFrozen == false else {
+            return
+        }
+
         if command.id != .commitTextEdit,
            isInlineTextModeActive,
            workspaceMode == .editing
@@ -321,6 +327,17 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
 
         if let refreshReason = executionResult.refreshReason {
             refreshCanvas(reason: refreshReason)
+        }
+    }
+
+    private func applyTransitionInteractionFreeze() {
+        transitionInteractionShieldView.isHidden = isTransitionInteractionFrozen == false
+        if isTransitionInteractionFrozen {
+            dismissContextMenu()
+            handlePrimaryPointerCancel()
+            view.window?.makeFirstResponder(nil)
+        } else if view.window != nil, view.isHidden == false {
+            view.window?.makeFirstResponder(canvasViewportView)
         }
     }
 
@@ -560,10 +577,15 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     }
 
     func canPerformCommand(_ commandID: CanvasCommandID) -> Bool {
-        commandDescriptor(for: commandID).isEnabled
+        isTransitionInteractionFrozen == false &&
+            commandDescriptor(for: commandID).isEnabled
     }
 
     func performCommand(withID commandID: CanvasCommandID) {
+        guard isTransitionInteractionFrozen == false else {
+            return
+        }
+
         switch commandID {
         case .importMedia:
             break
@@ -606,6 +628,10 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
 
     @objc
     func paste(_ sender: Any?) {
+        guard isTransitionInteractionFrozen == false else {
+            return
+        }
+
         handlePasteRequest()
     }
 
@@ -640,6 +666,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         setupContextMenuHostView()
         restoreInitialBoardState()
         setupCanvasViewport()
+        applyTransitionInteractionFreeze()
         print(
             "[Canvas macOS][ControllerLifecycle] " +
             "action=viewDidLoad.end " +
@@ -662,6 +689,19 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             "windowFrame=\(view.window.map { describe(rect: $0.frame) } ?? "nil") " +
             "cameraViewportSize=\(describe(size: camera.viewportSize))"
         )
+    }
+
+    func setTransitionInteractionFrozen(_ isFrozen: Bool) {
+        guard isTransitionInteractionFrozen != isFrozen else {
+            return
+        }
+
+        isTransitionInteractionFrozen = isFrozen
+        guard isViewLoaded else {
+            return
+        }
+
+        applyTransitionInteractionFreeze()
     }
 
     override func viewDidAppear() {
@@ -751,6 +791,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     private func setupViewHierarchy() {
         view.addSubview(canvasHostView)
         view.addSubview(chromeOverlayView)
+        view.addSubview(transitionInteractionShieldView)
         chromeOverlayView.addSubview(miniMapMountView)
         toolbarHostView.translatesAutoresizingMaskIntoConstraints = true
         chromeOverlayView.addSubview(toolbarHostView)
@@ -774,6 +815,10 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             chromeOverlayView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             chromeOverlayView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             chromeOverlayView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            transitionInteractionShieldView.topAnchor.constraint(equalTo: view.topAnchor),
+            transitionInteractionShieldView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            transitionInteractionShieldView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            transitionInteractionShieldView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             contextMenuHostView.topAnchor.constraint(equalTo: chromeOverlayView.topAnchor),
             contextMenuHostView.leadingAnchor.constraint(equalTo: chromeOverlayView.leadingAnchor),
             contextMenuHostView.trailingAnchor.constraint(equalTo: chromeOverlayView.trailingAnchor),
@@ -1100,24 +1145,45 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             self?.editorSession.animatedImagePlaybackSource(for: assetReference)
         }
         canvasViewportView.onPointerDown = { [weak self] location in
+            guard self?.isTransitionInteractionFrozen == false else {
+                return
+            }
             self?.handlePrimaryPointerDown(at: location)
         }
         canvasViewportView.onPointerMove = { [weak self] location, previousLocation in
+            guard self?.isTransitionInteractionFrozen == false else {
+                return
+            }
             self?.handlePrimaryPointerMove(to: location, from: previousLocation)
         }
         canvasViewportView.onPointerUp = { [weak self] location in
+            guard self?.isTransitionInteractionFrozen == false else {
+                return
+            }
             self?.handlePrimaryPointerUp(at: location)
         }
         canvasViewportView.onPointerCancel = { [weak self] in
+            guard self?.isTransitionInteractionFrozen == false else {
+                return
+            }
             self?.handlePrimaryPointerCancel()
         }
         canvasViewportView.onSecondaryClick = { [weak self] location in
+            guard self?.isTransitionInteractionFrozen == false else {
+                return
+            }
             self?.handleSecondaryClick(at: location)
         }
         canvasViewportView.onPan = { [weak self] translation in
+            guard self?.isTransitionInteractionFrozen == false else {
+                return
+            }
             self?.handleIndirectPan(translation)
         }
         canvasViewportView.onZoom = { [weak self] scaleDelta, anchor in
+            guard self?.isTransitionInteractionFrozen == false else {
+                return
+            }
             self?.handleZoom(scaleDelta, around: anchor)
         }
         canvasViewportView.onViewportSizeChange = { [weak self] viewportSize in
@@ -1127,9 +1193,15 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             )
         }
         canvasViewportView.onImportDragOperation = { [weak self] _, pasteboard in
+            guard self?.isTransitionInteractionFrozen == false else {
+                return []
+            }
             self?.dragOperation(for: pasteboard) ?? []
         }
         canvasViewportView.onImportDrop = { [weak self] _, pasteboard in
+            guard self?.isTransitionInteractionFrozen == false else {
+                return false
+            }
             self?.handleImportDrop(pasteboard: pasteboard) ?? false
         }
 
@@ -2387,12 +2459,16 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     }
 
     private func canTransferContent(from pasteboard: NSPasteboard) -> Bool {
-        isReadingModeActive == false &&
+        isTransitionInteractionFrozen == false &&
+            isReadingModeActive == false &&
             macOSCanvasImportAdapter.canResolveTransfer(from: pasteboard)
     }
 
     private func handlePasteRequest() {
-        guard isReadingModeActive == false else {
+        guard
+            isTransitionInteractionFrozen == false,
+            isReadingModeActive == false
+        else {
             return
         }
 
@@ -2413,7 +2489,10 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     private func handleImportDrop(
         pasteboard: NSPasteboard
     ) -> Bool {
-        guard isReadingModeActive == false else {
+        guard
+            isTransitionInteractionFrozen == false,
+            isReadingModeActive == false
+        else {
             return false
         }
 
@@ -2436,7 +2515,10 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     private func performTransferRequest(
         _ request: CanvasTransferRequest
     ) -> Bool {
-        guard isReadingModeActive == false else {
+        guard
+            isTransitionInteractionFrozen == false,
+            isReadingModeActive == false
+        else {
             return false
         }
 

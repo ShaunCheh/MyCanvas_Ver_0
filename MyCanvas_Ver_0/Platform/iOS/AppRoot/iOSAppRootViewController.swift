@@ -115,6 +115,8 @@ final class iOSAppRootViewController: UIViewController {
 
         activeTransitionSession = session
         transitionPhase = .opening
+        setTransitionInteractionFrozen(true, for: sourceViewController)
+        setTransitionInteractionFrozen(true, for: destinationViewController)
         activateTransitionOverlay()
         carrier.install(in: overlayHostView)
         mountViewController(destinationViewController, hidden: true)
@@ -144,6 +146,8 @@ final class iOSAppRootViewController: UIViewController {
             unmountViewController(sourceViewController)
         }
         destinationViewController.view.isHidden = false
+        setTransitionInteractionFrozen(false, for: session.sourceViewController)
+        setTransitionInteractionFrozen(false, for: destinationViewController)
         currentViewController = destinationViewController
         session.carrier.completeTransition()
         activeTransitionSession = nil
@@ -173,6 +177,8 @@ final class iOSAppRootViewController: UIViewController {
 
         activeTransitionSession = session
         transitionPhase = .closing
+        setTransitionInteractionFrozen(true, for: sourceViewController)
+        setTransitionInteractionFrozen(true, for: destinationViewController)
         activateTransitionOverlay()
         carrier.install(in: overlayHostView)
         mountViewController(destinationViewController, hidden: true)
@@ -235,6 +241,8 @@ final class iOSAppRootViewController: UIViewController {
             unmountViewController(sourceViewController)
         }
         destinationViewController.view.isHidden = false
+        setTransitionInteractionFrozen(false, for: session.sourceViewController)
+        setTransitionInteractionFrozen(false, for: destinationViewController)
         currentViewController = destinationViewController
         session.carrier.completeTransition()
         activeTransitionSession = nil
@@ -278,6 +286,7 @@ final class iOSAppRootViewController: UIViewController {
         }
 
         mountViewController(viewController, hidden: false)
+        setTransitionInteractionFrozen(false, for: viewController)
         currentViewController = viewController
     }
 
@@ -331,6 +340,8 @@ final class iOSAppRootViewController: UIViewController {
         }
 
         session.carrier.cancelTransition()
+        setTransitionInteractionFrozen(false, for: session.sourceViewController)
+        setTransitionInteractionFrozen(false, for: session.destinationViewController)
         if let destinationViewController = session.destinationViewController,
            destinationViewController !== currentViewController {
             unmountViewController(destinationViewController)
@@ -350,6 +361,14 @@ final class iOSAppRootViewController: UIViewController {
     private func deactivateTransitionOverlay() {
         overlayHostView.isUserInteractionEnabled = false
         overlayHostView.isHidden = true
+    }
+
+    private func setTransitionInteractionFrozen(
+        _ isFrozen: Bool,
+        for viewController: UIViewController?
+    ) {
+        (viewController as? any iOSBoardListCanvasTransitionInteractionControlling)?
+            .setTransitionInteractionFrozen(isFrozen)
     }
 
     private func steadyPhase(

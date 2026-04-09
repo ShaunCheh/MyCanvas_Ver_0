@@ -10,6 +10,10 @@ enum iOSBoardListCanvasTransitionPhase: String {
     case steadyBoardList
 }
 
+protocol iOSBoardListCanvasTransitionInteractionControlling: AnyObject {
+    func setTransitionInteractionFrozen(_ isFrozen: Bool)
+}
+
 final class iOSBoardListCanvasTransitionSession {
     let id = UUID()
     var context: BoardListCanvasTransitionContext

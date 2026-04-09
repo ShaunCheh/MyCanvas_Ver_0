@@ -8,7 +8,7 @@
 import PhotosUI
 import UIKit
 
-final class iOSViewController: UIViewController, PHPickerViewControllerDelegate, UIDropInteractionDelegate, UITextViewDelegate {
+final class iOSViewController: UIViewController, PHPickerViewControllerDelegate, UIDropInteractionDelegate, UITextViewDelegate, iOSBoardListCanvasTransitionInteractionControlling {
     private struct PointerResizeState {
         let itemID: CanvasItemID
         let handleRole: CanvasSelectionHandleRole
@@ -85,6 +85,13 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     private let chromeOverlayView: iOSCanvasChromeOverlayView = {
         let view = iOSCanvasChromeOverlayView()
         view.translatesAutoresizingMaskIntoConstraints = false
+        return view
+    }()
+    private let transitionInteractionShieldView: UIView = {
+        let view = UIView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.backgroundColor = .clear
+        view.isHidden = true
         return view
     }()
     private let backButton: UIButton = {
@@ -205,6 +212,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     private var canvasContentView: UIView?
     private var pendingRefreshReason: String?
     private var pointerDragState: PointerDragState = .idle
+    private var isTransitionInteractionFrozen = false
     private var lastZoomDispatchTimestamp: TimeInterval?
     private var lastZoomRefreshTimestamp: TimeInterval?
     private var didMutateCameraDuringZoomGesture = false
@@ -307,6 +315,10 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     }
 
     private func performCommand(_ command: CanvasCommand) {
+        guard isTransitionInteractionFrozen == false else {
+            return
+        }
+
         if command.id != .commitTextEdit,
            isInlineTextModeActive,
            workspaceMode == .editing
@@ -334,6 +346,15 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
 
         if let refreshReason = executionResult.refreshReason {
             requestCanvasRefresh(reason: refreshReason)
+        }
+    }
+
+    private func applyTransitionInteractionFreeze() {
+        transitionInteractionShieldView.isHidden = isTransitionInteractionFrozen == false
+        textEditorOverlayView.isUserInteractionEnabled = isTransitionInteractionFrozen == false
+        if isTransitionInteractionFrozen {
+            dismissContextMenu()
+            handlePrimaryPointerCancel()
         }
     }
 
@@ -604,6 +625,20 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         setupContextMenuHostView()
         restoreInitialBoardState()
         setupCanvasViewport()
+        applyTransitionInteractionFreeze()
+    }
+
+    func setTransitionInteractionFrozen(_ isFrozen: Bool) {
+        guard isTransitionInteractionFrozen != isFrozen else {
+            return
+        }
+
+        isTransitionInteractionFrozen = isFrozen
+        guard isViewLoaded else {
+            return
+        }
+
+        applyTransitionInteractionFreeze()
     }
 
     override func viewDidAppear(_ animated: Bool) {
@@ -645,6 +680,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         view.backgroundColor = .systemBackground
         view.addSubview(canvasHostView)
         view.addSubview(chromeOverlayView)
+        view.addSubview(transitionInteractionShieldView)
         chromeOverlayView.addSubview(miniMapMountView)
         chromeOverlayView.addSubview(historyButtonsStackView)
         toolbarHostView.translatesAutoresizingMaskIntoConstraints = true
@@ -670,6 +706,10 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             chromeOverlayView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             chromeOverlayView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             chromeOverlayView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            transitionInteractionShieldView.topAnchor.constraint(equalTo: view.topAnchor),
+            transitionInteractionShieldView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            transitionInteractionShieldView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            transitionInteractionShieldView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             contextMenuHostView.topAnchor.constraint(equalTo: chromeOverlayView.topAnchor),
             contextMenuHostView.leadingAnchor.constraint(equalTo: chromeOverlayView.leadingAnchor),
             contextMenuHostView.trailingAnchor.constraint(equalTo: chromeOverlayView.trailingAnchor),
@@ -1004,30 +1044,57 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             self?.editorSession.animatedImagePlaybackSource(for: assetReference)
         }
         canvasViewportView.onPointerDown = { [weak self] location in
+            guard self?.isTransitionInteractionFrozen == false else {
+                return
+            }
             self?.handlePrimaryPointerDown(at: location)
         }
         canvasViewportView.onPointerMove = { [weak self] location, previousLocation in
+            guard self?.isTransitionInteractionFrozen == false else {
+                return
+            }
             self?.handlePrimaryPointerMove(to: location, from: previousLocation)
         }
         canvasViewportView.onPointerUp = { [weak self] location in
+            guard self?.isTransitionInteractionFrozen == false else {
+                return
+            }
             self?.handlePrimaryPointerUp(at: location)
         }
         canvasViewportView.onPointerCancel = { [weak self] in
+            guard self?.isTransitionInteractionFrozen == false else {
+                return
+            }
             self?.handlePrimaryPointerCancel()
         }
         canvasViewportView.onLongPress = { [weak self] location in
+            guard self?.isTransitionInteractionFrozen == false else {
+                return
+            }
             self?.handleLongPress(at: location)
         }
         canvasViewportView.onPan = { [weak self] translation in
+            guard self?.isTransitionInteractionFrozen == false else {
+                return
+            }
             self?.handleIndirectPan(translation)
         }
         canvasViewportView.onZoom = { [weak self] scaleDelta, anchor in
+            guard self?.isTransitionInteractionFrozen == false else {
+                return
+            }
             self?.handleZoom(scaleDelta, around: anchor)
         }
         canvasViewportView.onZoomGestureBegan = { [weak self] in
+            guard self?.isTransitionInteractionFrozen == false else {
+                return
+            }
             self?.handleZoomGestureBegan()
         }
         canvasViewportView.onZoomGestureEnded = { [weak self] in
+            guard self?.isTransitionInteractionFrozen == false else {
+                return
+            }
             self?.handleZoomGestureEnded()
         }
         canvasViewportView.onViewportSizeChange = { [weak self] viewportSize in
@@ -2271,7 +2338,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         _ interaction: UIDropInteraction,
         canHandle session: UIDropSession
     ) -> Bool {
-        isReadingModeActive == false &&
+        isTransitionInteractionFrozen == false &&
+            isReadingModeActive == false &&
             iOSCanvasImportAdapter.canResolveTransfer(from: session)
     }
 
@@ -2279,7 +2347,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         _ interaction: UIDropInteraction,
         sessionDidUpdate session: UIDropSession
     ) -> UIDropProposal {
-        if isReadingModeActive == false,
+        if isTransitionInteractionFrozen == false,
+           isReadingModeActive == false,
            iOSCanvasImportAdapter.canResolveTransfer(from: session)
         {
             return UIDropProposal(operation: .copy)
@@ -2297,7 +2366,10 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
                 return
             }
 
-            guard self.isReadingModeActive == false else {
+            guard
+                self.isTransitionInteractionFrozen == false,
+                self.isReadingModeActive == false
+            else {
                 return
             }
 
@@ -2350,7 +2422,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     }
 
     private func canTransferContent(from pasteboard: UIPasteboard) -> Bool {
-        isReadingModeActive == false &&
+        isTransitionInteractionFrozen == false &&
+            isReadingModeActive == false &&
             iOSCanvasImportAdapter.canResolveTransfer(from: pasteboard)
     }
 
@@ -2380,7 +2453,10 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     private func performTransferRequest(
         _ request: CanvasTransferRequest
     ) -> Bool {
-        guard isReadingModeActive == false else {
+        guard
+            isTransitionInteractionFrozen == false,
+            isReadingModeActive == false
+        else {
             return false
         }
 
