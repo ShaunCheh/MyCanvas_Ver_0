@@ -43,6 +43,151 @@ liveCarrier --> canvasViewport["canvasViewportView<br/>live content"]
 liveCarrier --> boardTarget["BoardListTarget<br/>focusRect"]
 ```
 
+## 缩放时序
+
+### 计划内关键结构与函数
+
+- `BoardListCanvasTransitionSourceGeometry.focusRect`
+  - opening 的缩放起点，来自 `iOSBoardCollectionViewCell.transitionGeometry(in:)`。
+- `BoardListCanvasTransitionTargetGeometry.focusRect`
+  - closing 的缩放终点，来自 `iOSBoardListViewController.prepareTransitionTargetGeometry(for:completion:)`。
+- `CanvasTransitionLiveContentProviding`
+  - 由 `iOSViewController` 实现，负责向 AppRoot / carrier 暴露 `canvasViewportView`、`canvasHostView` 与 chrome 显隐控制。
+- `iOSLiveCanvasCarrierRequirements`
+  - live carrier 依赖注入容器，承载 `canvasViewProvider`、`canvasContainerViewProvider`，并补齐 chrome 控制入口。
+- `iOSBoardListCanvasTransitionCarrierFactory.makeCarrier(...)`
+  - 根据 `preferredCarrierKind` 与 `iOSLiveCanvasCarrierRequirements` 返回 `iOSLiveCanvasCarrier` 或 `iOSSnapshotShellCarrier`。
+- `iOSLiveCanvasCarrier.prepareTransition(...)`
+  - 建立 live 容器、解析 `focusRect`、准备 reparent / fallback。
+- `iOSLiveCanvasCarrier.animateTransition(completion:)`
+  - 执行 opening 或 closing 的 live zoom 主动画。
+- `iOSLiveCanvasCarrier.completeTransition()` / `cancelTransition()`
+  - 无论成功还是取消，都负责把 `canvasViewportView` 还回 `canvasHostView`，并恢复 chrome。
+- `iOSAppRootViewController.beginOpeningTransition(with:)`
+  - opening 总编排入口，负责 mount destination canvas、解析 provider、创建 carrier。
+- `iOSAppRootViewController.beginClosingTransition(with:)`
+  - closing 总编排入口，负责 mount destination boardlist、准备 trace、请求 target geometry。
+- `iOSAppRootViewController.handleResolvedClosingTargetGeometry(...)`
+  - closing target-ready 收口点，把 `focusRect` / `cardRect` 写回 context，再驱动 live carrier 开始缩回。
+
+### Opening Zoom 时序
+
+- 对应实施阶段：`Phase 3`
+- 目标：让 `boardlist` 缩略图区域而不是整卡 `cardRect` 成为 live zoom 起点。
+
+```mermaid
+sequenceDiagram
+    participant boardCell as "BoardCell<br/>iOSBoardCollectionViewCell"
+    participant boardListVC as "BoardListVC<br/>iOSBoardListViewController"
+    participant appRoot as "AppRoot<br/>iOSAppRootViewController"
+    participant canvasVC as "CanvasVC<br/>iOSViewController"
+    participant liveProvider as "LiveProvider<br/>CanvasTransitionLiveContentProviding"
+    participant carrierFactory as "CarrierFactory<br/>iOSBoardListCanvasTransitionCarrierFactory"
+    participant liveCarrier as "LiveCarrier<br/>iOSLiveCanvasCarrier"
+
+    boardCell->>boardListVC: "transitionGeometry in view"
+    boardListVC->>boardListVC: "makeOpenRequest with focusRect"
+    boardListVC->>appRoot: "handleCanvasOpenRequest"
+    appRoot->>canvasVC: "mount hidden destination"
+    appRoot->>liveProvider: "make live carrier requirements"
+    liveProvider-->>appRoot: "canvasViewportView and canvasHostView"
+    appRoot->>carrierFactory: "makeCarrier liveCanvas"
+    carrierFactory-->>appRoot: "iOSLiveCanvasCarrier"
+    appRoot->>liveCarrier: "prepareTransition with focusRect"
+    liveCarrier->>liveProvider: "setTransitionChromeHidden true"
+    liveCarrier->>liveCarrier: "move canvasViewportView to overlay"
+    appRoot->>liveCarrier: "animateTransition"
+    liveCarrier->>liveCarrier: "zoom focusRect to fullscreen"
+    liveCarrier->>liveProvider: "restore canvasViewportView to canvasHostView"
+    liveCarrier->>liveProvider: "setTransitionChromeHidden false"
+    liveCarrier-->>appRoot: "completion"
+    appRoot->>appRoot: "completeOpeningTransition"
+```
+
+- `T0 sourceGeometryReady`
+  - `iOSBoardCollectionViewCell.transitionGeometry(in:)` 产出 `focusRect + cardRect`。
+  - `iOSBoardListViewController.makeOpenRequest(for:)` 把 `.liveCanvas` 与 `sourceGeometry` 放入 `BoardListCanvasOpenRequest`。
+- `T1 destinationMounted`
+  - `iOSAppRootViewController.beginOpeningTransition(with:)` 创建 destination `iOSViewController`，先 `mountViewController(..., hidden: true)`，保证 `canvasViewportView` 已进入视图树并完成首轮 layout。
+- `T2 liveRequirementsReady`
+  - AppRoot 从 destination `CanvasTransitionLiveContentProviding` 取出 `iOSLiveCanvasCarrierRequirements`。
+  - 若 provider、`focusRect` 或 destination layout 不可用，直接在这里 fallback 到 `snapshotShell`。
+- `T3 livePrepareFinished`
+  - `iOSLiveCanvasCarrier.prepareTransition(...)` 建立 overlay live 容器，隐藏 destination chrome，把 `canvasViewportView` 从 `canvasHostView` 挪到 overlay。
+- `T4 liveZoomBegin`
+  - `iOSLiveCanvasCarrier.animateTransition(completion:)` 从 `focusRect` 放大到全屏。
+- `T5 liveHandoffFinished`
+  - live carrier 把 `canvasViewportView` 还回 destination `canvasHostView`，并恢复 chrome。
+- `T6 openingTransitionComplete`
+  - `iOSAppRootViewController.completeOpeningTransition(sessionID:)` 卸载 boardlist、解冻交互、关闭 overlay。
+
+### Closing Zoom 时序
+
+- 对应实施阶段：`Phase 4`
+- 目标：让当前 canvas 的 live 内容缩回 boardlist 目标缩略图区域，而不是缩回整卡 `cardRect`。
+
+```mermaid
+sequenceDiagram
+    participant canvasVC as "CanvasVC<br/>iOSViewController"
+    participant appRoot as "AppRoot<br/>iOSAppRootViewController"
+    participant boardListVC as "BoardListVC<br/>iOSBoardListViewController"
+    participant liveProvider as "LiveProvider<br/>CanvasTransitionLiveContentProviding"
+    participant liveCarrier as "LiveCarrier<br/>iOSLiveCanvasCarrier"
+
+    canvasVC->>appRoot: "handleCanvasReturnRequest"
+    appRoot->>boardListVC: "mount hidden boardlist"
+    appRoot->>liveProvider: "make live carrier requirements"
+    appRoot->>liveCarrier: "prepareTransition from fullscreen"
+    appRoot->>boardListVC: "prepareTransitionTargetGeometry"
+    boardListVC-->>appRoot: "targetGeometry with focusRect"
+    appRoot->>liveCarrier: "updateTransitionContext"
+    appRoot->>liveCarrier: "animateTransition"
+    liveCarrier->>liveProvider: "setTransitionChromeHidden true"
+    liveCarrier->>liveCarrier: "zoom fullscreen to focusRect"
+    liveCarrier->>liveProvider: "restore canvasViewportView to canvasHostView"
+    liveCarrier->>liveProvider: "setTransitionChromeHidden false"
+    liveCarrier-->>appRoot: "completion"
+    appRoot->>appRoot: "completeClosingTransition"
+```
+
+- `T0 returnRequestBuilt`
+  - `iOSViewController.makeReturnToBoardListRequest()` 构造 `BoardListCanvasReturnRequest`，`preferredCarrierKind` 走 `.liveCanvas`。
+- `T1 boardListMounted`
+  - `iOSAppRootViewController.beginClosingTransition(with:)` 先 mount hidden 的 boardlist，并把 closing trace 继续挂到现有链路。
+- `T2 livePrepareFinished`
+  - AppRoot 从 source `CanvasTransitionLiveContentProviding` 取出 `iOSLiveCanvasCarrierRequirements`。
+  - `iOSLiveCanvasCarrier.prepareTransition(...)` 把 source `canvasViewportView` 放入 overlay live 容器，但此时还不能开始缩回，因为 target `focusRect` 尚未就绪。
+- `T3 targetGeometryRequested`
+  - `iOSBoardListViewController.prepareTransitionTargetGeometry(for:completion:)` 解析目标板的 `focusRect + cardRect`。
+- `T4 targetGeometryResolved`
+  - `iOSAppRootViewController.handleResolvedClosingTargetGeometry(...)` 把新的 target geometry 写回 `BoardListCanvasTransitionContext`，再调用 `liveCarrier.updateTransitionContext(...)`。
+- `T5 liveZoomBackBegin`
+  - `iOSLiveCanvasCarrier.animateTransition(completion:)` 从全屏缩回目标 `focusRect`。
+- `T6 liveRestoreFinished`
+  - live carrier 完成缩回后恢复 source chrome 状态，并把 live content 做最终归位/清理。
+- `T7 closingTransitionComplete`
+  - `iOSAppRootViewController.completeClosingTransition(sessionID:)` 卸载 canvas、显示 boardlist、解冻交互、关闭 overlay。
+
+### 中断与回退时序
+
+- opening / closing 的 live 路径都必须允许在 `T2` 之前回退到 `snapshotShell`：
+  - `focusRect` 缺失
+  - provider 缺失
+  - `canvasViewportView` 尚未挂载
+  - reparent 前校验失败
+- 一旦 `canvasViewportView` 已经进入 overlay，`iOSLiveCanvasCarrier.cancelTransition()` 必须执行与 `completeTransition()` 对称的 restore：
+  - 把 `canvasViewportView` 还回 `canvasHostView`
+  - 恢复 chrome
+  - 清空 overlay live 容器
+  - 记录 fallback 或 cancel reason
+- `Phase 6` 的 trace 需要覆盖这些时序节点：
+  - `liveRequirementsReady`
+  - `livePrepareFinished`
+  - `liveZoomBegin`
+  - `liveHandoffFinished`
+  - `liveRestoreFinished`
+  - `liveFallbackTriggered`
+
 ## Phase 1：统一缩略图锚点几何
 
 - 在 [MyCanvas_Ver_0/Platform/Shared/Transition/BoardListCanvasTransitionGeometry.swift](MyCanvas_Ver_0/Platform/Shared/Transition/BoardListCanvasTransitionGeometry.swift) 把当前“source 有 `previewRect`、target 只有 `cardRect`”升级为对称语义，推荐统一成 `focusRect` + `cardRect`。
