@@ -65,6 +65,7 @@ final class macOSAppRootViewController: NSViewController {
         let viewController = makeViewController(for: destination)
         setCurrentViewControllerImmediately(viewController)
         transitionPhase = steadyPhase(for: destination)
+        deactivateTransitionOverlay()
     }
 
     private func makeViewController(for destination: AppLaunchDestination) -> NSViewController {
@@ -138,18 +139,17 @@ final class macOSAppRootViewController: NSViewController {
 
         activeTransitionSession = session
         transitionPhase = .opening
+        activateTransitionOverlay()
         carrier.install(in: overlayHostView)
         mountViewController(destinationViewController, hidden: true)
-        carrier.beginTransition(
+        view.layoutSubtreeIfNeeded()
+        carrier.prepareTransition(
             with: session.context,
             sourceViewController: sourceViewController,
             destinationViewController: destinationViewController
         )
-
-        DispatchQueue.main.async { [weak self] in
-            self?.completeOpeningTransition(
-                sessionID: session.id
-            )
+        carrier.animateTransition { [weak self] in
+            self?.completeOpeningTransition(sessionID: session.id)
         }
     }
 
@@ -172,6 +172,7 @@ final class macOSAppRootViewController: NSViewController {
         session.carrier.completeTransition()
         activeTransitionSession = nil
         transitionPhase = .steadyCanvas
+        deactivateTransitionOverlay()
     }
 
     private func beginClosingTransition(
@@ -196,10 +197,12 @@ final class macOSAppRootViewController: NSViewController {
 
         activeTransitionSession = session
         transitionPhase = .closing
+        activateTransitionOverlay()
         carrier.install(in: overlayHostView)
         mountViewController(destinationViewController, hidden: true)
         destinationViewController.prepareForDisplay()
-        carrier.beginTransition(
+        view.layoutSubtreeIfNeeded()
+        carrier.prepareTransition(
             with: session.context,
             sourceViewController: sourceViewController,
             destinationViewController: destinationViewController
@@ -236,7 +239,9 @@ final class macOSAppRootViewController: NSViewController {
         )
         session.context.targetGeometry = geometry
         session.carrier.updateTransitionContext(session.context)
-        completeClosingTransition(sessionID: sessionID)
+        session.carrier.animateTransition { [weak self] in
+            self?.completeClosingTransition(sessionID: sessionID)
+        }
     }
 
     private func completeClosingTransition(sessionID: UUID) {
@@ -258,6 +263,7 @@ final class macOSAppRootViewController: NSViewController {
         session.carrier.completeTransition()
         activeTransitionSession = nil
         transitionPhase = .steadyBoardList
+        deactivateTransitionOverlay()
     }
 
     private func makeBoardListViewController() -> macOSBoardListViewController {
@@ -284,6 +290,7 @@ final class macOSAppRootViewController: NSViewController {
             overlayHostView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             overlayHostView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
+        deactivateTransitionOverlay()
     }
 
     private func setCurrentViewControllerImmediately(
@@ -360,6 +367,15 @@ final class macOSAppRootViewController: NSViewController {
         currentViewController?.view.isHidden = false
         activeTransitionSession = nil
         transitionPhase = steadyPhase(for: currentViewController)
+        deactivateTransitionOverlay()
+    }
+
+    private func activateTransitionOverlay() {
+        overlayHostView.isHidden = false
+    }
+
+    private func deactivateTransitionOverlay() {
+        overlayHostView.isHidden = true
     }
 
     private func steadyPhase(
