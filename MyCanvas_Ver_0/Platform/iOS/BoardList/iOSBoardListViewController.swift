@@ -1376,11 +1376,15 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
         let sourceGeometry = transitionSourceGeometry(for: entry.id)
         switch entry {
         case .newBoardPlaceholder:
-            return .newBoardPlaceholder(geometry: sourceGeometry)
+            return .newBoardPlaceholder(
+                geometry: sourceGeometry,
+                preferredCarrierKind: .liveCanvas
+            )
         case let .board(item):
             return .existingBoard(
                 boardID: item.boardID,
-                geometry: sourceGeometry
+                geometry: sourceGeometry,
+                preferredCarrierKind: .liveCanvas
             )
         }
     }
