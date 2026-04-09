@@ -230,35 +230,72 @@ final class iOSBoardCollectionViewCell: UICollectionViewCell, UITextFieldDelegat
         in coordinateSpaceView: UIView
     ) -> BoardListCanvasTransitionSourceGeometry {
         contentView.layoutIfNeeded()
-        let cardRect = coordinateSpaceView.convert(
-            contentView.bounds,
-            from: contentView
+        let cardRect = BoardListCanvasTransitionGeometry.sanitizedRect(
+            coordinateSpaceView.convert(
+                contentView.bounds,
+                from: contentView
+            )
         )
 
         return BoardListCanvasTransitionSourceGeometry(
             cardRect: cardRect,
-            focusRect: transitionFocusRect(in: coordinateSpaceView)
+            focusRect: transitionFocusRect(
+                in: coordinateSpaceView,
+                cardRect: cardRect
+            )
         )
     }
 
     private func transitionFocusRect(
+        in coordinateSpaceView: UIView,
+        cardRect: CGRect? = nil
+    ) -> CGRect? {
+        if let anchorRect = transitionFocusAnchorRect(in: coordinateSpaceView) {
+            return anchorRect
+        }
+
+        return BoardListCanvasTransitionFocusRectResolver.focusRect(
+            in: cardRect,
+            displayMode: transitionDisplayMode,
+            isPlaceholder: isPlaceholderPresentation
+        )
+    }
+
+    private func transitionFocusAnchorRect(
         in coordinateSpaceView: UIView
     ) -> CGRect? {
-        if previewView.isHidden == false {
-            return coordinateSpaceView.convert(
-                previewView.bounds,
-                from: previewView
-            )
+        let anchorView: UIView
+        switch currentPresentationStyle {
+        case .boardGrid, .boardList:
+            anchorView = previewView
+        case .placeholderGrid, .placeholderList:
+            anchorView = placeholderIconView
         }
 
-        if placeholderIconView.isHidden == false {
-            return coordinateSpaceView.convert(
-                placeholderIconView.bounds,
-                from: placeholderIconView
+        return BoardListCanvasTransitionGeometry.sanitizedRect(
+            coordinateSpaceView.convert(
+                anchorView.bounds,
+                from: anchorView
             )
-        }
+        )
+    }
 
-        return nil
+    private var transitionDisplayMode: BoardListDisplayMode {
+        switch currentPresentationStyle {
+        case .boardGrid, .placeholderGrid:
+            return .grid
+        case .boardList, .placeholderList:
+            return .list
+        }
+    }
+
+    private var isPlaceholderPresentation: Bool {
+        switch currentPresentationStyle {
+        case .boardGrid, .boardList:
+            return false
+        case .placeholderGrid, .placeholderList:
+            return true
+        }
     }
 
     private func setupView() {

@@ -1155,16 +1155,18 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
     ) -> BoardListCanvasTransitionSourceGeometry {
         collectionView.layoutIfNeeded()
         if let cell = collectionView.cellForItem(at: indexPath) as? iOSBoardCollectionViewCell {
-            return cell.transitionGeometry(in: view)
+            let cellGeometry = cell.transitionGeometry(in: view)
+            return normalizedTransitionSourceGeometry(
+                at: indexPath,
+                cardRect: cellGeometry.cardRect,
+                focusRect: cellGeometry.focusRect
+            )
         }
 
-        let cardRect = transitionCardRect(at: indexPath)
-        return BoardListCanvasTransitionSourceGeometry(
-            cardRect: cardRect,
-            focusRect: transitionFocusRect(
-                at: indexPath,
-                cardRect: cardRect
-            )
+        return normalizedTransitionSourceGeometry(
+            at: indexPath,
+            cardRect: transitionCardRect(at: indexPath),
+            focusRect: nil
         )
     }
 
@@ -1181,20 +1183,20 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
             at: resolvedIndexPath
         ) as? iOSBoardCollectionViewCell {
             let cellGeometry = cell.transitionGeometry(in: view)
-            geometry = BoardListCanvasTransitionTargetGeometry(
+            let normalizedGeometry = normalizedTransitionTargetGeometry(
+                at: resolvedIndexPath,
                 cardRect: cellGeometry.cardRect,
                 focusRect: cellGeometry.focusRect
             )
-            usedFallbackGeometry = false
+            geometry = normalizedGeometry.geometry
+            usedFallbackGeometry = normalizedGeometry.usedFallbackFocusRect
         } else {
-            let cardRect = transitionCardRect(at: resolvedIndexPath)
-            geometry = BoardListCanvasTransitionTargetGeometry(
-                cardRect: cardRect,
-                focusRect: transitionFocusRect(
-                    at: resolvedIndexPath,
-                    cardRect: cardRect
-                )
+            let normalizedGeometry = normalizedTransitionTargetGeometry(
+                at: resolvedIndexPath,
+                cardRect: transitionCardRect(at: resolvedIndexPath),
+                focusRect: nil
             )
+            geometry = normalizedGeometry.geometry
             usedFallbackGeometry = true
         }
 
@@ -1225,6 +1227,64 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
             layoutAttributes.frame,
             from: collectionView
         )
+    }
+
+    private func normalizedTransitionSourceGeometry(
+        at indexPath: IndexPath,
+        cardRect: CGRect?,
+        focusRect: CGRect?
+    ) -> BoardListCanvasTransitionSourceGeometry {
+        let sanitizedCardRect = BoardListCanvasTransitionGeometry.sanitizedRect(
+            cardRect
+        )
+        return BoardListCanvasTransitionSourceGeometry(
+            cardRect: sanitizedCardRect,
+            focusRect: normalizedTransitionFocusRect(
+                at: indexPath,
+                focusRect: focusRect,
+                cardRect: sanitizedCardRect
+            )
+        )
+    }
+
+    private func normalizedTransitionTargetGeometry(
+        at indexPath: IndexPath,
+        cardRect: CGRect?,
+        focusRect: CGRect?
+    ) -> (
+        geometry: BoardListCanvasTransitionTargetGeometry,
+        usedFallbackFocusRect: Bool
+    ) {
+        let sanitizedCardRect = BoardListCanvasTransitionGeometry.sanitizedRect(
+            cardRect
+        )
+        let explicitFocusRect = BoardListCanvasTransitionGeometry.sanitizedRect(
+            focusRect
+        )
+        let resolvedFocusRect = normalizedTransitionFocusRect(
+            at: indexPath,
+            focusRect: explicitFocusRect,
+            cardRect: sanitizedCardRect
+        )
+        return (
+            BoardListCanvasTransitionTargetGeometry(
+                cardRect: sanitizedCardRect,
+                focusRect: resolvedFocusRect
+            ),
+            explicitFocusRect == nil
+        )
+    }
+
+    private func normalizedTransitionFocusRect(
+        at indexPath: IndexPath,
+        focusRect: CGRect?,
+        cardRect: CGRect?
+    ) -> CGRect? {
+        BoardListCanvasTransitionGeometry.sanitizedRect(focusRect) ??
+            transitionFocusRect(
+                at: indexPath,
+                cardRect: cardRect
+            )
     }
 
     private func transitionFocusRect(

@@ -49,6 +49,16 @@ final class iOSLiveCanvasCarrier: iOSBoardListCanvasTransitionCarrying {
         case snapshotFallback
     }
 
+    private enum PreferredRectSource: String {
+        case focusRect
+        case cardRect
+    }
+
+    private struct PreferredRectResolution {
+        let rect: CGRect
+        let source: PreferredRectSource
+    }
+
     private static let previewCornerRadius: CGFloat = 10
 
     private let requirements: iOSLiveCanvasCarrierRequirements
@@ -63,6 +73,7 @@ final class iOSLiveCanvasCarrier: iOSBoardListCanvasTransitionCarrying {
     private var liveCanvasView: UIView?
     private var liveContainerView: UIView?
     private var liveTargetFrame: CGRect?
+    private var liveTargetRectSource: PreferredRectSource?
     private var liveStrategy: Strategy = .snapshotFallback
     private var originalChromeHiddenState: Bool?
     private var isCanvasMountedInOverlay = false
@@ -161,7 +172,9 @@ final class iOSLiveCanvasCarrier: iOSBoardListCanvasTransitionCarrying {
         currentContext = context
         switch liveStrategy {
         case .liveClosing:
-            liveTargetFrame = resolveLiveClosingTargetFrame(using: context)
+            let targetFrameResolution = resolveLiveClosingTargetFrame(using: context)
+            liveTargetFrame = targetFrameResolution?.rect
+            liveTargetRectSource = targetFrameResolution?.source
         case .snapshotFallback:
             snapshotFallbackCarrier.updateTransitionContext(context)
         case .liveOpening:
@@ -235,17 +248,21 @@ final class iOSLiveCanvasCarrier: iOSBoardListCanvasTransitionCarrying {
             )
             return false
         }
+        guard
+            let sourceRectResolution = preferredRectResolution(
+                from: context.sourceGeometry
+            )
+        else {
+            logLiveCarrierFallback(
+                phase: "openingLiveFallback",
+                reason: "sourcePreferredRectMissing"
+            )
+            return false
+        }
         guard let destinationViewController else {
             logLiveCarrierFallback(
                 phase: "openingLiveFallback",
                 reason: "destinationViewControllerMissing"
-            )
-            return false
-        }
-        guard let sourceFocusRect = context.sourceGeometry.focusRect else {
-            logLiveCarrierFallback(
-                phase: "openingLiveFallback",
-                reason: "sourceFocusRectMissing"
             )
             return false
         }
@@ -278,7 +295,7 @@ final class iOSLiveCanvasCarrier: iOSBoardListCanvasTransitionCarrying {
         liveCanvasHostView.layoutIfNeeded()
 
         let sourceFrame = overlayHostView.convert(
-            sourceFocusRect,
+            sourceRectResolution.rect,
             from: sourceViewController.view
         ).standardized
         let targetFrame = overlayHostView.convert(
@@ -334,6 +351,7 @@ final class iOSLiveCanvasCarrier: iOSBoardListCanvasTransitionCarrying {
         logLiveCarrierEvent(
             phase: "openingPrepareFinished",
             extra:
+                "sourceRectSource=\(sourceRectResolution.source.rawValue) " +
                 "sourceFrame=\(describe(rect: sourceFrame)) " +
                 "targetFrame=\(describe(rect: targetFrame))"
         )
@@ -414,12 +432,16 @@ final class iOSLiveCanvasCarrier: iOSBoardListCanvasTransitionCarrying {
         self.liveCanvasView = liveCanvasView
         self.liveCanvasHostView = liveCanvasHostView
         self.liveContainerView = liveContainerView
-        self.liveTargetFrame = resolveLiveClosingTargetFrame(using: context)
+        let targetFrameResolution = resolveLiveClosingTargetFrame(using: context)
+        self.liveTargetFrame = targetFrameResolution?.rect
+        self.liveTargetRectSource = targetFrameResolution?.source
         isCanvasMountedInOverlay = true
 
         logLiveCarrierEvent(
             phase: "closingPrepareFinished",
-            extra: "sourceFrame=\(describe(rect: sourceFrame))"
+            extra:
+                "sourceFrame=\(describe(rect: sourceFrame)) " +
+                "targetRectSource=\(targetFrameResolution?.source.rawValue ?? "pending")"
         )
         return true
     }
@@ -484,16 +506,22 @@ final class iOSLiveCanvasCarrier: iOSBoardListCanvasTransitionCarrying {
             )
             return
         }
-        let targetFrame = liveTargetFrame ?? {
+        let targetFrameResolution = liveTargetFrame.map { frame in
+            PreferredRectResolution(
+                rect: frame,
+                source: liveTargetRectSource ?? .focusRect
+            )
+        } ?? {
             guard let currentContext else {
                 return nil
             }
             return resolveLiveClosingTargetFrame(using: currentContext)
         }()
-        guard let targetFrame else {
-            let fallbackReason =
-                currentContext?.targetGeometry.focusRect == nil
-                ? "targetFocusRectMissing"
+        guard let targetFrameResolution else {
+            let fallbackReason = currentContext.flatMap {
+                preferredRectResolution(from: $0.targetGeometry)
+            } == nil
+                ? "targetPreferredRectMissing"
                 : "targetFrameInvalid"
             fallbackToSnapshotClosing(
                 reason: fallbackReason,
@@ -504,7 +532,9 @@ final class iOSLiveCanvasCarrier: iOSBoardListCanvasTransitionCarrying {
 
         logLiveCarrierEvent(
             phase: "closingAnimateBegin",
-            extra: "targetFrame=\(describe(rect: targetFrame))"
+            extra:
+                "targetRectSource=\(targetFrameResolution.source.rawValue) " +
+                "targetFrame=\(describe(rect: targetFrameResolution.rect))"
         )
         UIView.animate(
             withDuration: BoardListCanvasTransitionConfiguration.closingAnimation.duration,
@@ -516,9 +546,9 @@ final class iOSLiveCanvasCarrier: iOSBoardListCanvasTransitionCarrying {
                 )
             ]
         ) {
-            liveContainerView.frame = targetFrame
+            liveContainerView.frame = targetFrameResolution.rect
             liveContainerView.layer.cornerRadius = self.previewCornerRadius(
-                for: targetFrame
+                for: targetFrameResolution.rect
             )
         } completion: { [weak self] _ in
             self?.performLiveClosingHandoff(completion: completion)
@@ -546,6 +576,7 @@ final class iOSLiveCanvasCarrier: iOSBoardListCanvasTransitionCarrying {
         liveContainerView?.removeFromSuperview()
         liveContainerView = nil
         liveTargetFrame = nil
+        liveTargetRectSource = nil
         isCanvasMountedInOverlay = false
         logLiveCarrierEvent(phase: "closingHandoffFinished")
         completion()
@@ -679,6 +710,7 @@ final class iOSLiveCanvasCarrier: iOSBoardListCanvasTransitionCarrying {
         liveContainerView?.removeFromSuperview()
         liveContainerView = nil
         liveTargetFrame = nil
+        liveTargetRectSource = nil
 
         if restoreChromeVisibility {
             restoreChromeVisibilityIfNeeded(animated: false) {}
@@ -700,24 +732,65 @@ final class iOSLiveCanvasCarrier: iOSBoardListCanvasTransitionCarrying {
 
     private func resolveLiveClosingTargetFrame(
         using context: BoardListCanvasTransitionContext
-    ) -> CGRect? {
+    ) -> PreferredRectResolution? {
         guard
             let overlayHostView,
             let destinationView = destinationViewController?.view,
-            let targetFocusRect = context.targetGeometry.focusRect
+            let targetRectResolution = preferredRectResolution(
+                from: context.targetGeometry
+            )
         else {
             return nil
         }
 
         let convertedTargetRect = overlayHostView.convert(
-            targetFocusRect,
+            targetRectResolution.rect,
             from: destinationView
         ).standardized
         guard convertedTargetRect.isEmpty == false else {
             return nil
         }
 
-        return convertedTargetRect
+        return PreferredRectResolution(
+            rect: convertedTargetRect,
+            source: targetRectResolution.source
+        )
+    }
+
+    private func preferredRectResolution(
+        from geometry: BoardListCanvasTransitionSourceGeometry
+    ) -> PreferredRectResolution? {
+        if let focusRect = geometry.focusRect {
+            return PreferredRectResolution(
+                rect: focusRect,
+                source: .focusRect
+            )
+        }
+        if let cardRect = geometry.cardRect {
+            return PreferredRectResolution(
+                rect: cardRect,
+                source: .cardRect
+            )
+        }
+        return nil
+    }
+
+    private func preferredRectResolution(
+        from geometry: BoardListCanvasTransitionTargetGeometry
+    ) -> PreferredRectResolution? {
+        if let focusRect = geometry.focusRect {
+            return PreferredRectResolution(
+                rect: focusRect,
+                source: .focusRect
+            )
+        }
+        if let cardRect = geometry.cardRect {
+            return PreferredRectResolution(
+                rect: cardRect,
+                source: .cardRect
+            )
+        }
+        return nil
     }
 
     private func previewCornerRadius(for rect: CGRect) -> CGFloat {
