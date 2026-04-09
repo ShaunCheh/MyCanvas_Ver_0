@@ -20,17 +20,22 @@ final class iOSBoardListCanvasTransitionSession {
     let carrier: any iOSBoardListCanvasTransitionCarrying
     weak var sourceViewController: UIViewController?
     weak var destinationViewController: UIViewController?
+    let debugTrace: BoardListCanvasTransitionDebugTrace?
+    var closingTargetGeometryRequestedAt: TimeInterval?
+    var closingAnimationStartedAt: TimeInterval?
 
     init(
         context: BoardListCanvasTransitionContext,
         carrier: any iOSBoardListCanvasTransitionCarrying,
         sourceViewController: UIViewController?,
-        destinationViewController: UIViewController?
+        destinationViewController: UIViewController?,
+        debugTrace: BoardListCanvasTransitionDebugTrace? = nil
     ) {
         self.context = context
         self.carrier = carrier
         self.sourceViewController = sourceViewController
         self.destinationViewController = destinationViewController
+        self.debugTrace = debugTrace
     }
 }
 #endif

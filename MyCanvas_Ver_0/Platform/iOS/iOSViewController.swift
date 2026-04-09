@@ -1694,34 +1694,86 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         performCommand(.redo)
     }
 
-    private func makeReturnToBoardListRequest() -> BoardListCanvasReturnRequest {
+    private func makeReturnToBoardListRequest(
+        debugTrace: BoardListCanvasTransitionDebugTrace? = nil
+    ) -> BoardListCanvasReturnRequest {
         .backButton(
             boardID: editorSession.activeBoardID,
-            launchContext: launchContext
+            launchContext: launchContext,
+            debugTrace: debugTrace
         )
     }
 
     @objc
     private func handleBackButtonTap() {
-        commitActiveTextEditIfNeeded()
+        let trace = BoardListCanvasTransitionDebugTrace()
+        logClosingTransitionTrace(trace, phase: "backButtonTap")
+
+        let commitStart = BoardListCanvasTransitionDebugLogger.now()
+        let committedTextEdit = commitActiveTextEditIfNeeded()
+        logClosingTransitionTrace(
+            trace,
+            phase: "commitActiveTextEditFinished",
+            localDuration: BoardListCanvasTransitionDebugLogger.now() - commitStart,
+            extra: "committed=\(committedTextEdit)"
+        )
+
+        let dismissStart = BoardListCanvasTransitionDebugLogger.now()
         dismissContextMenu()
-        requestReturnToBoardList()
+        logClosingTransitionTrace(
+            trace,
+            phase: "dismissContextMenuFinished",
+            localDuration: BoardListCanvasTransitionDebugLogger.now() - dismissStart
+        )
+
+        requestReturnToBoardList(trace: trace)
     }
 
-    private func requestReturnToBoardList() {
-        let request = makeReturnToBoardListRequest()
+    private func requestReturnToBoardList(
+        trace: BoardListCanvasTransitionDebugTrace
+    ) {
+        let request = makeReturnToBoardListRequest(debugTrace: trace)
+        logClosingTransitionTrace(
+            trace,
+            phase: "returnRequestBuilt",
+            extra:
+                "boardID=\(request.boardID?.uuidString ?? "nil") " +
+                "requiresPersistence=\(request.requiresBoardPersistence)"
+        )
         guard request.requiresBoardPersistence else {
+            logClosingTransitionTrace(trace, phase: "emitReturnRequest")
             onReturnToBoardList?(request)
             return
         }
 
         beginSaveButtonSaveState()
+        let saveStart = BoardListCanvasTransitionDebugLogger.now()
+        logClosingTransitionTrace(trace, phase: "returnSaveBegin")
         saveBoardNow(
             reason: "return to board list",
             createBoardIfNeeded: true
         ) { [weak self] result in
             guard let self else {
                 return
+            }
+
+            switch result {
+            case .success:
+                self.logClosingTransitionTrace(
+                    trace,
+                    phase: "returnSaveFinished",
+                    localDuration: BoardListCanvasTransitionDebugLogger.now() - saveStart,
+                    extra: "result=success"
+                )
+            case let .failure(error):
+                self.logClosingTransitionTrace(
+                    trace,
+                    phase: "returnSaveFinished",
+                    localDuration: BoardListCanvasTransitionDebugLogger.now() - saveStart,
+                    extra:
+                        "result=failure " +
+                        "error=\"\(error.localizedDescription)\""
+                )
             }
 
             self.handleImmediateBoardSaveResult(
@@ -1732,9 +1784,33 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
                     return
                 }
 
-                self.onReturnToBoardList?(self.makeReturnToBoardListRequest())
+                let persistedRequest = self.makeReturnToBoardListRequest(
+                    debugTrace: trace
+                )
+                self.logClosingTransitionTrace(
+                    trace,
+                    phase: "emitReturnRequestAfterSave",
+                    extra: "boardID=\(persistedRequest.boardID?.uuidString ?? "nil")"
+                )
+                self.onReturnToBoardList?(persistedRequest)
             }
         }
+    }
+
+    private func logClosingTransitionTrace(
+        _ trace: BoardListCanvasTransitionDebugTrace,
+        phase: String,
+        localDuration: TimeInterval? = nil,
+        extra: String = ""
+    ) {
+        BoardListCanvasTransitionDebugLogger.log(
+            platform: "iOS",
+            component: "Canvas",
+            trace: trace,
+            phase: phase,
+            localDuration: localDuration,
+            extra: extra
+        )
     }
 
     @objc

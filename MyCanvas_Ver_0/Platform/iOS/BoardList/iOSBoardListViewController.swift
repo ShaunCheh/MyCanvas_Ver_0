@@ -21,6 +21,12 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
         let completion: TransitionTargetGeometryHandler
     }
 
+    private struct ClosingTransitionTimingState {
+        let trace: BoardListCanvasTransitionDebugTrace
+        var targetGeometryRequestedAt: TimeInterval?
+        var revealDispatchEnqueuedAt: TimeInterval?
+    }
+
     private let folderPicker = FolderPicker()
     var onOpenCanvas: ((BoardListCanvasOpenRequest) -> Void)?
 
@@ -63,6 +69,7 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
         }
     }
     private var pendingTransitionTargetResolution: PendingTransitionTargetResolution?
+    private var closingTransitionTimingState: ClosingTransitionTimingState?
     private var isTransitionInteractionFrozen = false
     private var displayMode: BoardListDisplayMode = .grid {
         didSet {
@@ -224,7 +231,30 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
             return
         }
 
+        if closingTransitionTimingState != nil {
+            let prepareStart = BoardListCanvasTransitionDebugLogger.now()
+            logClosingTransitionTiming(phase: "prepareForDisplayBegin")
+            refreshBookmarkStatus()
+            logClosingTransitionTiming(
+                phase: "prepareForDisplayEnd",
+                localDuration: BoardListCanvasTransitionDebugLogger.now() - prepareStart,
+                extra: "boardCount=\(availableBoards.count)"
+            )
+            return
+        }
+
         refreshBookmarkStatus()
+    }
+
+    func setClosingTransitionTimingTrace(
+        _ trace: BoardListCanvasTransitionDebugTrace?
+    ) {
+        guard let trace else {
+            closingTransitionTimingState = nil
+            return
+        }
+
+        closingTransitionTimingState = ClosingTransitionTimingState(trace: trace)
     }
 
     func setTransitionInteractionFrozen(_ isFrozen: Bool) {
@@ -256,9 +286,26 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
     ) {
         pendingTransitionTargetResolution = nil
 
+        if boardID == nil {
+            logClosingTransitionTiming(
+                phase: "prepareTransitionTargetGeometryMissingBoardID"
+            )
+        } else {
+            let requestStart = BoardListCanvasTransitionDebugLogger.now()
+            updateClosingTransitionTimingState { state in
+                state.targetGeometryRequestedAt = requestStart
+                state.revealDispatchEnqueuedAt = nil
+            }
+            logClosingTransitionTiming(
+                phase: "prepareTransitionTargetGeometryBegin",
+                extra: "boardID=\(boardID?.uuidString ?? "nil")"
+            )
+        }
+
         guard let boardID else {
             pendingRevealBoardID = nil
             completion(.init())
+            closingTransitionTimingState = nil
             return
         }
 
@@ -269,6 +316,10 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
         )
 
         guard isViewLoaded, view.window != nil else {
+            logClosingTransitionTiming(
+                phase: "prepareTransitionTargetGeometryWaitingForWindow",
+                extra: "boardID=\(boardID.uuidString)"
+            )
             return
         }
 
@@ -384,12 +435,50 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
         }
     }
 
+    private func updateClosingTransitionTimingState(
+        _ update: (inout ClosingTransitionTimingState) -> Void
+    ) {
+        guard var state = closingTransitionTimingState else {
+            return
+        }
+
+        update(&state)
+        closingTransitionTimingState = state
+    }
+
+    private func logClosingTransitionTiming(
+        phase: String,
+        localDuration: TimeInterval? = nil,
+        extra: String = ""
+    ) {
+        guard let trace = closingTransitionTimingState?.trace else {
+            return
+        }
+
+        BoardListCanvasTransitionDebugLogger.log(
+            platform: "iOS",
+            component: "BoardList",
+            trace: trace,
+            phase: phase,
+            localDuration: localDuration,
+            extra: extra
+        )
+    }
+
     private func refreshBookmarkStatus() {
         logRenameTrace("refreshBookmarkStatusBegin")
+        let refreshStart = BoardListCanvasTransitionDebugLogger.now()
+        logClosingTransitionTiming(phase: "refreshBookmarkStatusBegin")
         dismissActionPanel()
         let bookmarkStatus = FolderBookmarkStore.bookmarkStatus()
         do {
+            let loadCatalogStart = BoardListCanvasTransitionDebugLogger.now()
             let boards = try catalogLoader.loadCatalog()
+            logClosingTransitionTiming(
+                phase: "loadCatalogSuccess",
+                localDuration: BoardListCanvasTransitionDebugLogger.now() - loadCatalogStart,
+                extra: "boardCount=\(boards.count)"
+            )
             availableBoards = boards
             hasSelectedFolder = true
             storageErrorMessage = nil
@@ -400,7 +489,13 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
                     boardCount: boards.count
                 )
             )
+            let reloadStart = BoardListCanvasTransitionDebugLogger.now()
             reloadBoardList()
+            logClosingTransitionTiming(
+                phase: "reloadBoardListAfterCatalogSuccess",
+                localDuration: BoardListCanvasTransitionDebugLogger.now() - reloadStart,
+                extra: "entryCount=\(entries.count)"
+            )
         } catch FolderBookmarkStoreError.missingBookmarkData {
             availableBoards = []
             selectedEntryID = nil
@@ -411,8 +506,17 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
                     bookmarkStatus: bookmarkStatus
                 )
             )
+            let reloadStart = BoardListCanvasTransitionDebugLogger.now()
             reloadBoardList()
+            logClosingTransitionTiming(
+                phase: "reloadBoardListAfterMissingBookmark",
+                localDuration: BoardListCanvasTransitionDebugLogger.now() - reloadStart
+            )
         } catch {
+            logClosingTransitionTiming(
+                phase: "loadCatalogFailed",
+                extra: "error=\"\(error.localizedDescription)\""
+            )
             availableBoards = []
             selectedEntryID = nil
             hasSelectedFolder = bookmarkStatus.hasSelectedFolder
@@ -423,9 +527,22 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
                     storageErrorDescription: error.localizedDescription
                 )
             )
+            let reloadStart = BoardListCanvasTransitionDebugLogger.now()
             reloadBoardList()
+            logClosingTransitionTiming(
+                phase: "reloadBoardListAfterCatalogFailure",
+                localDuration: BoardListCanvasTransitionDebugLogger.now() - reloadStart
+            )
         }
         logRenameTrace("refreshBookmarkStatusEnd", extra: "boardCount=\(availableBoards.count)")
+        logClosingTransitionTiming(
+            phase: "refreshBookmarkStatusEnd",
+            localDuration: BoardListCanvasTransitionDebugLogger.now() - refreshStart,
+            extra:
+                "boardCount=\(availableBoards.count) " +
+                "hasSelectedFolder=\(hasSelectedFolder) " +
+                "hasStorageError=\(storageErrorMessage != nil)"
+        )
     }
 
     private func ensureValidSelection() {
@@ -451,6 +568,11 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
 
     private func reloadBoardList() {
         logRenameTrace("reloadBoardListBegin", extra: "entryCount=\(entries.count)")
+        let reloadStart = BoardListCanvasTransitionDebugLogger.now()
+        logClosingTransitionTiming(
+            phase: "reloadBoardListBegin",
+            extra: "entryCount=\(entries.count)"
+        )
         collectionView.reloadData()
         updateCollectionVisibility()
         updateDisplayModeControlState()
@@ -459,6 +581,11 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
         revealPendingBoardIfNeeded()
         focusTitleEditorIfNeeded()
         logRenameTrace("reloadBoardListEnd", extra: "entryCount=\(entries.count)")
+        logClosingTransitionTiming(
+            phase: "reloadBoardListEnd",
+            localDuration: BoardListCanvasTransitionDebugLogger.now() - reloadStart,
+            extra: "entryCount=\(entries.count)"
+        )
     }
 
     private func updateDisplayModeControlState() {
@@ -624,8 +751,19 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
             return
         }
 
+        let resolutionDuration = closingTransitionTimingState?.targetGeometryRequestedAt.map {
+            BoardListCanvasTransitionDebugLogger.now() - $0
+        }
+        logClosingTransitionTiming(
+            phase: "finishPendingTransitionTargetResolution",
+            localDuration: resolutionDuration,
+            extra:
+                "boardID=\(boardID.uuidString) " +
+                "hasCardRect=\(geometry.cardRect != nil)"
+        )
         let completion = pendingTransitionTargetResolution?.completion
         pendingTransitionTargetResolution = nil
+        closingTransitionTimingState = nil
         completion?(geometry)
     }
 
@@ -944,6 +1082,10 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
             return
         }
 
+        logClosingTransitionTiming(
+            phase: "revealPendingBoardIfNeeded",
+            extra: "boardID=\(pendingRevealBoardID.uuidString)"
+        )
         logRenameTrace(
             "revealPendingBoardIfNeeded",
             extra: "boardID=\(pendingRevealBoardID.uuidString)"
@@ -959,9 +1101,18 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
                 geometry: .init()
             )
             self.pendingRevealBoardID = nil
+            closingTransitionTimingState = nil
             return
         }
 
+        let enqueueTime = BoardListCanvasTransitionDebugLogger.now()
+        updateClosingTransitionTimingState { state in
+            state.revealDispatchEnqueuedAt = enqueueTime
+        }
+        logClosingTransitionTiming(
+            phase: "revealPendingBoardEnqueued",
+            extra: "boardID=\(pendingRevealBoardID.uuidString)"
+        )
         DispatchQueue.main.async { [weak self] in
             self?.revealBoard(
                 at: indexPath,
@@ -979,6 +1130,17 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
             return
         }
 
+        let revealStart = BoardListCanvasTransitionDebugLogger.now()
+        let dispatchDelay = closingTransitionTimingState?.revealDispatchEnqueuedAt.map {
+            revealStart - $0
+        }
+        logClosingTransitionTiming(
+            phase: "revealBoardBegin",
+            localDuration: dispatchDelay,
+            extra:
+                "boardID=\(boardID.uuidString) " +
+                "indexPath=[section=\(indexPath.section),item=\(indexPath.item)]"
+        )
         logRenameTrace(
             "revealBoard",
             extra:
@@ -993,9 +1155,17 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
             animated: false
         )
         collectionView.layoutIfNeeded()
+        let geometry = transitionTargetGeometry(for: boardID)
+        logClosingTransitionTiming(
+            phase: "revealBoardEnd",
+            localDuration: BoardListCanvasTransitionDebugLogger.now() - revealStart,
+            extra:
+                "boardID=\(boardID.uuidString) " +
+                "hasCardRect=\(geometry.cardRect != nil)"
+        )
         finishPendingTransitionTargetResolution(
             for: boardID,
-            geometry: transitionTargetGeometry(for: boardID)
+            geometry: geometry
         )
         pendingRevealBoardID = nil
     }

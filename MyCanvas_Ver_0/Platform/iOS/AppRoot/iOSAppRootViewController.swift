@@ -72,6 +72,15 @@ final class iOSAppRootViewController: UIViewController {
         _ request: BoardListCanvasReturnRequest
     ) {
         currentBoardListCanvasTransitionContext = request.transitionContext
+        if let trace = request.debugTrace {
+            logClosingTransitionTrace(
+                trace,
+                phase: "handleCanvasReturnRequest",
+                extra:
+                    "boardID=\(request.boardID?.uuidString ?? "nil") " +
+                    "requiresPersistence=\(request.requiresBoardPersistence)"
+            )
+        }
         beginClosingTransition(with: request)
     }
 
@@ -172,7 +181,8 @@ final class iOSAppRootViewController: UIViewController {
             context: request.transitionContext,
             carrier: carrier,
             sourceViewController: sourceViewController,
-            destinationViewController: destinationViewController
+            destinationViewController: destinationViewController,
+            debugTrace: request.debugTrace
         )
 
         activeTransitionSession = session
@@ -182,15 +192,50 @@ final class iOSAppRootViewController: UIViewController {
         activateTransitionOverlay()
         carrier.install(in: overlayHostView)
         mountViewController(destinationViewController, hidden: true)
+        destinationViewController.setClosingTransitionTimingTrace(session.debugTrace)
+
+        if let trace = session.debugTrace {
+            logClosingTransitionTrace(
+                trace,
+                phase: "beginClosingTransition",
+                extra: "targetBoardID=\(request.transitionContext.targetBoardID?.uuidString ?? "nil")"
+            )
+        }
+
+        let prepareForDisplayStart = BoardListCanvasTransitionDebugLogger.now()
         destinationViewController.prepareForDisplay()
+        if let trace = session.debugTrace {
+            logClosingTransitionTrace(
+                trace,
+                phase: "boardListPrepareForDisplayFinished",
+                localDuration: BoardListCanvasTransitionDebugLogger.now() - prepareForDisplayStart
+            )
+        }
+
+        let carrierPreparationStart = BoardListCanvasTransitionDebugLogger.now()
         view.layoutIfNeeded()
         carrier.prepareTransition(
             with: session.context,
             sourceViewController: sourceViewController,
             destinationViewController: destinationViewController
         )
+        if let trace = session.debugTrace {
+            logClosingTransitionTrace(
+                trace,
+                phase: "carrierPrepareFinished",
+                localDuration: BoardListCanvasTransitionDebugLogger.now() - carrierPreparationStart
+            )
+        }
 
         let targetBoardID = request.transitionContext.targetBoardID
+        session.closingTargetGeometryRequestedAt = BoardListCanvasTransitionDebugLogger.now()
+        if let trace = session.debugTrace {
+            logClosingTransitionTrace(
+                trace,
+                phase: "requestTargetGeometry",
+                extra: "targetBoardID=\(targetBoardID?.uuidString ?? "nil")"
+            )
+        }
         destinationViewController.prepareTransitionTargetGeometry(
             for: targetBoardID
         ) { [weak self] geometry in
@@ -221,6 +266,28 @@ final class iOSAppRootViewController: UIViewController {
         )
         session.context.targetGeometry = geometry
         session.carrier.updateTransitionContext(session.context)
+        if let trace = session.debugTrace {
+            let targetResolutionDuration = session.closingTargetGeometryRequestedAt.map {
+                BoardListCanvasTransitionDebugLogger.now() - $0
+            }
+            logClosingTransitionTrace(
+                trace,
+                phase: "targetGeometryResolved",
+                localDuration: targetResolutionDuration,
+                extra:
+                    "hasCardRect=\(geometry.cardRect != nil) " +
+                    "expectedBoardID=\(expectedBoardID?.uuidString ?? "nil")"
+            )
+        }
+
+        session.closingAnimationStartedAt = BoardListCanvasTransitionDebugLogger.now()
+        if let trace = session.debugTrace {
+            logClosingTransitionTrace(
+                trace,
+                phase: "carrierAnimateBegin",
+                extra: "hasCardRect=\(geometry.cardRect != nil)"
+            )
+        }
         session.carrier.animateTransition { [weak self] in
             self?.completeClosingTransition(sessionID: sessionID)
         }
@@ -241,10 +308,22 @@ final class iOSAppRootViewController: UIViewController {
             unmountViewController(sourceViewController)
         }
         destinationViewController.view.isHidden = false
+        (destinationViewController as? iOSBoardListViewController)?
+            .setClosingTransitionTimingTrace(nil)
         setTransitionInteractionFrozen(false, for: session.sourceViewController)
         setTransitionInteractionFrozen(false, for: destinationViewController)
         currentViewController = destinationViewController
         session.carrier.completeTransition()
+        if let trace = session.debugTrace {
+            let animationDuration = session.closingAnimationStartedAt.map {
+                BoardListCanvasTransitionDebugLogger.now() - $0
+            }
+            logClosingTransitionTrace(
+                trace,
+                phase: "completeClosingTransition",
+                localDuration: animationDuration
+            )
+        }
         activeTransitionSession = nil
         transitionPhase = .steadyBoardList
         deactivateTransitionOverlay()
@@ -340,6 +419,9 @@ final class iOSAppRootViewController: UIViewController {
         }
 
         session.carrier.cancelTransition()
+        if let boardListViewController = session.destinationViewController as? iOSBoardListViewController {
+            boardListViewController.setClosingTransitionTimingTrace(nil)
+        }
         setTransitionInteractionFrozen(false, for: session.sourceViewController)
         setTransitionInteractionFrozen(false, for: session.destinationViewController)
         if let destinationViewController = session.destinationViewController,
@@ -369,6 +451,22 @@ final class iOSAppRootViewController: UIViewController {
     ) {
         (viewController as? any iOSBoardListCanvasTransitionInteractionControlling)?
             .setTransitionInteractionFrozen(isFrozen)
+    }
+
+    private func logClosingTransitionTrace(
+        _ trace: BoardListCanvasTransitionDebugTrace,
+        phase: String,
+        localDuration: TimeInterval? = nil,
+        extra: String = ""
+    ) {
+        BoardListCanvasTransitionDebugLogger.log(
+            platform: "iOS",
+            component: "AppRoot",
+            trace: trace,
+            phase: phase,
+            localDuration: localDuration,
+            extra: extra
+        )
     }
 
     private func steadyPhase(

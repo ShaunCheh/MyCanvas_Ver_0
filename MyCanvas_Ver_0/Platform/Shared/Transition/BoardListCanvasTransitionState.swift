@@ -85,12 +85,14 @@ struct BoardListCanvasReturnRequest: Hashable, Sendable {
     var targetGeometry: BoardListCanvasTransitionTargetGeometry
     var preferredCarrierKind: BoardListCanvasTransitionCarrierKind
     var requiresBoardPersistence: Bool
+    var debugTrace: BoardListCanvasTransitionDebugTrace?
 
     static func backButton(
         boardID: UUID?,
         launchContext: CanvasLaunchContext?,
         targetGeometry: BoardListCanvasTransitionTargetGeometry = .init(),
-        preferredCarrierKind: BoardListCanvasTransitionCarrierKind = .snapshotShell
+        preferredCarrierKind: BoardListCanvasTransitionCarrierKind = .snapshotShell,
+        debugTrace: BoardListCanvasTransitionDebugTrace? = nil
     ) -> Self {
         BoardListCanvasReturnRequest(
             boardID: boardID,
@@ -98,7 +100,8 @@ struct BoardListCanvasReturnRequest: Hashable, Sendable {
             sourceKind: .backButton,
             targetGeometry: targetGeometry,
             preferredCarrierKind: preferredCarrierKind,
-            requiresBoardPersistence: launchContext?.requiresBoardPersistenceOnReturn ?? false
+            requiresBoardPersistence: launchContext?.requiresBoardPersistenceOnReturn ?? false,
+            debugTrace: debugTrace
         )
     }
 
