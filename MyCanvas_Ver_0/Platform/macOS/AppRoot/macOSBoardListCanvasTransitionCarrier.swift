@@ -201,7 +201,7 @@ final class macOSSnapshotShellCarrier: macOSBoardListCanvasTransitionCarrying {
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = BoardListCanvasTransitionConfiguration.handoffAnimation.duration
                 context.timingFunction = CAMediaTimingFunction(
-                    name: timingFunctionName(for: BoardListCanvasTransitionConfiguration.handoffAnimation.curve)
+                    name: Self.timingFunctionName(for: BoardListCanvasTransitionConfiguration.handoffAnimation.curve)
                 )
                 destinationView.animator().alphaValue = 1
             } completionHandler: {
@@ -215,7 +215,7 @@ final class macOSSnapshotShellCarrier: macOSBoardListCanvasTransitionCarrying {
         NSAnimationContext.runAnimationGroup { context in
             context.duration = BoardListCanvasTransitionConfiguration.openingAnimation.duration
             context.timingFunction = CAMediaTimingFunction(
-                name: timingFunctionName(for: BoardListCanvasTransitionConfiguration.openingAnimation.curve)
+                name: Self.timingFunctionName(for: BoardListCanvasTransitionConfiguration.openingAnimation.curve)
             )
             shellShadowView.animator().frame = targetFrame
             shellShadowView.layer?.shadowOpacity = 0
@@ -227,7 +227,7 @@ final class macOSSnapshotShellCarrier: macOSBoardListCanvasTransitionCarrying {
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = BoardListCanvasTransitionConfiguration.handoffAnimation.duration
                 context.timingFunction = CAMediaTimingFunction(
-                    name: timingFunctionName(for: BoardListCanvasTransitionConfiguration.handoffAnimation.curve)
+                    name: Self.timingFunctionName(for: BoardListCanvasTransitionConfiguration.handoffAnimation.curve)
                 )
                 destinationView.animator().alphaValue = 1
                 shellShadowView.animator().alphaValue = 0
@@ -266,7 +266,7 @@ final class macOSSnapshotShellCarrier: macOSBoardListCanvasTransitionCarrying {
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = BoardListCanvasTransitionConfiguration.closingAnimation.duration
                 context.timingFunction = CAMediaTimingFunction(
-                    name: timingFunctionName(for: BoardListCanvasTransitionConfiguration.closingAnimation.curve)
+                    name: Self.timingFunctionName(for: BoardListCanvasTransitionConfiguration.closingAnimation.curve)
                 )
                 shellShadowView.animator().frame = targetFrame
                 shellShadowView.layer?.shadowOpacity = BoardListCanvasTransitionConfiguration.shellShadowOpacity
@@ -275,7 +275,7 @@ final class macOSSnapshotShellCarrier: macOSBoardListCanvasTransitionCarrying {
                 NSAnimationContext.runAnimationGroup { context in
                     context.duration = BoardListCanvasTransitionConfiguration.handoffAnimation.duration
                     context.timingFunction = CAMediaTimingFunction(
-                        name: timingFunctionName(for: BoardListCanvasTransitionConfiguration.handoffAnimation.curve)
+                        name: Self.timingFunctionName(for: BoardListCanvasTransitionConfiguration.handoffAnimation.curve)
                     )
                     shellShadowView.animator().alphaValue = 0
                 } completionHandler: {
@@ -289,7 +289,7 @@ final class macOSSnapshotShellCarrier: macOSBoardListCanvasTransitionCarrying {
         NSAnimationContext.runAnimationGroup { context in
             context.duration = BoardListCanvasTransitionConfiguration.closingAnimation.duration
             context.timingFunction = CAMediaTimingFunction(
-                name: timingFunctionName(for: BoardListCanvasTransitionConfiguration.closingAnimation.curve)
+                name: Self.timingFunctionName(for: BoardListCanvasTransitionConfiguration.closingAnimation.curve)
             )
             shellShadowView.animator().frame = fallbackFrame
             shellShadowView.animator().alphaValue = 0
@@ -379,7 +379,7 @@ final class macOSSnapshotShellCarrier: macOSBoardListCanvasTransitionCarrying {
         shadowView.layer?.shadowOffset = BoardListCanvasTransitionConfiguration.macOSShellShadowOffset
     }
 
-    private func timingFunctionName(
+    private static func timingFunctionName(
         for curve: BoardListCanvasTransitionTimingCurve
     ) -> CAMediaTimingFunctionName {
         switch curve {

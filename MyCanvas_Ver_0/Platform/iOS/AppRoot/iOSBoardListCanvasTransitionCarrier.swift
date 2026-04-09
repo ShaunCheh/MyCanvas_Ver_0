@@ -203,7 +203,7 @@ final class iOSSnapshotShellCarrier: iOSBoardListCanvasTransitionCarrying {
             UIView.animate(
                 withDuration: BoardListCanvasTransitionConfiguration.handoffAnimation.duration,
                 delay: 0,
-                options: [animationOptions(for: BoardListCanvasTransitionConfiguration.handoffAnimation.curve), .beginFromCurrentState]
+                options: [Self.animationOptions(for: BoardListCanvasTransitionConfiguration.handoffAnimation.curve), .beginFromCurrentState]
             ) {
                 destinationView.alpha = 1
             } completion: { _ in
@@ -219,7 +219,7 @@ final class iOSSnapshotShellCarrier: iOSBoardListCanvasTransitionCarrying {
             delay: 0,
             usingSpringWithDamping: BoardListCanvasTransitionConfiguration.openingAnimation.springDampingRatio ?? 1,
             initialSpringVelocity: BoardListCanvasTransitionConfiguration.openingAnimation.springInitialVelocity ?? 0,
-            options: [.beginFromCurrentState, animationOptions(for: BoardListCanvasTransitionConfiguration.openingAnimation.curve)]
+            options: [.beginFromCurrentState, Self.animationOptions(for: BoardListCanvasTransitionConfiguration.openingAnimation.curve)]
         ) {
             shellShadowView.frame = targetFrame
             shellContentView.layer.cornerRadius = 0
@@ -231,7 +231,7 @@ final class iOSSnapshotShellCarrier: iOSBoardListCanvasTransitionCarrying {
             UIView.animate(
                 withDuration: BoardListCanvasTransitionConfiguration.handoffAnimation.duration,
                 delay: 0,
-                options: [animationOptions(for: BoardListCanvasTransitionConfiguration.handoffAnimation.curve), .beginFromCurrentState]
+                options: [Self.animationOptions(for: BoardListCanvasTransitionConfiguration.handoffAnimation.curve), .beginFromCurrentState]
             ) {
                 destinationView.alpha = 1
                 shellShadowView.alpha = 0
@@ -270,7 +270,7 @@ final class iOSSnapshotShellCarrier: iOSBoardListCanvasTransitionCarrying {
             UIView.animate(
                 withDuration: BoardListCanvasTransitionConfiguration.closingAnimation.duration,
                 delay: 0,
-                options: [.beginFromCurrentState, animationOptions(for: BoardListCanvasTransitionConfiguration.closingAnimation.curve)]
+                options: [.beginFromCurrentState, Self.animationOptions(for: BoardListCanvasTransitionConfiguration.closingAnimation.curve)]
             ) {
                 shellShadowView.frame = targetFrame
                 shellContentView.layer.cornerRadius = BoardListCanvasTransitionConfiguration.shellCornerRadius
@@ -279,7 +279,7 @@ final class iOSSnapshotShellCarrier: iOSBoardListCanvasTransitionCarrying {
                 UIView.animate(
                     withDuration: BoardListCanvasTransitionConfiguration.handoffAnimation.duration,
                     delay: 0,
-                    options: [animationOptions(for: BoardListCanvasTransitionConfiguration.handoffAnimation.curve), .beginFromCurrentState]
+                    options: [Self.animationOptions(for: BoardListCanvasTransitionConfiguration.handoffAnimation.curve), .beginFromCurrentState]
                 ) {
                     shellShadowView.alpha = 0
                 } completion: { _ in
@@ -293,7 +293,7 @@ final class iOSSnapshotShellCarrier: iOSBoardListCanvasTransitionCarrying {
         UIView.animate(
             withDuration: BoardListCanvasTransitionConfiguration.closingAnimation.duration,
             delay: 0,
-            options: [.beginFromCurrentState, animationOptions(for: BoardListCanvasTransitionConfiguration.closingAnimation.curve)]
+            options: [.beginFromCurrentState, Self.animationOptions(for: BoardListCanvasTransitionConfiguration.closingAnimation.curve)]
         ) {
             shellShadowView.frame = fallbackFrame
             shellContentView.layer.cornerRadius = BoardListCanvasTransitionConfiguration.shellCornerRadius
@@ -362,7 +362,7 @@ final class iOSSnapshotShellCarrier: iOSBoardListCanvasTransitionCarrying {
         shadowView.layer.shadowOffset = BoardListCanvasTransitionConfiguration.iOSShellShadowOffset
     }
 
-    private func animationOptions(
+    private static func animationOptions(
         for curve: BoardListCanvasTransitionTimingCurve
     ) -> UIView.AnimationOptions {
         switch curve {
