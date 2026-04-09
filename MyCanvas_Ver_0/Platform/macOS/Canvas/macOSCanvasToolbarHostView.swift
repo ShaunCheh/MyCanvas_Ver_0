@@ -8,6 +8,15 @@ final class macOSCanvasToolbarHostView: NSView {
         static let shadowOpacity: Float = 0.12
         static let shadowRadius: CGFloat = 10
         static let shadowOffset = CGSize(width: 0, height: 4)
+        // AppRoot can force an early layout pass before the controller computes
+        // the real toolbar frame. Bootstrap with a legal non-zero size so the
+        // internal chrome insets do not conflict against a transient width == 0.
+        static let minimumBootstrapSize = CanvasToolbarMeasurement.measuredContentSize(
+            forMeasuredStackSize: CGSize(
+                width: CanvasToolbarChromeMetrics.buttonEdge,
+                height: CanvasToolbarChromeMetrics.buttonEdge
+            )
+        )
     }
 
     private let backgroundView: macOSCanvasChromeOverlayView = {
@@ -56,7 +65,7 @@ final class macOSCanvasToolbarHostView: NSView {
     }
 
     override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
+        super.init(frame: Self.bootstrapFrame(from: frameRect))
         translatesAutoresizingMaskIntoConstraints = false
         wantsLayer = true
         addSubview(backgroundView)
@@ -89,6 +98,16 @@ final class macOSCanvasToolbarHostView: NSView {
 
     required init?(coder: NSCoder) {
         return nil
+    }
+
+    private static func bootstrapFrame(from frameRect: CGRect) -> CGRect {
+        CGRect(
+            origin: frameRect.origin,
+            size: CGSize(
+                width: max(frameRect.width, Layout.minimumBootstrapSize.width),
+                height: max(frameRect.height, Layout.minimumBootstrapSize.height)
+            )
+        )
     }
 
     func registerButtons(_ buttons: [CanvasToolbarItemID: NSButton]) {
