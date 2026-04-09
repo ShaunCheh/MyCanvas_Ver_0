@@ -1196,13 +1196,13 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             guard self?.isTransitionInteractionFrozen == false else {
                 return []
             }
-            self?.dragOperation(for: pasteboard) ?? []
+            return self?.dragOperation(for: pasteboard) ?? []
         }
         canvasViewportView.onImportDrop = { [weak self] _, pasteboard in
             guard self?.isTransitionInteractionFrozen == false else {
                 return false
             }
-            self?.handleImportDrop(pasteboard: pasteboard) ?? false
+            return self?.handleImportDrop(pasteboard: pasteboard) ?? false
         }
 
         installCanvasContentView(canvasViewportView)
