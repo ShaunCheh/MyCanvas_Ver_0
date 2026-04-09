@@ -791,11 +791,12 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
         _ item: BoardCatalogItem
     ) -> BoardListCatalogMutationResult {
         let previousBoardIndex = availableBoardIndexByID[item.boardID]
-        let previousItem = previousBoardIndex.flatMap { boardIndex in
-            guard availableBoards.indices.contains(boardIndex) else {
-                return nil
-            }
-            return availableBoards[boardIndex]
+        let previousItem: BoardCatalogItem?
+        if let previousBoardIndex,
+           availableBoards.indices.contains(previousBoardIndex) {
+            previousItem = availableBoards[previousBoardIndex]
+        } else {
+            previousItem = nil
         }
 
         if let previousBoardIndex,
