@@ -22,6 +22,7 @@ final class iOSBoardListCanvasTransitionSession {
     weak var destinationViewController: UIViewController?
     let debugTrace: BoardListCanvasTransitionDebugTrace?
     var closingTargetGeometryRequestedAt: TimeInterval?
+    var closingTargetGeometryResolvedAt: TimeInterval?
     var closingAnimationStartedAt: TimeInterval?
 
     init(

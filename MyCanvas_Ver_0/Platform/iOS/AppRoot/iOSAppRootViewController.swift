@@ -250,6 +250,8 @@ final class iOSAppRootViewController: UIViewController {
             return
         }
 
+        let geometryResolvedAt = BoardListCanvasTransitionDebugLogger.now()
+        session.closingTargetGeometryResolvedAt = geometryResolvedAt
         updateCurrentTransitionTargetGeometry(
             geometry,
             expectedBoardID: expectedBoardID
@@ -258,7 +260,7 @@ final class iOSAppRootViewController: UIViewController {
         session.carrier.updateTransitionContext(session.context)
         if let trace = session.debugTrace {
             let targetResolutionDuration = session.closingTargetGeometryRequestedAt.map {
-                BoardListCanvasTransitionDebugLogger.now() - $0
+                geometryResolvedAt - $0
             }
             logClosingTransitionTrace(
                 trace,
@@ -272,10 +274,32 @@ final class iOSAppRootViewController: UIViewController {
 
         session.closingAnimationStartedAt = BoardListCanvasTransitionDebugLogger.now()
         if let trace = session.debugTrace {
+            let backButtonToCarrierAnimate = session.closingAnimationStartedAt.map {
+                $0 - trace.startedAtUptime
+            }
+            let requestTargetGeometryToResolved: TimeInterval? = {
+                guard
+                    let requestedAt = session.closingTargetGeometryRequestedAt,
+                    let resolvedAt = session.closingTargetGeometryResolvedAt
+                else {
+                    return nil
+                }
+
+                return resolvedAt - requestedAt
+            }()
+            let backButtonToCarrierAnimateSummary = backButtonToCarrierAnimate.map {
+                BoardListCanvasTransitionDebugLogger.durationString($0)
+            } ?? "nil"
+            let requestTargetGeometryToResolvedSummary = requestTargetGeometryToResolved.map {
+                BoardListCanvasTransitionDebugLogger.durationString($0)
+            } ?? "nil"
             logClosingTransitionTrace(
                 trace,
                 phase: "carrierAnimateBegin",
-                extra: "hasCardRect=\(geometry.cardRect != nil)"
+                extra:
+                    "hasCardRect=\(geometry.cardRect != nil) " +
+                    "backButtonToCarrierAnimate=\(backButtonToCarrierAnimateSummary) " +
+                    "requestTargetGeometryToResolved=\(requestTargetGeometryToResolvedSummary)"
             )
         }
         session.carrier.animateTransition { [weak self] in
@@ -308,10 +332,36 @@ final class iOSAppRootViewController: UIViewController {
             let animationDuration = session.closingAnimationStartedAt.map {
                 BoardListCanvasTransitionDebugLogger.now() - $0
             }
+            let backButtonToCarrierAnimate = session.closingAnimationStartedAt.map {
+                $0 - trace.startedAtUptime
+            }
+            let requestTargetGeometryToResolved: TimeInterval? = {
+                guard
+                    let requestedAt = session.closingTargetGeometryRequestedAt,
+                    let resolvedAt = session.closingTargetGeometryResolvedAt
+                else {
+                    return nil
+                }
+
+                return resolvedAt - requestedAt
+            }()
+            let backButtonToCarrierAnimateSummary = backButtonToCarrierAnimate.map {
+                BoardListCanvasTransitionDebugLogger.durationString($0)
+            } ?? "nil"
+            let requestTargetGeometryToResolvedSummary = requestTargetGeometryToResolved.map {
+                BoardListCanvasTransitionDebugLogger.durationString($0)
+            } ?? "nil"
+            let animationDurationSummary = animationDuration.map {
+                BoardListCanvasTransitionDebugLogger.durationString($0)
+            } ?? "nil"
             logClosingTransitionTrace(
                 trace,
                 phase: "completeClosingTransition",
-                localDuration: animationDuration
+                localDuration: animationDuration,
+                extra:
+                    "backButtonToCarrierAnimate=\(backButtonToCarrierAnimateSummary) " +
+                    "requestTargetGeometryToResolved=\(requestTargetGeometryToResolvedSummary) " +
+                    "animationDuration=\(animationDurationSummary)"
             )
         }
         activeTransitionSession = nil

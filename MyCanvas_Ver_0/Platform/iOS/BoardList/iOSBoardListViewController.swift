@@ -55,6 +55,10 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
         let trace: BoardListCanvasTransitionDebugTrace
         var targetGeometryRequestedAt: TimeInterval?
         var revealDispatchEnqueuedAt: TimeInterval?
+        var revealDispatchDelay: TimeInterval?
+        var refreshInvocationCount: Int = 0
+        var reloadInvocationCount: Int = 0
+        var reloadDuringTargetResolutionCount: Int = 0
     }
 
     private let folderPicker = FolderPicker()
@@ -694,6 +698,45 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
         previewWorkPolicy = .normal
     }
 
+    private func describePreviewWorkPolicy(
+        _ policy: BoardListPreviewWorkPolicy
+    ) -> String {
+        switch policy {
+        case .normal:
+            return "normal"
+        case .geometryOnly:
+            return "geometryOnly"
+        }
+    }
+
+    private func logClosingGuardSummary(
+        boardID: UUID,
+        hasCardRect: Bool,
+        usedFallbackGeometry: Bool? = nil
+    ) {
+        guard let state = closingTransitionTimingState else {
+            return
+        }
+
+        let revealDispatchDelaySummary = state.revealDispatchDelay.map {
+            BoardListCanvasTransitionDebugLogger.durationString($0)
+        } ?? "nil"
+        let fallbackSuffix = usedFallbackGeometry.map {
+            " usedFallbackGeometry=\($0)"
+        } ?? ""
+        logClosingTransitionTiming(
+            phase: "closingTargetReadySummary",
+            extra:
+                "boardID=\(boardID.uuidString) " +
+                "refreshCount=\(state.refreshInvocationCount) " +
+                "reloadCount=\(state.reloadInvocationCount) " +
+                "targetReadyReloadCount=\(state.reloadDuringTargetResolutionCount) " +
+                "revealDispatchDelay=\(revealDispatchDelaySummary) " +
+                "hasCardRect=\(hasCardRect)" +
+                fallbackSuffix
+        )
+    }
+
     private func scheduleVisibleBoardThumbnailRefreshIfNeeded() {
         guard currentPreviewWorkPolicy() == .normal else {
             return
@@ -826,8 +869,22 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
 
     private func refreshBookmarkStatus() {
         logRenameTrace("refreshBookmarkStatusBegin")
+        var refreshInvocationCount: Int?
+        updateClosingTransitionTimingState { state in
+            state.refreshInvocationCount += 1
+            refreshInvocationCount = state.refreshInvocationCount
+        }
         let refreshStart = BoardListCanvasTransitionDebugLogger.now()
         logClosingTransitionTiming(phase: "refreshBookmarkStatusBegin")
+        if let refreshInvocationCount,
+           refreshInvocationCount > 1 {
+            logClosingTransitionTiming(
+                phase: "guardDoubleRefreshDetected",
+                extra:
+                    "count=\(refreshInvocationCount) " +
+                    "pendingBoardID=\(pendingTransitionTargetResolution?.boardID.uuidString ?? "nil")"
+            )
+        }
         dismissActionPanel()
         let bookmarkStatus = FolderBookmarkStore.bookmarkStatus()
         do {
@@ -927,11 +984,42 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
 
     private func reloadBoardList() {
         logRenameTrace("reloadBoardListBegin", extra: "entryCount=\(entries.count)")
+        let triggeredDuringTargetResolution =
+            pendingTransitionTargetResolution != nil ||
+            currentPreviewWorkPolicy() == .geometryOnly
+        var reloadInvocationCount: Int?
+        var reloadDuringTargetResolutionCount: Int?
+        updateClosingTransitionTimingState { state in
+            state.reloadInvocationCount += 1
+            reloadInvocationCount = state.reloadInvocationCount
+            if triggeredDuringTargetResolution {
+                state.reloadDuringTargetResolutionCount += 1
+                reloadDuringTargetResolutionCount = state.reloadDuringTargetResolutionCount
+            }
+        }
         let reloadStart = BoardListCanvasTransitionDebugLogger.now()
         logClosingTransitionTiming(
             phase: "reloadBoardListBegin",
             extra: "entryCount=\(entries.count)"
         )
+        if let reloadInvocationCount {
+            logClosingTransitionTiming(
+                phase: "guardReloadDataObserved",
+                extra:
+                    "count=\(reloadInvocationCount) " +
+                    "duringTargetResolution=\(triggeredDuringTargetResolution) " +
+                    "previewWorkPolicy=\(describePreviewWorkPolicy(currentPreviewWorkPolicy()))"
+            )
+        }
+        if let reloadDuringTargetResolutionCount {
+            logClosingTransitionTiming(
+                phase: "guardTargetReadyReloadDataDetected",
+                extra:
+                    "count=\(reloadDuringTargetResolutionCount) " +
+                    "boardID=\(pendingTransitionTargetResolution?.boardID.uuidString ?? "nil") " +
+                    "entryCount=\(entries.count)"
+            )
+        }
         collectionView.reloadData()
         updateCollectionVisibility()
         updateDisplayModeControlState()
@@ -1141,6 +1229,10 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
                 "boardID=\(boardID.uuidString) " +
                 "hasCardRect=\(geometry.cardRect != nil)"
         )
+        logClosingGuardSummary(
+            boardID: boardID,
+            hasCardRect: geometry.cardRect != nil
+        )
         let completion = pendingTransitionTargetResolution?.completion
         pendingTransitionTargetResolution = nil
         closingTransitionTimingState = nil
@@ -1167,6 +1259,11 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
                 "indexPath=[section=\(preparationResult.resolvedIndexPath.section),item=\(preparationResult.resolvedIndexPath.item)] " +
                 "usedFallbackGeometry=\(preparationResult.usedFallbackGeometry) " +
                 "hasCardRect=\(preparationResult.geometry.cardRect != nil)"
+        )
+        logClosingGuardSummary(
+            boardID: preparationResult.boardID,
+            hasCardRect: preparationResult.geometry.cardRect != nil,
+            usedFallbackGeometry: preparationResult.usedFallbackGeometry
         )
         let completion = pendingTransitionTargetResolution?.completion
         pendingTransitionTargetResolution = nil
@@ -1590,6 +1687,9 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
         let revealStart = BoardListCanvasTransitionDebugLogger.now()
         let dispatchDelay = closingTransitionTimingState?.revealDispatchEnqueuedAt.map {
             revealStart - $0
+        }
+        updateClosingTransitionTimingState { state in
+            state.revealDispatchDelay = dispatchDelay
         }
         logClosingTransitionTiming(
             phase: "revealBoardBegin",

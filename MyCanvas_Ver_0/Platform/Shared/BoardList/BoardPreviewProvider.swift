@@ -476,6 +476,8 @@ private func logBoardPreviewProviderCacheHitMetadata(
             "tracePolicy=\(tracePolicy.rawValue) " +
             "targetPixelSize=\(describeBoardPreviewProviderSize(targetPixelSize)) " +
             "cachedPixels={\(cachedImage.width), \(cachedImage.height)} " +
+            "imageRegionSampling=false " +
+            "sourceImageReads=false " +
             "imageItemCount=\(item.document.imageItemRecords.count) " +
             "textItemCount=\(item.document.textItemRecords.count)"
     )
@@ -493,6 +495,14 @@ private func logBoardPreviewProviderSourceImagesIfNeeded(
     guard tracePolicy == .verbose else {
         return
     }
+
+    print(
+        "[BoardList][ThumbnailTrace][Guard] " +
+            "phase=\(phase) " +
+            "boardID=\(item.boardID.uuidString) " +
+            "tracePolicy=\(tracePolicy.rawValue) " +
+            "sourceImageReads=true"
+    )
 
     let imageItemRecords = item.document.imageItemRecords
     guard imageItemRecords.count <= maxImageCount else {
