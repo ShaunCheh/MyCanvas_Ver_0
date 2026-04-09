@@ -1309,20 +1309,43 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
             "revealBoard",
             extra:
                 "boardID=\(boardID.uuidString) " +
-                "indexPath=[section=\(indexPath.section),item=\(indexPath.item)]"
+                "indexPath=[section=\(indexPath.section),item=\(indexPath.item)] " +
+                "wasVisible=\(isBoardTransitionTargetVisible(at: indexPath))"
         )
 
-        collectionView.layoutSubtreeIfNeeded()
-        collectionView.scrollToItems(
-            at: Set([indexPath]),
-            scrollPosition: .nearestVerticalEdge
-        )
-        collectionView.layoutSubtreeIfNeeded()
+        _ = scrollBoardTransitionTargetIntoViewIfNeeded(at: indexPath)
         finishPendingTransitionTargetResolution(
             for: boardID,
             geometry: transitionTargetGeometry(for: boardID)
         )
         pendingRevealBoardID = nil
+    }
+
+    private func isBoardTransitionTargetVisible(
+        at indexPath: IndexPath
+    ) -> Bool {
+        guard let layoutAttributes = collectionView.layoutAttributesForItem(at: indexPath) else {
+            return false
+        }
+
+        return collectionView.visibleRect.intersects(layoutAttributes.frame)
+    }
+
+    @discardableResult
+    private func scrollBoardTransitionTargetIntoViewIfNeeded(
+        at indexPath: IndexPath
+    ) -> Bool {
+        collectionView.layoutSubtreeIfNeeded()
+        guard isBoardTransitionTargetVisible(at: indexPath) == false else {
+            return false
+        }
+
+        collectionView.scrollToItems(
+            at: Set([indexPath]),
+            scrollPosition: .nearestVerticalEdge
+        )
+        collectionView.layoutSubtreeIfNeeded()
+        return true
     }
 
     private func handleCollectionScrollBoundsDidChange() {

@@ -1836,27 +1836,25 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
         updateClosingTransitionTimingState { state in
             state.revealDispatchDelay = dispatchDelay
         }
+        collectionView.layoutIfNeeded()
+        let wasVisibleBeforeReveal = isBoardTransitionTargetVisible(at: indexPath)
         logClosingTransitionTiming(
             phase: "revealBoardBegin",
             localDuration: dispatchDelay,
             extra:
                 "boardID=\(boardID.uuidString) " +
-                "indexPath=[section=\(indexPath.section),item=\(indexPath.item)]"
+                "indexPath=[section=\(indexPath.section),item=\(indexPath.item)] " +
+                "wasVisible=\(wasVisibleBeforeReveal)"
         )
         logRenameTrace(
             "revealBoard",
             extra:
                 "boardID=\(boardID.uuidString) " +
-                "indexPath=[section=\(indexPath.section),item=\(indexPath.item)]"
+                "indexPath=[section=\(indexPath.section),item=\(indexPath.item)] " +
+                "wasVisible=\(wasVisibleBeforeReveal)"
         )
 
-        collectionView.layoutIfNeeded()
-        collectionView.scrollToItem(
-            at: indexPath,
-            at: .top,
-            animated: false
-        )
-        collectionView.layoutIfNeeded()
+        let didScroll = scrollBoardTransitionTargetIntoViewIfNeeded(at: indexPath)
         let preparationResult = resolveTransitionTargetGeometry(for: boardID)
         logClosingTransitionTiming(
             phase: "revealBoardEnd",
@@ -1864,6 +1862,7 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
             extra:
                 "boardID=\(boardID.uuidString) " +
                 "indexPath=[section=\(preparationResult?.resolvedIndexPath.section ?? indexPath.section),item=\(preparationResult?.resolvedIndexPath.item ?? indexPath.item)] " +
+                "didScroll=\(didScroll) " +
                 "usedFallbackGeometry=\(preparationResult?.usedFallbackGeometry ?? true) " +
                 "hasCardRect=\(preparationResult?.geometry.cardRect != nil)"
         )
@@ -1876,6 +1875,36 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
             )
         }
         pendingRevealBoardID = nil
+    }
+
+    private func isBoardTransitionTargetVisible(
+        at indexPath: IndexPath
+    ) -> Bool {
+        guard let layoutAttributes = collectionView.layoutAttributesForItem(at: indexPath) else {
+            return false
+        }
+
+        return collectionView.bounds.intersects(layoutAttributes.frame)
+    }
+
+    @discardableResult
+    private func scrollBoardTransitionTargetIntoViewIfNeeded(
+        at indexPath: IndexPath
+    ) -> Bool {
+        guard isBoardTransitionTargetVisible(at: indexPath) == false else {
+            return false
+        }
+
+        guard let layoutAttributes = collectionView.layoutAttributesForItem(at: indexPath) else {
+            return false
+        }
+
+        collectionView.scrollRectToVisible(
+            layoutAttributes.frame.insetBy(dx: 0, dy: -Layout.itemSpacing),
+            animated: false
+        )
+        collectionView.layoutIfNeeded()
+        return true
     }
 
     private func presentSelectionError(_ error: Error) {
