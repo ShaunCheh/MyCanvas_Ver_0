@@ -294,27 +294,11 @@ enum BoardStore {
 
             var entries: [BoardDocumentCatalogEntry] = []
             for candidateURL in candidateURLs {
-                guard try isDirectory(candidateURL) else {
-                    continue
+                if let entry = try makeBoardDocumentCatalogEntry(
+                    at: candidateURL
+                ) {
+                    entries.append(entry)
                 }
-
-                let boardDocumentURL = candidateURL.appendingPathComponent(boardDocumentFilename)
-                guard FileManager.default.fileExists(atPath: boardDocumentURL.path) else {
-                    continue
-                }
-
-                let document = try readBoardDocument(at: boardDocumentURL)
-                entries.append(
-                    BoardDocumentCatalogEntry(
-                        boardDirectoryURL: candidateURL,
-                        documentURL: boardDocumentURL,
-                        assetsDirectoryURL: candidateURL.appendingPathComponent(
-                            assetsDirectoryName,
-                            isDirectory: true
-                        ),
-                        document: document
-                    )
-                )
             }
 
             return entries.sorted { lhs, rhs in
@@ -324,6 +308,21 @@ enum BoardStore {
 
                 return lhs.document.updatedAt > rhs.document.updatedAt
             }
+        }
+    }
+
+    static func loadBoardDocumentEntry(
+        id: UUID,
+        userDefaults: UserDefaults = .standard
+    ) throws -> BoardDocumentCatalogEntry? {
+        try SelectedFolderAccess.withBoardsDirectoryURL(userDefaults: userDefaults) { boardsDirectoryURL in
+            try CoordinatedFileIO.ensureDirectory(at: boardsDirectoryURL)
+            return try makeBoardDocumentCatalogEntry(
+                at: boardDirectoryURL(
+                    for: id,
+                    boardsDirectoryURL: boardsDirectoryURL
+                )
+            )
         }
     }
 
@@ -344,6 +343,36 @@ enum BoardStore {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         return try decoder.decode(BoardDocument.self, from: data)
+    }
+
+    private static func makeBoardDocumentCatalogEntry(
+        at boardDirectoryURL: URL
+    ) throws -> BoardDocumentCatalogEntry? {
+        guard FileManager.default.fileExists(atPath: boardDirectoryURL.path) else {
+            return nil
+        }
+
+        guard try isDirectory(boardDirectoryURL) else {
+            return nil
+        }
+
+        let boardDocumentURL = boardDirectoryURL.appendingPathComponent(
+            boardDocumentFilename
+        )
+        guard FileManager.default.fileExists(atPath: boardDocumentURL.path) else {
+            return nil
+        }
+
+        let document = try readBoardDocument(at: boardDocumentURL)
+        return BoardDocumentCatalogEntry(
+            boardDirectoryURL: boardDirectoryURL,
+            documentURL: boardDocumentURL,
+            assetsDirectoryURL: boardDirectoryURL.appendingPathComponent(
+                assetsDirectoryName,
+                isDirectory: true
+            ),
+            document: document
+        )
     }
 
     private static func makeDocumentData(
