@@ -23,6 +23,18 @@ private struct BoardListCatalogMutationResult {
     let changeKind: BoardListCatalogMutationChangeKind
 }
 
+private enum BoardListPreviewWorkPolicy: Equatable {
+    case normal
+    case geometryOnly
+}
+
+private struct BoardListClosingTargetPreparationResult {
+    let boardID: UUID
+    let resolvedIndexPath: IndexPath
+    let geometry: BoardListCanvasTransitionTargetGeometry
+    let usedFallbackGeometry: Bool
+}
+
 final class iOSBoardListViewController: UIViewController, UICollectionViewDataSource, UICollectionViewDelegateFlowLayout, iOSBoardListCanvasTransitionInteractionControlling {
     private enum Layout {
         static let listItemHeight: CGFloat = 96
@@ -93,6 +105,7 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
     }
     private var pendingTransitionTargetResolution: PendingTransitionTargetResolution?
     private var closingTransitionTimingState: ClosingTransitionTimingState?
+    private var previewWorkPolicy: BoardListPreviewWorkPolicy = .normal
     private var isTransitionInteractionFrozen = false
     private var displayMode: BoardListDisplayMode = .grid {
         didSet {
@@ -296,6 +309,7 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
         completion: @escaping (BoardListCanvasTransitionTargetGeometry) -> Void
     ) {
         pendingTransitionTargetResolution = nil
+        restoreNormalPreviewWorkPolicy()
 
         if boardID == nil {
             logClosingTransitionTiming(
@@ -325,6 +339,7 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
             boardID: boardID,
             completion: completion
         )
+        previewWorkPolicy = .geometryOnly
 
         guard isViewLoaded, view.window != nil else {
             logClosingTransitionTiming(
@@ -342,6 +357,7 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
     ) {
         switch mode {
         case .fullDisplay:
+            restoreNormalPreviewWorkPolicy()
             refreshBookmarkStatus()
         case let .closingTarget(boardID):
             syncClosingTargetBoard(boardID: boardID)
@@ -363,6 +379,7 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
         do {
             let loadCatalogItemStart = BoardListCanvasTransitionDebugLogger.now()
             guard let boardItem = try catalogLoader.loadCatalogItem(boardID: boardID) else {
+                restoreNormalPreviewWorkPolicy()
                 logClosingTransitionTiming(
                     phase: "loadCatalogItemMissing",
                     extra: "boardID=\(boardID.uuidString)"
@@ -404,15 +421,12 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
                     boardCount: availableBoards.count
                 )
             )
-
-            let reloadStart = BoardListCanvasTransitionDebugLogger.now()
-            reloadBoardList()
-            logClosingTransitionTiming(
-                phase: "reloadBoardListAfterClosingTargetSync",
-                localDuration: BoardListCanvasTransitionDebugLogger.now() - reloadStart,
-                extra: "entryCount=\(entries.count)"
+            applyClosingTargetCollectionMutation(
+                mutationResult,
+                boardID: boardID
             )
         } catch FolderBookmarkStoreError.missingBookmarkData {
+            restoreNormalPreviewWorkPolicy()
             replaceAvailableBoards(with: [])
             selectedEntryID = nil
             hasSelectedFolder = false
@@ -429,6 +443,7 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
                 localDuration: BoardListCanvasTransitionDebugLogger.now() - reloadStart
             )
         } catch {
+            restoreNormalPreviewWorkPolicy()
             logClosingTransitionTiming(
                 phase: "loadCatalogItemFailed",
                 extra:
@@ -436,6 +451,99 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
                     "error=\"\(error.localizedDescription)\""
             )
             refreshBookmarkStatus()
+        }
+    }
+
+    private func applyClosingTargetCollectionMutation(
+        _ mutationResult: BoardListCatalogMutationResult,
+        boardID: UUID
+    ) {
+        let updateStart = BoardListCanvasTransitionDebugLogger.now()
+        let previousIndexPathDescription = mutationResult.previousIndexPath.map {
+            "[section=\($0.section),item=\($0.item)]"
+        } ?? "nil"
+        let resolvedIndexPathDescription =
+            "[section=\(mutationResult.resolvedIndexPath.section),item=\(mutationResult.resolvedIndexPath.item)]"
+        logClosingTransitionTiming(
+            phase: "applyClosingTargetCollectionMutationBegin",
+            extra:
+                "boardID=\(boardID.uuidString) " +
+                "changeKind=\(mutationResult.changeKind.rawValue) " +
+                "previousIndexPath=\(previousIndexPathDescription) " +
+                "resolvedIndexPath=\(resolvedIndexPathDescription)"
+        )
+
+        updateCollectionVisibility()
+        updateDisplayModeControlState()
+        updateCollectionLayout()
+        view.layoutIfNeeded()
+
+        let finishMutation: () -> Void = { [weak self] in
+            guard let self else {
+                return
+            }
+
+            self.syncCollectionSelection()
+            self.view.layoutIfNeeded()
+            self.collectionView.layoutIfNeeded()
+            self.logClosingTransitionTiming(
+                phase: "applyClosingTargetCollectionMutationEnd",
+                localDuration: BoardListCanvasTransitionDebugLogger.now() - updateStart,
+                extra:
+                    "boardID=\(boardID.uuidString) " +
+                    "changeKind=\(mutationResult.changeKind.rawValue) " +
+                    "resolvedIndexPath=\(resolvedIndexPathDescription)"
+            )
+            self.revealPendingBoardIfNeeded()
+        }
+
+        switch mutationResult.changeKind {
+        case .unchanged:
+            finishMutation()
+        case .updated:
+            UIView.performWithoutAnimation {
+                self.collectionView.performBatchUpdates({
+                    self.collectionView.reloadItems(
+                        at: [mutationResult.resolvedIndexPath]
+                    )
+                }, completion: { _ in
+                    finishMutation()
+                })
+            }
+        case .inserted:
+            UIView.performWithoutAnimation {
+                self.collectionView.performBatchUpdates({
+                    self.collectionView.insertItems(
+                        at: [mutationResult.resolvedIndexPath]
+                    )
+                }, completion: { _ in
+                    finishMutation()
+                })
+            }
+        case .moved:
+            guard let previousIndexPath = mutationResult.previousIndexPath else {
+                UIView.performWithoutAnimation {
+                    self.collectionView.performBatchUpdates({
+                        self.collectionView.reloadItems(
+                            at: [mutationResult.resolvedIndexPath]
+                        )
+                    }, completion: { _ in
+                        finishMutation()
+                    })
+                }
+                return
+            }
+
+            UIView.performWithoutAnimation {
+                self.collectionView.performBatchUpdates({
+                    self.collectionView.deleteItems(at: [previousIndexPath])
+                    self.collectionView.insertItems(
+                        at: [mutationResult.resolvedIndexPath]
+                    )
+                }, completion: { _ in
+                    finishMutation()
+                })
+            }
         }
     }
 
@@ -576,6 +684,58 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
             localDuration: localDuration,
             extra: extra
         )
+    }
+
+    private func currentPreviewWorkPolicy() -> BoardListPreviewWorkPolicy {
+        previewWorkPolicy
+    }
+
+    private func restoreNormalPreviewWorkPolicy() {
+        previewWorkPolicy = .normal
+    }
+
+    private func scheduleVisibleBoardThumbnailRefreshIfNeeded() {
+        guard currentPreviewWorkPolicy() == .normal else {
+            return
+        }
+
+        DispatchQueue.main.async { [weak self] in
+            self?.requestVisibleBoardThumbnailsIfNeeded()
+        }
+    }
+
+    private func requestVisibleBoardThumbnailsIfNeeded() {
+        guard
+            currentPreviewWorkPolicy() == .normal,
+            isViewLoaded,
+            view.window != nil
+        else {
+            return
+        }
+
+        let visibleIndexPaths = collectionView.indexPathsForVisibleItems.sorted {
+            if $0.section == $1.section {
+                return $0.item < $1.item
+            }
+
+            return $0.section < $1.section
+        }
+        for indexPath in visibleIndexPaths {
+            guard
+                let entry = entry(at: indexPath),
+                let catalogItem = entry.catalogItem,
+                let cell = collectionView.cellForItem(at: indexPath) as? iOSBoardCollectionViewCell,
+                cell.isShowingThumbnailPreview == false
+            else {
+                continue
+            }
+
+            cell.requestThumbnail(
+                using: previewProvider,
+                for: catalogItem,
+                displayMode: displayMode
+            )
+        }
     }
 
     private func replaceAvailableBoards(
@@ -912,21 +1072,42 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
         )
     }
 
-    private func transitionTargetGeometry(
+    private func resolveTransitionTargetGeometry(
         for boardID: UUID
-    ) -> BoardListCanvasTransitionTargetGeometry {
-        guard let indexPath = indexPath(for: boardID) else {
-            return .init()
+    ) -> BoardListClosingTargetPreparationResult? {
+        guard let resolvedIndexPath = indexPath(for: boardID) else {
+            return nil
         }
 
-        if let cell = collectionView.cellForItem(at: indexPath) as? iOSBoardCollectionViewCell {
-            return BoardListCanvasTransitionTargetGeometry(
+        let geometry: BoardListCanvasTransitionTargetGeometry
+        let usedFallbackGeometry: Bool
+        if let cell = collectionView.cellForItem(
+            at: resolvedIndexPath
+        ) as? iOSBoardCollectionViewCell {
+            geometry = BoardListCanvasTransitionTargetGeometry(
                 cardRect: cell.transitionGeometry(in: view).cardRect
             )
+            usedFallbackGeometry = false
+        } else {
+            geometry = BoardListCanvasTransitionTargetGeometry(
+                cardRect: transitionCardRect(at: resolvedIndexPath)
+            )
+            usedFallbackGeometry = true
         }
 
-        return BoardListCanvasTransitionTargetGeometry(
-            cardRect: transitionCardRect(at: indexPath)
+        logClosingTransitionTiming(
+            phase: "resolveTransitionTargetGeometry",
+            extra:
+                "boardID=\(boardID.uuidString) " +
+                "indexPath=[section=\(resolvedIndexPath.section),item=\(resolvedIndexPath.item)] " +
+                "usedFallbackGeometry=\(usedFallbackGeometry) " +
+                "hasCardRect=\(geometry.cardRect != nil)"
+        )
+        return BoardListClosingTargetPreparationResult(
+            boardID: boardID,
+            resolvedIndexPath: resolvedIndexPath,
+            geometry: geometry,
+            usedFallbackGeometry: usedFallbackGeometry
         )
     }
 
@@ -963,7 +1144,36 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
         let completion = pendingTransitionTargetResolution?.completion
         pendingTransitionTargetResolution = nil
         closingTransitionTimingState = nil
+        restoreNormalPreviewWorkPolicy()
         completion?(geometry)
+        scheduleVisibleBoardThumbnailRefreshIfNeeded()
+    }
+
+    private func finishPendingTransitionTargetResolution(
+        _ preparationResult: BoardListClosingTargetPreparationResult
+    ) {
+        guard pendingTransitionTargetResolution?.boardID == preparationResult.boardID else {
+            return
+        }
+
+        let resolutionDuration = closingTransitionTimingState?.targetGeometryRequestedAt.map {
+            BoardListCanvasTransitionDebugLogger.now() - $0
+        }
+        logClosingTransitionTiming(
+            phase: "finishPendingTransitionTargetResolution",
+            localDuration: resolutionDuration,
+            extra:
+                "boardID=\(preparationResult.boardID.uuidString) " +
+                "indexPath=[section=\(preparationResult.resolvedIndexPath.section),item=\(preparationResult.resolvedIndexPath.item)] " +
+                "usedFallbackGeometry=\(preparationResult.usedFallbackGeometry) " +
+                "hasCardRect=\(preparationResult.geometry.cardRect != nil)"
+        )
+        let completion = pendingTransitionTargetResolution?.completion
+        pendingTransitionTargetResolution = nil
+        closingTransitionTimingState = nil
+        restoreNormalPreviewWorkPolicy()
+        completion?(preparationResult.geometry)
+        scheduleVisibleBoardThumbnailRefreshIfNeeded()
     }
 
     private func catalogEntryIndexPath(
@@ -1402,18 +1612,24 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
             animated: false
         )
         collectionView.layoutIfNeeded()
-        let geometry = transitionTargetGeometry(for: boardID)
+        let preparationResult = resolveTransitionTargetGeometry(for: boardID)
         logClosingTransitionTiming(
             phase: "revealBoardEnd",
             localDuration: BoardListCanvasTransitionDebugLogger.now() - revealStart,
             extra:
                 "boardID=\(boardID.uuidString) " +
-                "hasCardRect=\(geometry.cardRect != nil)"
+                "indexPath=[section=\(preparationResult?.resolvedIndexPath.section ?? indexPath.section),item=\(preparationResult?.resolvedIndexPath.item ?? indexPath.item)] " +
+                "usedFallbackGeometry=\(preparationResult?.usedFallbackGeometry ?? true) " +
+                "hasCardRect=\(preparationResult?.geometry.cardRect != nil)"
         )
-        finishPendingTransitionTargetResolution(
-            for: boardID,
-            geometry: geometry
-        )
+        if let preparationResult {
+            finishPendingTransitionTargetResolution(preparationResult)
+        } else {
+            finishPendingTransitionTargetResolution(
+                for: boardID,
+                geometry: .init()
+            )
+        }
         pendingRevealBoardID = nil
     }
 
@@ -1465,11 +1681,16 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
         let previewContent: BoardPreviewContent
         if entry.canRequestPreview,
            let catalogItem = entry.catalogItem {
-            let targetPixelSize = cell.targetThumbnailPixelSize(for: displayMode)
-            previewContent = previewProvider.immediatePreview(
-                for: catalogItem,
-                targetPixelSize: targetPixelSize
-            )
+            switch currentPreviewWorkPolicy() {
+            case .normal:
+                let targetPixelSize = cell.targetThumbnailPixelSize(for: displayMode)
+                previewContent = previewProvider.immediatePreview(
+                    for: catalogItem,
+                    targetPixelSize: targetPixelSize
+                )
+            case .geometryOnly:
+                previewContent = .geometry(catalogItem.previewSeed)
+            }
         } else {
             previewContent = .empty
         }
@@ -1512,7 +1733,8 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
 
         if entry.canRequestPreview,
            let catalogItem = entry.catalogItem,
-           previewContent.isThumbnail == false {
+           previewContent.isThumbnail == false,
+           currentPreviewWorkPolicy() == .normal {
             cell.requestThumbnail(
                 using: previewProvider,
                 for: catalogItem,

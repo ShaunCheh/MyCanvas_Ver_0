@@ -83,6 +83,7 @@ final class iOSBoardCollectionViewCell: UICollectionViewCell, UITextFieldDelegat
     private var onMoreActionsRequested: MoreActionsHandler?
     private var onRenameSubmitted: RenameSubmitHandler?
     private var currentPresentationStyle: PresentationStyle = .boardGrid
+    private var currentPreviewContent: BoardPreviewContent = .empty
     private var isTitleEditingActive = false
     private var didHandleCurrentTitleEditEnd = false
 
@@ -125,6 +126,7 @@ final class iOSBoardCollectionViewCell: UICollectionViewCell, UITextFieldDelegat
         onRenameSubmitted = nil
         isTitleEditingActive = false
         didHandleCurrentTitleEditEnd = false
+        currentPreviewContent = .empty
         previewView.apply(content: .empty)
     }
 
@@ -146,6 +148,7 @@ final class iOSBoardCollectionViewCell: UICollectionViewCell, UITextFieldDelegat
         didHandleCurrentTitleEditEnd = false
         self.onMoreActionsRequested = onMoreActionsRequested
         self.onRenameSubmitted = onRenameSubmitted
+        currentPreviewContent = previewContent
         previewView.apply(content: previewContent)
         applyPresentation(
             for: entry,
@@ -181,6 +184,10 @@ final class iOSBoardCollectionViewCell: UICollectionViewCell, UITextFieldDelegat
         thumbnailRequestToken = nil
     }
 
+    var isShowingThumbnailPreview: Bool {
+        currentPreviewContent.isThumbnail
+    }
+
     func targetThumbnailPixelSize(
         for displayMode: BoardListDisplayMode
     ) -> CGSize {
@@ -214,6 +221,7 @@ final class iOSBoardCollectionViewCell: UICollectionViewCell, UITextFieldDelegat
                 return
             }
 
+            self.currentPreviewContent = previewContent
             self.previewView.apply(content: previewContent)
         }
     }
