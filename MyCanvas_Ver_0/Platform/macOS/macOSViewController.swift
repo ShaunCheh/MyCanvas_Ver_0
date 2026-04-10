@@ -719,6 +719,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             "cameraViewportSize=\(describe(size: camera.viewportSize))"
         )
         updateCameraViewportSizeIfNeeded(trigger: "viewDidAppear")
+        updateChromeOverlayLayout()
     }
 
     override func viewDidLayout() {
@@ -853,6 +854,9 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         renderToolbar()
         if view.bounds.isEmpty == false {
             view.layoutSubtreeIfNeeded()
+            if chromeOverlayView.bounds.isEmpty == false {
+                chromeOverlayView.layoutSubtreeIfNeeded()
+            }
             updateChromeOverlayLayout()
         }
     }
@@ -863,6 +867,9 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             return
         }
 
+        if chromeOverlayView.bounds.isEmpty == false {
+            chromeOverlayView.layoutSubtreeIfNeeded()
+        }
         let contextMenuLayoutContext = performOverlayLayoutPass()
         updateContextMenuLayout(using: contextMenuLayoutContext)
     }
@@ -918,14 +925,18 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
 
     private func toolbarLayoutSafeBounds() -> CGRect {
         CGRect(
-            x: view.bounds.minX + view.safeAreaInsets.left,
-            y: view.bounds.minY + view.safeAreaInsets.top,
+            x: chromeOverlayView.bounds.minX + chromeOverlayView.safeAreaInsets.left,
+            y: chromeOverlayView.bounds.minY + chromeOverlayView.safeAreaInsets.top,
             width: max(
-                view.bounds.width - view.safeAreaInsets.left - view.safeAreaInsets.right,
+                chromeOverlayView.bounds.width -
+                    chromeOverlayView.safeAreaInsets.left -
+                    chromeOverlayView.safeAreaInsets.right,
                 0
             ),
             height: max(
-                view.bounds.height - view.safeAreaInsets.top - view.safeAreaInsets.bottom,
+                chromeOverlayView.bounds.height -
+                    chromeOverlayView.safeAreaInsets.top -
+                    chromeOverlayView.safeAreaInsets.bottom,
                 0
             )
         ).standardized
@@ -1947,7 +1958,10 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             currentPresentation: initialPresentation,
             pendingLayoutReconcile: true
         )
-        toolbarHostView.renderTransition(initialPresentation)
+        toolbarHostView.renderTransition(
+            initialPresentation,
+            animated: false
+        )
 
         switch initialStage {
         case .collapsing, .expanding:
@@ -2143,7 +2157,10 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         )
         runtime.pendingLayoutReconcile = true
         toolbarTransitionRuntime = runtime
-        toolbarHostView.renderTransition(runtime.currentPresentation)
+        toolbarHostView.renderTransition(
+            runtime.currentPresentation,
+            animated: false
+        )
     }
 
     private func animateToolbarTransition(
@@ -2171,7 +2188,10 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         toolbarTransitionRuntime = runtime
 
         if duration <= 0 {
-            toolbarHostView.renderTransition(targetPresentation)
+            toolbarHostView.renderTransition(
+                targetPresentation,
+                animated: false
+            )
             completion()
             return
         }
@@ -2179,7 +2199,10 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         NSAnimationContext.runAnimationGroup { context in
             context.duration = duration
             context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            self.toolbarHostView.renderTransition(targetPresentation)
+            self.toolbarHostView.renderTransition(
+                targetPresentation,
+                animated: true
+            )
         } completionHandler: { [weak self] in
             guard let self else {
                 return

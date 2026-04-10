@@ -129,8 +129,11 @@ final class macOSCanvasToolbarHostView: NSView {
         syncButtons(with: state.items)
     }
 
-    func renderTransition(_ presentation: CanvasToolbarTransitionPresentation) {
-        let shouldAnimate = shouldAnimateTransitionChanges
+    func renderTransition(
+        _ presentation: CanvasToolbarTransitionPresentation,
+        animated explicitAnimated: Bool? = nil
+    ) {
+        let shouldAnimate = explicitAnimated ?? shouldAnimateTransitionChanges
         if shouldAnimate == false {
             clearTransitionAnimations()
         }
