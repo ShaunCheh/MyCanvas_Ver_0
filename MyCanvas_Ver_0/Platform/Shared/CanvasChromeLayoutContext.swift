@@ -4,7 +4,6 @@ import Foundation
 enum CanvasChromeBlockerKind: String, Sendable {
     case backButton
     case modeToggle
-    case historyButtons
     case toolbar
     case miniMap
     case contextMenu
