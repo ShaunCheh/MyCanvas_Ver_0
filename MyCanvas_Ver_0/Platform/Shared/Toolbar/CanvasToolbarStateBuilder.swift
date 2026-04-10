@@ -8,7 +8,8 @@ struct CanvasToolbarStateBuilder {
         saveState: CanvasSaveState,
         placement: CanvasToolbarPlacement,
         isImportEnabled: Bool = true,
-        showsBackground: Bool = true
+        showsBackground: Bool = true,
+        includesHistoryItems: Bool = false
     ) -> CanvasToolbarState {
         guard session.isReadingModeActive == false else {
             return CanvasToolbarState(
@@ -19,6 +20,9 @@ struct CanvasToolbarStateBuilder {
         }
 
         var itemStates: [CanvasToolbarItemState] = []
+        if includesHistoryItems {
+            itemStates.append(contentsOf: historyItemStates(session: session))
+        }
         if shouldShowCropItem(session: session) {
             itemStates.append(cropItemState(session: session))
         }
@@ -30,6 +34,41 @@ struct CanvasToolbarStateBuilder {
             placement: placement,
             items: itemStates,
             showsBackground: showsBackground
+        )
+    }
+
+    func historyItemStates(session: CanvasEditorSession) -> [CanvasToolbarItemState] {
+        [
+            undoItemState(session: session),
+            redoItemState(session: session)
+        ]
+    }
+
+    func undoItemState(session: CanvasEditorSession) -> CanvasToolbarItemState {
+        let descriptor = commandCatalog.descriptor(
+            for: .undo,
+            session: session
+        )
+        return CanvasToolbarItemState(
+            id: .undo,
+            systemImageName: descriptor.systemImageName,
+            isEnabled: descriptor.isEnabled,
+            accessibilityLabel: descriptor.title,
+            visualRole: .accent
+        )
+    }
+
+    func redoItemState(session: CanvasEditorSession) -> CanvasToolbarItemState {
+        let descriptor = commandCatalog.descriptor(
+            for: .redo,
+            session: session
+        )
+        return CanvasToolbarItemState(
+            id: .redo,
+            systemImageName: descriptor.systemImageName,
+            isEnabled: descriptor.isEnabled,
+            accessibilityLabel: descriptor.title,
+            visualRole: .accent
         )
     }
 

@@ -184,8 +184,20 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         button.translatesAutoresizingMaskIntoConstraints = false
         return button
     }()
+    private let undoButton: NSButton = {
+        let button = NSButton()
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }()
+    private let redoButton: NSButton = {
+        let button = NSButton()
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }()
     private var toolbarButtonsByID: [CanvasToolbarItemID: NSButton] {
         [
+            .undo: undoButton,
+            .redo: redoButton,
             .crop: cropButton,
             .save: saveButton,
             .text: textButton,
@@ -660,6 +672,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         setupSaveButton()
         setupCropButton()
         setupTextButton()
+        setupUndoButton()
+        setupRedoButton()
         setupBackButton()
         setupWorkspaceModeButton()
         setupMiniMapView()
@@ -1120,6 +1134,18 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     private func setupTextButton() {
         textButton.target = self
         textButton.action = #selector(handleTextButtonClick)
+        updateInlineEditButtonsAppearance()
+    }
+
+    private func setupUndoButton() {
+        undoButton.target = self
+        undoButton.action = #selector(handleUndoButtonClick)
+        updateInlineEditButtonsAppearance()
+    }
+
+    private func setupRedoButton() {
+        redoButton.target = self
+        redoButton.action = #selector(handleRedoButtonClick)
         updateInlineEditButtonsAppearance()
     }
 
@@ -1872,6 +1898,16 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         } else {
             performCommand(.addTextItem)
         }
+    }
+
+    @objc
+    private func handleUndoButtonClick() {
+        performCommand(.undo)
+    }
+
+    @objc
+    private func handleRedoButtonClick() {
+        performCommand(.redo)
     }
 
     private func makeReturnToBoardListRequest() -> BoardListCanvasReturnRequest {
@@ -3772,6 +3808,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         ) else {
             return
         }
+        updateInlineEditButtonsAppearance()
     }
 
     private func recordImmediateHistoryChange(
@@ -3786,6 +3823,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         ) else {
             return
         }
+        updateInlineEditButtonsAppearance()
     }
 
     private var isInlineEditModeActive: Bool {
@@ -3936,7 +3974,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         toolbarStateBuilder.mainToolbarState(
             session: editorSession,
             saveState: saveButtonState,
-            placement: toolbarPreferredPlacement()
+            placement: toolbarPreferredPlacement(),
+            includesHistoryItems: true
         )
     }
 
