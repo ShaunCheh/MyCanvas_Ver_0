@@ -872,11 +872,13 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     }
 
     private func performOverlayLayoutPass() -> CanvasChromeLayoutContext {
+        let safeBounds = toolbarLayoutSafeBounds()
+        let baseChromeBlockers = baseChromeBlockersForToolbarLayout()
         let toolbarPlacementResult = CanvasToolbarPlacementPass.resolve(
-            safeBounds: toolbarLayoutSafeBounds(),
+            safeBounds: safeBounds,
             toolbarPreferredPlacement: toolbarPreferredPlacement(),
             toolbarMeasuredSize: measuredToolbarHostSize(),
-            baseChromeBlockers: baseChromeBlockersForToolbarLayout(),
+            baseChromeBlockers: baseChromeBlockers,
             scale: toolbarPlacementScale(),
             solver: toolbarPlacementSolver
         )
@@ -885,6 +887,12 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             in: toolbarPlacementResult.chromeLayoutContext
         )
         applyMiniMapFrame(miniMapFrame)
+        logChromeOverlayLayoutPass(
+            safeBounds: safeBounds,
+            baseChromeBlockers: baseChromeBlockers,
+            chromeLayoutContext: toolbarPlacementResult.chromeLayoutContext,
+            miniMapFrame: miniMapFrame
+        )
         return makeContextMenuLayoutContext(
             chromeLayoutContext: toolbarPlacementResult.chromeLayoutContext,
             miniMapFrame: miniMapFrame
@@ -4033,6 +4041,25 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         }
     }
 
+    private func describe(miniMapAnchor: CanvasMiniMapAnchor) -> String {
+        switch miniMapAnchor {
+        case .topLeading:
+            return "topLeading"
+        case .topTrailing:
+            return "topTrailing"
+        case .bottomLeading:
+            return "bottomLeading"
+        case .bottomTrailing:
+            return "bottomTrailing"
+        }
+    }
+
+    private func describe(
+        chromeBlocker: CanvasChromeBlocker
+    ) -> String {
+        "\(chromeBlocker.kind.rawValue)=\(describe(rect: chromeBlocker.rect))"
+    }
+
     private func describe(itemID: CanvasItemID?) -> String {
         itemID?.uuidString ?? "nil"
     }
@@ -4099,6 +4126,72 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         )
     }
 
+    private func logChromeOverlayLayoutPass(
+        safeBounds: CGRect,
+        baseChromeBlockers: [CanvasChromeBlocker],
+        chromeLayoutContext: CanvasChromeLayoutContext,
+        miniMapFrame: CGRect
+    ) {
+        let sanitizedMiniMapFrame = CanvasChromeLayoutGeometry.sanitizedRect(
+            miniMapFrame
+        ) ?? .zero
+        let sanitizedBackButtonFrame = CanvasChromeLayoutGeometry.sanitizedRect(
+            backButton.frame
+        ) ?? .zero
+        let sanitizedModeToggleFrame = CanvasChromeLayoutGeometry.sanitizedRect(
+            workspaceModeButton.frame
+        ) ?? .zero
+        let sanitizedToolbarFrame = chromeLayoutContext.chromeBlockers
+            .first(where: { $0.kind == .toolbar })?.rect ?? .zero
+        let layoutBounds = CanvasChromeLayoutGeometry.sanitizedRect(
+            safeBounds.insetBy(
+                dx: miniMapConfiguration.edgeInset,
+                dy: miniMapConfiguration.edgeInset
+            )
+        ) ?? .zero
+        let overlapBackButtonArea = intersectionArea(
+            between: sanitizedMiniMapFrame,
+            and: sanitizedBackButtonFrame
+        )
+        let overlapModeToggleArea = intersectionArea(
+            between: sanitizedMiniMapFrame,
+            and: sanitizedModeToggleFrame
+        )
+        let overlapToolbarArea = intersectionArea(
+            between: sanitizedMiniMapFrame,
+            and: sanitizedToolbarFrame
+        )
+        let baseBlockersDescription = baseChromeBlockers
+            .map(describe(chromeBlocker:))
+            .joined(separator: ", ")
+        let occupiedRectsDescription = chromeLayoutContext.chromeBlockers
+            .map(describe(chromeBlocker:))
+            .joined(separator: ", ")
+
+        print(
+            "[Canvas macOS][ChromeOverlayLayout] " +
+            "event=miniMapLayout " +
+            "overlayIsFlipped=\(chromeOverlayView.isFlipped) " +
+            "preferredMiniMapAnchor=\(describe(miniMapAnchor: miniMapConfiguration.preferredAnchor)) " +
+            "visualPreferredMiniMapAnchor=\(visualMiniMapAnchorDescription()) " +
+            "safeBounds=\(describe(rect: safeBounds)) " +
+            "layoutBounds=\(describe(rect: layoutBounds)) " +
+            "backButtonFrame=\(describe(rect: sanitizedBackButtonFrame)) " +
+            "modeToggleFrame=\(describe(rect: sanitizedModeToggleFrame)) " +
+            "toolbarFrame=\(describe(rect: sanitizedToolbarFrame)) " +
+            "miniMapFrame=\(describe(rect: sanitizedMiniMapFrame)) " +
+            "miniMapHidden=\(miniMapMountView.isHidden) " +
+            "overlapBackButton=\(overlapBackButtonArea > 0) " +
+            "overlapBackButtonArea=\(formatCoordinate(overlapBackButtonArea)) " +
+            "overlapModeToggle=\(overlapModeToggleArea > 0) " +
+            "overlapModeToggleArea=\(formatCoordinate(overlapModeToggleArea)) " +
+            "overlapToolbar=\(overlapToolbarArea > 0) " +
+            "overlapToolbarArea=\(formatCoordinate(overlapToolbarArea)) " +
+            "baseBlockers=[\(baseBlockersDescription)] " +
+            "occupiedRects=[\(occupiedRectsDescription)]"
+        )
+    }
+
     private func toolbarSlideDirectionDescription(
         for frames: CanvasToolbarTransitionFrames
     ) -> String {
@@ -4140,6 +4233,36 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         }
 
         return "custom"
+    }
+
+    private func visualMiniMapAnchorDescription() -> String {
+        let semanticAnchor = miniMapConfiguration.preferredAnchor
+        if chromeOverlayView.isFlipped {
+            return describe(miniMapAnchor: semanticAnchor)
+        }
+
+        switch semanticAnchor {
+        case .topLeading:
+            return "bottomLeading(nonflipped)"
+        case .topTrailing:
+            return "bottomTrailing(nonflipped)"
+        case .bottomLeading:
+            return "topLeading(nonflipped)"
+        case .bottomTrailing:
+            return "topTrailing(nonflipped)"
+        }
+    }
+
+    private func intersectionArea(
+        between lhs: CGRect,
+        and rhs: CGRect
+    ) -> CGFloat {
+        let intersection = lhs.intersection(rhs)
+        guard intersection.isNull == false, intersection.isEmpty == false else {
+            return 0
+        }
+
+        return intersection.width * intersection.height
     }
 
     private func describe(pointerDragState: PointerDragState) -> String {
