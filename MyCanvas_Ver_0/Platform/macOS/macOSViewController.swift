@@ -1978,7 +1978,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
                 safeBounds: toolbarLayoutSafeBounds()
             )
 
-            return CanvasToolbarTransitionContext(
+            let context = CanvasToolbarTransitionContext(
                 direction: direction,
                 visibleSnapshot: CanvasToolbarTransitionSnapshot(
                     state: visibleState,
@@ -1992,6 +1992,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
                 ),
                 configuration: configuration
             )
+            logToolbarTransitionContext(context)
+            return context
 
         case .toEditing:
             applyWorkspaceModeForToolbarTransition(to: .editing)
@@ -2010,7 +2012,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
                 safeBounds: toolbarLayoutSafeBounds()
             )
 
-            return CanvasToolbarTransitionContext(
+            let context = CanvasToolbarTransitionContext(
                 direction: direction,
                 visibleSnapshot: CanvasToolbarTransitionSnapshot(
                     state: visibleState,
@@ -2024,6 +2026,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
                 ),
                 configuration: configuration
             )
+            logToolbarTransitionContext(context)
+            return context
         }
     }
 
@@ -2146,6 +2150,12 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         let targetPresentation = CanvasToolbarTransitionGeometry.presentation(
             for: targetStage,
             context: runtime.context
+        )
+        logToolbarTransitionAnimation(
+            context: runtime.context,
+            stage: targetStage,
+            presentation: targetPresentation,
+            duration: duration
         )
         let expectedDirection = runtime.context.direction
         runtime.stage = targetStage
@@ -3993,6 +4003,36 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         "{{\(formatCoordinate(rect.origin.x)), \(formatCoordinate(rect.origin.y))}, {\(formatCoordinate(rect.size.width)), \(formatCoordinate(rect.size.height))}}"
     }
 
+    private func describe(
+        toolbarTransitionDirection: CanvasToolbarTransitionDirection
+    ) -> String {
+        switch toolbarTransitionDirection {
+        case .toReading:
+            return "toReading"
+        case .toEditing:
+            return "toEditing"
+        }
+    }
+
+    private func describe(
+        toolbarTransitionStage: CanvasToolbarTransitionStage
+    ) -> String {
+        switch toolbarTransitionStage {
+        case .steadyVisible:
+            return "steadyVisible"
+        case let .collapsing(progress):
+            return "collapsing(\(formatCoordinate(progress)))"
+        case let .exiting(progress):
+            return "exiting(\(formatCoordinate(progress)))"
+        case .hidden:
+            return "hidden"
+        case let .entering(progress):
+            return "entering(\(formatCoordinate(progress)))"
+        case let .expanding(progress):
+            return "expanding(\(formatCoordinate(progress)))"
+        }
+    }
+
     private func describe(itemID: CanvasItemID?) -> String {
         itemID?.uuidString ?? "nil"
     }
@@ -4003,6 +4043,103 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         }
 
         return "itemID=\(editOverlay.itemID.uuidString) kind=\(String(describing: editOverlay.kind)) activeScreenQuad=\(describe(rect: editOverlay.activeScreenQuad.boundingRect.standardized))"
+    }
+
+    private func logToolbarTransitionContext(
+        _ context: CanvasToolbarTransitionContext
+    ) {
+        let safeBounds = toolbarLayoutSafeBounds()
+        let slideDelta = CGPoint(
+            x: context.frames.offscreenFrame.minX - context.frames.collapsedFrame.minX,
+            y: context.frames.offscreenFrame.minY - context.frames.collapsedFrame.minY
+        )
+        let itemIDs = context.visibleSnapshot.state.items
+            .map(\.id.rawValue)
+            .joined(separator: ",")
+
+        print(
+            "[Canvas macOS][ToolbarTransition] " +
+            "event=contextBuilt " +
+            "direction=\(describe(toolbarTransitionDirection: context.direction)) " +
+            "placementEdge=\(context.visibleSnapshot.state.placement.preferredEdge.rawValue) " +
+            "preferredAxis=\(context.visibleSnapshot.state.preferredAxis.rawValue) " +
+            "overlayIsFlipped=\(chromeOverlayView.isFlipped) " +
+            "hostSuperviewIsFlipped=\(toolbarHostView.superview?.isFlipped ?? false) " +
+            "hostIsFlipped=\(toolbarHostView.isFlipped) " +
+            "safeBounds=\(describe(rect: safeBounds)) " +
+            "currentHostFrame=\(describe(rect: toolbarHostView.frame)) " +
+            "visibleFrame=\(describe(rect: context.frames.visibleFrame)) " +
+            "collapsedFrame=\(describe(rect: context.frames.collapsedFrame)) " +
+            "offscreenFrame=\(describe(rect: context.frames.offscreenFrame)) " +
+            "slideDelta=\(describe(point: slideDelta)) " +
+            "slideDirection=\(toolbarSlideDirectionDescription(for: context.frames)) " +
+            "collapseVerticalAnchor=\(toolbarCollapseVerticalAnchorDescription(for: context.frames)) " +
+            "items=[\(itemIDs)]"
+        )
+    }
+
+    private func logToolbarTransitionAnimation(
+        context: CanvasToolbarTransitionContext,
+        stage: CanvasToolbarTransitionStage,
+        presentation: CanvasToolbarTransitionPresentation,
+        duration: TimeInterval
+    ) {
+        print(
+            "[Canvas macOS][ToolbarTransition] " +
+            "event=animate " +
+            "direction=\(describe(toolbarTransitionDirection: context.direction)) " +
+            "stage=\(describe(toolbarTransitionStage: stage)) " +
+            "duration=\(formatCoordinate(duration)) " +
+            "currentHostFrame=\(describe(rect: toolbarHostView.frame)) " +
+            "targetFrame=\(describe(rect: presentation.frame)) " +
+            "targetAlpha=\(formatCoordinate(presentation.contentAlpha)) " +
+            "targetScale=\(formatCoordinate(presentation.contentScale)) " +
+            "keepsHostVisible=\(presentation.keepsHostVisible) " +
+            "isInteractive=\(presentation.isInteractive)"
+        )
+    }
+
+    private func toolbarSlideDirectionDescription(
+        for frames: CanvasToolbarTransitionFrames
+    ) -> String {
+        let deltaX = frames.offscreenFrame.minX - frames.collapsedFrame.minX
+        let deltaY = frames.offscreenFrame.minY - frames.collapsedFrame.minY
+
+        if abs(deltaX) >= 0.5, abs(deltaY) < 0.5 {
+            return deltaX > 0 ? "right(+x)" : "left(-x)"
+        }
+
+        if abs(deltaY) >= 0.5, abs(deltaX) < 0.5 {
+            if chromeOverlayView.isFlipped {
+                return deltaY > 0 ? "down(+y in flipped)" : "up(-y in flipped)"
+            }
+
+            return deltaY > 0 ? "up(+y in nonflipped)" : "down(-y in nonflipped)"
+        }
+
+        if abs(deltaX) < 0.5, abs(deltaY) < 0.5 {
+            return "none"
+        }
+
+        return "diagonal"
+    }
+
+    private func toolbarCollapseVerticalAnchorDescription(
+        for frames: CanvasToolbarTransitionFrames
+    ) -> String {
+        if abs(frames.visibleFrame.minY - frames.collapsedFrame.minY) < 0.5 {
+            return chromeOverlayView.isFlipped
+                ? "top(minY preserved in flipped container)"
+                : "bottom(minY preserved in nonflipped container)"
+        }
+
+        if abs(frames.visibleFrame.maxY - frames.collapsedFrame.maxY) < 0.5 {
+            return chromeOverlayView.isFlipped
+                ? "bottom(maxY preserved in flipped container)"
+                : "top(maxY preserved in nonflipped container)"
+        }
+
+        return "custom"
     }
 
     private func describe(pointerDragState: PointerDragState) -> String {

@@ -134,6 +134,10 @@ final class macOSCanvasToolbarHostView: NSView {
         if shouldAnimate == false {
             clearTransitionAnimations()
         }
+        logTransitionRenderRequest(
+            presentation: presentation,
+            animated: shouldAnimate
+        )
         isTransitionRendering = true
         transitionInteractivity = presentation.isInteractive
         backgroundView.isHidden = presentation.showsBackground == false
@@ -260,6 +264,35 @@ final class macOSCanvasToolbarHostView: NSView {
         buttonsStackView.layer?.removeAllAnimations()
     }
 
+    private func logTransitionRenderRequest(
+        presentation: CanvasToolbarTransitionPresentation,
+        animated: Bool
+    ) {
+        let targetOriginDelta = CGPoint(
+            x: presentation.frame.origin.x - frame.origin.x,
+            y: presentation.frame.origin.y - frame.origin.y
+        )
+        let targetSizeDelta = CGSize(
+            width: presentation.frame.size.width - frame.size.width,
+            height: presentation.frame.size.height - frame.size.height
+        )
+
+        print(
+            "[Canvas macOS][ToolbarHostTransition] " +
+            "animated=\(animated) " +
+            "dockEdge=\(dockEdge.rawValue) " +
+            "hostIsFlipped=\(isFlipped) " +
+            "superviewIsFlipped=\(superview?.isFlipped ?? false) " +
+            "currentFrame=\(describe(rect: frame)) " +
+            "targetFrame=\(describe(rect: presentation.frame)) " +
+            "originDelta=\(describe(point: targetOriginDelta)) " +
+            "sizeDelta=\(describe(size: targetSizeDelta)) " +
+            "contentAlpha=\(formatCoordinate(presentation.contentAlpha)) " +
+            "contentScale=\(formatCoordinate(presentation.contentScale)) " +
+            "keepsHostVisible=\(presentation.keepsHostVisible)"
+        )
+    }
+
     private func applyAppearance(
         _ itemState: CanvasToolbarItemState,
         to button: NSButton
@@ -322,6 +355,22 @@ final class macOSCanvasToolbarHostView: NSView {
             heightConstraint.identifier = "canvasToolbarHost.buttonHeight"
             heightConstraint.isActive = true
         }
+    }
+
+    private func describe(point: CGPoint) -> String {
+        "{\(formatCoordinate(point.x)), \(formatCoordinate(point.y))}"
+    }
+
+    private func describe(size: CGSize) -> String {
+        "{\(formatCoordinate(size.width)), \(formatCoordinate(size.height))}"
+    }
+
+    private func describe(rect: CGRect) -> String {
+        "{{\(formatCoordinate(rect.origin.x)), \(formatCoordinate(rect.origin.y))}, {\(formatCoordinate(rect.size.width)), \(formatCoordinate(rect.size.height))}}"
+    }
+
+    private func formatCoordinate(_ value: CGFloat) -> String {
+        String(format: "%.2f", Double(value))
     }
 }
 #endif
