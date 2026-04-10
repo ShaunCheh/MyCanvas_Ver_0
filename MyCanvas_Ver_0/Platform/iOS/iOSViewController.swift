@@ -158,15 +158,6 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         toolbarTransitionRuntime != nil
     }
     private let textEditorOverlayView = iOSCanvasTextEditorOverlayView()
-    private let historyButtonsStackView: iOSCanvasChromeStackView = {
-        let stackView = iOSCanvasChromeStackView()
-        stackView.translatesAutoresizingMaskIntoConstraints = false
-        stackView.axis = .vertical
-        stackView.alignment = .trailing
-        stackView.distribution = .fill
-        stackView.spacing = 12
-        return stackView
-    }()
     private let miniMapMountView: iOSCanvasChromeOverlayView = {
         let view = iOSCanvasChromeOverlayView()
         view.translatesAutoresizingMaskIntoConstraints = true
@@ -207,14 +198,13 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     }()
     private var toolbarButtonsByID: [CanvasToolbarItemID: UIButton] {
         [
+            .undo: undoButton,
+            .redo: redoButton,
             .crop: cropButton,
             .save: saveButton,
             .text: textButton,
             .importMedia: importButton
         ]
-    }
-    private var historyButtons: [UIButton] {
-        [undoButton, redoButton]
     }
     private let canvasViewportView = iOSCanvasViewportView()
     private var canvasContentView: UIView?
@@ -699,14 +689,12 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         view.addSubview(chromeOverlayView)
         view.addSubview(transitionInteractionShieldView)
         chromeOverlayView.addSubview(miniMapMountView)
-        chromeOverlayView.addSubview(historyButtonsStackView)
         toolbarHostView.translatesAutoresizingMaskIntoConstraints = true
         chromeOverlayView.addSubview(toolbarHostView)
         chromeOverlayView.addSubview(textEditorOverlayView)
         chromeOverlayView.addSubview(contextMenuHostView)
         chromeOverlayView.addSubview(backButton)
         chromeOverlayView.addSubview(workspaceModeButton)
-        installHistoryButtons()
         registerToolbarButtons()
     }
 
@@ -744,22 +732,12 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             textEditorOverlayView.leadingAnchor.constraint(greaterThanOrEqualTo: safeAreaLayoutGuide.leadingAnchor, constant: 20),
             textEditorOverlayView.trailingAnchor.constraint(lessThanOrEqualTo: safeAreaLayoutGuide.trailingAnchor, constant: -20),
             preferredTextEditorWidth,
-            textEditorOverlayView.heightAnchor.constraint(equalToConstant: 148),
-            historyButtonsStackView.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -20),
-            historyButtonsStackView.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -20),
-            undoButton.heightAnchor.constraint(equalToConstant: 40),
-            redoButton.heightAnchor.constraint(equalToConstant: 40)
+            textEditorOverlayView.heightAnchor.constraint(equalToConstant: 148)
         ])
     }
 
     private func registerToolbarButtons() {
         toolbarHostView.registerButtons(toolbarButtonsByID)
-    }
-
-    private func installHistoryButtons() {
-        historyButtons.forEach { button in
-            historyButtonsStackView.addArrangedSubview(button)
-        }
     }
 
     private func updatePreparedToolbarPlacement() {
@@ -834,11 +812,6 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         appendChromeBlocker(
             kind: .modeToggle,
             for: workspaceModeButton,
-            to: &chromeBlockers
-        )
-        appendChromeBlocker(
-            kind: .historyButtons,
-            for: historyButtonsStackView,
             to: &chromeBlockers
         )
         return chromeBlockers
@@ -1007,12 +980,12 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
 
     private func setupUndoButton() {
         undoButton.addTarget(self, action: #selector(handleUndoButtonTap), for: .touchUpInside)
-        updateHistoryButtonsAppearance()
+        updateInlineEditButtonsAppearance()
     }
 
     private func setupRedoButton() {
         redoButton.addTarget(self, action: #selector(handleRedoButtonTap), for: .touchUpInside)
-        updateHistoryButtonsAppearance()
+        updateInlineEditButtonsAppearance()
     }
 
     private func setupBackButton() {
@@ -2140,7 +2113,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     ) {
         workspaceMode = targetMode
         updateWorkspaceModeButtonAppearance()
-        updateHistoryButtonsAppearance()
+        updateInlineEditButtonsAppearance()
         syncTextEditorPresentation()
         requestCanvasRefresh(reason: "toggle workspace mode")
         scheduleAutosave(
@@ -3697,7 +3670,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         ) else {
             return
         }
-        updateHistoryButtonsAppearance()
+        updateInlineEditButtonsAppearance()
     }
 
     private func recordImmediateHistoryChange(
@@ -3712,7 +3685,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         ) else {
             return
         }
-        updateHistoryButtonsAppearance()
+        updateInlineEditButtonsAppearance()
     }
 
     private var isInlineEditModeActive: Bool {
@@ -3868,7 +3841,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         toolbarStateBuilder.mainToolbarState(
             session: editorSession,
             saveState: saveButtonState,
-            placement: toolbarPreferredPlacement()
+            placement: toolbarPreferredPlacement(),
+            includesHistoryItems: true
         )
     }
 
@@ -3886,73 +3860,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     }
 
     private func updateInlineEditButtonsAppearance() {
-        updateHistoryButtonsAppearance()
         updatePreparedToolbarPlacement()
         syncTextEditorPresentation()
-    }
-
-    private func updateHistoryButtonsAppearance() {
-        historyButtonsStackView.isHidden = isReadingModeActive
-        updateUndoButtonAppearance()
-        updateRedoButtonAppearance()
-    }
-
-    private func updateUndoButtonAppearance() {
-        let descriptor = commandDescriptor(for: .undo)
-        applyUndoButtonAppearance(
-            title: descriptor.title,
-            systemImageName: descriptor.systemImageName,
-            backgroundColor: .systemBlue,
-            isEnabled: descriptor.isEnabled
-        )
-    }
-
-    private func updateRedoButtonAppearance() {
-        let descriptor = commandDescriptor(for: .redo)
-        applyRedoButtonAppearance(
-            title: descriptor.title,
-            systemImageName: descriptor.systemImageName,
-            backgroundColor: .systemIndigo,
-            isEnabled: descriptor.isEnabled
-        )
-    }
-
-    private func applyUndoButtonAppearance(
-        title: String,
-        systemImageName: String,
-        backgroundColor: UIColor,
-        isEnabled: Bool
-    ) {
-        undoButton.isEnabled = isEnabled
-        var configuration = undoButton.configuration ?? UIButton.Configuration.filled()
-        configuration.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
-        configuration.imagePlacement = .leading
-        configuration.imagePadding = 6
-        configuration.cornerStyle = .capsule
-        configuration.baseForegroundColor = .white
-        configuration.title = title
-        configuration.image = UIImage(systemName: systemImageName)
-        configuration.baseBackgroundColor = isEnabled ? backgroundColor : .systemGray3
-        undoButton.configuration = configuration
-    }
-
-    private func applyRedoButtonAppearance(
-        title: String,
-        systemImageName: String,
-        backgroundColor: UIColor,
-        isEnabled: Bool
-    ) {
-        redoButton.isEnabled = isEnabled
-        var configuration = redoButton.configuration ?? UIButton.Configuration.filled()
-        configuration.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
-        configuration.imagePlacement = .leading
-        configuration.imagePadding = 6
-        configuration.cornerStyle = .capsule
-        configuration.baseForegroundColor = .white
-        configuration.title = title
-        configuration.image = UIImage(systemName: systemImageName)
-        configuration.baseBackgroundColor = isEnabled ? backgroundColor : .systemGray3
-        redoButton.configuration = configuration
     }
 
     private func presentSaveError(message: String) {
