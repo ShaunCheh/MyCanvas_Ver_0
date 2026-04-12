@@ -895,15 +895,20 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     private func performOverlayLayoutPass() -> CanvasChromeLayoutContext {
         let safeBounds = toolbarLayoutSafeBounds()
         let baseChromeBlockers = baseChromeBlockersForToolbarLayout()
+        let toolbarState = makeToolbarState()
         let toolbarPlacementResult = CanvasToolbarPlacementPass.resolve(
             safeBounds: safeBounds,
-            toolbarPreferredPlacement: toolbarPreferredPlacement(),
-            toolbarMeasuredSize: measuredToolbarHostSize(),
+            toolbarPreferredPlacement: toolbarState.placement,
+            toolbarMeasuredSize: measuredToolbarHostSize(for: toolbarState),
             baseChromeBlockers: baseChromeBlockers,
             scale: toolbarPlacementScale(),
             solver: toolbarPlacementSolver
         )
-        applyToolbarFrame(toolbarPlacementResult.toolbarFrame)
+        applyToolbarFrame(
+            toolbarState.items.isEmpty
+                ? toolbarPlacementResult.hiddenToolbarFrame
+                : toolbarPlacementResult.toolbarFrame
+        )
         let miniMapFrame = resolveMiniMapFrame(
             in: toolbarPlacementResult.chromeLayoutContext
         )
@@ -1062,12 +1067,6 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
                 kind: kind,
                 rect: standardizedRect
             )
-        )
-    }
-
-    private func measuredToolbarHostSize() -> CGSize {
-        CanvasChromeLayoutGeometry.sanitizedSize(
-            toolbarHostView.measuredContentSize()
         )
     }
 
@@ -2031,9 +2030,13 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             let collapsedFrame = CanvasToolbarTransitionGeometry.collapsedFrame(
                 from: visibleFrame
             )
-            let offscreenFrame = CanvasToolbarTransitionGeometry.offscreenFrame(
-                from: collapsedFrame,
-                safeBounds: toolbarLayoutSafeBounds()
+            let offscreenFrame = CanvasToolbarTransitionGeometry.hiddenFrame(
+                for: visibleState.placement,
+                visibleFrame: visibleFrame,
+                safeBounds: toolbarLayoutSafeBounds(),
+                scale: toolbarPlacementScale(),
+                baseChromeBlockers: baseChromeBlockersForToolbarLayout(),
+                solver: toolbarPlacementSolver
             )
 
             let context = CanvasToolbarTransitionContext(
@@ -2065,9 +2068,13 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             let collapsedFrame = CanvasToolbarTransitionGeometry.collapsedFrame(
                 from: visibleFrame
             )
-            let offscreenFrame = CanvasToolbarTransitionGeometry.offscreenFrame(
-                from: collapsedFrame,
-                safeBounds: toolbarLayoutSafeBounds()
+            let offscreenFrame = CanvasToolbarTransitionGeometry.hiddenFrame(
+                for: visibleState.placement,
+                visibleFrame: visibleFrame,
+                safeBounds: toolbarLayoutSafeBounds(),
+                scale: toolbarPlacementScale(),
+                baseChromeBlockers: baseChromeBlockersForToolbarLayout(),
+                solver: toolbarPlacementSolver
             )
 
             let context = CanvasToolbarTransitionContext(
@@ -2496,10 +2503,13 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             scale: toolbarPlacementScale(),
             solver: toolbarPlacementSolver
         )
+        let steadyFrame = state.items.isEmpty
+            ? placementResult.hiddenToolbarFrame
+            : placementResult.toolbarFrame
 
         return normalizedToolbarFrame(
-            placementResult.toolbarFrame,
-            fallback: placementResult.toolbarFrame
+            steadyFrame,
+            fallback: steadyFrame
         )
     }
 

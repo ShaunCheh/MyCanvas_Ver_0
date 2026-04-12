@@ -3,6 +3,7 @@ import Foundation
 
 struct CanvasToolbarPlacementPassResult: Hashable, Sendable {
     var toolbarFrame: CGRect
+    var hiddenToolbarFrame: CGRect
     var chromeLayoutContext: CanvasChromeLayoutContext
 }
 
@@ -31,6 +32,15 @@ enum CanvasToolbarPlacementPass {
                 scale: scale
             )
         } ?? .zero
+        let hiddenToolbarFrame = CanvasToolbarTransitionGeometry.hiddenFrame(
+            for: toolbarPreferredPlacement,
+            visibleFrame: CanvasChromeLayoutGeometry.sanitizedRect(toolbarFrame),
+            safeBounds: safeBounds,
+            scale: scale,
+            baseChromeBlockers: baseChromeBlockers,
+            solver: solver,
+            configuration: configuration
+        )
 
         var chromeBlockers = baseChromeBlockers
         if let toolbarRect = CanvasChromeLayoutGeometry.sanitizedRect(
@@ -46,6 +56,7 @@ enum CanvasToolbarPlacementPass {
 
         return CanvasToolbarPlacementPassResult(
             toolbarFrame: toolbarFrame,
+            hiddenToolbarFrame: hiddenToolbarFrame,
             chromeLayoutContext: makeChromeLayoutContext(
                 safeBounds: safeBounds,
                 toolbarPreferredPlacement: toolbarPreferredPlacement,
