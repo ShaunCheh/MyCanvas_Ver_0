@@ -368,6 +368,8 @@ enum CanvasImportLayout: Equatable {
     }
 }
 
+// Import requests stay downstream of transfer requests. They carry document-ready
+// media items plus presentation metadata after lowering, not raw capture intents.
 struct CanvasImportRequest {
     let items: [CanvasImportItem]
     let placement: CanvasImportPlacement

@@ -43,6 +43,8 @@ enum CanvasCommandID: String {
 }
 
 enum CanvasCommand {
+    // importMedia lives in the command lane after transfer/import lowering and
+    // intentionally consumes CanvasImportRequest instead of raw capture input.
     case importMedia(CanvasImportRequest)
     case addTextItem
     case beginTextEdit(itemID: CanvasItemID)

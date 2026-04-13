@@ -3,6 +3,8 @@ enum CanvasTransferItem {
     case video(CanvasResolvedImportVideo)
 }
 
+// Transfer requests stay downstream of platform capture. They model already
+// resolved media payload plus placement/layout metadata, not raw input attempts.
 struct CanvasTransferRequest {
     let items: [CanvasTransferItem]
     let placement: CanvasImportPlacement
