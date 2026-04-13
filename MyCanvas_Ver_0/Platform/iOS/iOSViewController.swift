@@ -66,6 +66,17 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         case iOSKeyCommand
         case importButton
         case dragAndDrop
+
+        var debugName: String {
+            switch self {
+            case .iOSKeyCommand:
+                return "iOSKeyCommand"
+            case .importButton:
+                return "importButton"
+            case .dragAndDrop:
+                return "dragAndDrop"
+            }
+        }
     }
 
     private static let isDiagnosticLoggingEnabled = false
@@ -1066,9 +1077,6 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             self?.handlePrimaryPointerCancel()
         }
         canvasViewportView.onLongPress = { [weak self] location in
-            guard self?.isTransitionInteractionFrozen == false else {
-                return
-            }
             self?.handleLongPress(at: location)
         }
         canvasViewportView.onPan = { [weak self] translation in
@@ -1195,7 +1203,11 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             return
         }
 
-        guard isInteractionAllowed(.contextMenuRequest) else {
+        guard handleInteractionAttempt(
+            .contextMenuRequest,
+            sourceDescription: "longPress",
+            continueIfAllowed: { true }
+        ) else {
             dismissContextMenu()
             return
         }
@@ -2466,10 +2478,6 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
                     return
                 }
 
-                guard self.isTransferEntryAllowed(.dragAndDrop) else {
-                    return
-                }
-
                 guard let transferRequest = await iOSCanvasImportAdapter.transferRequest(
                     from: session,
                     sourceDescription: "drag and drop"
@@ -2487,19 +2495,12 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
         picker.dismiss(animated: true)
 
-        guard
-            results.isEmpty == false,
-            isTransferEntryAllowed(.importButton)
-        else {
+        guard results.isEmpty == false else {
             return
         }
 
         Task { @MainActor [weak self] in
             guard let self else {
-                return
-            }
-
-            guard self.isTransferEntryAllowed(.importButton) else {
                 return
             }
 
@@ -2557,9 +2558,15 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     @discardableResult
     private func handleInteractionAttempt(
         _ intent: CanvasInteractionIntent,
+        sourceDescription: String,
         continueIfAllowed: () -> Bool
     ) -> Bool {
         let decision = interactionDecision(for: intent)
+        logInteractionDecision(
+            intent: intent,
+            decision: decision,
+            sourceDescription: sourceDescription
+        )
         switch decision {
         case .allow:
             return continueIfAllowed()
@@ -2569,12 +2576,6 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             }
             return false
         }
-    }
-
-    private func transferEntryDecision(
-        for entry: CanvasTransferEntryIntent
-    ) -> CanvasInteractionDecision {
-        interactionDecision(for: .transferEntry(entry))
     }
 
     private func isTransferEntryAllowed(
@@ -2589,9 +2590,57 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         deliverySource: TransferEntryDeliverySource,
         continueIfAllowed: () -> Bool
     ) -> Bool {
-        handleInteractionAttempt(.transferEntry(entry)) {
+        handleInteractionAttempt(
+            .transferEntry(entry),
+            sourceDescription: deliverySource.debugName
+        ) {
             continueIfAllowed()
         }
+    }
+
+    private func logInteractionDecision(
+        intent: CanvasInteractionIntent,
+        decision: CanvasInteractionDecision,
+        sourceDescription: String
+    ) {
+        print(
+            "[Canvas iOS][InteractionGate] " +
+            "source=\"\(sourceDescription)\" " +
+            "intent=\(intent.debugName) " +
+            "decision=\(decision.debugName) " +
+            "reason=\(decision.blockReason?.debugName ?? "none") " +
+            "feedback=\(decision.feedbackHint?.debugName ?? "none") " +
+            "workspaceMode=\(workspaceMode.rawValue) " +
+            "frozen=\(isTransitionInteractionFrozen)"
+        )
+    }
+
+    private func transferSafetyNetBlockReason() -> CanvasInteractionBlockReason? {
+        if isTransitionInteractionFrozen {
+            return .transitionInteractionFrozen
+        }
+
+        if isReadingModeActive {
+            return .readingMode
+        }
+
+        return nil
+    }
+
+    private func logTransferSafetyNetBlock(
+        request: CanvasTransferRequest,
+        reason: CanvasInteractionBlockReason
+    ) {
+        print(
+            "[Canvas iOS][InteractionGate] " +
+            "source=\"\(request.sourceDescription)\" " +
+            "intent=transferRequestSafetyNet " +
+            "decision=block " +
+            "reason=\(reason.debugName) " +
+            "feedback=none " +
+            "workspaceMode=\(workspaceMode.rawValue) " +
+            "frozen=\(isTransitionInteractionFrozen)"
+        )
     }
 
     private func applyInteractionFeedback(_ hint: CanvasInteractionFeedbackHint) {
@@ -2638,10 +2687,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     private func performTransferRequest(
         _ request: CanvasTransferRequest
     ) -> Bool {
-        guard
-            isTransitionInteractionFrozen == false,
-            isReadingModeActive == false
-        else {
+        if let reason = transferSafetyNetBlockReason() {
+            logTransferSafetyNetBlock(request: request, reason: reason)
             return false
         }
 
@@ -3884,7 +3931,10 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     }
 
     private func beginTextEditIfPossible(for itemID: CanvasItemID) -> Bool {
-        handleInteractionAttempt(.beginTextEdit(itemID: itemID)) {
+        handleInteractionAttempt(
+            .beginTextEdit(itemID: itemID),
+            sourceDescription: "itemTapReentry"
+        ) {
             guard scene.textItem(withID: itemID) != nil else {
                 return false
             }

@@ -151,6 +151,38 @@ final class CanvasContextMenuActionResolverTests: XCTestCase {
         XCTAssertTrue(actionStates.isEmpty)
     }
 
+    func testExplicitReadingEnvironmentReturnsNoActionsEvenWhenSessionEditing() throws {
+        let session = makeContextMenuActionResolverTestSession()
+        let imageItem = CanvasImageItem(
+            asset: CanvasImageAsset.transientStaticImage(
+                cgImage: try makeContextMenuActionResolverTestImage(
+                    red: 0.6,
+                    green: 0.2,
+                    blue: 0.8
+                )
+            ),
+            center: CGPoint(x: 48, y: 62),
+            size: CGSize(width: 118, height: 88),
+            zIndex: 0
+        )
+        session.scene.append(imageItem)
+
+        let actionStates = CanvasContextMenuActionResolver().actionStates(
+            for: makeContextMenuContext(
+                targetKind: .selectedItemBody,
+                targetItemID: imageItem.id,
+                selectedItemID: imageItem.id
+            ),
+            session: session,
+            environment: makeContextMenuEnvironment(
+                workspaceMode: .reading,
+                isFrozen: false
+            )
+        )
+
+        XCTAssertTrue(actionStates.isEmpty)
+    }
+
     func testFrozenEnvironmentReturnsNoActionsEvenInEditingMode() throws {
         let session = makeContextMenuActionResolverTestSession()
         let imageItem = CanvasImageItem(

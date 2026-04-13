@@ -40,3 +40,52 @@ enum CanvasInteractionDecision: Equatable, Sendable {
         feedback: CanvasInteractionFeedbackHint?
     )
 }
+
+extension CanvasInteractionBlockReason {
+    var debugName: String {
+        switch self {
+        case .readingMode:
+            return "readingMode"
+        case .transitionInteractionFrozen:
+            return "transitionInteractionFrozen"
+        }
+    }
+}
+
+extension CanvasInteractionFeedbackHint {
+    var debugName: String {
+        switch self {
+        case .shakeWorkspaceModeButton:
+            return "shakeWorkspaceModeButton"
+        }
+    }
+}
+
+extension CanvasInteractionDecision {
+    var debugName: String {
+        switch self {
+        case .allow:
+            return "allow"
+        case .block:
+            return "block"
+        }
+    }
+
+    var blockReason: CanvasInteractionBlockReason? {
+        switch self {
+        case .allow:
+            return nil
+        case .block(let reason, _):
+            return reason
+        }
+    }
+
+    var feedbackHint: CanvasInteractionFeedbackHint? {
+        switch self {
+        case .allow:
+            return nil
+        case .block(_, let feedback):
+            return feedback
+        }
+    }
+}

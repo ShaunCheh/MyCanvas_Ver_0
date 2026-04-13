@@ -12,24 +12,27 @@ struct CanvasContextMenuActionResolver {
         let resolvedEnvironment = environment ?? .workspaceModeOnly(
             workspaceMode: session.workspaceMode
         )
+        let intent = CanvasInteractionIntent.contextMenuRequest
         let candidateActionIDs = candidateActionIDs(
             for: context,
             session: session
         )
-        switch interactionPolicy.decision(
-        for: .contextMenuRequest,
-        environment: resolvedEnvironment
-        ) {
+        let decision = interactionPolicy.decision(
+            for: intent,
+            environment: resolvedEnvironment
+        )
+        switch decision {
         case .allow:
             break
-        case .block(let reason, _):
-            print(
-                "[Canvas Shared][ContextMenuActions] " +
-                context.debugSummary + " " +
-                "candidateIDs=[\(describeContextMenuActionIDs(candidateActionIDs))] " +
-                "enabledIDs=[] " +
-                "disabledIDs=[\(describeContextMenuActionIDs(candidateActionIDs))] " +
-                "reason=\(describeInteractionBlockReason(reason))"
+        case .block:
+            logContextMenuInteractionDecision(
+                intent: intent,
+                decision: decision,
+                environment: resolvedEnvironment,
+                context: context,
+                candidateActionIDs: candidateActionIDs,
+                enabledActionIDs: [],
+                disabledActionIDs: candidateActionIDs
             )
             return []
         }
@@ -51,12 +54,14 @@ struct CanvasContextMenuActionResolver {
         let disabledIDs = candidateActionIDs.filter { actionID in
             enabledIDSet.contains(actionID.rawValueDescription) == false
         }
-        print(
-            "[Canvas Shared][ContextMenuActions] " +
-            context.debugSummary + " " +
-            "candidateIDs=[\(describeContextMenuActionIDs(candidateActionIDs))] " +
-            "enabledIDs=[\(describeContextMenuActionIDs(enabledStates.map(\.actionID)))] " +
-            "disabledIDs=[\(describeContextMenuActionIDs(disabledIDs))]"
+        logContextMenuInteractionDecision(
+            intent: intent,
+            decision: decision,
+            environment: resolvedEnvironment,
+            context: context,
+            candidateActionIDs: candidateActionIDs,
+            enabledActionIDs: enabledStates.map(\.actionID),
+            disabledActionIDs: disabledIDs
         )
         return enabledStates
     }
@@ -348,13 +353,27 @@ private func describeContextMenuActionIDs(
     actionIDs.map(\.rawValueDescription).joined(separator: ",")
 }
 
-private func describeInteractionBlockReason(
-    _ reason: CanvasInteractionBlockReason
-) -> String {
-    switch reason {
-    case .readingMode:
-        return "readingMode"
-    case .transitionInteractionFrozen:
-        return "transitionInteractionFrozen"
-    }
+private func logContextMenuInteractionDecision(
+    intent: CanvasInteractionIntent,
+    decision: CanvasInteractionDecision,
+    environment: CanvasInteractionEnvironment,
+    context: CanvasContextMenuContext,
+    candidateActionIDs: [CanvasContextMenuActionID],
+    enabledActionIDs: [CanvasContextMenuActionID],
+    disabledActionIDs: [CanvasContextMenuActionID]
+) {
+    print(
+        "[Canvas Shared][InteractionGate] " +
+        "source=\"contextMenuResolver\" " +
+        "intent=\(intent.debugName) " +
+        "decision=\(decision.debugName) " +
+        "reason=\(decision.blockReason?.debugName ?? "none") " +
+        "feedback=\(decision.feedbackHint?.debugName ?? "none") " +
+        "workspaceMode=\(environment.workspaceMode.rawValue) " +
+        "frozen=\(environment.isTransitionInteractionFrozen) " +
+        context.debugSummary + " " +
+        "candidateIDs=[\(describeContextMenuActionIDs(candidateActionIDs))] " +
+        "enabledIDs=[\(describeContextMenuActionIDs(enabledActionIDs))] " +
+        "disabledIDs=[\(describeContextMenuActionIDs(disabledActionIDs))]"
+    )
 }

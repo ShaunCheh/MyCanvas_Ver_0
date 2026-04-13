@@ -62,6 +62,19 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         case macOSLocalKeyMonitor
         case importButton
         case dragAndDrop
+
+        var debugName: String {
+            switch self {
+            case .macOSPasteAction:
+                return "macOSPasteAction"
+            case .macOSLocalKeyMonitor:
+                return "macOSLocalKeyMonitor"
+            case .importButton:
+                return "importButton"
+            case .dragAndDrop:
+                return "dragAndDrop"
+            }
+        }
     }
 
     private static let pointerDragActivationDistance: CGFloat = 4
@@ -1245,9 +1258,6 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             self?.handlePrimaryPointerCancel()
         }
         canvasViewportView.onSecondaryClick = { [weak self] location in
-            guard self?.isTransitionInteractionFrozen == false else {
-                return
-            }
             self?.handleSecondaryClick(at: location)
         }
         canvasViewportView.onPan = { [weak self] translation in
@@ -1434,7 +1444,11 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     }
 
     private func handleSecondaryClick(at location: CGPoint) {
-        guard isInteractionAllowed(.contextMenuRequest) else {
+        guard handleInteractionAttempt(
+            .contextMenuRequest,
+            sourceDescription: "secondaryClick",
+            continueIfAllowed: { true }
+        ) else {
             dismissContextMenu()
             return
         }
@@ -1873,10 +1887,6 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
                     response == .OK,
                     let self
                 else {
-                    return
-                }
-
-                guard self.isTransferEntryAllowed(.importButton) else {
                     return
                 }
 
@@ -2624,9 +2634,15 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     @discardableResult
     private func handleInteractionAttempt(
         _ intent: CanvasInteractionIntent,
+        sourceDescription: String,
         continueIfAllowed: () -> Bool
     ) -> Bool {
         let decision = interactionDecision(for: intent)
+        logInteractionDecision(
+            intent: intent,
+            decision: decision,
+            sourceDescription: sourceDescription
+        )
         switch decision {
         case .allow:
             return continueIfAllowed()
@@ -2656,9 +2672,57 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         deliverySource: TransferEntryDeliverySource,
         continueIfAllowed: () -> Bool
     ) -> Bool {
-        handleInteractionAttempt(.transferEntry(entry)) {
+        handleInteractionAttempt(
+            .transferEntry(entry),
+            sourceDescription: deliverySource.debugName
+        ) {
             continueIfAllowed()
         }
+    }
+
+    private func logInteractionDecision(
+        intent: CanvasInteractionIntent,
+        decision: CanvasInteractionDecision,
+        sourceDescription: String
+    ) {
+        print(
+            "[Canvas macOS][InteractionGate] " +
+            "source=\"\(sourceDescription)\" " +
+            "intent=\(intent.debugName) " +
+            "decision=\(decision.debugName) " +
+            "reason=\(decision.blockReason?.debugName ?? "none") " +
+            "feedback=\(decision.feedbackHint?.debugName ?? "none") " +
+            "workspaceMode=\(workspaceMode.rawValue) " +
+            "frozen=\(isTransitionInteractionFrozen)"
+        )
+    }
+
+    private func transferSafetyNetBlockReason() -> CanvasInteractionBlockReason? {
+        if isTransitionInteractionFrozen {
+            return .transitionInteractionFrozen
+        }
+
+        if isReadingModeActive {
+            return .readingMode
+        }
+
+        return nil
+    }
+
+    private func logTransferSafetyNetBlock(
+        request: CanvasTransferRequest,
+        reason: CanvasInteractionBlockReason
+    ) {
+        print(
+            "[Canvas macOS][InteractionGate] " +
+            "source=\"\(request.sourceDescription)\" " +
+            "intent=transferRequestSafetyNet " +
+            "decision=block " +
+            "reason=\(reason.debugName) " +
+            "feedback=none " +
+            "workspaceMode=\(workspaceMode.rawValue) " +
+            "frozen=\(isTransitionInteractionFrozen)"
+        )
     }
 
     private func applyInteractionFeedback(_ hint: CanvasInteractionFeedbackHint) {
@@ -2818,10 +2882,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     private func performTransferRequest(
         _ request: CanvasTransferRequest
     ) -> Bool {
-        guard
-            isTransitionInteractionFrozen == false,
-            isReadingModeActive == false
-        else {
+        if let reason = transferSafetyNetBlockReason() {
+            logTransferSafetyNetBlock(request: request, reason: reason)
             return false
         }
 
@@ -4124,7 +4186,10 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     }
 
     private func beginTextEditIfPossible(for itemID: CanvasItemID) -> Bool {
-        handleInteractionAttempt(.beginTextEdit(itemID: itemID)) {
+        handleInteractionAttempt(
+            .beginTextEdit(itemID: itemID),
+            sourceDescription: "itemClickReentry"
+        ) {
             guard scene.textItem(withID: itemID) != nil else {
                 return false
             }
