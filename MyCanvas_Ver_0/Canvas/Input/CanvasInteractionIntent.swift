@@ -1,6 +1,8 @@
 import Foundation
 
-// Shared interaction intents stay upstream of transfer/import lowering.
+// Shared interaction intents live in the downstream interaction lane.
+// Raw keyboard, pointer, and touch facts belong to CanvasRawInputIntent.
+// These intents still stay upstream of transfer/import lowering.
 enum CanvasTransferEntryIntent: Equatable, Sendable {
     case pasteKeyboardShortcut
     case pasteMenu

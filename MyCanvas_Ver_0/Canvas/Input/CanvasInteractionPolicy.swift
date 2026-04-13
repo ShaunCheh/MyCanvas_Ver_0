@@ -1,5 +1,7 @@
 import Foundation
 
+// Shared policy evaluates downstream business intents only.
+// Raw input capture and indicator-only events stay in adjacent lanes.
 struct CanvasInteractionPolicy {
     func decision(
         for intent: CanvasInteractionIntent,

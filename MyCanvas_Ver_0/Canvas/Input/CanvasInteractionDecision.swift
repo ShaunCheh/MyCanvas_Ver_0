@@ -1,5 +1,7 @@
 import Foundation
 
+// Shared interaction decisions stay in the downstream interaction lane after
+// raw-input routing has already normalized hardware facts into business intents.
 struct CanvasInteractionEnvironment: Equatable, Sendable {
     let workspaceMode: CanvasWorkspaceMode
     let isTransitionInteractionFrozen: Bool
