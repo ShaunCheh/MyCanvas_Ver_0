@@ -184,6 +184,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         return view
     }()
     private let contextMenuHostView = CanvasContextMenuHostView()
+    private let inputIndicatorHostView = CanvasInputIndicatorHostView()
     private let miniMapView = iOSCanvasMiniMapView()
     private let importButton: UIButton = {
         let button = UIButton(type: .system)
@@ -468,6 +469,12 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         contextMenuHostView.updateLayout(layoutContext: layoutContext)
     }
 
+    private func updateInputIndicatorLayout(
+        using layoutContext: CanvasChromeLayoutContext
+    ) {
+        inputIndicatorHostView.updateLayout(layoutContext: layoutContext)
+    }
+
     private func performContextMenuAction(_ actionID: CanvasContextMenuActionID) {
         guard let contextMenuState else {
             dismissContextMenu()
@@ -712,6 +719,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         toolbarHostView.translatesAutoresizingMaskIntoConstraints = true
         chromeOverlayView.addSubview(toolbarHostView)
         chromeOverlayView.addSubview(textEditorOverlayView)
+        chromeOverlayView.addSubview(inputIndicatorHostView)
         chromeOverlayView.addSubview(contextMenuHostView)
         chromeOverlayView.addSubview(backButton)
         chromeOverlayView.addSubview(workspaceModeButton)
@@ -735,6 +743,10 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             transitionInteractionShieldView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             transitionInteractionShieldView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             transitionInteractionShieldView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            inputIndicatorHostView.topAnchor.constraint(equalTo: chromeOverlayView.topAnchor),
+            inputIndicatorHostView.leadingAnchor.constraint(equalTo: chromeOverlayView.leadingAnchor),
+            inputIndicatorHostView.trailingAnchor.constraint(equalTo: chromeOverlayView.trailingAnchor),
+            inputIndicatorHostView.bottomAnchor.constraint(equalTo: chromeOverlayView.bottomAnchor),
             contextMenuHostView.topAnchor.constraint(equalTo: chromeOverlayView.topAnchor),
             contextMenuHostView.leadingAnchor.constraint(equalTo: chromeOverlayView.leadingAnchor),
             contextMenuHostView.trailingAnchor.constraint(equalTo: chromeOverlayView.trailingAnchor),
@@ -780,6 +792,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         }
 
         let contextMenuLayoutContext = performOverlayLayoutPass()
+        updateInputIndicatorLayout(using: contextMenuLayoutContext)
         updateContextMenuLayout(using: contextMenuLayoutContext)
     }
 
@@ -2619,6 +2632,10 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             routingResult: routingResult,
             sourceDescription: sourceDescription
         )
+
+        if let indicatorEvent = routingResult.indicatorEvent {
+            inputIndicatorHostView.record(event: indicatorEvent)
+        }
 
         guard let interactionIntent = routingResult.interactionIntent else {
             return continueIfAllowed(routingResult)

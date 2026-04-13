@@ -185,6 +185,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         return view
     }()
     private let contextMenuHostView = CanvasContextMenuHostView()
+    private let inputIndicatorHostView = CanvasInputIndicatorHostView()
     private let miniMapView = macOSCanvasMiniMapView()
     private let importButton: NSButton = {
         let button = NSButton()
@@ -463,6 +464,12 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         using layoutContext: CanvasChromeLayoutContext
     ) {
         contextMenuHostView.updateLayout(layoutContext: layoutContext)
+    }
+
+    private func updateInputIndicatorLayout(
+        using layoutContext: CanvasChromeLayoutContext
+    ) {
+        inputIndicatorHostView.updateLayout(layoutContext: layoutContext)
     }
 
     private func performContextMenuAction(_ actionID: CanvasContextMenuActionID) {
@@ -872,6 +879,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         toolbarHostView.translatesAutoresizingMaskIntoConstraints = true
         chromeOverlayView.addSubview(toolbarHostView)
         chromeOverlayView.addSubview(textEditorOverlayView)
+        chromeOverlayView.addSubview(inputIndicatorHostView)
         chromeOverlayView.addSubview(contextMenuHostView)
         chromeOverlayView.addSubview(backButton)
         chromeOverlayView.addSubview(workspaceModeButton)
@@ -895,6 +903,10 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             transitionInteractionShieldView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             transitionInteractionShieldView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             transitionInteractionShieldView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            inputIndicatorHostView.topAnchor.constraint(equalTo: chromeOverlayView.topAnchor),
+            inputIndicatorHostView.leadingAnchor.constraint(equalTo: chromeOverlayView.leadingAnchor),
+            inputIndicatorHostView.trailingAnchor.constraint(equalTo: chromeOverlayView.trailingAnchor),
+            inputIndicatorHostView.bottomAnchor.constraint(equalTo: chromeOverlayView.bottomAnchor),
             contextMenuHostView.topAnchor.constraint(equalTo: chromeOverlayView.topAnchor),
             contextMenuHostView.leadingAnchor.constraint(equalTo: chromeOverlayView.leadingAnchor),
             contextMenuHostView.trailingAnchor.constraint(equalTo: chromeOverlayView.trailingAnchor),
@@ -946,6 +958,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             chromeOverlayView.layoutSubtreeIfNeeded()
         }
         let contextMenuLayoutContext = performOverlayLayoutPass()
+        updateInputIndicatorLayout(using: contextMenuLayoutContext)
         updateContextMenuLayout(using: contextMenuLayoutContext)
     }
 
@@ -2701,6 +2714,10 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             routingResult: routingResult,
             sourceDescription: sourceDescription
         )
+
+        if let indicatorEvent = routingResult.indicatorEvent {
+            inputIndicatorHostView.record(event: indicatorEvent)
+        }
 
         guard let interactionIntent = routingResult.interactionIntent else {
             return continueIfAllowed(routingResult)
