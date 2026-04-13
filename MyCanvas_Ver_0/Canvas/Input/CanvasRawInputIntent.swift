@@ -102,6 +102,24 @@ struct CanvasKeyChord: Equatable, Sendable {
     }
 }
 
+extension CanvasKeyChord {
+    static var copyKeyboardShortcut: CanvasKeyChord {
+        CanvasKeyChord(modifiers: [.command], key: .character("c"))
+    }
+
+    static var pasteKeyboardShortcut: CanvasKeyChord {
+        CanvasKeyChord(modifiers: [.command], key: .character("v"))
+    }
+
+    static var undoKeyboardShortcut: CanvasKeyChord {
+        CanvasKeyChord(modifiers: [.command], key: .character("z"))
+    }
+
+    static var redoKeyboardShortcut: CanvasKeyChord {
+        CanvasKeyChord(modifiers: [.command, .shift], key: .character("z"))
+    }
+}
+
 enum CanvasPointerButton: String, Equatable, Sendable {
     case primary
     case secondary
@@ -153,5 +171,51 @@ enum CanvasRawInputIntent: Equatable, Sendable {
         case .gesture(let gesture, let source):
             return "gesture.\(gesture.debugName).\(source.debugName)"
         }
+    }
+}
+
+extension CanvasRawInputIntent {
+    static var copyKeyboardShortcut: CanvasRawInputIntent {
+        .keyChord(.copyKeyboardShortcut)
+    }
+
+    static var pasteKeyboardShortcut: CanvasRawInputIntent {
+        .keyChord(.pasteKeyboardShortcut)
+    }
+
+    static var undoKeyboardShortcut: CanvasRawInputIntent {
+        .keyChord(.undoKeyboardShortcut)
+    }
+
+    static var redoKeyboardShortcut: CanvasRawInputIntent {
+        .keyChord(.redoKeyboardShortcut)
+    }
+
+    static var primaryPointerClick: CanvasRawInputIntent {
+        .pointerClick(.primary)
+    }
+
+    static var secondaryPointerClick: CanvasRawInputIntent {
+        .pointerClick(.secondary)
+    }
+
+    static var touchTapGesture: CanvasRawInputIntent {
+        .gesture(.tap, source: .touch)
+    }
+
+    static var touchLongPressGesture: CanvasRawInputIntent {
+        .gesture(.longPress, source: .touch)
+    }
+
+    static var pointerScrollGesture: CanvasRawInputIntent {
+        .gesture(.scroll, source: .pointer)
+    }
+
+    static var touchPinchGesture: CanvasRawInputIntent {
+        .gesture(.pinch, source: .touch)
+    }
+
+    static var pointerZoomGesture: CanvasRawInputIntent {
+        .gesture(.zoom, source: .pointer)
     }
 }

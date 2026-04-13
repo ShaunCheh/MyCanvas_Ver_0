@@ -1176,7 +1176,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         }
         canvasViewportView.onPan = { [weak self] translation in
             self?.observeContinuousRawInput(
-                .gesture(.scroll, source: .pointer),
+                .pointerScrollGesture,
                 sourceDescription: RawInputDeliverySource.scrollGesture.debugName,
                 kind: .scroll
             )
@@ -1242,7 +1242,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
 
         hasObservedCurrentPinchRawInput = true
         observeRawInput(
-            .gesture(.pinch, source: .touch),
+            .touchPinchGesture,
             sourceDescription: RawInputDeliverySource.pinchGesture.debugName
         )
     }
@@ -1316,7 +1316,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
 
     private func handleLongPress(at location: CGPoint) {
         let didContinue = handleCapturedInput(
-            makeLongPressRawInput(),
+            .touchLongPressGesture,
             sourceDescription: RawInputDeliverySource.longPressGesture.debugName
         ) { routingResult in
             guard routingResult.interactionIntent == .contextMenuRequest else {
@@ -1342,14 +1342,6 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             return true
         }
 
-        print(
-            "[Canvas iOS][ContextMenuInput] " +
-            "longPressLocation=\(describe(point: location)) " +
-            "viewportBounds=\(describe(rect: canvasViewportView.bounds)) " +
-            "viewportFrame=\(describe(rect: canvasViewportView.frame)) " +
-            "overlayBounds=\(describe(rect: chromeOverlayView.bounds)) " +
-            "overlayFrame=\(describe(rect: chromeOverlayView.frame))"
-        )
         prepareForLongPressContextMenu()
 
         let resolvedContext = resolveContext(at: location)
@@ -1522,7 +1514,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         switch pointerDragState {
         case let .pressed(_, pressContext):
             observeRawInput(
-                .gesture(.tap, source: .touch),
+                .touchTapGesture,
                 sourceDescription: RawInputDeliverySource.tapGesture.debugName
             )
             if isInlineEditModeActive {
@@ -2572,46 +2564,6 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         min(max(progress, 0), 1)
     }
 
-    private func makeCopyKeyboardShortcutRawInput() -> CanvasRawInputIntent {
-        .keyChord(
-            CanvasKeyChord(
-                modifiers: [.command],
-                key: .character("c")
-            )
-        )
-    }
-
-    private func makePasteKeyboardShortcutRawInput() -> CanvasRawInputIntent {
-        .keyChord(
-            CanvasKeyChord(
-                modifiers: [.command],
-                key: .character("v")
-            )
-        )
-    }
-
-    private func makeUndoKeyboardShortcutRawInput() -> CanvasRawInputIntent {
-        .keyChord(
-            CanvasKeyChord(
-                modifiers: [.command],
-                key: .character("z")
-            )
-        )
-    }
-
-    private func makeRedoKeyboardShortcutRawInput() -> CanvasRawInputIntent {
-        .keyChord(
-            CanvasKeyChord(
-                modifiers: [.command, .shift],
-                key: .character("z")
-            )
-        )
-    }
-
-    private func makeLongPressRawInput() -> CanvasRawInputIntent {
-        .gesture(.longPress, source: .touch)
-    }
-
     private func handleObservedTextEditorShortcut(
         _ shortcut: iOSCanvasTextEditorObservedShortcut
     ) {
@@ -2620,24 +2572,24 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
 
         switch shortcut {
         case .copy:
-            rawInput = makeCopyKeyboardShortcutRawInput()
+            rawInput = .copyKeyboardShortcut
             sourceDescription =
                 RawInputDeliverySource.textEditorCopyKeyCommand.debugName
         case .paste:
-            rawInput = makePasteKeyboardShortcutRawInput()
+            rawInput = .pasteKeyboardShortcut
             sourceDescription =
                 RawInputDeliverySource.textEditorPasteKeyCommand.debugName
         case .undo:
-            rawInput = makeUndoKeyboardShortcutRawInput()
+            rawInput = .undoKeyboardShortcut
             sourceDescription =
                 RawInputDeliverySource.textEditorUndoKeyCommand.debugName
         case .redo:
-            rawInput = makeRedoKeyboardShortcutRawInput()
+            rawInput = .redoKeyboardShortcut
             sourceDescription =
                 RawInputDeliverySource.textEditorRedoKeyCommand.debugName
         }
 
-        observeIndicatorOnlyRawInput(
+        _ = resolveCapturedInputRouting(
             rawInput,
             sourceDescription: sourceDescription
         )
@@ -2646,7 +2598,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     @objc
     private func handleCopyKeyCommand(_ sender: UIKeyCommand) {
         observeRawInput(
-            makeCopyKeyboardShortcutRawInput(),
+            .copyKeyboardShortcut,
             sourceDescription: RawInputDeliverySource.copyKeyCommand.debugName
         )
     }
@@ -2654,7 +2606,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     @objc
     private func handlePasteKeyCommand(_ sender: UIKeyCommand) {
         handleCapturedInput(
-            makePasteKeyboardShortcutRawInput(),
+            .pasteKeyboardShortcut,
             sourceDescription: RawInputDeliverySource.pasteKeyCommand.debugName
         ) { routingResult in
             guard
@@ -2671,7 +2623,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     @objc
     private func handleUndoKeyCommand(_ sender: UIKeyCommand) {
         handleCapturedInput(
-            makeUndoKeyboardShortcutRawInput(),
+            .undoKeyboardShortcut,
             sourceDescription: RawInputDeliverySource.undoKeyCommand.debugName
         ) { routingResult in
             guard routingResult.interactionIntent == .command(.undo) else {
@@ -2686,7 +2638,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     @objc
     private func handleRedoKeyCommand(_ sender: UIKeyCommand) {
         handleCapturedInput(
-            makeRedoKeyboardShortcutRawInput(),
+            .redoKeyboardShortcut,
             sourceDescription: RawInputDeliverySource.redoKeyCommand.debugName
         ) { routingResult in
             guard routingResult.interactionIntent == .command(.redo) else {
@@ -2851,16 +2803,10 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         sourceDescription: String,
         continueIfAllowed: (CanvasInputRoutingResult) -> Bool
     ) -> Bool {
-        let routingResult = inputRoutingResolver.route(rawInput)
-        logCapturedInputRouting(
-            rawInput: rawInput,
-            routingResult: routingResult,
+        let routingResult = resolveCapturedInputRouting(
+            rawInput,
             sourceDescription: sourceDescription
         )
-
-        if let indicatorEvent = routingResult.indicatorEvent {
-            inputIndicatorHostView.record(event: indicatorEvent)
-        }
 
         guard let interactionIntent = routingResult.interactionIntent else {
             return continueIfAllowed(routingResult)
@@ -2874,6 +2820,31 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         }
     }
 
+    @discardableResult
+    private func resolveCapturedInputRouting(
+        _ rawInput: CanvasRawInputIntent,
+        sourceDescription: String
+    ) -> CanvasInputRoutingResult {
+        let routingResult = inputRoutingResolver.route(rawInput)
+        logCapturedInputRouting(
+            rawInput: rawInput,
+            routingResult: routingResult,
+            sourceDescription: sourceDescription
+        )
+        recordCapturedInputIndicator(routingResult.indicatorEvent)
+        return routingResult
+    }
+
+    private func recordCapturedInputIndicator(
+        _ indicatorEvent: CanvasInputIndicatorEvent?
+    ) {
+        guard let indicatorEvent else {
+            return
+        }
+
+        inputIndicatorHostView.record(event: indicatorEvent)
+    }
+
     private func observeRawInput(
         _ rawInput: CanvasRawInputIntent,
         sourceDescription: String
@@ -2883,22 +2854,6 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             sourceDescription: sourceDescription
         ) { _ in
             true
-        }
-    }
-
-    private func observeIndicatorOnlyRawInput(
-        _ rawInput: CanvasRawInputIntent,
-        sourceDescription: String
-    ) {
-        let routingResult = inputRoutingResolver.route(rawInput)
-        logCapturedInputRouting(
-            rawInput: rawInput,
-            routingResult: routingResult,
-            sourceDescription: sourceDescription
-        )
-
-        if let indicatorEvent = routingResult.indicatorEvent {
-            inputIndicatorHostView.record(event: indicatorEvent)
         }
     }
 

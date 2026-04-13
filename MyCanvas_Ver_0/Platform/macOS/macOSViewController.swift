@@ -726,7 +726,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
 
     @objc
     func undo(_ sender: Any?) {
-        let rawInput = makeUndoKeyboardShortcutRawInput()
+        let rawInput = CanvasRawInputIntent.undoKeyboardShortcut
         if consumeObservedKeyboardShortcut(rawInput) {
             performCommand(.undo)
             return
@@ -758,7 +758,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
 
     @objc
     func redo(_ sender: Any?) {
-        let rawInput = makeRedoKeyboardShortcutRawInput()
+        let rawInput = CanvasRawInputIntent.redoKeyboardShortcut
         if consumeObservedKeyboardShortcut(rawInput) {
             performCommand(.redo)
             return
@@ -790,7 +790,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
 
     @objc
     func paste(_ sender: Any?) {
-        let rawInput = makePasteKeyboardShortcutRawInput()
+        let rawInput = CanvasRawInputIntent.pasteKeyboardShortcut
         if consumeObservedKeyboardShortcut(rawInput) {
             handlePasteRequest()
             return
@@ -1387,7 +1387,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         }
         canvasViewportView.onPointerDown = { [weak self] location in
             self?.observeRawInput(
-                .pointerClick(.primary),
+                .primaryPointerClick,
                 sourceDescription: RawInputDeliverySource.primaryClick.debugName
             )
             guard self?.isTransitionInteractionFrozen == false else {
@@ -1418,7 +1418,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         }
         canvasViewportView.onPan = { [weak self] translation in
             self?.observeContinuousRawInput(
-                .gesture(.scroll, source: .pointer),
+                .pointerScrollGesture,
                 sourceDescription: RawInputDeliverySource.scrollGesture.debugName,
                 kind: .scroll
             )
@@ -1429,7 +1429,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         }
         canvasViewportView.onZoom = { [weak self] scaleDelta, anchor in
             self?.observeContinuousRawInput(
-                .gesture(.zoom, source: .pointer),
+                .pointerZoomGesture,
                 sourceDescription: RawInputDeliverySource.zoomGesture.debugName,
                 kind: .zoom
             )
@@ -1611,7 +1611,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
 
     private func handleSecondaryClick(at location: CGPoint) {
         let didContinue = handleCapturedInput(
-            makeSecondaryClickRawInput(),
+            .secondaryPointerClick,
             sourceDescription: RawInputDeliverySource.secondaryClick.debugName
         ) { routingResult in
             guard routingResult.interactionIntent == .contextMenuRequest else {
@@ -1631,33 +1631,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             return true
         }
 
-        let cameraBeforeSync = camera
-        let snapshotBeforeSync = lastRenderSnapshot
-        let worldPointBeforeSync = cameraBeforeSync.viewportToWorld(location)
         updateCameraViewportSizeIfNeeded(trigger: "secondary click")
-        let worldPointAfterSync = camera.viewportToWorld(location)
-        print(
-            "[Canvas macOS][ContextMenuInput] " +
-            "secondaryClickLocation=\(describe(point: location)) " +
-            "worldPointBeforeSync=\(describe(point: worldPointBeforeSync)) " +
-            "worldPointAfterSync=\(describe(point: worldPointAfterSync)) " +
-            "pointerDragState=\(describe(pointerDragState: pointerDragState)) " +
-            "selectedItemID=\(describe(itemID: interactionState.selectedItemID)) " +
-            "viewportBounds=\(describe(rect: canvasViewportView.bounds)) " +
-            "viewportFrame=\(describe(rect: canvasViewportView.frame)) " +
-            "overlayBounds=\(describe(rect: chromeOverlayView.bounds)) " +
-            "overlayFrame=\(describe(rect: chromeOverlayView.frame)) " +
-            "cameraCenterBefore=\(describe(point: cameraBeforeSync.center)) " +
-            "cameraCenterAfter=\(describe(point: camera.center)) " +
-            "zoomBefore=\(String(format: "%.4f", Double(cameraBeforeSync.zoomScale))) " +
-            "zoomAfter=\(String(format: "%.4f", Double(camera.zoomScale))) " +
-            "cameraViewportSizeBefore=\(describe(size: cameraBeforeSync.viewportSize)) " +
-            "cameraViewportSizeAfter=\(describe(size: camera.viewportSize)) " +
-            "snapshotViewportBoundsBefore=\(describe(rect: snapshotBeforeSync.viewportBounds)) " +
-            "snapshotViewportBoundsAfter=\(describe(rect: lastRenderSnapshot.viewportBounds)) " +
-            "snapshotEditOverlayBefore=\(describe(editOverlay: snapshotBeforeSync.editOverlay)) " +
-            "snapshotEditOverlayAfter=\(describe(editOverlay: lastRenderSnapshot.editOverlay))"
-        )
         prepareForSecondaryClickContextMenu()
 
         let resolvedContext = resolveContext(at: location)
@@ -2856,16 +2830,10 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         sourceDescription: String,
         continueIfAllowed: (CanvasInputRoutingResult) -> Bool
     ) -> Bool {
-        let routingResult = inputRoutingResolver.route(rawInput)
-        logCapturedInputRouting(
-            rawInput: rawInput,
-            routingResult: routingResult,
+        let routingResult = resolveCapturedInputRouting(
+            rawInput,
             sourceDescription: sourceDescription
         )
-
-        if let indicatorEvent = routingResult.indicatorEvent {
-            inputIndicatorHostView.record(event: indicatorEvent)
-        }
 
         guard let interactionIntent = routingResult.interactionIntent else {
             return continueIfAllowed(routingResult)
@@ -2879,6 +2847,31 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         }
     }
 
+    @discardableResult
+    private func resolveCapturedInputRouting(
+        _ rawInput: CanvasRawInputIntent,
+        sourceDescription: String
+    ) -> CanvasInputRoutingResult {
+        let routingResult = inputRoutingResolver.route(rawInput)
+        logCapturedInputRouting(
+            rawInput: rawInput,
+            routingResult: routingResult,
+            sourceDescription: sourceDescription
+        )
+        recordCapturedInputIndicator(routingResult.indicatorEvent)
+        return routingResult
+    }
+
+    private func recordCapturedInputIndicator(
+        _ indicatorEvent: CanvasInputIndicatorEvent?
+    ) {
+        guard let indicatorEvent else {
+            return
+        }
+
+        inputIndicatorHostView.record(event: indicatorEvent)
+    }
+
     private func observeRawInput(
         _ rawInput: CanvasRawInputIntent,
         sourceDescription: String
@@ -2888,22 +2881,6 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             sourceDescription: sourceDescription
         ) { _ in
             true
-        }
-    }
-
-    private func observeIndicatorOnlyRawInput(
-        _ rawInput: CanvasRawInputIntent,
-        sourceDescription: String
-    ) {
-        let routingResult = inputRoutingResolver.route(rawInput)
-        logCapturedInputRouting(
-            rawInput: rawInput,
-            routingResult: routingResult,
-            sourceDescription: sourceDescription
-        )
-
-        if let indicatorEvent = routingResult.indicatorEvent {
-            inputIndicatorHostView.record(event: indicatorEvent)
         }
     }
 
@@ -3085,7 +3062,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         }
 
         if window.firstResponder === textEditorOverlayView.textView {
-            observeIndicatorOnlyRawInput(
+            _ = resolveCapturedInputRouting(
                 rawInput,
                 sourceDescription: RawInputDeliverySource.localKeyMonitor.debugName
             )
@@ -3128,13 +3105,13 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
 
         switch (relevantFlags, characters) {
         case ([.command], "c"):
-            return makeCopyKeyboardShortcutRawInput()
+            return .copyKeyboardShortcut
         case ([.command], "v"):
-            return makePasteKeyboardShortcutRawInput()
+            return .pasteKeyboardShortcut
         case ([.command], "z"):
-            return makeUndoKeyboardShortcutRawInput()
+            return .undoKeyboardShortcut
         case ([.command, .shift], "z"):
-            return makeRedoKeyboardShortcutRawInput()
+            return .redoKeyboardShortcut
         default:
             return nil
         }
@@ -3181,46 +3158,6 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         _ rawInput: CanvasRawInputIntent
     ) -> Bool {
         observedKeyboardShortcutRawInput(from: NSApp.currentEvent) == rawInput
-    }
-
-    private func makeCopyKeyboardShortcutRawInput() -> CanvasRawInputIntent {
-        .keyChord(
-            CanvasKeyChord(
-                modifiers: [.command],
-                key: .character("c")
-            )
-        )
-    }
-
-    private func makePasteKeyboardShortcutRawInput() -> CanvasRawInputIntent {
-        .keyChord(
-            CanvasKeyChord(
-                modifiers: [.command],
-                key: .character("v")
-            )
-        )
-    }
-
-    private func makeUndoKeyboardShortcutRawInput() -> CanvasRawInputIntent {
-        .keyChord(
-            CanvasKeyChord(
-                modifiers: [.command],
-                key: .character("z")
-            )
-        )
-    }
-
-    private func makeRedoKeyboardShortcutRawInput() -> CanvasRawInputIntent {
-        .keyChord(
-            CanvasKeyChord(
-                modifiers: [.command, .shift],
-                key: .character("z")
-            )
-        )
-    }
-
-    private func makeSecondaryClickRawInput() -> CanvasRawInputIntent {
-        .pointerClick(.secondary)
     }
 
     private func resolvedPasteTransferEntryIntent() -> CanvasTransferEntryIntent {
