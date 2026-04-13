@@ -372,7 +372,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     ) {
         let actionStates = contextMenuActionResolver.actionStates(
             for: resolvedContext,
-            session: editorSession
+            session: editorSession,
+            environment: makeInteractionEnvironment()
         )
         guard actionStates.isEmpty == false else {
             dismissContextMenu()
@@ -1433,7 +1434,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     }
 
     private func handleSecondaryClick(at location: CGPoint) {
-        guard isReadingModeActive == false else {
+        guard isInteractionAllowed(.contextMenuRequest) else {
             dismissContextMenu()
             return
         }
@@ -2600,19 +2601,19 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         )
     }
 
-    private func transferEntryDecision(
-        for entry: CanvasTransferEntryIntent
+    private func interactionDecision(
+        for intent: CanvasInteractionIntent
     ) -> CanvasInteractionDecision {
         interactionPolicy.decision(
-            for: .transferEntry(entry),
+            for: intent,
             environment: makeInteractionEnvironment()
         )
     }
 
-    private func isTransferEntryAllowed(
-        _ entry: CanvasTransferEntryIntent
+    private func isInteractionAllowed(
+        _ intent: CanvasInteractionIntent
     ) -> Bool {
-        switch transferEntryDecision(for: entry) {
+        switch interactionDecision(for: intent) {
         case .allow:
             return true
         case .block:
@@ -2621,12 +2622,11 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     }
 
     @discardableResult
-    private func handleTransferEntryAttempt(
-        _ entry: CanvasTransferEntryIntent,
-        deliverySource: TransferEntryDeliverySource,
+    private func handleInteractionAttempt(
+        _ intent: CanvasInteractionIntent,
         continueIfAllowed: () -> Bool
     ) -> Bool {
-        let decision = transferEntryDecision(for: entry)
+        let decision = interactionDecision(for: intent)
         switch decision {
         case .allow:
             return continueIfAllowed()
@@ -2635,6 +2635,29 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
                 applyInteractionFeedback(feedback)
             }
             return false
+        }
+    }
+
+    private func transferEntryDecision(
+        for entry: CanvasTransferEntryIntent
+    ) -> CanvasInteractionDecision {
+        interactionDecision(for: .transferEntry(entry))
+    }
+
+    private func isTransferEntryAllowed(
+        _ entry: CanvasTransferEntryIntent
+    ) -> Bool {
+        isInteractionAllowed(.transferEntry(entry))
+    }
+
+    @discardableResult
+    private func handleTransferEntryAttempt(
+        _ entry: CanvasTransferEntryIntent,
+        deliverySource: TransferEntryDeliverySource,
+        continueIfAllowed: () -> Bool
+    ) -> Bool {
+        handleInteractionAttempt(.transferEntry(entry)) {
+            continueIfAllowed()
         }
     }
 
@@ -4101,16 +4124,14 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     }
 
     private func beginTextEditIfPossible(for itemID: CanvasItemID) -> Bool {
-        guard isReadingModeActive == false else {
-            return false
-        }
+        handleInteractionAttempt(.beginTextEdit(itemID: itemID)) {
+            guard scene.textItem(withID: itemID) != nil else {
+                return false
+            }
 
-        guard scene.textItem(withID: itemID) != nil else {
-            return false
+            performCommand(.beginTextEdit(itemID: itemID))
+            return isInlineTextModeActive
         }
-
-        performCommand(.beginTextEdit(itemID: itemID))
-        return isInlineTextModeActive
     }
 
     private func syncTextEditorPresentation() {

@@ -2,23 +2,34 @@ import Foundation
 
 struct CanvasContextMenuActionResolver {
     private let commandCatalog = CanvasCommandCatalog()
+    private let interactionPolicy = CanvasInteractionPolicy()
 
     func actionStates(
         for context: CanvasContextMenuContext,
-        session: CanvasEditorSession
+        session: CanvasEditorSession,
+        environment: CanvasInteractionEnvironment? = nil
     ) -> [CanvasContextMenuActionState] {
+        let resolvedEnvironment = environment ?? .workspaceModeOnly(
+            workspaceMode: session.workspaceMode
+        )
         let candidateActionIDs = candidateActionIDs(
             for: context,
             session: session
         )
-        if session.isReadingModeActive {
+        switch interactionPolicy.decision(
+        for: .contextMenuRequest,
+        environment: resolvedEnvironment
+        ) {
+        case .allow:
+            break
+        case .block(let reason, _):
             print(
                 "[Canvas Shared][ContextMenuActions] " +
                 context.debugSummary + " " +
                 "candidateIDs=[\(describeContextMenuActionIDs(candidateActionIDs))] " +
                 "enabledIDs=[] " +
                 "disabledIDs=[\(describeContextMenuActionIDs(candidateActionIDs))] " +
-                "reason=readingMode"
+                "reason=\(describeInteractionBlockReason(reason))"
             )
             return []
         }
@@ -335,4 +346,15 @@ private func describeContextMenuActionIDs(
     _ actionIDs: [CanvasContextMenuActionID]
 ) -> String {
     actionIDs.map(\.rawValueDescription).joined(separator: ",")
+}
+
+private func describeInteractionBlockReason(
+    _ reason: CanvasInteractionBlockReason
+) -> String {
+    switch reason {
+    case .readingMode:
+        return "readingMode"
+    case .transitionInteractionFrozen:
+        return "transitionInteractionFrozen"
+    }
 }

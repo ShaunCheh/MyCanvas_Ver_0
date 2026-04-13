@@ -121,6 +121,67 @@ final class CanvasContextMenuActionResolverTests: XCTestCase {
         XCTAssertTrue(actionStates.contains(where: isVideoDisplayFrameAction))
         XCTAssertFalse(actionStates.contains(where: isGIFFrameImportAction))
     }
+
+    func testReadingModeReturnsNoActionsEvenWhenContextHasCandidates() throws {
+        let session = makeContextMenuActionResolverTestSession()
+        let imageItem = CanvasImageItem(
+            asset: CanvasImageAsset.transientStaticImage(
+                cgImage: try makeContextMenuActionResolverTestImage(
+                    red: 0.3,
+                    green: 0.5,
+                    blue: 0.7
+                )
+            ),
+            center: CGPoint(x: 40, y: 50),
+            size: CGSize(width: 120, height: 90),
+            zIndex: 0
+        )
+        session.scene.append(imageItem)
+        session.workspaceMode = .reading
+
+        let actionStates = CanvasContextMenuActionResolver().actionStates(
+            for: makeContextMenuContext(
+                targetKind: .selectedItemBody,
+                targetItemID: imageItem.id,
+                selectedItemID: imageItem.id
+            ),
+            session: session
+        )
+
+        XCTAssertTrue(actionStates.isEmpty)
+    }
+
+    func testFrozenEnvironmentReturnsNoActionsEvenInEditingMode() throws {
+        let session = makeContextMenuActionResolverTestSession()
+        let imageItem = CanvasImageItem(
+            asset: CanvasImageAsset.transientStaticImage(
+                cgImage: try makeContextMenuActionResolverTestImage(
+                    red: 0.9,
+                    green: 0.4,
+                    blue: 0.2
+                )
+            ),
+            center: CGPoint(x: 52, y: 68),
+            size: CGSize(width: 140, height: 96),
+            zIndex: 0
+        )
+        session.scene.append(imageItem)
+
+        let actionStates = CanvasContextMenuActionResolver().actionStates(
+            for: makeContextMenuContext(
+                targetKind: .selectedItemBody,
+                targetItemID: imageItem.id,
+                selectedItemID: imageItem.id
+            ),
+            session: session,
+            environment: makeContextMenuEnvironment(
+                workspaceMode: .editing,
+                isFrozen: true
+            )
+        )
+
+        XCTAssertTrue(actionStates.isEmpty)
+    }
 }
 
 private enum CanvasContextMenuActionResolverTestRetainer {
@@ -151,6 +212,16 @@ private func makeContextMenuContext(
         selectedItemID: selectedItemID,
         isInlineEditModeActive: false,
         isInlineCropModeActive: false
+    )
+}
+
+private func makeContextMenuEnvironment(
+    workspaceMode: CanvasWorkspaceMode,
+    isFrozen: Bool
+) -> CanvasInteractionEnvironment {
+    CanvasInteractionEnvironment(
+        workspaceMode: workspaceMode,
+        isTransitionInteractionFrozen: isFrozen
     )
 }
 

@@ -77,6 +77,45 @@ final class CanvasInteractionPolicyTests: XCTestCase {
         XCTAssertEqual(decision, .block(reason: .readingMode, feedback: nil))
     }
 
+    func testContextMenuRequestAllowsInEditingModeWhenNotFrozen() {
+        let decision = policy.decision(
+            for: .contextMenuRequest,
+            environment: makeEnvironment(workspaceMode: .editing, isFrozen: false)
+        )
+
+        XCTAssertEqual(decision, .allow)
+    }
+
+    func testContextMenuRequestBlocksInReadingModeWithoutFeedback() {
+        let decision = policy.decision(
+            for: .contextMenuRequest,
+            environment: makeEnvironment(workspaceMode: .reading, isFrozen: false)
+        )
+
+        XCTAssertEqual(decision, .block(reason: .readingMode, feedback: nil))
+    }
+
+    func testBeginTextEditBlocksInReadingModeWithoutFeedback() {
+        let decision = policy.decision(
+            for: .beginTextEdit(itemID: CanvasItemID()),
+            environment: makeEnvironment(workspaceMode: .reading, isFrozen: false)
+        )
+
+        XCTAssertEqual(decision, .block(reason: .readingMode, feedback: nil))
+    }
+
+    func testBeginTextEditPrioritizesFrozenBlockInEditingMode() {
+        let decision = policy.decision(
+            for: .beginTextEdit(itemID: CanvasItemID()),
+            environment: makeEnvironment(workspaceMode: .editing, isFrozen: true)
+        )
+
+        XCTAssertEqual(
+            decision,
+            .block(reason: .transitionInteractionFrozen, feedback: nil)
+        )
+    }
+
     func testCommandAllowsInEditingModeWhenNotFrozen() {
         let decision = policy.decision(
             for: .command(.undo),
