@@ -1,6 +1,8 @@
 import Foundation
 
 struct CanvasCommandCatalog {
+    private let interactionPolicy = CanvasInteractionPolicy()
+
     func descriptor(
         for commandID: CanvasCommandID,
         session: CanvasEditorSession,
@@ -167,19 +169,20 @@ struct CanvasCommandCatalog {
         _ descriptor: CanvasCommandDescriptor,
         session: CanvasEditorSession
     ) -> CanvasCommandDescriptor {
-        guard
-            session.isReadingModeActive,
-            descriptor.id.isAllowedInReadingMode == false
-        else {
+        switch interactionPolicy.commandDecision(
+        for: descriptor.id,
+        workspaceMode: session.workspaceMode
+        ) {
+        case .allow:
             return descriptor
+        case .block:
+            return CanvasCommandDescriptor(
+                id: descriptor.id,
+                title: descriptor.title,
+                systemImageName: descriptor.systemImageName,
+                isEnabled: false,
+                isActive: false
+            )
         }
-
-        return CanvasCommandDescriptor(
-            id: descriptor.id,
-            title: descriptor.title,
-            systemImageName: descriptor.systemImageName,
-            isEnabled: false,
-            isActive: false
-        )
     }
 }

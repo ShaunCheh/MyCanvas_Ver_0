@@ -27,6 +27,16 @@ struct CanvasInteractionPolicy {
             return .block(reason: .readingMode, feedback: nil)
         }
     }
+
+    func commandDecision(
+        for commandID: CanvasCommandID,
+        workspaceMode: CanvasWorkspaceMode
+    ) -> CanvasInteractionDecision {
+        decision(
+            for: .command(commandID),
+            environment: .commandLane(workspaceMode: workspaceMode)
+        )
+    }
 }
 
 private extension CanvasTransferEntryIntent {

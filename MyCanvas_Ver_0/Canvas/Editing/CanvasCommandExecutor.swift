@@ -2,13 +2,17 @@ import Foundation
 
 final class CanvasCommandExecutor {
     private let session: CanvasEditorSession
+    private let interactionPolicy = CanvasInteractionPolicy()
 
     init(session: CanvasEditorSession) {
         self.session = session
     }
 
     func canExecute(_ command: CanvasCommand) -> Bool {
-        guard session.isReadingModeActive == false || command.isAllowedInReadingMode else {
+        guard case .allow = interactionPolicy.commandDecision(
+            for: command.id,
+            workspaceMode: session.workspaceMode
+        ) else {
             return false
         }
 
