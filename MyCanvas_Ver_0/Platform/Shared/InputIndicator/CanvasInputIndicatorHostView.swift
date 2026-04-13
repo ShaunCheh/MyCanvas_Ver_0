@@ -314,10 +314,6 @@ final class CanvasInputIndicatorHostView: NSView {
     private let queue = CanvasInputIndicatorQueue()
     private let containerView = NSView()
     private let stackView = NSStackView()
-    private var containerLeadingConstraint: NSLayoutConstraint!
-    private var containerTopConstraint: NSLayoutConstraint!
-    private var containerWidthConstraint: NSLayoutConstraint!
-    private var containerHeightConstraint: NSLayoutConstraint!
     private var itemViewsByID: [UUID: macOSCanvasInputIndicatorItemView] = [:]
     private var currentSnapshot = CanvasInputIndicatorQueueSnapshot()
     private var currentLayoutContext: CanvasChromeLayoutContext?
@@ -343,20 +339,8 @@ final class CanvasInputIndicatorHostView: NSView {
 
         addSubview(containerView)
         containerView.addSubview(stackView)
-        containerLeadingConstraint = containerView.leadingAnchor.constraint(equalTo: leadingAnchor)
-        containerTopConstraint = containerView.topAnchor.constraint(equalTo: topAnchor)
-        containerWidthConstraint = containerView.widthAnchor.constraint(equalToConstant: 0)
-        containerHeightConstraint = containerView.heightAnchor.constraint(equalToConstant: 0)
-        NSLayoutConstraint.activate([
-            containerLeadingConstraint,
-            containerTopConstraint,
-            containerWidthConstraint,
-            containerHeightConstraint,
-            stackView.topAnchor.constraint(equalTo: containerView.topAnchor),
-            stackView.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
-            stackView.trailingAnchor.constraint(equalTo: containerView.trailingAnchor),
-            stackView.bottomAnchor.constraint(equalTo: containerView.bottomAnchor)
-        ])
+        containerView.frame = .zero
+        stackView.frame = .zero
     }
 
     override var isFlipped: Bool {
@@ -506,36 +490,92 @@ final class CanvasInputIndicatorHostView: NSView {
     }
 
     private func applyLayout() {
-        guard
-            currentSnapshot.isEmpty == false,
-            let currentLayoutContext
-        else {
-            updateContainerConstraints(.zero)
+        guard currentSnapshot.isEmpty == false else {
+            hideContainer(resetFrame: true)
             return
         }
 
         let preferredSize = preferredContainerSize()
+        guard preferredSize.width > 0, preferredSize.height > 0 else {
+            hideContainer(resetFrame: true)
+            return
+        }
+
+        guard let currentLayoutContext else {
+            hideContainer(usingPreferredSize: preferredSize)
+            return
+        }
+
         guard let frame = layoutSolver.resolveHostFrame(
             preferredSize: preferredSize,
             layoutContext: currentLayoutContext
         ) else {
-            updateContainerConstraints(.zero)
+            hideContainer(usingPreferredSize: preferredSize)
             return
         }
 
-        updateContainerConstraints(frame)
+        containerView.isHidden = false
+        isHidden = false
+        updateContainerFrame(frame)
     }
 
-    private func updateContainerConstraints(_ frame: CGRect) {
+    private func hideContainer(
+        resetFrame: Bool = false,
+        usingPreferredSize preferredSize: CGSize? = nil
+    ) {
+        containerView.isHidden = true
+        isHidden = true
+
+        guard
+            resetFrame == false,
+            let preferredSize,
+            preferredSize.width > 0,
+            preferredSize.height > 0
+        else {
+            updateContainerFrame(.zero)
+            return
+        }
+
+        // Keep a legal non-zero content frame while hidden so AppKit never
+        // re-measures the live stack inside a 0x0 parent container.
+        updateContainerFrame(
+            CGRect(origin: .zero, size: preferredSize)
+        )
+    }
+
+    private func updateContainerFrame(_ frame: CGRect) {
         let standardizedFrame = frame.standardized
-        containerLeadingConstraint.constant = standardizedFrame.minX
-        containerTopConstraint.constant = standardizedFrame.minY
-        containerWidthConstraint.constant = max(0, standardizedFrame.width)
-        containerHeightConstraint.constant = max(0, standardizedFrame.height)
+        let sanitizedSize = CanvasChromeLayoutGeometry.sanitizedSize(
+            standardizedFrame.size
+        )
+        containerView.frame = CGRect(
+            x: standardizedFrame.minX,
+            y: standardizedFrame.minY,
+            width: sanitizedSize.width,
+            height: sanitizedSize.height
+        )
+        stackView.frame = CGRect(origin: .zero, size: sanitizedSize)
     }
 
     private func preferredContainerSize() -> CGSize {
-        CanvasChromeLayoutGeometry.sanitizedSize(stackView.fittingSize)
+        let itemSizes = currentSnapshot.items.compactMap { item in
+            itemViewsByID[item.id]?.measuredSize()
+        }
+        guard itemSizes.isEmpty == false else {
+            return .zero
+        }
+
+        let maximumWidth = itemSizes.map(\.width).max() ?? 0
+        let totalHeight = itemSizes.reduce(CGFloat(0)) { partialResult, size in
+            partialResult + size.height
+        }
+        let spacingHeight = CGFloat(max(itemSizes.count - 1, 0)) * Layout.itemSpacing
+        return CanvasChromeLayoutGeometry.sanitizedSize(
+            CGSize(
+                width: maximumWidth,
+                height: totalHeight + spacingHeight
+            )
+        )
     }
 }
 
@@ -597,6 +637,16 @@ private final class macOSCanvasInputIndicatorItemView: NSView {
     func apply(text: String) {
         label.stringValue = text
         setAccessibilityLabel(text)
+    }
+
+    func measuredSize() -> CGSize {
+        let labelSize = CanvasChromeLayoutGeometry.sanitizedSize(label.fittingSize)
+        return CanvasChromeLayoutGeometry.sanitizedSize(
+            CGSize(
+                width: labelSize.width + Layout.horizontalInset * 2,
+                height: labelSize.height + Layout.verticalInset * 2
+            )
+        )
     }
 }
 #endif

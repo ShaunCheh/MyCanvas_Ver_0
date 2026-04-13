@@ -4,10 +4,10 @@ overview: 把 macOS 输入指示器从“0 尺寸约束下的 live fitting”重
 todos:
   - id: macos-indicator-frame-host
     content: 将 macOS 输入指示器宿主改成 frame-driven 浮层容器，移除 0 尺寸约束测量闭环
-    status: pending
+    status: completed
   - id: macos-indicator-measure-flow
     content: 重排 macOS 分支的 snapshot/measure/layout 顺序，确保 preferred size 不受 0 尺寸父容器污染
-    status: pending
+    status: completed
   - id: macos-indicator-verify
     content: 完成双端 build 与 macOS 手工约束告警回归验证
     status: pending
