@@ -53,6 +53,50 @@ final class CanvasInputRoutingResolverTests: XCTestCase {
         XCTAssertNil(result.interactionIntent)
     }
 
+    func testUndoKeyboardShortcutRoutesToIndicatorAndUndoCommandIntent() {
+        let rawInput = CanvasRawInputIntent.keyChord(
+            CanvasKeyChord(
+                modifiers: [.command],
+                key: .character("z")
+            )
+        )
+
+        let result = resolver.route(rawInput)
+
+        XCTAssertEqual(
+            result.indicatorEvent,
+            .keyChord(
+                CanvasKeyChord(
+                    modifiers: [.command],
+                    key: .character("z")
+                )
+            )
+        )
+        XCTAssertEqual(result.interactionIntent, .command(.undo))
+    }
+
+    func testRedoKeyboardShortcutRoutesToIndicatorAndRedoCommandIntent() {
+        let rawInput = CanvasRawInputIntent.keyChord(
+            CanvasKeyChord(
+                modifiers: [.command, .shift],
+                key: .character("z")
+            )
+        )
+
+        let result = resolver.route(rawInput)
+
+        XCTAssertEqual(
+            result.indicatorEvent,
+            .keyChord(
+                CanvasKeyChord(
+                    modifiers: [.command, .shift],
+                    key: .character("z")
+                )
+            )
+        )
+        XCTAssertEqual(result.interactionIntent, .command(.redo))
+    }
+
     func testPrimaryClickRoutesOnlyToLeftClickIndicator() {
         let result = resolver.route(.pointerClick(.primary))
 

@@ -10,9 +10,8 @@ import Foundation
 import AppKit
 
 @main
-final class macOSAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
+final class macOSAppDelegate: NSObject, NSApplicationDelegate {
     private var window: NSWindow?
-    private var rootViewController: macOSAppRootViewController?
     private static let sharedDelegate = macOSAppDelegate()
     
     static func main() {
@@ -24,7 +23,6 @@ final class macOSAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidat
     func applicationDidFinishLaunching(_ notification: Notification) {
         FolderBookmarkStore.logStoredBookmarkPresence()
         let viewController = macOSAppRootViewController()
-        rootViewController = viewController
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -40,27 +38,6 @@ final class macOSAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidat
         NSApp.mainMenu = makeMainMenu()
         NSApp.activate(ignoringOtherApps: true)
         self.window = window
-    }
-
-    @objc
-    private func handleUndoMenuItem(_ sender: Any?) {
-        rootViewController?.currentCanvasViewController?.performCommand(withID: .undo)
-    }
-
-    @objc
-    private func handleRedoMenuItem(_ sender: Any?) {
-        rootViewController?.currentCanvasViewController?.performCommand(withID: .redo)
-    }
-
-    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        switch menuItem.action {
-        case #selector(handleUndoMenuItem(_:)):
-            return rootViewController?.currentCanvasViewController?.canPerformCommand(.undo) ?? false
-        case #selector(handleRedoMenuItem(_:)):
-            return rootViewController?.currentCanvasViewController?.canPerformCommand(.redo) ?? false
-        default:
-            return true
-        }
     }
 
     private func makeMainMenu() -> NSMenu {
@@ -89,19 +66,17 @@ final class macOSAppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidat
 
         let undoItem = NSMenuItem(
             title: "Undo",
-            action: #selector(handleUndoMenuItem(_:)),
+            action: #selector(macOSViewController.undo(_:)),
             keyEquivalent: "z"
         )
-        undoItem.target = self
         undoItem.keyEquivalentModifierMask = [.command]
         editMenu.addItem(undoItem)
 
         let redoItem = NSMenuItem(
             title: "Redo",
-            action: #selector(handleRedoMenuItem(_:)),
+            action: #selector(macOSViewController.redo(_:)),
             keyEquivalent: "Z"
         )
-        redoItem.target = self
         redoItem.keyEquivalentModifierMask = [.command, .shift]
         editMenu.addItem(redoItem)
 

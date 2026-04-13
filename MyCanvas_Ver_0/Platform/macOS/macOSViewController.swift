@@ -59,7 +59,6 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
 
     private enum TransferEntryDeliverySource {
         case macOSPasteAction
-        case macOSLocalKeyMonitor
         case importButton
         case dragAndDrop
 
@@ -67,14 +66,54 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             switch self {
             case .macOSPasteAction:
                 return "macOSPasteAction"
-            case .macOSLocalKeyMonitor:
-                return "macOSLocalKeyMonitor"
             case .importButton:
                 return "importButton"
             case .dragAndDrop:
                 return "dragAndDrop"
             }
         }
+    }
+
+    private enum RawInputDeliverySource {
+        case localKeyMonitor
+        case pasteAction
+        case undoAction
+        case redoAction
+        case primaryClick
+        case secondaryClick
+        case scrollGesture
+        case zoomGesture
+
+        var debugName: String {
+            switch self {
+            case .localKeyMonitor:
+                return "macOSLocalKeyMonitor"
+            case .pasteAction:
+                return "macOSPasteAction"
+            case .undoAction:
+                return "macOSUndoAction"
+            case .redoAction:
+                return "macOSRedoAction"
+            case .primaryClick:
+                return "macOSPrimaryClick"
+            case .secondaryClick:
+                return "macOSSecondaryClick"
+            case .scrollGesture:
+                return "macOSScrollGesture"
+            case .zoomGesture:
+                return "macOSZoomGesture"
+            }
+        }
+    }
+
+    private enum ContinuousRawInputKind: Hashable {
+        case scroll
+        case zoom
+    }
+
+    private struct ObservedKeyboardShortcut {
+        let rawInput: CanvasRawInputIntent
+        let observedAt: Date
     }
 
     private static let pointerDragActivationDistance: CGFloat = 4
@@ -84,6 +123,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     private static let cropOutlineHitTargetWidth: CGFloat = 14
     private static let minimumCropViewportDimension: CGFloat = 20
     private static let rotateHandleHitTargetSize: CGFloat = 22
+    private static let observedKeyboardShortcutReuseWindow: TimeInterval = 0.45
+    private static let continuousRawInputObservationInterval: TimeInterval = 0.32
 
     private let miniMapLayoutSolver = CanvasOverlayLayoutSolver()
     private let alignmentGuideSolver = CanvasAlignmentGuideSolver()
@@ -232,7 +273,9 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     private var pendingRefreshReason: String?
     private var pointerDragState: PointerDragState = .idle
     private var isTransitionInteractionFrozen = false
-    private var supplementalKeyboardCaptureMonitor: Any?
+    private var keyboardShortcutObservationMonitor: Any?
+    private var observedKeyboardShortcuts: [ObservedKeyboardShortcut] = []
+    private var lastContinuousRawInputObservationByKind: [ContinuousRawInputKind: Date] = [:]
     private var saveButtonResetWorkItem: DispatchWorkItem?
     private var saveButtonState: CanvasSaveState = .idle {
         didSet {
@@ -251,7 +294,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     private var isSyncingTextEditorContent = false
 
     deinit {
-        removeSupplementalKeyboardCaptureIfNeeded()
+        removeKeyboardShortcutObservationIfNeeded()
     }
 
     private var scene: CanvasScene {
@@ -379,7 +422,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         } else if view.window != nil, view.isHidden == false {
             view.window?.makeFirstResponder(canvasViewportView)
         }
-        updateSupplementalKeyboardCaptureIfNeeded()
+        updateKeyboardShortcutObservationIfNeeded()
     }
 
     private func presentContextMenu(
@@ -667,6 +710,10 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         _ item: any NSValidatedUserInterfaceItem
     ) -> Bool {
         switch item.action {
+        case #selector(macOSViewController.undo(_:)):
+            return canPerformCommand(.undo)
+        case #selector(macOSViewController.redo(_:)):
+            return canPerformCommand(.redo)
         case #selector(macOSViewController.paste(_:)):
             return canTransferContent(
                 from: .general,
@@ -678,12 +725,82 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     }
 
     @objc
+    func undo(_ sender: Any?) {
+        let rawInput = makeUndoKeyboardShortcutRawInput()
+        if consumeObservedKeyboardShortcut(rawInput) {
+            performCommand(.undo)
+            return
+        }
+
+        if isCurrentKeyboardShortcut(rawInput) {
+            _ = handleCapturedInput(
+                rawInput,
+                sourceDescription: RawInputDeliverySource.undoAction.debugName
+            ) { routingResult in
+                guard routingResult.interactionIntent == .command(.undo) else {
+                    return false
+                }
+
+                performCommand(.undo)
+                return true
+            }
+            return
+        }
+
+        _ = handleCommandAttempt(
+            .undo,
+            sourceDescription: RawInputDeliverySource.undoAction.debugName
+        ) {
+            performCommand(.undo)
+            return true
+        }
+    }
+
+    @objc
+    func redo(_ sender: Any?) {
+        let rawInput = makeRedoKeyboardShortcutRawInput()
+        if consumeObservedKeyboardShortcut(rawInput) {
+            performCommand(.redo)
+            return
+        }
+
+        if isCurrentKeyboardShortcut(rawInput) {
+            _ = handleCapturedInput(
+                rawInput,
+                sourceDescription: RawInputDeliverySource.redoAction.debugName
+            ) { routingResult in
+                guard routingResult.interactionIntent == .command(.redo) else {
+                    return false
+                }
+
+                performCommand(.redo)
+                return true
+            }
+            return
+        }
+
+        _ = handleCommandAttempt(
+            .redo,
+            sourceDescription: RawInputDeliverySource.redoAction.debugName
+        ) {
+            performCommand(.redo)
+            return true
+        }
+    }
+
+    @objc
     func paste(_ sender: Any?) {
+        let rawInput = makePasteKeyboardShortcutRawInput()
+        if consumeObservedKeyboardShortcut(rawInput) {
+            handlePasteRequest()
+            return
+        }
+
         switch resolvedPasteTransferEntryIntent() {
         case .pasteKeyboardShortcut:
             handleCapturedInput(
-                makePasteKeyboardShortcutRawInput(),
-                sourceDescription: TransferEntryDeliverySource.macOSPasteAction.debugName
+                rawInput,
+                sourceDescription: RawInputDeliverySource.pasteAction.debugName
             ) { routingResult in
                 guard
                     routingResult.interactionIntent
@@ -796,12 +913,12 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         )
         updateCameraViewportSizeIfNeeded(trigger: "viewDidAppear")
         updateChromeOverlayLayout()
-        updateSupplementalKeyboardCaptureIfNeeded()
+        updateKeyboardShortcutObservationIfNeeded()
     }
 
     override func viewWillDisappear() {
         super.viewWillDisappear()
-        removeSupplementalKeyboardCaptureIfNeeded()
+        removeKeyboardShortcutObservationIfNeeded()
     }
 
     override func viewDidLayout() {
@@ -1269,6 +1386,10 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             self?.editorSession.animatedImagePlaybackSource(for: assetReference)
         }
         canvasViewportView.onPointerDown = { [weak self] location in
+            self?.observeRawInput(
+                .pointerClick(.primary),
+                sourceDescription: RawInputDeliverySource.primaryClick.debugName
+            )
             guard self?.isTransitionInteractionFrozen == false else {
                 return
             }
@@ -1293,15 +1414,29 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             self?.handlePrimaryPointerCancel()
         }
         canvasViewportView.onSecondaryClick = { [weak self] location in
+            self?.observeRawInput(
+                .pointerClick(.secondary),
+                sourceDescription: RawInputDeliverySource.secondaryClick.debugName
+            )
             self?.handleSecondaryClick(at: location)
         }
         canvasViewportView.onPan = { [weak self] translation in
+            self?.observeContinuousRawInput(
+                .gesture(.scroll, source: .pointer),
+                sourceDescription: RawInputDeliverySource.scrollGesture.debugName,
+                kind: .scroll
+            )
             guard self?.isTransitionInteractionFrozen == false else {
                 return
             }
             self?.handleIndirectPan(translation)
         }
         canvasViewportView.onZoom = { [weak self] scaleDelta, anchor in
+            self?.observeContinuousRawInput(
+                .gesture(.zoom, source: .pointer),
+                sourceDescription: RawInputDeliverySource.zoomGesture.debugName,
+                kind: .zoom
+            )
             guard self?.isTransitionInteractionFrozen == false else {
                 return
             }
@@ -2338,7 +2473,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     ) {
         workspaceMode = targetMode
         updateWorkspaceModeButtonAppearance()
-        updateSupplementalKeyboardCaptureIfNeeded()
+        updateKeyboardShortcutObservationIfNeeded()
         syncTextEditorPresentation()
         refreshCanvas(reason: "toggle workspace mode")
         scheduleAutosave(
@@ -2731,6 +2866,52 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         }
     }
 
+    private func observeRawInput(
+        _ rawInput: CanvasRawInputIntent,
+        sourceDescription: String
+    ) {
+        _ = handleCapturedInput(
+            rawInput,
+            sourceDescription: sourceDescription
+        ) { _ in
+            true
+        }
+    }
+
+    private func observeContinuousRawInput(
+        _ rawInput: CanvasRawInputIntent,
+        sourceDescription: String,
+        kind: ContinuousRawInputKind,
+        now: Date = Date()
+    ) {
+        if let lastObservedAt = lastContinuousRawInputObservationByKind[kind],
+           now.timeIntervalSince(lastObservedAt)
+                < Self.continuousRawInputObservationInterval
+        {
+            return
+        }
+
+        lastContinuousRawInputObservationByKind[kind] = now
+        observeRawInput(
+            rawInput,
+            sourceDescription: sourceDescription
+        )
+    }
+
+    @discardableResult
+    private func handleCommandAttempt(
+        _ commandID: CanvasCommandID,
+        sourceDescription: String,
+        continueIfAllowed: () -> Bool
+    ) -> Bool {
+        handleInteractionAttempt(
+            .command(commandID),
+            sourceDescription: sourceDescription
+        ) {
+            continueIfAllowed()
+        }
+    }
+
     private func transferEntryDecision(
         for entry: CanvasTransferEntryIntent
     ) -> CanvasInteractionDecision {
@@ -2824,7 +3005,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         )
     }
 
-    private func shouldEnableSupplementalKeyboardCapture() -> Bool {
+    private func shouldEnableKeyboardShortcutObservation() -> Bool {
         guard
             view.window != nil,
             view.isHiddenOrHasHiddenAncestor == false
@@ -2832,67 +3013,146 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             return false
         }
 
-        switch transferEntryDecision(for: .pasteKeyboardShortcut) {
-        case .block(
-            reason: .readingMode,
-            feedback: .shakeWorkspaceModeButton
-        ):
-            return true
-        case .allow,
-             .block:
-            return false
-        }
+        return true
     }
 
-    private func updateSupplementalKeyboardCaptureIfNeeded() {
-        guard shouldEnableSupplementalKeyboardCapture() else {
-            removeSupplementalKeyboardCaptureIfNeeded()
+    private func updateKeyboardShortcutObservationIfNeeded() {
+        guard shouldEnableKeyboardShortcutObservation() else {
+            removeKeyboardShortcutObservationIfNeeded()
             return
         }
 
-        guard supplementalKeyboardCaptureMonitor == nil else {
+        guard keyboardShortcutObservationMonitor == nil else {
             return
         }
 
-        supplementalKeyboardCaptureMonitor = NSEvent.addLocalMonitorForEvents(
+        keyboardShortcutObservationMonitor = NSEvent.addLocalMonitorForEvents(
             matching: [.keyDown]
         ) { [weak self] event in
-            self?.handleSupplementalKeyboardCapture(event) ?? event
+            self?.handleObservedKeyboardShortcut(event) ?? event
         }
     }
 
-    private func removeSupplementalKeyboardCaptureIfNeeded() {
-        guard let supplementalKeyboardCaptureMonitor else {
+    private func removeKeyboardShortcutObservationIfNeeded() {
+        guard let keyboardShortcutObservationMonitor else {
             return
         }
 
-        NSEvent.removeMonitor(supplementalKeyboardCaptureMonitor)
-        self.supplementalKeyboardCaptureMonitor = nil
+        NSEvent.removeMonitor(keyboardShortcutObservationMonitor)
+        self.keyboardShortcutObservationMonitor = nil
+        observedKeyboardShortcuts.removeAll()
     }
 
-    private func handleSupplementalKeyboardCapture(
+    private func handleObservedKeyboardShortcut(
         _ event: NSEvent
     ) -> NSEvent? {
         guard
-            shouldEnableSupplementalKeyboardCapture(),
+            shouldEnableKeyboardShortcutObservation(),
             let window = view.window,
             event.window === window,
-            isPasteKeyboardShortcutEvent(event)
+            let rawInput = observedKeyboardShortcutRawInput(from: event)
         else {
             return event
         }
 
-        guard case .block = transferEntryDecision(for: .pasteKeyboardShortcut) else {
-            return event
+        let shouldContinue = handleCapturedInput(
+            rawInput,
+            sourceDescription: RawInputDeliverySource.localKeyMonitor.debugName
+        ) { _ in
+            true
         }
 
-        _ = handleCapturedInput(
-            makePasteKeyboardShortcutRawInput(),
-            sourceDescription: TransferEntryDeliverySource.macOSLocalKeyMonitor.debugName
-        ) { _ in
-            false
+        if shouldContinue,
+           inputRoutingResolver.route(rawInput).interactionIntent != nil
+        {
+            rememberObservedKeyboardShortcut(rawInput)
         }
-        return nil
+
+        return shouldContinue ? event : nil
+    }
+
+    private func observedKeyboardShortcutRawInput(
+        from event: NSEvent?
+    ) -> CanvasRawInputIntent? {
+        guard
+            let event,
+            event.type == .keyDown,
+            event.isARepeat == false
+        else {
+            return nil
+        }
+
+        let relevantFlags = event.modifierFlags.intersection(
+            [.command, .control, .option, .shift]
+        )
+        guard let characters = event.charactersIgnoringModifiers?.lowercased() else {
+            return nil
+        }
+
+        switch (relevantFlags, characters) {
+        case ([.command], "c"):
+            return makeCopyKeyboardShortcutRawInput()
+        case ([.command], "v"):
+            return makePasteKeyboardShortcutRawInput()
+        case ([.command], "z"):
+            return makeUndoKeyboardShortcutRawInput()
+        case ([.command, .shift], "z"):
+            return makeRedoKeyboardShortcutRawInput()
+        default:
+            return nil
+        }
+    }
+
+    private func rememberObservedKeyboardShortcut(
+        _ rawInput: CanvasRawInputIntent,
+        now: Date = Date()
+    ) {
+        pruneObservedKeyboardShortcuts(asOf: now)
+        observedKeyboardShortcuts.append(
+            ObservedKeyboardShortcut(
+                rawInput: rawInput,
+                observedAt: now
+            )
+        )
+    }
+
+    private func consumeObservedKeyboardShortcut(
+        _ rawInput: CanvasRawInputIntent,
+        now: Date = Date()
+    ) -> Bool {
+        pruneObservedKeyboardShortcuts(asOf: now)
+        guard let index = observedKeyboardShortcuts.firstIndex(where: {
+            $0.rawInput == rawInput
+        }) else {
+            return false
+        }
+
+        observedKeyboardShortcuts.remove(at: index)
+        return true
+    }
+
+    private func pruneObservedKeyboardShortcuts(
+        asOf now: Date = Date()
+    ) {
+        observedKeyboardShortcuts.removeAll { observedShortcut in
+            now.timeIntervalSince(observedShortcut.observedAt)
+                > Self.observedKeyboardShortcutReuseWindow
+        }
+    }
+
+    private func isCurrentKeyboardShortcut(
+        _ rawInput: CanvasRawInputIntent
+    ) -> Bool {
+        observedKeyboardShortcutRawInput(from: NSApp.currentEvent) == rawInput
+    }
+
+    private func makeCopyKeyboardShortcutRawInput() -> CanvasRawInputIntent {
+        .keyChord(
+            CanvasKeyChord(
+                modifiers: [.command],
+                key: .character("c")
+            )
+        )
     }
 
     private func makePasteKeyboardShortcutRawInput() -> CanvasRawInputIntent {
@@ -2904,15 +3164,22 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         )
     }
 
-    private func isPasteKeyboardShortcutEvent(_ event: NSEvent) -> Bool {
-        let relevantFlags = event.modifierFlags.intersection(
-            [.command, .control, .option, .shift]
+    private func makeUndoKeyboardShortcutRawInput() -> CanvasRawInputIntent {
+        .keyChord(
+            CanvasKeyChord(
+                modifiers: [.command],
+                key: .character("z")
+            )
         )
-        guard relevantFlags == [.command] else {
-            return false
-        }
+    }
 
-        return event.charactersIgnoringModifiers?.lowercased() == "v"
+    private func makeRedoKeyboardShortcutRawInput() -> CanvasRawInputIntent {
+        .keyChord(
+            CanvasKeyChord(
+                modifiers: [.command, .shift],
+                key: .character("z")
+            )
+        )
     }
 
     private func resolvedPasteTransferEntryIntent() -> CanvasTransferEntryIntent {

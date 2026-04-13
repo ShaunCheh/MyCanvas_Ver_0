@@ -21,23 +21,40 @@ struct CanvasInputRoutingResolver: Sendable {
     private func routeKeyChord(
         _ chord: CanvasKeyChord
     ) -> CanvasInputRoutingResult {
-        let interactionIntent: CanvasInteractionIntent?
-        if chord.isPasteKeyboardShortcut {
-            interactionIntent = .transferEntry(.pasteKeyboardShortcut)
-        } else {
-            interactionIntent = nil
-        }
-
         return CanvasInputRoutingResult(
             indicatorEvent: .keyChord(chord),
-            interactionIntent: interactionIntent
+            interactionIntent: chord.routedInteractionIntent
         )
     }
 }
 
 private extension CanvasKeyChord {
+    var routedInteractionIntent: CanvasInteractionIntent? {
+        if isPasteKeyboardShortcut {
+            return .transferEntry(.pasteKeyboardShortcut)
+        }
+
+        if isUndoKeyboardShortcut {
+            return .command(.undo)
+        }
+
+        if isRedoKeyboardShortcut {
+            return .command(.redo)
+        }
+
+        return nil
+    }
+
     var isPasteKeyboardShortcut: Bool {
         modifiers == [.command] && key.matchesCharacter("v")
+    }
+
+    var isUndoKeyboardShortcut: Bool {
+        modifiers == [.command] && key.matchesCharacter("z")
+    }
+
+    var isRedoKeyboardShortcut: Bool {
+        modifiers == [.command, .shift] && key.matchesCharacter("z")
     }
 }
 
