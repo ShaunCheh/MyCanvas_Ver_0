@@ -79,6 +79,42 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         }
     }
 
+    private enum RawInputDeliverySource {
+        case copyKeyCommand
+        case pasteKeyCommand
+        case undoKeyCommand
+        case redoKeyCommand
+        case tapGesture
+        case longPressGesture
+        case scrollGesture
+        case pinchGesture
+
+        var debugName: String {
+            switch self {
+            case .copyKeyCommand:
+                return "iOSCopyKeyCommand"
+            case .pasteKeyCommand:
+                return "iOSPasteKeyCommand"
+            case .undoKeyCommand:
+                return "iOSUndoKeyCommand"
+            case .redoKeyCommand:
+                return "iOSRedoKeyCommand"
+            case .tapGesture:
+                return "iOSTapGesture"
+            case .longPressGesture:
+                return "iOSLongPressGesture"
+            case .scrollGesture:
+                return "iOSScrollGesture"
+            case .pinchGesture:
+                return "iOSPinchGesture"
+            }
+        }
+    }
+
+    private enum ContinuousRawInputKind: Hashable {
+        case scroll
+    }
+
     private static let isDiagnosticLoggingEnabled = false
     private static let isPinchZoomDiagnosticLoggingEnabled = true
     private static let pointerDragActivationDistance: CGFloat = 4
@@ -88,6 +124,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     private static let cropOutlineHitTargetWidth: CGFloat = 20
     private static let minimumCropViewportDimension: CGFloat = 28
     private static let rotateHandleHitTargetSize: CGFloat = 32
+    private static let continuousRawInputObservationInterval: TimeInterval = 0.32
     private let miniMapLayoutSolver = CanvasOverlayLayoutSolver()
     private let alignmentGuideSolver = CanvasAlignmentGuideSolver()
     var miniMapConfiguration = CanvasMiniMapConfiguration()
@@ -235,6 +272,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     private var lastZoomDispatchTimestamp: TimeInterval?
     private var lastZoomRefreshTimestamp: TimeInterval?
     private var didMutateCameraDuringZoomGesture = false
+    private var lastContinuousRawInputObservationByKind: [ContinuousRawInputKind: Date] = [:]
+    private var hasObservedCurrentPinchRawInput = false
     private var saveButtonResetWorkItem: DispatchWorkItem?
     private var saveButtonState: CanvasSaveState = .idle {
         didSet {
@@ -632,13 +671,40 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     }
 
     override var keyCommands: [UIKeyCommand]? {
+        let copyCommand = UIKeyCommand(
+            input: "c",
+            modifierFlags: [.command],
+            action: #selector(handleCopyKeyCommand(_:))
+        )
+        copyCommand.discoverabilityTitle = "Copy"
+
         let pasteCommand = UIKeyCommand(
             input: "v",
             modifierFlags: [.command],
             action: #selector(handlePasteKeyCommand(_:))
         )
         pasteCommand.discoverabilityTitle = "Paste Image"
-        return [pasteCommand]
+
+        let undoCommand = UIKeyCommand(
+            input: "z",
+            modifierFlags: [.command],
+            action: #selector(handleUndoKeyCommand(_:))
+        )
+        undoCommand.discoverabilityTitle = "Undo"
+
+        let redoCommand = UIKeyCommand(
+            input: "z",
+            modifierFlags: [.command, .shift],
+            action: #selector(handleRedoKeyCommand(_:))
+        )
+        redoCommand.discoverabilityTitle = "Redo"
+
+        return [
+            copyCommand,
+            pasteCommand,
+            undoCommand,
+            redoCommand
+        ]
     }
 
     override func viewDidLoad() {
@@ -1091,9 +1157,18 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             self?.handlePrimaryPointerCancel()
         }
         canvasViewportView.onLongPress = { [weak self] location in
+            self?.observeRawInput(
+                .gesture(.longPress, source: .touch),
+                sourceDescription: RawInputDeliverySource.longPressGesture.debugName
+            )
             self?.handleLongPress(at: location)
         }
         canvasViewportView.onPan = { [weak self] translation in
+            self?.observeContinuousRawInput(
+                .gesture(.scroll, source: .pointer),
+                sourceDescription: RawInputDeliverySource.scrollGesture.debugName,
+                kind: .scroll
+            )
             guard self?.isTransitionInteractionFrozen == false else {
                 return
             }
@@ -1106,12 +1181,14 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             self?.handleZoom(scaleDelta, around: anchor)
         }
         canvasViewportView.onZoomGestureBegan = { [weak self] in
+            self?.observePinchRawInputIfNeeded()
             guard self?.isTransitionInteractionFrozen == false else {
                 return
             }
             self?.handleZoomGestureBegan()
         }
         canvasViewportView.onZoomGestureEnded = { [weak self] in
+            self?.finishPinchRawInputObservation()
             guard self?.isTransitionInteractionFrozen == false else {
                 return
             }
@@ -1145,6 +1222,22 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             updateKind: .viewStateOnly
         )
         didMutateCameraDuringZoomGesture = false
+    }
+
+    private func observePinchRawInputIfNeeded() {
+        guard hasObservedCurrentPinchRawInput == false else {
+            return
+        }
+
+        hasObservedCurrentPinchRawInput = true
+        observeRawInput(
+            .gesture(.pinch, source: .touch),
+            sourceDescription: RawInputDeliverySource.pinchGesture.debugName
+        )
+    }
+
+    private func finishPinchRawInputObservation() {
+        hasObservedCurrentPinchRawInput = false
     }
 
     private func syncCameraViewportSizeIfNeeded(
@@ -1400,6 +1493,10 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
 
         switch pointerDragState {
         case let .pressed(_, pressContext):
+            observeRawInput(
+                .gesture(.tap, source: .touch),
+                sourceDescription: RawInputDeliverySource.tapGesture.debugName
+            )
             if isInlineEditModeActive {
                 editorSession.cancelPendingHistoryTransaction()
                 return
@@ -2447,6 +2544,15 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         min(max(progress, 0), 1)
     }
 
+    private func makeCopyKeyboardShortcutRawInput() -> CanvasRawInputIntent {
+        .keyChord(
+            CanvasKeyChord(
+                modifiers: [.command],
+                key: .character("c")
+            )
+        )
+    }
+
     private func makePasteKeyboardShortcutRawInput() -> CanvasRawInputIntent {
         .keyChord(
             CanvasKeyChord(
@@ -2456,11 +2562,37 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         )
     }
 
+    private func makeUndoKeyboardShortcutRawInput() -> CanvasRawInputIntent {
+        .keyChord(
+            CanvasKeyChord(
+                modifiers: [.command],
+                key: .character("z")
+            )
+        )
+    }
+
+    private func makeRedoKeyboardShortcutRawInput() -> CanvasRawInputIntent {
+        .keyChord(
+            CanvasKeyChord(
+                modifiers: [.command, .shift],
+                key: .character("z")
+            )
+        )
+    }
+
+    @objc
+    private func handleCopyKeyCommand(_ sender: UIKeyCommand) {
+        observeRawInput(
+            makeCopyKeyboardShortcutRawInput(),
+            sourceDescription: RawInputDeliverySource.copyKeyCommand.debugName
+        )
+    }
+
     @objc
     private func handlePasteKeyCommand(_ sender: UIKeyCommand) {
         handleCapturedInput(
             makePasteKeyboardShortcutRawInput(),
-            sourceDescription: TransferEntryDeliverySource.iOSKeyCommand.debugName
+            sourceDescription: RawInputDeliverySource.pasteKeyCommand.debugName
         ) { routingResult in
             guard
                 routingResult.interactionIntent
@@ -2469,6 +2601,36 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
                 return false
             }
             handlePasteRequest()
+            return true
+        }
+    }
+
+    @objc
+    private func handleUndoKeyCommand(_ sender: UIKeyCommand) {
+        handleCapturedInput(
+            makeUndoKeyboardShortcutRawInput(),
+            sourceDescription: RawInputDeliverySource.undoKeyCommand.debugName
+        ) { routingResult in
+            guard routingResult.interactionIntent == .command(.undo) else {
+                return false
+            }
+
+            performCommand(.undo)
+            return true
+        }
+    }
+
+    @objc
+    private func handleRedoKeyCommand(_ sender: UIKeyCommand) {
+        handleCapturedInput(
+            makeRedoKeyboardShortcutRawInput(),
+            sourceDescription: RawInputDeliverySource.redoKeyCommand.debugName
+        ) { routingResult in
+            guard routingResult.interactionIntent == .command(.redo) else {
+                return false
+            }
+
+            performCommand(.redo)
             return true
         }
     }
@@ -2647,6 +2809,38 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         ) {
             continueIfAllowed(routingResult)
         }
+    }
+
+    private func observeRawInput(
+        _ rawInput: CanvasRawInputIntent,
+        sourceDescription: String
+    ) {
+        _ = handleCapturedInput(
+            rawInput,
+            sourceDescription: sourceDescription
+        ) { _ in
+            true
+        }
+    }
+
+    private func observeContinuousRawInput(
+        _ rawInput: CanvasRawInputIntent,
+        sourceDescription: String,
+        kind: ContinuousRawInputKind,
+        now: Date = Date()
+    ) {
+        if let lastObservedAt = lastContinuousRawInputObservationByKind[kind],
+           now.timeIntervalSince(lastObservedAt)
+                < Self.continuousRawInputObservationInterval
+        {
+            return
+        }
+
+        lastContinuousRawInputObservationByKind[kind] = now
+        observeRawInput(
+            rawInput,
+            sourceDescription: sourceDescription
+        )
     }
 
     private func isTransferEntryAllowed(
