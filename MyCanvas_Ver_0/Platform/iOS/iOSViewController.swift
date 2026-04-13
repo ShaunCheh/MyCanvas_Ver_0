@@ -101,6 +101,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     private let toolbarStateBuilder = CanvasToolbarStateBuilder()
     private let contextMenuActionResolver = CanvasContextMenuActionResolver()
     private let interactionPolicy = CanvasInteractionPolicy()
+    private let inputRoutingResolver = CanvasInputRoutingResolver()
     private let canvasHostView: UIView = {
         let view = UIView()
         view.translatesAutoresizingMaskIntoConstraints = false
@@ -2433,12 +2434,27 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         min(max(progress, 0), 1)
     }
 
+    private func makePasteKeyboardShortcutRawInput() -> CanvasRawInputIntent {
+        .keyChord(
+            CanvasKeyChord(
+                modifiers: [.command],
+                key: .character("v")
+            )
+        )
+    }
+
     @objc
     private func handlePasteKeyCommand(_ sender: UIKeyCommand) {
-        handleTransferEntryAttempt(
-            .pasteKeyboardShortcut,
-            deliverySource: .iOSKeyCommand
-        ) {
+        handleCapturedInput(
+            makePasteKeyboardShortcutRawInput(),
+            sourceDescription: TransferEntryDeliverySource.iOSKeyCommand.debugName
+        ) { routingResult in
+            guard
+                routingResult.interactionIntent
+                    == .transferEntry(.pasteKeyboardShortcut)
+            else {
+                return false
+            }
             handlePasteRequest()
             return true
         }
@@ -2575,6 +2591,44 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
                 applyInteractionFeedback(feedback)
             }
             return false
+        }
+    }
+
+    private func logCapturedInputRouting(
+        rawInput: CanvasRawInputIntent,
+        routingResult: CanvasInputRoutingResult,
+        sourceDescription: String
+    ) {
+        print(
+            "[Canvas iOS][RawInputRoute] " +
+            "source=\"\(sourceDescription)\" " +
+            "rawInput=\(rawInput.debugName) " +
+            routingResult.debugSummary
+        )
+    }
+
+    @discardableResult
+    private func handleCapturedInput(
+        _ rawInput: CanvasRawInputIntent,
+        sourceDescription: String,
+        continueIfAllowed: (CanvasInputRoutingResult) -> Bool
+    ) -> Bool {
+        let routingResult = inputRoutingResolver.route(rawInput)
+        logCapturedInputRouting(
+            rawInput: rawInput,
+            routingResult: routingResult,
+            sourceDescription: sourceDescription
+        )
+
+        guard let interactionIntent = routingResult.interactionIntent else {
+            return continueIfAllowed(routingResult)
+        }
+
+        return handleInteractionAttempt(
+            interactionIntent,
+            sourceDescription: sourceDescription
+        ) {
+            continueIfAllowed(routingResult)
         }
     }
 

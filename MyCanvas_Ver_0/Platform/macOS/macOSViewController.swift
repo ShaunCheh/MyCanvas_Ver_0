@@ -98,6 +98,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     private let toolbarStateBuilder = CanvasToolbarStateBuilder()
     private let contextMenuActionResolver = CanvasContextMenuActionResolver()
     private let interactionPolicy = CanvasInteractionPolicy()
+    private let inputRoutingResolver = CanvasInputRoutingResolver()
     private let canvasHostView: NSView = {
         let view = NSView()
         view.translatesAutoresizingMaskIntoConstraints = false
@@ -671,12 +672,33 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
 
     @objc
     func paste(_ sender: Any?) {
-        handleTransferEntryAttempt(
-            resolvedPasteTransferEntryIntent(),
-            deliverySource: .macOSPasteAction
-        ) {
-            handlePasteRequest()
-            return true
+        switch resolvedPasteTransferEntryIntent() {
+        case .pasteKeyboardShortcut:
+            handleCapturedInput(
+                makePasteKeyboardShortcutRawInput(),
+                sourceDescription: TransferEntryDeliverySource.macOSPasteAction.debugName
+            ) { routingResult in
+                guard
+                    routingResult.interactionIntent
+                        == .transferEntry(.pasteKeyboardShortcut)
+                else {
+                    return false
+                }
+
+                handlePasteRequest()
+                return true
+            }
+        case .pasteMenu:
+            handleTransferEntryAttempt(
+                .pasteMenu,
+                deliverySource: .macOSPasteAction
+            ) {
+                handlePasteRequest()
+                return true
+            }
+        case .importButton,
+             .dragAndDrop:
+            return
         }
     }
 
@@ -2654,6 +2676,44 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         }
     }
 
+    private func logCapturedInputRouting(
+        rawInput: CanvasRawInputIntent,
+        routingResult: CanvasInputRoutingResult,
+        sourceDescription: String
+    ) {
+        print(
+            "[Canvas macOS][RawInputRoute] " +
+            "source=\"\(sourceDescription)\" " +
+            "rawInput=\(rawInput.debugName) " +
+            routingResult.debugSummary
+        )
+    }
+
+    @discardableResult
+    private func handleCapturedInput(
+        _ rawInput: CanvasRawInputIntent,
+        sourceDescription: String,
+        continueIfAllowed: (CanvasInputRoutingResult) -> Bool
+    ) -> Bool {
+        let routingResult = inputRoutingResolver.route(rawInput)
+        logCapturedInputRouting(
+            rawInput: rawInput,
+            routingResult: routingResult,
+            sourceDescription: sourceDescription
+        )
+
+        guard let interactionIntent = routingResult.interactionIntent else {
+            return continueIfAllowed(routingResult)
+        }
+
+        return handleInteractionAttempt(
+            interactionIntent,
+            sourceDescription: sourceDescription
+        ) {
+            continueIfAllowed(routingResult)
+        }
+    }
+
     private func transferEntryDecision(
         for entry: CanvasTransferEntryIntent
     ) -> CanvasInteractionDecision {
@@ -2809,13 +2869,22 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             return event
         }
 
-        _ = handleTransferEntryAttempt(
-            .pasteKeyboardShortcut,
-            deliverySource: .macOSLocalKeyMonitor
-        ) {
+        _ = handleCapturedInput(
+            makePasteKeyboardShortcutRawInput(),
+            sourceDescription: TransferEntryDeliverySource.macOSLocalKeyMonitor.debugName
+        ) { _ in
             false
         }
         return nil
+    }
+
+    private func makePasteKeyboardShortcutRawInput() -> CanvasRawInputIntent {
+        .keyChord(
+            CanvasKeyChord(
+                modifiers: [.command],
+                key: .character("v")
+            )
+        )
     }
 
     private func isPasteKeyboardShortcutEvent(_ event: NSEvent) -> Bool {
