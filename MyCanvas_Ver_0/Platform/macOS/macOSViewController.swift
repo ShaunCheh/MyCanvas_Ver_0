@@ -57,6 +57,12 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         case draggingCanvas
     }
 
+    private enum TransferEntryDeliverySource {
+        case macOSPasteAction
+        case importButton
+        case dragAndDrop
+    }
+
     private static let pointerDragActivationDistance: CGFloat = 4
     private static let selectionHandleHitTargetSize: CGFloat = 18
     private static let minimumResizeViewportDimension: CGFloat = 20
@@ -77,6 +83,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     private let commandCatalog = CanvasCommandCatalog()
     private let toolbarStateBuilder = CanvasToolbarStateBuilder()
     private let contextMenuActionResolver = CanvasContextMenuActionResolver()
+    private let interactionPolicy = CanvasInteractionPolicy()
     private let canvasHostView: NSView = {
         let view = NSView()
         view.translatesAutoresizingMaskIntoConstraints = false
@@ -632,7 +639,10 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     ) -> Bool {
         switch item.action {
         case #selector(macOSViewController.paste(_:)):
-            return canTransferContent(from: .general)
+            return canTransferContent(
+                from: .general,
+                entry: resolvedPasteTransferEntryIntent()
+            )
         default:
             return true
         }
@@ -640,11 +650,13 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
 
     @objc
     func paste(_ sender: Any?) {
-        guard isTransitionInteractionFrozen == false else {
-            return
+        handleTransferEntryAttempt(
+            resolvedPasteTransferEntryIntent(),
+            deliverySource: .macOSPasteAction
+        ) {
+            handlePasteRequest()
+            return true
         }
-
-        handlePasteRequest()
     }
 
     override func loadView() {
@@ -1243,16 +1255,15 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             )
         }
         canvasViewportView.onImportDragOperation = { [weak self] _, pasteboard in
-            guard self?.isTransitionInteractionFrozen == false else {
-                return []
-            }
             return self?.dragOperation(for: pasteboard) ?? []
         }
         canvasViewportView.onImportDrop = { [weak self] _, pasteboard in
-            guard self?.isTransitionInteractionFrozen == false else {
-                return false
-            }
-            return self?.handleImportDrop(pasteboard: pasteboard) ?? false
+            return self?.handleTransferEntryAttempt(
+                .dragAndDrop,
+                deliverySource: .dragAndDrop
+            ) {
+                self?.handleImportDrop(pasteboard: pasteboard) ?? false
+            } ?? false
         }
 
         installCanvasContentView(canvasViewportView)
@@ -1828,41 +1839,43 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
 
     @objc
     private func handleImportButtonClick() {
-        guard isReadingModeActive == false else {
-            return
-        }
-
-        commitActiveTextEditIfNeeded()
-        guard let window = view.window else {
-            return
-        }
-
-        let openPanel = NSOpenPanel()
-        openPanel.allowedContentTypes = [.image, .movie]
-        openPanel.allowsMultipleSelection = true
-        openPanel.canChooseDirectories = false
-        openPanel.canChooseFiles = true
-
-        openPanel.beginSheetModal(for: window) { [weak self] response in
-            guard
-                response == .OK,
-                let self
-            else {
-                return
+        handleTransferEntryAttempt(
+            .importButton,
+            deliverySource: .importButton
+        ) {
+            commitActiveTextEditIfNeeded()
+            guard let window = view.window else {
+                return false
             }
 
-            guard self.isReadingModeActive == false else {
-                return
-            }
+            let openPanel = NSOpenPanel()
+            openPanel.allowedContentTypes = [.image, .movie]
+            openPanel.allowsMultipleSelection = true
+            openPanel.canChooseDirectories = false
+            openPanel.canChooseFiles = true
 
-            guard let transferRequest = macOSCanvasImportAdapter.transferRequest(
-                from: openPanel.urls,
-                sourceDescription: "open panel"
-            ) else {
-                return
-            }
+            openPanel.beginSheetModal(for: window) { [weak self] response in
+                guard
+                    response == .OK,
+                    let self
+                else {
+                    return
+                }
 
-            _ = self.performTransferRequest(transferRequest)
+                guard self.isTransferEntryAllowed(.importButton) else {
+                    return
+                }
+
+                guard let transferRequest = macOSCanvasImportAdapter.transferRequest(
+                    from: openPanel.urls,
+                    sourceDescription: "open panel"
+                ) else {
+                    return
+                }
+
+                _ = self.performTransferRequest(transferRequest)
+            }
+            return true
         }
     }
 
@@ -2566,20 +2579,76 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         min(max(progress, 0), 1)
     }
 
-    private func canTransferContent(from pasteboard: NSPasteboard) -> Bool {
-        isTransitionInteractionFrozen == false &&
-            isReadingModeActive == false &&
+    private func makeInteractionEnvironment() -> CanvasInteractionEnvironment {
+        CanvasInteractionEnvironment(
+            workspaceMode: workspaceMode,
+            isTransitionInteractionFrozen: isTransitionInteractionFrozen
+        )
+    }
+
+    private func transferEntryDecision(
+        for entry: CanvasTransferEntryIntent
+    ) -> CanvasInteractionDecision {
+        interactionPolicy.decision(
+            for: .transferEntry(entry),
+            environment: makeInteractionEnvironment()
+        )
+    }
+
+    private func isTransferEntryAllowed(
+        _ entry: CanvasTransferEntryIntent
+    ) -> Bool {
+        switch transferEntryDecision(for: entry) {
+        case .allow:
+            return true
+        case .block:
+            return false
+        }
+    }
+
+    @discardableResult
+    private func handleTransferEntryAttempt(
+        _ entry: CanvasTransferEntryIntent,
+        deliverySource: TransferEntryDeliverySource,
+        continueIfAllowed: () -> Bool
+    ) -> Bool {
+        let decision = transferEntryDecision(for: entry)
+        switch decision {
+        case .allow:
+            return continueIfAllowed()
+        case .block(_, let feedback):
+            if let feedback {
+                applyInteractionFeedback(feedback)
+            }
+            return false
+        }
+    }
+
+    private func applyInteractionFeedback(_ hint: CanvasInteractionFeedbackHint) {
+        switch hint {
+        case .shakeWorkspaceModeButton:
+            // Phase 3 wires this to the workspace mode button animation.
+            break
+        }
+    }
+
+    private func resolvedPasteTransferEntryIntent() -> CanvasTransferEntryIntent {
+        if NSApp.currentEvent?.type == .keyDown {
+            return .pasteKeyboardShortcut
+        }
+
+        return .pasteMenu
+    }
+
+    private func canTransferContent(
+        from pasteboard: NSPasteboard,
+        entry: CanvasTransferEntryIntent
+    ) -> Bool {
+        isTransferEntryAllowed(entry) &&
             macOSCanvasImportAdapter.canResolveTransfer(from: pasteboard)
     }
 
     private func handlePasteRequest() {
-        guard
-            isTransitionInteractionFrozen == false,
-            isReadingModeActive == false
-        else {
-            return
-        }
-
         guard let transferRequest = macOSCanvasImportAdapter.transferRequest(
             from: .general,
             sourceDescription: "pasteboard"
@@ -2591,19 +2660,12 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     }
 
     private func dragOperation(for pasteboard: NSPasteboard) -> NSDragOperation {
-        canTransferContent(from: pasteboard) ? .copy : []
+        canTransferContent(from: pasteboard, entry: .dragAndDrop) ? .copy : []
     }
 
     private func handleImportDrop(
         pasteboard: NSPasteboard
     ) -> Bool {
-        guard
-            isTransitionInteractionFrozen == false,
-            isReadingModeActive == false
-        else {
-            return false
-        }
-
         guard let transferRequest = macOSCanvasImportAdapter.transferRequest(
             from: pasteboard,
             sourceDescription: "drag and drop"

@@ -50,6 +50,24 @@ final class CanvasInteractionPolicyTests: XCTestCase {
         )
     }
 
+    func testImportButtonBlocksInReadingModeWithoutFeedback() {
+        let decision = policy.decision(
+            for: .transferEntry(.importButton),
+            environment: makeEnvironment(workspaceMode: .reading, isFrozen: false)
+        )
+
+        XCTAssertEqual(decision, .block(reason: .readingMode, feedback: nil))
+    }
+
+    func testDragAndDropBlocksInReadingModeWithoutFeedback() {
+        let decision = policy.decision(
+            for: .transferEntry(.dragAndDrop),
+            environment: makeEnvironment(workspaceMode: .reading, isFrozen: false)
+        )
+
+        XCTAssertEqual(decision, .block(reason: .readingMode, feedback: nil))
+    }
+
     func testCommandAllowsInEditingModeWhenNotFrozen() {
         let decision = policy.decision(
             for: .command(.undo),

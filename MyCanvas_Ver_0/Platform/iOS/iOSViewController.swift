@@ -62,6 +62,12 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         case draggingCanvas
     }
 
+    private enum TransferEntryDeliverySource {
+        case iOSKeyCommand
+        case importButton
+        case dragAndDrop
+    }
+
     private static let isDiagnosticLoggingEnabled = false
     private static let isPinchZoomDiagnosticLoggingEnabled = true
     private static let pointerDragActivationDistance: CGFloat = 4
@@ -83,6 +89,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     private let commandCatalog = CanvasCommandCatalog()
     private let toolbarStateBuilder = CanvasToolbarStateBuilder()
     private let contextMenuActionResolver = CanvasContextMenuActionResolver()
+    private let interactionPolicy = CanvasInteractionPolicy()
     private let canvasHostView: UIView = {
         let view = UIView()
         view.translatesAutoresizingMaskIntoConstraints = false
@@ -1636,18 +1643,20 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
 
     @objc
     private func handleImportButtonTap() {
-        guard isReadingModeActive == false else {
-            return
+        handleTransferEntryAttempt(
+            .importButton,
+            deliverySource: .importButton
+        ) {
+            commitActiveTextEditIfNeeded()
+            var configuration = PHPickerConfiguration(photoLibrary: .shared())
+            configuration.filter = .any(of: [.images, .videos])
+            configuration.selectionLimit = 0
+
+            let pickerViewController = PHPickerViewController(configuration: configuration)
+            pickerViewController.delegate = self
+            present(pickerViewController, animated: true)
+            return true
         }
-
-        commitActiveTextEditIfNeeded()
-        var configuration = PHPickerConfiguration(photoLibrary: .shared())
-        configuration.filter = .any(of: [.images, .videos])
-        configuration.selectionLimit = 0
-
-        let pickerViewController = PHPickerViewController(configuration: configuration)
-        pickerViewController.delegate = self
-        present(pickerViewController, animated: true)
     }
 
     @objc
@@ -2413,15 +2422,20 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
 
     @objc
     private func handlePasteKeyCommand(_ sender: UIKeyCommand) {
-        handlePasteRequest()
+        handleTransferEntryAttempt(
+            .pasteKeyboardShortcut,
+            deliverySource: .iOSKeyCommand
+        ) {
+            handlePasteRequest()
+            return true
+        }
     }
 
     func dropInteraction(
         _ interaction: UIDropInteraction,
         canHandle session: UIDropSession
     ) -> Bool {
-        isTransitionInteractionFrozen == false &&
-            isReadingModeActive == false &&
+        isTransferEntryAllowed(.dragAndDrop) &&
             iOSCanvasImportAdapter.canResolveTransfer(from: session)
     }
 
@@ -2429,8 +2443,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         _ interaction: UIDropInteraction,
         sessionDidUpdate session: UIDropSession
     ) -> UIDropProposal {
-        if isTransitionInteractionFrozen == false,
-           isReadingModeActive == false,
+        if isTransferEntryAllowed(.dragAndDrop),
            iOSCanvasImportAdapter.canResolveTransfer(from: session)
         {
             return UIDropProposal(operation: .copy)
@@ -2443,39 +2456,49 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         _ interaction: UIDropInteraction,
         performDrop session: UIDropSession
     ) {
-        Task { @MainActor [weak self] in
-            guard let self else {
-                return
-            }
+        handleTransferEntryAttempt(
+            .dragAndDrop,
+            deliverySource: .dragAndDrop
+        ) {
+            Task { @MainActor [weak self] in
+                guard let self else {
+                    return
+                }
 
-            guard
-                self.isTransitionInteractionFrozen == false,
-                self.isReadingModeActive == false
-            else {
-                return
-            }
+                guard self.isTransferEntryAllowed(.dragAndDrop) else {
+                    return
+                }
 
-            guard let transferRequest = await iOSCanvasImportAdapter.transferRequest(
-                from: session,
-                sourceDescription: "drag and drop"
-            ) else {
-                return
-            }
+                guard let transferRequest = await iOSCanvasImportAdapter.transferRequest(
+                    from: session,
+                    sourceDescription: "drag and drop"
+                ) else {
+                    return
+                }
 
-            _ = self.performTransferRequest(transferRequest)
-            self.becomeFirstResponder()
+                _ = self.performTransferRequest(transferRequest)
+                self.becomeFirstResponder()
+            }
+            return true
         }
     }
 
     func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
         picker.dismiss(animated: true)
 
-        guard results.isEmpty == false, isReadingModeActive == false else {
+        guard
+            results.isEmpty == false,
+            isTransferEntryAllowed(.importButton)
+        else {
             return
         }
 
         Task { @MainActor [weak self] in
             guard let self else {
+                return
+            }
+
+            guard self.isTransferEntryAllowed(.importButton) else {
                 return
             }
 
@@ -2503,17 +2526,60 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         requestCanvasRefresh(reason: "update text edit draft")
     }
 
-    private func canTransferContent(from pasteboard: UIPasteboard) -> Bool {
-        isTransitionInteractionFrozen == false &&
-            isReadingModeActive == false &&
-            iOSCanvasImportAdapter.canResolveTransfer(from: pasteboard)
+    private func makeInteractionEnvironment() -> CanvasInteractionEnvironment {
+        CanvasInteractionEnvironment(
+            workspaceMode: workspaceMode,
+            isTransitionInteractionFrozen: isTransitionInteractionFrozen
+        )
+    }
+
+    private func transferEntryDecision(
+        for entry: CanvasTransferEntryIntent
+    ) -> CanvasInteractionDecision {
+        interactionPolicy.decision(
+            for: .transferEntry(entry),
+            environment: makeInteractionEnvironment()
+        )
+    }
+
+    private func isTransferEntryAllowed(
+        _ entry: CanvasTransferEntryIntent
+    ) -> Bool {
+        switch transferEntryDecision(for: entry) {
+        case .allow:
+            return true
+        case .block:
+            return false
+        }
+    }
+
+    @discardableResult
+    private func handleTransferEntryAttempt(
+        _ entry: CanvasTransferEntryIntent,
+        deliverySource: TransferEntryDeliverySource,
+        continueIfAllowed: () -> Bool
+    ) -> Bool {
+        let decision = transferEntryDecision(for: entry)
+        switch decision {
+        case .allow:
+            return continueIfAllowed()
+        case .block(_, let feedback):
+            if let feedback {
+                applyInteractionFeedback(feedback)
+            }
+            return false
+        }
+    }
+
+    private func applyInteractionFeedback(_ hint: CanvasInteractionFeedbackHint) {
+        switch hint {
+        case .shakeWorkspaceModeButton:
+            // Phase 3 wires this to the workspace mode button animation.
+            break
+        }
     }
 
     private func handlePasteRequest() {
-        guard canTransferContent(from: .general) else {
-            return
-        }
-
         Task { @MainActor [weak self] in
             guard let self else {
                 return
