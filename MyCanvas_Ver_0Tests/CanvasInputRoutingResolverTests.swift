@@ -104,6 +104,13 @@ final class CanvasInputRoutingResolverTests: XCTestCase {
         XCTAssertNil(result.interactionIntent)
     }
 
+    func testSecondaryClickRoutesToRightClickIndicatorAndContextMenuRequest() {
+        let result = resolver.route(.pointerClick(.secondary))
+
+        XCTAssertEqual(result.indicatorEvent, .action(.rightClick))
+        XCTAssertEqual(result.interactionIntent, .contextMenuRequest)
+    }
+
     func testTouchTapRoutesOnlyToTapIndicator() {
         let result = resolver.route(
             .gesture(.tap, source: .touch)
@@ -113,13 +120,13 @@ final class CanvasInputRoutingResolverTests: XCTestCase {
         XCTAssertNil(result.interactionIntent)
     }
 
-    func testTouchLongPressRoutesOnlyToLongPressIndicator() {
+    func testTouchLongPressRoutesToLongPressIndicatorAndContextMenuRequest() {
         let result = resolver.route(
             .gesture(.longPress, source: .touch)
         )
 
         XCTAssertEqual(result.indicatorEvent, .action(.longPress))
-        XCTAssertNil(result.interactionIntent)
+        XCTAssertEqual(result.interactionIntent, .contextMenuRequest)
     }
 
     func testPointerScrollRoutesOnlyToScrollIndicator() {

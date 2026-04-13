@@ -1172,10 +1172,6 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             self?.handlePrimaryPointerCancel()
         }
         canvasViewportView.onLongPress = { [weak self] location in
-            self?.observeRawInput(
-                .gesture(.longPress, source: .touch),
-                sourceDescription: RawInputDeliverySource.longPressGesture.debugName
-            )
             self?.handleLongPress(at: location)
         }
         canvasViewportView.onPan = { [weak self] translation in
@@ -1319,23 +1315,31 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     }
 
     private func handleLongPress(at location: CGPoint) {
+        let didContinue = handleCapturedInput(
+            makeLongPressRawInput(),
+            sourceDescription: RawInputDeliverySource.longPressGesture.debugName
+        ) { routingResult in
+            guard routingResult.interactionIntent == .contextMenuRequest else {
+                return false
+            }
+
+            return presentLongPressContextMenu(at: location)
+        }
+
+        if didContinue == false {
+            dismissContextMenuIfContextMenuRequestBlocked()
+        }
+    }
+
+    private func presentLongPressContextMenu(at location: CGPoint) -> Bool {
         syncCameraViewportSizeFromCurrentBoundsIfPossible()
         guard hasRenderableViewportSize else {
             logIgnoredCanvasInput("long press \(describe(point: location))")
-            return
-        }
-
-        guard handleInteractionAttempt(
-            .contextMenuRequest,
-            sourceDescription: "longPress",
-            continueIfAllowed: { true }
-        ) else {
-            dismissContextMenu()
-            return
+            return true
         }
 
         if commitActiveTextEditIfNeeded() {
-            return
+            return true
         }
 
         print(
@@ -1350,6 +1354,15 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
 
         let resolvedContext = resolveContext(at: location)
         presentContextMenu(for: resolvedContext)
+        return true
+    }
+
+    private func dismissContextMenuIfContextMenuRequestBlocked() {
+        guard case .block = interactionDecision(for: .contextMenuRequest) else {
+            return
+        }
+
+        dismissContextMenu()
     }
 
     private func prepareForLongPressContextMenu() {
@@ -2593,6 +2606,10 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
                 key: .character("z")
             )
         )
+    }
+
+    private func makeLongPressRawInput() -> CanvasRawInputIntent {
+        .gesture(.longPress, source: .touch)
     }
 
     private func handleObservedTextEditorShortcut(

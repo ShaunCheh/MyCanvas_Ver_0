@@ -8,13 +8,9 @@ struct CanvasInputRoutingResolver: Sendable {
         case .keyChord(let chord):
             return routeKeyChord(chord)
         case .pointerClick(let button):
-            return CanvasInputRoutingResult(
-                indicatorEvent: .action(button.indicatorAction)
-            )
+            return routePointerClick(button)
         case .gesture(let gesture, _):
-            return CanvasInputRoutingResult(
-                indicatorEvent: .action(gesture.indicatorAction)
-            )
+            return routeGesture(gesture)
         }
     }
 
@@ -24,6 +20,24 @@ struct CanvasInputRoutingResolver: Sendable {
         return CanvasInputRoutingResult(
             indicatorEvent: .keyChord(chord),
             interactionIntent: chord.routedInteractionIntent
+        )
+    }
+
+    private func routePointerClick(
+        _ button: CanvasPointerButton
+    ) -> CanvasInputRoutingResult {
+        CanvasInputRoutingResult(
+            indicatorEvent: .action(button.indicatorAction),
+            interactionIntent: button.routedInteractionIntent
+        )
+    }
+
+    private func routeGesture(
+        _ gesture: CanvasRawInputGesture
+    ) -> CanvasInputRoutingResult {
+        CanvasInputRoutingResult(
+            indicatorEvent: .action(gesture.indicatorAction),
+            interactionIntent: gesture.routedInteractionIntent
         )
     }
 }
@@ -67,6 +81,15 @@ private extension CanvasPointerButton {
             return .rightClick
         }
     }
+
+    var routedInteractionIntent: CanvasInteractionIntent? {
+        switch self {
+        case .primary:
+            return nil
+        case .secondary:
+            return .contextMenuRequest
+        }
+    }
 }
 
 private extension CanvasRawInputGesture {
@@ -82,6 +105,18 @@ private extension CanvasRawInputGesture {
             return .pinch
         case .zoom:
             return .zoom
+        }
+    }
+
+    var routedInteractionIntent: CanvasInteractionIntent? {
+        switch self {
+        case .longPress:
+            return .contextMenuRequest
+        case .tap,
+             .scroll,
+             .pinch,
+             .zoom:
+            return nil
         }
     }
 }

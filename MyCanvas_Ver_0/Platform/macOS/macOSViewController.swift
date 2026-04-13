@@ -1414,10 +1414,6 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             self?.handlePrimaryPointerCancel()
         }
         canvasViewportView.onSecondaryClick = { [weak self] location in
-            self?.observeRawInput(
-                .pointerClick(.secondary),
-                sourceDescription: RawInputDeliverySource.secondaryClick.debugName
-            )
             self?.handleSecondaryClick(at: location)
         }
         canvasViewportView.onPan = { [weak self] translation in
@@ -1614,17 +1610,25 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     }
 
     private func handleSecondaryClick(at location: CGPoint) {
-        guard handleInteractionAttempt(
-            .contextMenuRequest,
-            sourceDescription: "secondaryClick",
-            continueIfAllowed: { true }
-        ) else {
-            dismissContextMenu()
-            return
+        let didContinue = handleCapturedInput(
+            makeSecondaryClickRawInput(),
+            sourceDescription: RawInputDeliverySource.secondaryClick.debugName
+        ) { routingResult in
+            guard routingResult.interactionIntent == .contextMenuRequest else {
+                return false
+            }
+
+            return presentSecondaryClickContextMenu(at: location)
         }
 
+        if didContinue == false {
+            dismissContextMenuIfContextMenuRequestBlocked()
+        }
+    }
+
+    private func presentSecondaryClickContextMenu(at location: CGPoint) -> Bool {
         if commitActiveTextEditIfNeeded() {
-            return
+            return true
         }
 
         let cameraBeforeSync = camera
@@ -1658,6 +1662,15 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
 
         let resolvedContext = resolveContext(at: location)
         presentContextMenu(for: resolvedContext)
+        return true
+    }
+
+    private func dismissContextMenuIfContextMenuRequestBlocked() {
+        guard case .block = interactionDecision(for: .contextMenuRequest) else {
+            return
+        }
+
+        dismissContextMenu()
     }
 
     private func prepareForSecondaryClickContextMenu() {
@@ -3204,6 +3217,10 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
                 key: .character("z")
             )
         )
+    }
+
+    private func makeSecondaryClickRawInput() -> CanvasRawInputIntent {
+        .pointerClick(.secondary)
     }
 
     private func resolvedPasteTransferEntryIntent() -> CanvasTransferEntryIntent {
