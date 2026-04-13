@@ -82,8 +82,8 @@ final class CanvasInputIndicatorHostView: UIView {
 
     func updateLayout(layoutContext: CanvasChromeLayoutContext) {
         currentLayoutContext = layoutContext
-        applyLayout()
-        layoutIfNeeded()
+        let didResolveLayout = commitResolvedLayout()
+        setHostHidden(currentSnapshot.isEmpty || didResolveLayout == false)
     }
 
     private func handleRefreshTimerTick() {
@@ -122,8 +122,11 @@ final class CanvasInputIndicatorHostView: UIView {
         _ snapshot: CanvasInputIndicatorQueueSnapshot,
         animated: Bool
     ) {
+        layoutIfNeeded()
+        let previousFramesByID = currentVisualFramesByID()
         let previousIDs = Set(currentSnapshot.items.map(\.id))
         let nextIDs = Set(snapshot.items.map(\.id))
+        let insertedIDs = nextIDs.subtracting(previousIDs)
         let removedIDs = previousIDs.subtracting(nextIDs)
         removedIDs.forEach(removeItemView)
 
@@ -134,9 +137,8 @@ final class CanvasInputIndicatorHostView: UIView {
                 arrangedSubview.removeFromSuperview()
             }
             itemViewsByID.removeAll()
-            containerView.isHidden = true
-            isHidden = true
-            applyLayout()
+            setHostHidden(true)
+            _ = commitResolvedLayout()
             return
         }
 
@@ -147,11 +149,13 @@ final class CanvasInputIndicatorHostView: UIView {
                 view = existingView
             } else {
                 let newView = iOSCanvasInputIndicatorItemView()
-                newView.alpha = 0
-                newView.transform = CGAffineTransform(
-                    translationX: 0,
-                    y: Layout.insertionTranslationY
-                )
+                if animated {
+                    newView.alpha = 0
+                    newView.transform = CGAffineTransform(
+                        translationX: 0,
+                        y: Layout.insertionTranslationY
+                    )
+                }
                 itemViewsByID[item.id] = newView
                 view = newView
             }
@@ -159,39 +163,94 @@ final class CanvasInputIndicatorHostView: UIView {
             orderedViews.append(view)
         }
 
+        rebuildArrangedSubviews(using: orderedViews)
+
+        currentSnapshot = snapshot
+
+        guard commitResolvedLayout() else {
+            applyFinalVisualState(for: snapshot)
+            setHostHidden(true)
+            return
+        }
+
+        setHostHidden(false)
+
+        guard animated else {
+            applyFinalVisualState(for: snapshot)
+            return
+        }
+
+        prepareAnimatedVisualState(
+            for: snapshot,
+            insertedIDs: insertedIDs,
+            previousFramesByID: previousFramesByID
+        )
+
+        UIView.animate(
+            withDuration: Layout.animationDuration,
+            delay: 0,
+            options: [.curveEaseOut, .beginFromCurrentState]
+        ) {
+            self.applyFinalVisualState(for: snapshot)
+        }
+    }
+
+    private func rebuildArrangedSubviews(
+        using orderedViews: [iOSCanvasInputIndicatorItemView]
+    ) {
         stackView.arrangedSubviews.forEach { arrangedSubview in
             stackView.removeArrangedSubview(arrangedSubview)
         }
         orderedViews.forEach { view in
             stackView.addArrangedSubview(view)
         }
+    }
 
-        currentSnapshot = snapshot
-        containerView.isHidden = false
-        isHidden = false
+    private func prepareAnimatedVisualState(
+        for snapshot: CanvasInputIndicatorQueueSnapshot,
+        insertedIDs: Set<UUID>,
+        previousFramesByID: [UUID: CGRect]
+    ) {
+        for item in snapshot.items {
+            guard let view = itemViewsByID[item.id] else {
+                continue
+            }
 
-        let applyVisualState = {
-            for item in snapshot.items {
-                guard let view = self.itemViewsByID[item.id] else {
-                    continue
-                }
-                view.alpha = item.opacity
+            if insertedIDs.contains(item.id) {
+                view.alpha = 0
+                view.transform = CGAffineTransform(
+                    translationX: 0,
+                    y: Layout.insertionTranslationY
+                )
+                continue
+            }
+
+            guard let previousFrame = previousFramesByID[item.id] else {
+                view.transform = .identity
+                continue
+            }
+
+            let deltaY = previousFrame.minY - view.frame.minY
+            if abs(deltaY) > .ulpOfOne {
+                view.transform = CGAffineTransform(
+                    translationX: 0,
+                    y: deltaY
+                )
+            } else {
                 view.transform = .identity
             }
-            self.applyLayout()
-            self.layoutIfNeeded()
         }
+    }
 
-        if animated {
-            UIView.animate(
-                withDuration: Layout.animationDuration,
-                delay: 0,
-                options: [.curveEaseOut, .beginFromCurrentState]
-            ) {
-                applyVisualState()
+    private func applyFinalVisualState(
+        for snapshot: CanvasInputIndicatorQueueSnapshot
+    ) {
+        for item in snapshot.items {
+            guard let view = itemViewsByID[item.id] else {
+                continue
             }
-        } else {
-            applyVisualState()
+            view.alpha = item.opacity
+            view.transform = .identity
         }
     }
 
@@ -204,13 +263,14 @@ final class CanvasInputIndicatorHostView: UIView {
         view.removeFromSuperview()
     }
 
-    private func applyLayout() {
+    @discardableResult
+    private func applyLayout() -> Bool {
         guard
             currentSnapshot.isEmpty == false,
             let currentLayoutContext
         else {
             updateContainerConstraints(.zero)
-            return
+            return false
         }
 
         let preferredSize = preferredContainerSize()
@@ -219,10 +279,20 @@ final class CanvasInputIndicatorHostView: UIView {
             layoutContext: currentLayoutContext
         ) else {
             updateContainerConstraints(.zero)
-            return
+            return false
         }
 
         updateContainerConstraints(frame)
+        return true
+    }
+
+    @discardableResult
+    private func commitResolvedLayout() -> Bool {
+        let didResolveLayout = applyLayout()
+        UIView.performWithoutAnimation {
+            self.layoutIfNeeded()
+        }
+        return didResolveLayout
     }
 
     private func updateContainerConstraints(_ frame: CGRect) {
@@ -238,6 +308,32 @@ final class CanvasInputIndicatorHostView: UIView {
             UIView.layoutFittingCompressedSize
         )
         return CanvasChromeLayoutGeometry.sanitizedSize(stackSize)
+    }
+
+    private func currentVisualFramesByID() -> [UUID: CGRect] {
+        itemViewsByID.reduce(into: [:]) { partialResult, entry in
+            guard let currentFrame = currentVisualFrame(for: entry.value) else {
+                return
+            }
+            partialResult[entry.key] = currentFrame
+        }
+    }
+
+    private func currentVisualFrame(for view: UIView) -> CGRect? {
+        if let animatedFrame = view.layer.presentation()?.frame,
+           let sanitizedAnimatedFrame = CanvasChromeLayoutGeometry.sanitizedRect(
+               animatedFrame
+           )
+        {
+            return sanitizedAnimatedFrame
+        }
+
+        return CanvasChromeLayoutGeometry.sanitizedRect(view.frame)
+    }
+
+    private func setHostHidden(_ hidden: Bool) {
+        containerView.isHidden = hidden
+        isHidden = hidden
     }
 }
 
