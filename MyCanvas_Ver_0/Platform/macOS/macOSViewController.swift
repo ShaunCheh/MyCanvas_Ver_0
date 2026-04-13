@@ -59,6 +59,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
 
     private enum TransferEntryDeliverySource {
         case macOSPasteAction
+        case macOSLocalKeyMonitor
         case importButton
         case dragAndDrop
     }
@@ -216,6 +217,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     private var pendingRefreshReason: String?
     private var pointerDragState: PointerDragState = .idle
     private var isTransitionInteractionFrozen = false
+    private var supplementalKeyboardCaptureMonitor: Any?
     private var saveButtonResetWorkItem: DispatchWorkItem?
     private var saveButtonState: CanvasSaveState = .idle {
         didSet {
@@ -232,6 +234,10 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     }
     private var activeTextEditorItemID: CanvasItemID?
     private var isSyncingTextEditorContent = false
+
+    deinit {
+        removeSupplementalKeyboardCaptureIfNeeded()
+    }
 
     private var scene: CanvasScene {
         editorSession.scene
@@ -358,6 +364,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         } else if view.window != nil, view.isHidden == false {
             view.window?.makeFirstResponder(canvasViewportView)
         }
+        updateSupplementalKeyboardCaptureIfNeeded()
     }
 
     private func presentContextMenu(
@@ -746,6 +753,12 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         )
         updateCameraViewportSizeIfNeeded(trigger: "viewDidAppear")
         updateChromeOverlayLayout()
+        updateSupplementalKeyboardCaptureIfNeeded()
+    }
+
+    override func viewWillDisappear() {
+        super.viewWillDisappear()
+        removeSupplementalKeyboardCaptureIfNeeded()
     }
 
     override func viewDidLayout() {
@@ -2279,6 +2292,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     ) {
         workspaceMode = targetMode
         updateWorkspaceModeButtonAppearance()
+        updateSupplementalKeyboardCaptureIfNeeded()
         syncTextEditorPresentation()
         refreshCanvas(reason: "toggle workspace mode")
         scheduleAutosave(
@@ -2627,9 +2641,105 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     private func applyInteractionFeedback(_ hint: CanvasInteractionFeedbackHint) {
         switch hint {
         case .shakeWorkspaceModeButton:
-            // Phase 3 wires this to the workspace mode button animation.
-            break
+            animateWorkspaceModeButtonShake()
         }
+    }
+
+    private func animateWorkspaceModeButtonShake() {
+        let animation = CAKeyframeAnimation(keyPath: "transform.translation.x")
+        animation.values = [0, -10, 10, -7, 7, -4, 4, 0]
+        animation.duration = 0.36
+        animation.isAdditive = true
+        animation.calculationMode = .linear
+        workspaceModeButton.layer?.removeAnimation(
+            forKey: "CanvasWorkspaceModeButtonShake"
+        )
+        workspaceModeButton.layer?.add(
+            animation,
+            forKey: "CanvasWorkspaceModeButtonShake"
+        )
+    }
+
+    private func shouldEnableSupplementalKeyboardCapture() -> Bool {
+        guard
+            view.window != nil,
+            view.isHiddenOrHasHiddenAncestor == false
+        else {
+            return false
+        }
+
+        switch transferEntryDecision(for: .pasteKeyboardShortcut) {
+        case .block(
+            reason: .readingMode,
+            feedback: .shakeWorkspaceModeButton
+        ):
+            return true
+        case .allow,
+             .block:
+            return false
+        }
+    }
+
+    private func updateSupplementalKeyboardCaptureIfNeeded() {
+        guard shouldEnableSupplementalKeyboardCapture() else {
+            removeSupplementalKeyboardCaptureIfNeeded()
+            return
+        }
+
+        guard supplementalKeyboardCaptureMonitor == nil else {
+            return
+        }
+
+        supplementalKeyboardCaptureMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.keyDown]
+        ) { [weak self] event in
+            self?.handleSupplementalKeyboardCapture(event) ?? event
+        }
+    }
+
+    private func removeSupplementalKeyboardCaptureIfNeeded() {
+        guard let supplementalKeyboardCaptureMonitor else {
+            return
+        }
+
+        NSEvent.removeMonitor(supplementalKeyboardCaptureMonitor)
+        self.supplementalKeyboardCaptureMonitor = nil
+    }
+
+    private func handleSupplementalKeyboardCapture(
+        _ event: NSEvent
+    ) -> NSEvent? {
+        guard
+            shouldEnableSupplementalKeyboardCapture(),
+            let window = view.window,
+            event.window === window,
+            isPasteKeyboardShortcutEvent(event)
+        else {
+            return event
+        }
+
+        guard case .block = transferEntryDecision(for: .pasteKeyboardShortcut) else {
+            return event
+        }
+
+        _ = handleTransferEntryAttempt(
+            .pasteKeyboardShortcut,
+            deliverySource: .macOSLocalKeyMonitor
+        ) {
+            false
+        }
+        return nil
+    }
+
+    private func isPasteKeyboardShortcutEvent(_ event: NSEvent) -> Bool {
+        let relevantFlags = event.modifierFlags.intersection(
+            [.command, .control, .option, .shift]
+        )
+        guard relevantFlags == [.command] else {
+            return false
+        }
+
+        return event.charactersIgnoringModifiers?.lowercased() == "v"
     }
 
     private func resolvedPasteTransferEntryIntent() -> CanvasTransferEntryIntent {

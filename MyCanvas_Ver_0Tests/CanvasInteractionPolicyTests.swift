@@ -59,6 +59,15 @@ final class CanvasInteractionPolicyTests: XCTestCase {
         XCTAssertEqual(decision, .block(reason: .readingMode, feedback: nil))
     }
 
+    func testPasteMenuBlocksInReadingModeWithoutFeedback() {
+        let decision = policy.decision(
+            for: .transferEntry(.pasteMenu),
+            environment: makeEnvironment(workspaceMode: .reading, isFrozen: false)
+        )
+
+        XCTAssertEqual(decision, .block(reason: .readingMode, feedback: nil))
+    }
+
     func testDragAndDropBlocksInReadingModeWithoutFeedback() {
         let decision = policy.decision(
             for: .transferEntry(.dragAndDrop),

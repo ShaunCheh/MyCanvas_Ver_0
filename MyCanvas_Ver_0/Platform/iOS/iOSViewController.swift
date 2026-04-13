@@ -2574,9 +2574,23 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     private func applyInteractionFeedback(_ hint: CanvasInteractionFeedbackHint) {
         switch hint {
         case .shakeWorkspaceModeButton:
-            // Phase 3 wires this to the workspace mode button animation.
-            break
+            animateWorkspaceModeButtonShake()
         }
+    }
+
+    private func animateWorkspaceModeButtonShake() {
+        let animation = CAKeyframeAnimation(keyPath: "transform.translation.x")
+        animation.values = [0, -10, 10, -7, 7, -4, 4, 0]
+        animation.duration = 0.36
+        animation.isAdditive = true
+        animation.calculationMode = .linear
+        workspaceModeButton.layer.removeAnimation(
+            forKey: "CanvasWorkspaceModeButtonShake"
+        )
+        workspaceModeButton.layer.add(
+            animation,
+            forKey: "CanvasWorkspaceModeButtonShake"
+        )
     }
 
     private func handlePasteRequest() {
