@@ -1,6 +1,13 @@
 #if os(iOS)
 import UIKit
 
+enum iOSCanvasTextEditorObservedShortcut {
+    case copy
+    case paste
+    case undo
+    case redo
+}
+
 final class iOSCanvasTextEditorOverlayView: UIView {
     private enum Layout {
         static let cornerRadius: CGFloat = 18
@@ -26,8 +33,8 @@ final class iOSCanvasTextEditorOverlayView: UIView {
         return view
     }()
 
-    let textView: UITextView = {
-        let textView = UITextView()
+    let textView: iOSCanvasInputObservingTextView = {
+        let textView = iOSCanvasInputObservingTextView()
         textView.translatesAutoresizingMaskIntoConstraints = false
         textView.backgroundColor = .clear
         textView.font = .systemFont(ofSize: 17)
@@ -46,6 +53,11 @@ final class iOSCanvasTextEditorOverlayView: UIView {
         textView.accessibilityLabel = "Text editor"
         return textView
     }()
+
+    var onObservedShortcut: ((iOSCanvasTextEditorObservedShortcut) -> Void)? {
+        get { textView.onObservedShortcut }
+        set { textView.onObservedShortcut = newValue }
+    }
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -81,6 +93,94 @@ final class iOSCanvasTextEditorOverlayView: UIView {
         if textView.text != text {
             textView.text = text
         }
+    }
+}
+
+final class iOSCanvasInputObservingTextView: UITextView {
+    private struct CommandSignature: Hashable {
+        let input: String?
+        let modifierFlagsRawValue: UIKeyModifierFlags.RawValue
+
+        init(_ command: UIKeyCommand) {
+            input = command.input
+            modifierFlagsRawValue = command.modifierFlags.rawValue
+        }
+    }
+
+    var onObservedShortcut: ((iOSCanvasTextEditorObservedShortcut) -> Void)?
+
+    override var keyCommands: [UIKeyCommand]? {
+        let observedCommands = [
+            makeObservedKeyCommand(
+                input: "c",
+                modifierFlags: [.command],
+                action: #selector(handleObservedCopyKeyCommand(_:)),
+                discoverabilityTitle: "Copy"
+            ),
+            makeObservedKeyCommand(
+                input: "v",
+                modifierFlags: [.command],
+                action: #selector(handleObservedPasteKeyCommand(_:)),
+                discoverabilityTitle: "Paste"
+            ),
+            makeObservedKeyCommand(
+                input: "z",
+                modifierFlags: [.command],
+                action: #selector(handleObservedUndoKeyCommand(_:)),
+                discoverabilityTitle: "Undo"
+            ),
+            makeObservedKeyCommand(
+                input: "z",
+                modifierFlags: [.command, .shift],
+                action: #selector(handleObservedRedoKeyCommand(_:)),
+                discoverabilityTitle: "Redo"
+            )
+        ]
+
+        let observedSignatures = Set(observedCommands.map(CommandSignature.init))
+        let inheritedCommands = (super.keyCommands ?? []).filter { command in
+            observedSignatures.contains(CommandSignature(command)) == false
+        }
+        return observedCommands + inheritedCommands
+    }
+
+    private func makeObservedKeyCommand(
+        input: String,
+        modifierFlags: UIKeyModifierFlags,
+        action: Selector,
+        discoverabilityTitle: String
+    ) -> UIKeyCommand {
+        let command = UIKeyCommand(
+            input: input,
+            modifierFlags: modifierFlags,
+            action: action
+        )
+        command.discoverabilityTitle = discoverabilityTitle
+        return command
+    }
+
+    @objc
+    private func handleObservedCopyKeyCommand(_ sender: UIKeyCommand) {
+        onObservedShortcut?(.copy)
+        copy(sender)
+    }
+
+    @objc
+    private func handleObservedPasteKeyCommand(_ sender: UIKeyCommand) {
+        onObservedShortcut?(.paste)
+        paste(sender)
+    }
+
+    @objc
+    private func handleObservedUndoKeyCommand(_ sender: UIKeyCommand) {
+        onObservedShortcut?(.undo)
+        undoManager?.undo()
+    }
+
+    @objc
+    private func handleObservedRedoKeyCommand(_ sender: UIKeyCommand) {
+        onObservedShortcut?(.redo)
+        undoManager?.redo()
     }
 }
 #endif

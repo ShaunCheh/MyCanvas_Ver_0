@@ -2878,6 +2878,22 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         }
     }
 
+    private func observeIndicatorOnlyRawInput(
+        _ rawInput: CanvasRawInputIntent,
+        sourceDescription: String
+    ) {
+        let routingResult = inputRoutingResolver.route(rawInput)
+        logCapturedInputRouting(
+            rawInput: rawInput,
+            routingResult: routingResult,
+            sourceDescription: sourceDescription
+        )
+
+        if let indicatorEvent = routingResult.indicatorEvent {
+            inputIndicatorHostView.record(event: indicatorEvent)
+        }
+    }
+
     private func observeContinuousRawInput(
         _ rawInput: CanvasRawInputIntent,
         sourceDescription: String,
@@ -3052,6 +3068,14 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             event.window === window,
             let rawInput = observedKeyboardShortcutRawInput(from: event)
         else {
+            return event
+        }
+
+        if window.firstResponder === textEditorOverlayView.textView {
+            observeIndicatorOnlyRawInput(
+                rawInput,
+                sourceDescription: RawInputDeliverySource.localKeyMonitor.debugName
+            )
             return event
         }
 

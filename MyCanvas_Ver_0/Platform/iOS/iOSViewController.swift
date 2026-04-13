@@ -84,6 +84,10 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         case pasteKeyCommand
         case undoKeyCommand
         case redoKeyCommand
+        case textEditorCopyKeyCommand
+        case textEditorPasteKeyCommand
+        case textEditorUndoKeyCommand
+        case textEditorRedoKeyCommand
         case tapGesture
         case longPressGesture
         case scrollGesture
@@ -99,6 +103,14 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
                 return "iOSUndoKeyCommand"
             case .redoKeyCommand:
                 return "iOSRedoKeyCommand"
+            case .textEditorCopyKeyCommand:
+                return "iOSTextEditorCopyKeyCommand"
+            case .textEditorPasteKeyCommand:
+                return "iOSTextEditorPasteKeyCommand"
+            case .textEditorUndoKeyCommand:
+                return "iOSTextEditorUndoKeyCommand"
+            case .textEditorRedoKeyCommand:
+                return "iOSTextEditorRedoKeyCommand"
             case .tapGesture:
                 return "iOSTapGesture"
             case .longPressGesture:
@@ -1059,6 +1071,9 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
 
     private func setupTextEditorOverlay() {
         textEditorOverlayView.textView.delegate = self
+        textEditorOverlayView.onObservedShortcut = { [weak self] shortcut in
+            self?.handleObservedTextEditorShortcut(shortcut)
+        }
         syncTextEditorPresentation()
     }
 
@@ -2580,6 +2595,37 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         )
     }
 
+    private func handleObservedTextEditorShortcut(
+        _ shortcut: iOSCanvasTextEditorObservedShortcut
+    ) {
+        let rawInput: CanvasRawInputIntent
+        let sourceDescription: String
+
+        switch shortcut {
+        case .copy:
+            rawInput = makeCopyKeyboardShortcutRawInput()
+            sourceDescription =
+                RawInputDeliverySource.textEditorCopyKeyCommand.debugName
+        case .paste:
+            rawInput = makePasteKeyboardShortcutRawInput()
+            sourceDescription =
+                RawInputDeliverySource.textEditorPasteKeyCommand.debugName
+        case .undo:
+            rawInput = makeUndoKeyboardShortcutRawInput()
+            sourceDescription =
+                RawInputDeliverySource.textEditorUndoKeyCommand.debugName
+        case .redo:
+            rawInput = makeRedoKeyboardShortcutRawInput()
+            sourceDescription =
+                RawInputDeliverySource.textEditorRedoKeyCommand.debugName
+        }
+
+        observeIndicatorOnlyRawInput(
+            rawInput,
+            sourceDescription: sourceDescription
+        )
+    }
+
     @objc
     private func handleCopyKeyCommand(_ sender: UIKeyCommand) {
         observeRawInput(
@@ -2820,6 +2866,22 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             sourceDescription: sourceDescription
         ) { _ in
             true
+        }
+    }
+
+    private func observeIndicatorOnlyRawInput(
+        _ rawInput: CanvasRawInputIntent,
+        sourceDescription: String
+    ) {
+        let routingResult = inputRoutingResolver.route(rawInput)
+        logCapturedInputRouting(
+            rawInput: rawInput,
+            routingResult: routingResult,
+            sourceDescription: sourceDescription
+        )
+
+        if let indicatorEvent = routingResult.indicatorEvent {
+            inputIndicatorHostView.record(event: indicatorEvent)
         }
     }
 
