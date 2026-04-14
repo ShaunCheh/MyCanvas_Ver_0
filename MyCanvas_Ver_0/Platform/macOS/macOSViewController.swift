@@ -233,6 +233,11 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         button.translatesAutoresizingMaskIntoConstraints = false
         return button
     }()
+    private let browserButton: NSButton = {
+        let button = NSButton()
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }()
     private let saveButton: NSButton = {
         let button = NSButton()
         button.translatesAutoresizingMaskIntoConstraints = false
@@ -265,7 +270,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             .crop: cropButton,
             .save: saveButton,
             .text: textButton,
-            .importMedia: importButton
+            .importMedia: importButton,
+            .browser: browserButton
         ]
     }
     private let canvasViewportView = macOSCanvasViewportView()
@@ -656,6 +662,16 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         }
     }
 
+    private func presentWebPageEditor() {
+        guard presentedViewControllers?.isEmpty != false else {
+            return
+        }
+
+        commitActiveTextEditIfNeeded()
+        let editorViewController = macOSWebPageEditorViewController()
+        presentAsSheet(editorViewController)
+    }
+
     private func performGIFFrameImport(
         for itemID: CanvasItemID,
         frameIndices: [Int]
@@ -848,6 +864,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         updatePreparedToolbarPlacement()
         setupTextEditorOverlay()
         setupImportButton()
+        setupBrowserButton()
         setupSaveButton()
         setupCropButton()
         setupTextButton()
@@ -1301,6 +1318,12 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     private func setupImportButton() {
         importButton.target = self
         importButton.action = #selector(handleImportButtonClick)
+        renderToolbar()
+    }
+
+    private func setupBrowserButton() {
+        browserButton.target = self
+        browserButton.action = #selector(handleBrowserButtonClick)
         renderToolbar()
     }
 
@@ -2058,6 +2081,11 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             }
             return true
         }
+    }
+
+    @objc
+    private func handleBrowserButtonClick() {
+        presentWebPageEditor()
     }
 
     @objc

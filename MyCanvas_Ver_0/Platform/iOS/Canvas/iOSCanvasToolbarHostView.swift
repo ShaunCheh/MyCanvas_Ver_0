@@ -247,6 +247,8 @@ final class iOSCanvasToolbarHostView: UIView {
             return UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
         case .importMedia:
             return UIImage.SymbolConfiguration(pointSize: 20, weight: .bold)
+        case .browser:
+            return UIImage.SymbolConfiguration(pointSize: 18, weight: .semibold)
         case .crop, .text:
             return UIImage.SymbolConfiguration(pointSize: 17, weight: .semibold)
         }

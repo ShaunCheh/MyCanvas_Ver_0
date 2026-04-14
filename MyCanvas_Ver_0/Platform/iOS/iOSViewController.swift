@@ -240,6 +240,11 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         button.translatesAutoresizingMaskIntoConstraints = false
         return button
     }()
+    private let browserButton: UIButton = {
+        let button = UIButton(type: .system)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }()
     private let saveButton: UIButton = {
         let button = UIButton(type: .system)
         button.translatesAutoresizingMaskIntoConstraints = false
@@ -272,7 +277,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             .crop: cropButton,
             .save: saveButton,
             .text: textButton,
-            .importMedia: importButton
+            .importMedia: importButton,
+            .browser: browserButton
         ]
     }
     private let canvasViewportView = iOSCanvasViewportView()
@@ -667,6 +673,16 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         }
     }
 
+    private func presentWebPageEditor() {
+        guard presentedViewController == nil else {
+            return
+        }
+
+        commitActiveTextEditIfNeeded()
+        let editorViewController = iOSWebPageEditorViewController()
+        present(editorViewController, animated: true)
+    }
+
     private func performGIFFrameImport(
         for itemID: CanvasItemID,
         frameIndices: [Int]
@@ -726,6 +742,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         updatePreparedToolbarPlacement()
         setupTextEditorOverlay()
         setupImportButton()
+        setupBrowserButton()
         setupSaveButton()
         setupCropButton()
         setupTextButton()
@@ -1066,6 +1083,11 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
 
     private func setupImportButton() {
         importButton.addTarget(self, action: #selector(handleImportButtonTap), for: .touchUpInside)
+        renderToolbar()
+    }
+
+    private func setupBrowserButton() {
+        browserButton.addTarget(self, action: #selector(handleBrowserButtonTap), for: .touchUpInside)
         renderToolbar()
     }
 
@@ -1801,6 +1823,11 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             present(pickerViewController, animated: true)
             return true
         }
+    }
+
+    @objc
+    private func handleBrowserButtonTap() {
+        presentWebPageEditor()
     }
 
     @objc

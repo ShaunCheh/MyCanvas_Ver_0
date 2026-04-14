@@ -29,6 +29,7 @@ struct CanvasToolbarStateBuilder {
         itemStates.append(saveItemState(saveState: saveState))
         itemStates.append(textItemState(session: session))
         itemStates.append(importItemState(isEnabled: isImportEnabled))
+        itemStates.append(browserItemState())
 
         return CanvasToolbarState(
             placement: placement,
@@ -124,6 +125,15 @@ struct CanvasToolbarStateBuilder {
             systemImageName: "plus",
             isEnabled: isEnabled,
             accessibilityLabel: "Import media",
+            visualRole: .accent
+        )
+    }
+
+    func browserItemState() -> CanvasToolbarItemState {
+        CanvasToolbarItemState(
+            id: .browser,
+            systemImageName: "safari",
+            accessibilityLabel: "Open website",
             visualRole: .accent
         )
     }
