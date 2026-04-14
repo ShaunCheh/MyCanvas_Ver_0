@@ -53,8 +53,11 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         case croppingSelectedItem(PointerCropState)
         case movingCropFrame(PointerCropTranslationState)
         case rotatingSelectedItem(PointerRotateState)
+        case rotatingSelection(CanvasSelectionRotateState)
         case draggingSelectedItem(CanvasSelectedItemDragState)
+        case draggingSelection(CanvasSelectionDragState)
         case resizingSelectedItem(PointerResizeState)
+        case resizingSelection(CanvasSelectionResizeState)
         case draggingCanvas
     }
 
@@ -1690,8 +1693,11 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
              .croppingSelectedItem,
              .movingCropFrame,
              .rotatingSelectedItem,
+             .rotatingSelection,
              .draggingSelectedItem,
+             .draggingSelection,
              .resizingSelectedItem,
+             .resizingSelection,
              .draggingCanvas:
             // Reuse primary-cancel semantics so secondary click never leaves a
             // half-committed drag/crop/rotate interaction behind.
@@ -1735,8 +1741,17 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
                 beginRotationInteraction(for: itemID)
                 updateRotationDraft(using: rotateState, to: location)
             case .groupRotateHandle:
-                editorSession.cancelPendingHistoryTransaction()
-                pointerDragState = .idle
+                guard let rotateState = makeSelectionRotateState(
+                    initialViewportLocation: pressedLocation
+                ) else {
+                    editorSession.cancelPendingHistoryTransaction()
+                    pointerDragState = .idle
+                    return
+                }
+
+                pointerDragState = .rotatingSelection(rotateState)
+                beginRotationInteraction(for: rotateState.snapshot)
+                updateSelectionRotationDraft(using: rotateState, to: location)
             case let .cropHandle(handleRole):
                 guard let itemID = pressContext.targetItemID else {
                     editorSession.cancelPendingHistoryTransaction()
@@ -1783,32 +1798,59 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
 
                 pointerDragState = .resizingSelectedItem(resizeState)
                 resizeSelectedItem(using: resizeState, to: location)
-            case .groupSelectionHandle:
-                editorSession.cancelPendingHistoryTransaction()
-                pointerDragState = .idle
+            case let .groupSelectionHandle(handleRole):
+                guard let resizeState = makeSelectionResizeState(
+                    handleRole: handleRole
+                ) else {
+                    editorSession.cancelPendingHistoryTransaction()
+                    pointerDragState = .idle
+                    return
+                }
+
+                pointerDragState = .resizingSelection(resizeState)
+                resizeSelection(using: resizeState, to: location)
             case .selectedItemBody:
                 guard let itemID = pressContext.targetItemID else {
                     pointerDragState = .idle
                     return
                 }
 
-                guard let dragState = makeSelectedItemDragState(
-                    itemID: itemID,
-                    initialViewportLocation: pressedLocation
-                ) else {
-                    pointerDragState = .idle
-                    return
-                }
+                if interactionState.selectionCount > 1 {
+                    guard let dragState = makeSelectionDragState(
+                        initialViewportLocation: pressedLocation
+                    ) else {
+                        pointerDragState = .idle
+                        return
+                    }
 
-                guard let updatedDragState = moveSelectedItem(
-                    using: dragState,
-                    to: location
-                ) else {
-                    pointerDragState = .idle
-                    return
-                }
+                    guard let updatedDragState = moveSelection(
+                        using: dragState,
+                        to: location
+                    ) else {
+                        pointerDragState = .idle
+                        return
+                    }
 
-                pointerDragState = .draggingSelectedItem(updatedDragState)
+                    pointerDragState = .draggingSelection(updatedDragState)
+                } else {
+                    guard let dragState = makeSelectedItemDragState(
+                        itemID: itemID,
+                        initialViewportLocation: pressedLocation
+                    ) else {
+                        pointerDragState = .idle
+                        return
+                    }
+
+                    guard let updatedDragState = moveSelectedItem(
+                        using: dragState,
+                        to: location
+                    ) else {
+                        pointerDragState = .idle
+                        return
+                    }
+
+                    pointerDragState = .draggingSelectedItem(updatedDragState)
+                }
             case .unselectedItemBody, .blank:
                 pointerDragState = .draggingCanvas
                 panCanvas(from: pressedLocation, to: location)
@@ -1819,6 +1861,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             updateTranslatedCropDraft(using: translationState, to: location)
         case let .rotatingSelectedItem(rotateState):
             updateRotationDraft(using: rotateState, to: location)
+        case let .rotatingSelection(rotateState):
+            updateSelectionRotationDraft(using: rotateState, to: location)
         case let .draggingSelectedItem(dragState):
             guard let updatedDragState = moveSelectedItem(
                 using: dragState,
@@ -1828,8 +1872,19 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
                 return
             }
             pointerDragState = .draggingSelectedItem(updatedDragState)
+        case let .draggingSelection(dragState):
+            guard let updatedDragState = moveSelection(
+                using: dragState,
+                to: location
+            ) else {
+                pointerDragState = .idle
+                return
+            }
+            pointerDragState = .draggingSelection(updatedDragState)
         case let .resizingSelectedItem(resizeState):
             resizeSelectedItem(using: resizeState, to: location)
+        case let .resizingSelection(resizeState):
+            resizeSelection(using: resizeState, to: location)
         case .draggingCanvas:
             panCanvas(from: previousLocation, to: location)
         case .idle:
@@ -1884,7 +1939,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
                 refreshCanvas(reason: "clear alignment interaction on pointer up")
             }
             editorSession.cancelPendingHistoryTransaction()
-        case .rotatingSelectedItem:
+        case .rotatingSelectedItem, .rotatingSelection:
             commitRotationDraftIfNeeded()
         case .croppingSelectedItem, .movingCropFrame:
             commitCropDraftIfNeeded()
@@ -1893,8 +1948,15 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             clearAlignmentInteractionStateIfNeeded(
                 refreshReason: "finish move alignment interaction"
             )
+        case .draggingSelection:
+            commitPendingPointerHistoryTransaction(autosaveReason: "move selection")
+            clearAlignmentInteractionStateIfNeeded(
+                refreshReason: "finish move alignment interaction"
+            )
         case .resizingSelectedItem:
             commitPendingPointerHistoryTransaction(autosaveReason: "resize item")
+        case .resizingSelection:
+            commitPendingPointerHistoryTransaction(autosaveReason: "resize selection")
         case .draggingCanvas, .idle:
             break
         }
@@ -1902,7 +1964,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
 
     private func handlePrimaryPointerCancel() {
         switch pointerDragState {
-        case .rotatingSelectedItem:
+        case .rotatingSelectedItem, .rotatingSelection:
             cancelRotationInteractionIfNeeded(
                 refreshAfterCancellation: true
             )
@@ -1913,8 +1975,15 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             clearAlignmentInteractionStateIfNeeded(
                 refreshReason: "cancel move alignment interaction"
             )
+        case .draggingSelection:
+            commitPendingPointerHistoryTransaction(autosaveReason: "move selection")
+            clearAlignmentInteractionStateIfNeeded(
+                refreshReason: "cancel move alignment interaction"
+            )
         case .resizingSelectedItem:
             commitPendingPointerHistoryTransaction(autosaveReason: "resize item")
+        case .resizingSelection:
+            commitPendingPointerHistoryTransaction(autosaveReason: "resize selection")
         case .pressed, .draggingCanvas, .idle:
             editorSession.cancelPendingHistoryTransaction()
         }
@@ -3402,6 +3471,27 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         )
     }
 
+    private func makeSelectionRotateState(
+        initialViewportLocation: CGPoint
+    ) -> CanvasSelectionRotateState? {
+        guard
+            inlineEditState == nil,
+            interactionState.selectionCount > 1,
+            let snapshot = currentSelectionTransformSnapshot()
+        else {
+            return nil
+        }
+
+        let initialPointerAngle = angle(
+            from: snapshot.selectionCenter,
+            to: camera.viewportToWorld(initialViewportLocation)
+        )
+        return CanvasSelectionRotateState(
+            snapshot: snapshot,
+            rotationOffsetToPointerAngle: normalizedCanvasAngle(-initialPointerAngle)
+        )
+    }
+
     private func makePointerCropState(
         itemID: CanvasImageItemID,
         handleRole: CanvasCropHandleRole
@@ -3579,33 +3669,84 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         }
 
         rotationPreviewState = CanvasRotationPreviewState(
-            itemID: rotateState.itemID,
+            item: item,
             draftRotationRadians: draftRotationRadians
         )
         refreshCanvas()
     }
 
-    private func commitRotationDraftIfNeeded() {
+    private func updateSelectionRotationDraft(
+        using rotateState: CanvasSelectionRotateState,
+        to viewportLocation: CGPoint
+    ) {
         guard
-            let rotationPreviewState,
-            let item = scene.boardItem(withID: rotationPreviewState.itemID)
+            inlineEditState == nil,
+            interactionStateMatchesSelection(
+                itemIDs: rotateState.snapshot.memberItemIDs
+            ),
+            interactionState.selectionCount > 1,
+            rotationInteractionState.map({
+                Set($0.memberItemIDs) == Set(rotateState.snapshot.memberItemIDs)
+            }) == true
         else {
+            return
+        }
+
+        let pointerWorldLocation = camera.viewportToWorld(viewportLocation)
+        let draftRotationRadians = rotateState.draftRotationRadians(
+            for: pointerWorldLocation
+        )
+        guard !anglesMatch(
+            rotationPreviewState?.displayRotationRadians ?? 0,
+            draftRotationRadians
+        ) else {
+            return
+        }
+
+        rotationPreviewState = CanvasRotationPreviewState(
+            snapshot: rotateState.snapshot,
+            draftGeometries: rotateState.rotatedMemberGeometries(
+                for: pointerWorldLocation
+            ),
+            displayRotationRadians: draftRotationRadians
+        )
+        refreshCanvas(reason: "update rotate selection draft")
+    }
+
+    private func commitRotationDraftIfNeeded() {
+        guard let rotationPreviewState else {
             cancelRotationInteractionIfNeeded(
                 refreshAfterCancellation: true
             )
             return
         }
 
-        guard !anglesMatch(item.rotationRadians, rotationPreviewState.draftRotationRadians) else {
+        guard rotationPreviewState.draftGeometries.allSatisfy({
+            scene.boardItem(withID: $0.itemID) != nil
+        }) else {
             cancelRotationInteractionIfNeeded(
                 refreshAfterCancellation: true
             )
             return
         }
 
-        guard let rotatedItem = scene.rotateBoardItem(
-            withID: rotationPreviewState.itemID,
-            to: rotationPreviewState.draftRotationRadians
+        let needsCommit = rotationPreviewState.draftGeometries.contains { geometry in
+            guard let item = scene.boardItem(withID: geometry.itemID) else {
+                return false
+            }
+            return item.center != geometry.center ||
+                item.size != geometry.size ||
+                anglesMatch(item.rotationRadians, geometry.rotationRadians) == false
+        }
+        guard needsCommit else {
+            cancelRotationInteractionIfNeeded(
+                refreshAfterCancellation: true
+            )
+            return
+        }
+
+        guard let rotatedItems = scene.applyBoardItemGeometries(
+            rotationPreviewState.draftGeometries
         ) else {
             cancelRotationInteractionIfNeeded(
                 refreshAfterCancellation: true
@@ -3613,21 +3754,29 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             return
         }
 
-        expandBoardIfNeeded(toInclude: rotatedItem.worldBounds)
+        if let rotatedBounds = worldBounds(for: rotatedItems) {
+            expandBoardIfNeeded(toInclude: rotatedBounds)
+        }
         clearRotationTransientState()
-        refreshCanvas()
-        commitPendingPointerHistoryTransaction(autosaveReason: "rotate item")
+        refreshCanvas(reason: rotationPreviewState.memberItemIDs.count > 1
+            ? "commit rotate selection"
+            : "commit rotate item")
+        commitPendingPointerHistoryTransaction(
+            autosaveReason: rotationPreviewState.memberItemIDs.count > 1
+                ? "rotate selection"
+                : "rotate item"
+        )
     }
 
     private func displayedRotationRadians(for item: CanvasBoardItem) -> CGFloat {
         guard
             let rotationPreviewState,
-            rotationPreviewState.itemID == item.id
+            let previewGeometry = rotationPreviewState.geometry(for: item.id)
         else {
             return item.rotationRadians
         }
 
-        return rotationPreviewState.draftRotationRadians
+        return previewGeometry.rotationRadians
     }
 
     private func clearRotationTransientState() {
@@ -3646,6 +3795,25 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
 
         rotationInteractionState = CanvasRotationInteractionState(itemID: itemID)
         refreshCanvas()
+    }
+
+    private func beginRotationInteraction(
+        for snapshot: CanvasSelectionTransformSnapshot
+    ) {
+        guard interactionStateMatchesSelection(itemIDs: snapshot.memberItemIDs) else {
+            return
+        }
+
+        let interactionState = CanvasRotationInteractionState(
+            primaryItemID: snapshot.primaryItemID,
+            memberItemIDs: snapshot.memberItemIDs
+        )
+        guard rotationInteractionState?.memberItemIDs != interactionState.memberItemIDs else {
+            return
+        }
+
+        rotationInteractionState = interactionState
+        refreshCanvas(reason: "begin rotate selection interaction")
     }
 
     private func clearRotationInteractionState() {
@@ -3675,7 +3843,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             rotationPreviewState != nil || rotationInteractionState != nil
         let wasRotating: Bool
         switch pointerDragState {
-        case .rotatingSelectedItem:
+        case .rotatingSelectedItem, .rotatingSelection:
             wasRotating = true
         default:
             wasRotating = false
@@ -3709,6 +3877,22 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             itemID: itemID,
             dragStartWorldLocation: camera.viewportToWorld(initialViewportLocation),
             dragStartCenter: movingItem.center
+        )
+    }
+
+    private func makeSelectionDragState(
+        initialViewportLocation: CGPoint
+    ) -> CanvasSelectionDragState? {
+        guard
+            interactionState.selectionCount > 1,
+            let snapshot = currentSelectionTransformSnapshot()
+        else {
+            return nil
+        }
+
+        return CanvasSelectionDragState(
+            snapshot: snapshot,
+            dragStartWorldLocation: camera.viewportToWorld(initialViewportLocation)
         )
     }
 
@@ -3753,6 +3937,57 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         return dragState.replacingAlignmentLock(solveResult.lockState)
     }
 
+    private func moveSelection(
+        using dragState: CanvasSelectionDragState,
+        to location: CGPoint
+    ) -> CanvasSelectionDragState? {
+        guard interactionStateMatchesSelection(itemIDs: dragState.snapshot.memberItemIDs) else {
+            clearAlignmentInteractionStateIfNeeded(
+                refreshReason: "clear stale selection alignment interaction"
+            )
+            return nil
+        }
+
+        let currentWorldLocation = camera.viewportToWorld(location)
+        let proposedBounds = dragState.proposedBounds(
+            for: currentWorldLocation
+        )
+        let solveResult = alignmentGuideSolver.solve(
+            CanvasAlignmentSolveRequest(
+                primaryMovingItemID: dragState.snapshot.primaryItemID,
+                movingItemIDs: dragState.snapshot.memberItemIDs,
+                movingBounds: proposedBounds,
+                scene: scene,
+                boardState: boardState,
+                camera: camera,
+                lockState: dragState.alignmentLock
+            )
+        )
+        let resolvedTranslation = CGPoint(
+            x: solveResult.resolvedBounds.midX - dragState.snapshot.selectionBounds.midX,
+            y: solveResult.resolvedBounds.midY - dragState.snapshot.selectionBounds.midY
+        )
+        guard let movedItems = scene.applyBoardItemGeometries(
+            dragState.snapshot.translatedMemberGeometries(
+                by: resolvedTranslation
+            )
+        ) else {
+            clearAlignmentInteractionStateIfNeeded(
+                refreshReason: "clear failed selection alignment interaction"
+            )
+            return nil
+        }
+
+        alignmentInteractionState = solveResult.interactionState
+        if let movedBounds = worldBounds(for: movedItems) {
+            expandBoardIfNeeded(toInclude: movedBounds)
+        }
+        refreshCanvas(
+            reason: "move selection by \(describe(point: resolvedTranslation))"
+        )
+        return dragState.replacingAlignmentLock(solveResult.lockState)
+    }
+
     private func makePointerResizeState(
         itemID: CanvasItemID,
         handleRole: CanvasSelectionHandleRole
@@ -3782,6 +4017,30 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
                 for: handleRole,
                 in: initialLocalFrame
             ),
+            minimumScale: minimumScale
+        )
+    }
+
+    private func makeSelectionResizeState(
+        handleRole: CanvasSelectionHandleRole
+    ) -> CanvasSelectionResizeState? {
+        guard
+            interactionState.selectionCount > 1,
+            let snapshot = currentSelectionTransformSnapshot(),
+            snapshot.selectionBounds.width > 0,
+            snapshot.selectionBounds.height > 0
+        else {
+            return nil
+        }
+
+        let minimumWorldDimension = Self.minimumResizeViewportDimension / camera.zoomScale
+        let minimumScale = max(
+            minimumWorldDimension / snapshot.selectionBounds.width,
+            minimumWorldDimension / snapshot.selectionBounds.height
+        )
+        return CanvasSelectionResizeState(
+            snapshot: snapshot,
+            handleRole: handleRole,
             minimumScale: minimumScale
         )
     }
@@ -3827,6 +4086,50 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
 
         expandBoardIfNeeded(toInclude: resizedItem.worldBounds)
         refreshCanvas()
+    }
+
+    private func resizeSelection(
+        using resizeState: CanvasSelectionResizeState,
+        to viewportLocation: CGPoint
+    ) {
+        guard interactionStateMatchesSelection(itemIDs: resizeState.snapshot.memberItemIDs) else {
+            return
+        }
+
+        guard
+            let resizedGeometries = resizeState.resizedMemberGeometries(
+                for: camera.viewportToWorld(viewportLocation)
+            ),
+            let resizedItems = scene.applyBoardItemGeometries(resizedGeometries),
+            let resizedBounds = worldBounds(for: resizedItems)
+        else {
+            return
+        }
+
+        expandBoardIfNeeded(toInclude: resizedBounds)
+        refreshCanvas(reason: "resize selection to \(describe(rect: resizedBounds))")
+    }
+
+    private func currentSelectionTransformSnapshot() -> CanvasSelectionTransformSnapshot? {
+        CanvasSelectionTransformSnapshot(
+            scene: scene,
+            interactionState: interactionState
+        )
+    }
+
+    private func interactionStateMatchesSelection(
+        itemIDs: [CanvasItemID]
+    ) -> Bool {
+        Set(interactionState.selectedItemIDs) == Set(itemIDs)
+    }
+
+    private func worldBounds(
+        for items: [CanvasBoardItem]
+    ) -> CGRect? {
+        let bounds = items.reduce(into: CGRect.null) { partialResult, item in
+            partialResult = partialResult.union(item.worldBounds.standardized)
+        }
+        return bounds.isNull ? nil : bounds.standardized
     }
 
     // Keep the opposite corner fixed and use the larger axis scale so resizing
@@ -4443,15 +4746,17 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         case .rotateHandle:
             reason = "rotate item"
         case .groupRotateHandle:
-            return
+            reason = "rotate selection"
         case .cropHandle, .cropTranslationArea:
             reason = "crop item"
         case .selectionHandle:
             reason = "resize item"
         case .groupSelectionHandle:
-            return
+            reason = "resize selection"
         case .selectedItemBody:
-            reason = "move item"
+            reason = interactionState.selectionCount > 1
+                ? "move selection"
+                : "move item"
         case .unselectedItemBody, .blank:
             return
         }
@@ -5014,10 +5319,16 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             return "movingCropFrame"
         case .rotatingSelectedItem:
             return "rotatingSelectedItem"
+        case .rotatingSelection:
+            return "rotatingSelection"
         case .draggingSelectedItem:
             return "draggingSelectedItem"
+        case .draggingSelection:
+            return "draggingSelection"
         case .resizingSelectedItem:
             return "resizingSelectedItem"
+        case .resizingSelection:
+            return "resizingSelection"
         case .draggingCanvas:
             return "draggingCanvas"
         }

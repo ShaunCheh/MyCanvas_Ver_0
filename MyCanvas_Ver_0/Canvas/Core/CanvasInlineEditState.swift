@@ -22,24 +22,128 @@ enum CanvasInlineEditSession: Equatable {
 // Keep rotation preview separate from crop-only inline edit state so selected
 // items can rotate directly without entering a dedicated mode.
 struct CanvasRotationPreviewState {
-    let itemID: CanvasItemID
-    var draftRotationRadians: CGFloat
+    let primaryItemID: CanvasItemID
+    let memberItemIDs: [CanvasItemID]
+    let draftGeometries: [CanvasBoardItemGeometry]
+    let displayRotationRadians: CGFloat
+
+    init(
+        item: CanvasBoardItem,
+        draftRotationRadians: CGFloat
+    ) {
+        self.primaryItemID = item.id
+        self.memberItemIDs = [item.id]
+        self.draftGeometries = [
+            CanvasBoardItemGeometry(
+                itemID: item.id,
+                center: item.center,
+                size: item.size,
+                rotationRadians: draftRotationRadians
+            )
+        ]
+        self.displayRotationRadians = draftRotationRadians
+    }
+
+    init(
+        snapshot: CanvasSelectionTransformSnapshot,
+        draftGeometries: [CanvasBoardItemGeometry],
+        displayRotationRadians: CGFloat
+    ) {
+        self.primaryItemID = snapshot.primaryItemID
+        self.memberItemIDs = snapshot.memberItemIDs
+        self.draftGeometries = draftGeometries
+        self.displayRotationRadians = displayRotationRadians
+    }
+
+    var itemID: CanvasItemID {
+        primaryItemID
+    }
+
+    var draftRotationRadians: CGFloat {
+        displayRotationRadians
+    }
+
+    func geometry(
+        for itemID: CanvasItemID
+    ) -> CanvasBoardItemGeometry? {
+        draftGeometries.first(where: { $0.itemID == itemID })
+    }
 }
 
 // Track the active rotation gesture separately from the draft angle so later
 // overlays can appear immediately when rotation starts, even before the angle
 // diverges from the persisted item rotation.
 struct CanvasRotationInteractionState {
-    let itemID: CanvasItemID
+    let primaryItemID: CanvasItemID
+    let memberItemIDs: [CanvasItemID]
+
+    init(itemID: CanvasItemID) {
+        self.primaryItemID = itemID
+        self.memberItemIDs = [itemID]
+    }
+
+    init(
+        primaryItemID: CanvasItemID,
+        memberItemIDs: [CanvasItemID]
+    ) {
+        let normalized = normalizeCanvasSelectionState(
+            selectedItemIDs: memberItemIDs,
+            primarySelectedItemID: primaryItemID
+        )
+        self.primaryItemID = normalized.primarySelectedItemID ?? primaryItemID
+        self.memberItemIDs = normalized.selectedItemIDs
+    }
+
+    var itemID: CanvasItemID {
+        primaryItemID
+    }
 }
 
 // Like rotation interaction state, alignment guides stay transient and never
 // enter BoardRuntimeState / history snapshots.
 struct CanvasAlignmentInteractionState: Equatable {
-    let itemID: CanvasItemID
+    let primaryItemID: CanvasItemID
+    let memberItemIDs: [CanvasItemID]
     let guides: [CanvasAlignmentGuide]
     let xMatch: CanvasAlignmentMatch?
     let yMatch: CanvasAlignmentMatch?
+
+    init(
+        itemID: CanvasItemID,
+        guides: [CanvasAlignmentGuide],
+        xMatch: CanvasAlignmentMatch?,
+        yMatch: CanvasAlignmentMatch?
+    ) {
+        self.init(
+            primaryItemID: itemID,
+            memberItemIDs: [itemID],
+            guides: guides,
+            xMatch: xMatch,
+            yMatch: yMatch
+        )
+    }
+
+    init(
+        primaryItemID: CanvasItemID,
+        memberItemIDs: [CanvasItemID],
+        guides: [CanvasAlignmentGuide],
+        xMatch: CanvasAlignmentMatch?,
+        yMatch: CanvasAlignmentMatch?
+    ) {
+        let normalized = normalizeCanvasSelectionState(
+            selectedItemIDs: memberItemIDs,
+            primarySelectedItemID: primaryItemID
+        )
+        self.primaryItemID = normalized.primarySelectedItemID ?? primaryItemID
+        self.memberItemIDs = normalized.selectedItemIDs
+        self.guides = guides
+        self.xMatch = xMatch
+        self.yMatch = yMatch
+    }
+
+    var itemID: CanvasItemID {
+        primaryItemID
+    }
 
     var isActive: Bool {
         guides.isEmpty == false || xMatch != nil || yMatch != nil

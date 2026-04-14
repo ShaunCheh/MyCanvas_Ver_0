@@ -10,11 +10,14 @@ struct CanvasImagePresentationResolver {
         let isCropPreviewActive =
             inlineEditState?.mode == .crop &&
             inlineEditState?.itemID == item.id
-        let isRotationPreviewActive = rotationPreviewState?.itemID == item.id
+        let previewGeometry = rotationPreviewState?.geometry(for: item.id)
+        let isRotationPreviewActive = previewGeometry != nil
 
         var effectiveItem = item
-        if let rotationPreviewState, rotationPreviewState.itemID == item.id {
-            effectiveItem.rotationRadians = rotationPreviewState.draftRotationRadians
+        if let previewGeometry {
+            effectiveItem.center = previewGeometry.center
+            effectiveItem.size = previewGeometry.size
+            effectiveItem.rotationRadians = previewGeometry.rotationRadians
         }
 
         let effectiveCropRectNormalized = isCropPreviewActive

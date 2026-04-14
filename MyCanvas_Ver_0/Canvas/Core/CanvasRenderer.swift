@@ -457,24 +457,58 @@ struct CanvasRenderer {
 
         guard
             let rotationInteractionState,
-            interactionState.singleSelectedItemID == rotationInteractionState.itemID,
-            let item = scene.boardItem(withID: rotationInteractionState.itemID)
+            interactionStateMatchesTransientSelection(
+                selectedItemIDs: interactionState.selectedItemIDs,
+                transientItemIDs: rotationInteractionState.memberItemIDs
+            )
         else {
             return nil
         }
 
-        let effectiveItem = effectiveBoardItem(
-            from: item,
-            rotationPreviewState: rotationPreviewState
-        )
-        let screenQuad = camera.worldToViewport(effectiveItem.worldQuad)
-        let screenCenter = camera.worldToViewport(effectiveItem.center)
+        let effectiveItems = rotationInteractionState.memberItemIDs.compactMap { itemID in
+            scene.boardItem(withID: itemID)
+        }.map { item in
+            effectiveBoardItem(
+                from: item,
+                rotationPreviewState: rotationPreviewState
+            )
+        }
+        guard effectiveItems.isEmpty == false else {
+            return nil
+        }
+
+        let screenQuad: CanvasQuad
+        let screenCenter: CGPoint
+        let currentRotationRadians: CGFloat
+        let overlayItemID: CanvasItemID
+
+        if effectiveItems.count == 1, let effectiveItem = effectiveItems.first {
+            screenQuad = camera.worldToViewport(effectiveItem.worldQuad)
+            screenCenter = camera.worldToViewport(effectiveItem.center)
+            currentRotationRadians = normalizedCanvasAngle(
+                effectiveItem.rotationRadians
+            )
+            overlayItemID = effectiveItem.id
+        } else {
+            let interactionBounds = groupSelectionWorldBounds(for: effectiveItems)
+            screenQuad = camera.worldToViewport(
+                CanvasQuad(rect: interactionBounds)
+            )
+            screenCenter = camera.worldToViewport(
+                CGPoint(
+                    x: interactionBounds.midX,
+                    y: interactionBounds.midY
+                )
+            )
+            currentRotationRadians = normalizedCanvasAngle(
+                rotationPreviewState?.displayRotationRadians ?? 0
+            )
+            overlayItemID = rotationInteractionState.primaryItemID
+        }
+
         let rotateAffordance = makeRotateAffordance(
             screenCenter: screenCenter,
             screenQuad: screenQuad
-        )
-        let currentRotationRadians = normalizedCanvasAngle(
-            effectiveItem.rotationRadians
         )
         let displayDegrees0To360 = canvasDisplayDegrees0To360(
             forRotationRadians: currentRotationRadians
@@ -512,7 +546,7 @@ struct CanvasRenderer {
         )
 
         return CanvasInteractionRenderOverlay(
-            itemID: effectiveItem.id,
+            itemID: overlayItemID,
             kind: .rotation,
             payload: .rotation(
                 CanvasRotationInteractionOverlayPayload(
@@ -550,8 +584,13 @@ struct CanvasRenderer {
         guard
             let alignmentInteractionState,
             alignmentInteractionState.isActive,
-            interactionState.singleSelectedItemID == alignmentInteractionState.itemID,
-            scene.boardItem(withID: alignmentInteractionState.itemID) != nil
+            interactionStateMatchesTransientSelection(
+                selectedItemIDs: interactionState.selectedItemIDs,
+                transientItemIDs: alignmentInteractionState.memberItemIDs
+            ),
+            alignmentInteractionState.memberItemIDs.allSatisfy({
+                scene.boardItem(withID: $0) != nil
+            })
         else {
             return nil
         }
@@ -583,14 +622,12 @@ struct CanvasRenderer {
     ) -> CanvasBoardItem {
         guard
             let rotationPreviewState,
-            rotationPreviewState.itemID == item.id
+            let previewGeometry = rotationPreviewState.geometry(for: item.id)
         else {
             return item
         }
 
-        var effectiveItem = item
-        effectiveItem.rotationRadians = rotationPreviewState.draftRotationRadians
-        return effectiveItem
+        return item.applyingGeometry(previewGeometry) ?? item
     }
 
     private func selectedOverlayItems(
@@ -615,6 +652,13 @@ struct CanvasRenderer {
             partialResult = partialResult.union(item.worldQuad.boundingRect.standardized)
         }
         return bounds.isNull ? .zero : bounds.standardized
+    }
+
+    private func interactionStateMatchesTransientSelection(
+        selectedItemIDs: [CanvasItemID],
+        transientItemIDs: [CanvasItemID]
+    ) -> Bool {
+        Set(selectedItemIDs) == Set(transientItemIDs)
     }
 
     private func makeRenderItem(

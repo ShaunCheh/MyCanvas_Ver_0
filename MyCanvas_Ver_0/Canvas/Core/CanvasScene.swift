@@ -112,6 +112,54 @@ final class CanvasScene {
     }
 
     @discardableResult
+    // Selection transforms must update every member from one shared geometry
+    // snapshot so group move/resize/rotate stay atomic within each gesture tick.
+    func applyBoardItemGeometries(
+        _ geometries: [CanvasBoardItemGeometry]
+    ) -> [CanvasBoardItem]? {
+        guard geometries.isEmpty == false else {
+            return []
+        }
+
+        var geometryByItemID: [CanvasItemID: CanvasBoardItemGeometry] = [:]
+        for geometry in geometries {
+            guard
+                geometry.size.width > 0,
+                geometry.size.height > 0,
+                geometryByItemID[geometry.itemID] == nil
+            else {
+                return nil
+            }
+            geometryByItemID[geometry.itemID] = geometry
+        }
+
+        for geometry in geometries {
+            guard items.contains(where: { $0.id == geometry.itemID }) else {
+                return nil
+            }
+        }
+
+        var updatedItems = items
+        var updatedBoardItems: [CanvasBoardItem] = []
+        updatedBoardItems.reserveCapacity(geometries.count)
+
+        for geometry in geometries {
+            guard
+                let index = updatedItems.firstIndex(where: { $0.id == geometry.itemID }),
+                let updatedItem = updatedItems[index].applyingGeometry(geometry)
+            else {
+                return nil
+            }
+
+            updatedItems[index] = updatedItem
+            updatedBoardItems.append(updatedItem)
+        }
+
+        items = updatedItems
+        return updatedBoardItems
+    }
+
+    @discardableResult
     // Controllers own pointer math, but Scene remains the shared mutation entry
     // point for resizing so platform flows write geometry the same way.
     func resizeBoardItem(withID id: CanvasItemID, to worldFrame: CGRect) -> CanvasBoardItem? {

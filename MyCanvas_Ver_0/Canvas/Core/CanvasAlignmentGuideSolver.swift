@@ -148,8 +148,9 @@ struct CanvasAlignmentSolverConfiguration: Equatable {
 }
 
 struct CanvasAlignmentSolveRequest {
-    let movingItemID: CanvasItemID
-    let proposedCenter: CGPoint
+    let primaryMovingItemID: CanvasItemID
+    let movingItemIDs: [CanvasItemID]
+    let movingBounds: CGRect
     let scene: CanvasScene
     let boardState: CanvasBoardState?
     let camera: CanvasCamera
@@ -163,26 +164,77 @@ struct CanvasAlignmentSolveRequest {
         camera: CanvasCamera,
         lockState: CanvasAlignmentLockState = .none
     ) {
-        self.movingItemID = movingItemID
-        self.proposedCenter = proposedCenter
+        let movingSize = scene.boardItem(withID: movingItemID)?.size ?? .zero
+        self.primaryMovingItemID = movingItemID
+        self.movingItemIDs = [movingItemID]
+        self.movingBounds = CGRect(
+            x: proposedCenter.x - movingSize.width / 2,
+            y: proposedCenter.y - movingSize.height / 2,
+            width: movingSize.width,
+            height: movingSize.height
+        ).standardized
         self.scene = scene
         self.boardState = boardState
         self.camera = camera
         self.lockState = lockState
     }
+
+    init(
+        primaryMovingItemID: CanvasItemID,
+        movingItemIDs: [CanvasItemID],
+        movingBounds: CGRect,
+        scene: CanvasScene,
+        boardState: CanvasBoardState?,
+        camera: CanvasCamera,
+        lockState: CanvasAlignmentLockState = .none
+    ) {
+        let normalized = normalizeCanvasSelectionState(
+            selectedItemIDs: movingItemIDs,
+            primarySelectedItemID: primaryMovingItemID
+        )
+        self.primaryMovingItemID = normalized.primarySelectedItemID ?? primaryMovingItemID
+        self.movingItemIDs = normalized.selectedItemIDs
+        self.movingBounds = movingBounds.standardized
+        self.scene = scene
+        self.boardState = boardState
+        self.camera = camera
+        self.lockState = lockState
+    }
+
+    var movingItemID: CanvasItemID {
+        primaryMovingItemID
+    }
+
+    var proposedCenter: CGPoint {
+        CGPoint(
+            x: movingBounds.midX,
+            y: movingBounds.midY
+        )
+    }
+
+    var excludedItemIDs: Set<CanvasItemID> {
+        Set(movingItemIDs)
+    }
 }
 
 struct CanvasAlignmentSolveResult {
-    let resolvedCenter: CGPoint
+    let resolvedBounds: CGRect
     let interactionState: CanvasAlignmentInteractionState?
     let lockState: CanvasAlignmentLockState
 
+    var resolvedCenter: CGPoint {
+        CGPoint(
+            x: resolvedBounds.midX,
+            y: resolvedBounds.midY
+        )
+    }
+
     static func passthrough(
-        proposedCenter: CGPoint,
+        proposedBounds: CGRect,
         lockState: CanvasAlignmentLockState = .none
     ) -> CanvasAlignmentSolveResult {
         CanvasAlignmentSolveResult(
-            resolvedCenter: proposedCenter,
+            resolvedBounds: proposedBounds.standardized,
             interactionState: nil,
             lockState: lockState
         )
@@ -197,17 +249,14 @@ struct CanvasAlignmentGuideSolver {
     func solve(
         _ request: CanvasAlignmentSolveRequest
     ) -> CanvasAlignmentSolveResult {
-        guard let movingItem = request.scene.boardItem(withID: request.movingItemID) else {
+        guard let movingItem = request.scene.boardItem(withID: request.primaryMovingItemID) else {
             return CanvasAlignmentSolveResult.passthrough(
-                proposedCenter: request.proposedCenter,
+                proposedBounds: request.movingBounds,
                 lockState: .none
             )
         }
 
-        let proposedFrame = worldFrame(
-            size: movingItem.size,
-            centeredAt: request.proposedCenter
-        )
+        let proposedFrame = request.movingBounds
         let searchRect = searchWorldRect(
             movingFrame: proposedFrame,
             camera: request.camera
@@ -216,11 +265,11 @@ struct CanvasAlignmentGuideSolver {
             in: request.scene,
             boardState: request.boardState,
             searchRect: searchRect,
-            excluding: request.movingItemID
+            excluding: request.excludedItemIDs
         )
         guard references.isEmpty == false else {
             return CanvasAlignmentSolveResult.passthrough(
-                proposedCenter: request.proposedCenter,
+                proposedBounds: proposedFrame,
                 lockState: .none
             )
         }
@@ -255,45 +304,42 @@ struct CanvasAlignmentGuideSolver {
         )
         guard xCandidate != nil || yCandidate != nil else {
             return CanvasAlignmentSolveResult.passthrough(
-                proposedCenter: request.proposedCenter,
+                proposedBounds: proposedFrame,
                 lockState: .none
             )
         }
 
-        let resolvedCenter = CGPoint(
-            x: request.proposedCenter.x + (xCandidate?.deltaInWorld ?? 0),
-            y: request.proposedCenter.y + (yCandidate?.deltaInWorld ?? 0)
-        )
+        let resolvedFrame = proposedFrame.offsetBy(
+            dx: xCandidate?.deltaInWorld ?? 0,
+            dy: yCandidate?.deltaInWorld ?? 0
+        ).standardized
         let lockState = CanvasAlignmentLockState(
             xAxis: xCandidate?.axisLock,
             yAxis: yCandidate?.axisLock
         )
         logSolveDiagnostics(
             movingItem: movingItem,
-            proposedCenter: request.proposedCenter,
-            resolvedCenter: resolvedCenter,
+            proposedBounds: proposedFrame,
+            resolvedBounds: resolvedFrame,
             camera: request.camera,
             enterThresholdInWorld: enterThresholdInWorld,
             releaseThresholdInWorld: releaseThresholdInWorld,
             xCandidate: xCandidate,
             yCandidate: yCandidate
         )
-        let resolvedFrame = worldFrame(
-            size: movingItem.size,
-            centeredAt: resolvedCenter
-        )
         let guides = [
             xCandidate.map { guide(for: $0, movingFrame: resolvedFrame) },
             yCandidate.map { guide(for: $0, movingFrame: resolvedFrame) }
         ].compactMap { $0 }
         let interactionState = CanvasAlignmentInteractionState(
-            itemID: request.movingItemID,
+            primaryItemID: request.primaryMovingItemID,
+            memberItemIDs: request.movingItemIDs,
             guides: guides,
             xMatch: xCandidate?.match,
             yMatch: yCandidate?.match
         )
         return CanvasAlignmentSolveResult(
-            resolvedCenter: resolvedCenter,
+            resolvedBounds: resolvedFrame,
             interactionState: interactionState.isActive ? interactionState : nil,
             lockState: lockState
         )
@@ -301,8 +347,8 @@ struct CanvasAlignmentGuideSolver {
 
     private func logSolveDiagnostics(
         movingItem: CanvasBoardItem,
-        proposedCenter: CGPoint,
-        resolvedCenter: CGPoint,
+        proposedBounds: CGRect,
+        resolvedBounds: CGRect,
         camera: CanvasCamera,
         enterThresholdInWorld: CGFloat,
         releaseThresholdInWorld: CGFloat,
@@ -314,16 +360,16 @@ struct CanvasAlignmentGuideSolver {
         }
 
         let rawDeltaInWorld = CGPoint(
-            x: proposedCenter.x - movingItem.center.x,
-            y: proposedCenter.y - movingItem.center.y
+            x: proposedBounds.midX - movingItem.center.x,
+            y: proposedBounds.midY - movingItem.center.y
         )
         let resolvedDeltaInWorld = CGPoint(
-            x: resolvedCenter.x - movingItem.center.x,
-            y: resolvedCenter.y - movingItem.center.y
+            x: resolvedBounds.midX - movingItem.center.x,
+            y: resolvedBounds.midY - movingItem.center.y
         )
         let solverCorrectionInWorld = CGPoint(
-            x: resolvedCenter.x - proposedCenter.x,
-            y: resolvedCenter.y - proposedCenter.y
+            x: resolvedBounds.midX - proposedBounds.midX,
+            y: resolvedBounds.midY - proposedBounds.midY
         )
         let xAxisPinned = xCandidate != nil &&
             abs(rawDeltaInWorld.x) > canvasAlignmentComparisonEpsilon &&
@@ -337,8 +383,8 @@ struct CanvasAlignmentGuideSolver {
             "itemID=\(movingItem.id.uuidString) " +
             "centerBefore=\(describeAlignmentPoint(movingItem.center)) " +
             "rawDelta=\(describeAlignmentPoint(rawDeltaInWorld)) " +
-            "proposedCenter=\(describeAlignmentPoint(proposedCenter)) " +
-            "resolvedCenter=\(describeAlignmentPoint(resolvedCenter)) " +
+            "proposedCenter=\(describeAlignmentPoint(CGPoint(x: proposedBounds.midX, y: proposedBounds.midY))) " +
+            "resolvedCenter=\(describeAlignmentPoint(CGPoint(x: resolvedBounds.midX, y: resolvedBounds.midY))) " +
             "resolvedDelta=\(describeAlignmentPoint(resolvedDeltaInWorld)) " +
             "solverCorrection=\(describeAlignmentPoint(solverCorrectionInWorld)) " +
             "zoom=\(formatAlignmentValue(camera.zoomScale)) " +
@@ -379,11 +425,11 @@ struct CanvasAlignmentGuideSolver {
         in scene: CanvasScene,
         boardState: CanvasBoardState?,
         searchRect: CGRect,
-        excluding movingItemID: CanvasItemID
+        excluding excludedItemIDs: Set<CanvasItemID>
     ) -> [CanvasAlignmentReference] {
         var references = scene
             .visibleBoardItems(in: searchRect)
-            .filter { $0.id != movingItemID }
+            .filter { excludedItemIDs.contains($0.id) == false }
             .map {
                 CanvasAlignmentReference(
                     source: .item($0.id),

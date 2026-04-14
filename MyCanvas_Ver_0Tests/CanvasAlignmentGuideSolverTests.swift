@@ -223,6 +223,59 @@ final class CanvasAlignmentGuideSolverTests: XCTestCase {
         XCTAssertEqual(result.interactionState?.xMatch?.referenceSource, .board)
     }
 
+    func testSolveSupportsGroupSelectionBoundsAndSelectionExclusions() {
+        let firstMovingItem = makeAlignmentTestTextItem(
+            center: CGPoint(x: -20, y: 0),
+            size: CGSize(width: 40, height: 40)
+        )
+        let secondMovingItem = makeAlignmentTestTextItem(
+            center: CGPoint(x: 40, y: 0),
+            size: CGSize(width: 40, height: 40),
+            zIndex: 1
+        )
+        let referenceItem = makeAlignmentTestTextItem(
+            center: CGPoint(x: 200, y: 0),
+            size: CGSize(width: 60, height: 60),
+            zIndex: 2
+        )
+        let scene = makeAlignmentTestScene(
+            items: [
+                .text(firstMovingItem),
+                .text(secondMovingItem),
+                .text(referenceItem)
+            ]
+        )
+        let solver = CanvasAlignmentGuideSolver()
+
+        let result = solver.solve(
+            CanvasAlignmentSolveRequest(
+                primaryMovingItemID: secondMovingItem.id,
+                movingItemIDs: [firstMovingItem.id, secondMovingItem.id],
+                movingBounds: CGRect(
+                    x: 154,
+                    y: -20,
+                    width: 100,
+                    height: 40
+                ),
+                scene: scene,
+                boardState: nil,
+                camera: makeAlignmentTestCamera()
+            )
+        )
+
+        XCTAssertEqual(result.resolvedBounds.midX, 200)
+        XCTAssertEqual(result.resolvedBounds.midY, 0)
+        XCTAssertEqual(result.interactionState?.itemID, secondMovingItem.id)
+        XCTAssertEqual(
+            result.interactionState?.memberItemIDs,
+            [firstMovingItem.id, secondMovingItem.id]
+        )
+        XCTAssertEqual(
+            result.interactionState?.xMatch?.referenceSource,
+            .item(referenceItem.id)
+        )
+    }
+
     func testSolveKeepsExistingLockWhilePointerStaysWithinReleaseThreshold() {
         let movingItem = makeAlignmentTestTextItem(center: CGPoint(x: 0, y: 0))
         let referenceItem = makeAlignmentTestTextItem(

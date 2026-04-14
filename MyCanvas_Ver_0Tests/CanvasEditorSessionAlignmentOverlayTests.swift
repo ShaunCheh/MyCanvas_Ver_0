@@ -382,6 +382,123 @@ final class CanvasEditorSessionAlignmentOverlayTests: XCTestCase {
         }
         XCTAssertEqual(pressContext.targetItemID, secondItem.id)
     }
+
+    func testMakeCanvasSnapshotProducesAlignmentOverlayForGroupSelection() throws {
+        let firstItem = CanvasTextItem(
+            text: "first",
+            center: CGPoint(x: -30, y: 0),
+            size: CGSize(width: 80, height: 40)
+        )
+        let secondItem = CanvasTextItem(
+            text: "second",
+            center: CGPoint(x: 70, y: 20),
+            size: CGSize(width: 100, height: 44)
+        )
+        let session = makeAlignmentOverlayTestSession(
+            items: [.text(firstItem), .text(secondItem)],
+            interactionState: CanvasInteractionState(
+                selectedItemIDs: [firstItem.id, secondItem.id],
+                primarySelectedItemID: secondItem.id
+            )
+        )
+        session.alignmentInteractionState = CanvasAlignmentInteractionState(
+            primaryItemID: secondItem.id,
+            memberItemIDs: [firstItem.id, secondItem.id],
+            guides: [
+                CanvasAlignmentGuide(
+                    orientation: .vertical,
+                    worldStart: CGPoint(x: 30, y: -20),
+                    worldEnd: CGPoint(x: 30, y: 60),
+                    movingAnchor: .centerX,
+                    referenceAnchor: .centerX,
+                    referenceSource: .board
+                )
+            ],
+            xMatch: CanvasAlignmentMatch(
+                movingAnchor: .centerX,
+                referenceAnchor: .centerX,
+                referenceSource: .board,
+                referenceCoordinate: 30,
+                distanceInWorld: 0
+            ),
+            yMatch: nil
+        )
+
+        let snapshot = session.makeCanvasSnapshot()
+        let interactionOverlay = try XCTUnwrap(snapshot.interactionOverlay)
+        guard case let .alignment(payload) = interactionOverlay.payload else {
+            XCTFail("Expected alignment overlay payload for group selection.")
+            return
+        }
+
+        XCTAssertEqual(interactionOverlay.itemID, secondItem.id)
+        XCTAssertTrue(payload.isActive)
+        XCTAssertEqual(payload.guideSegments.count, 1)
+        XCTAssertEqual(payload.xMatch?.referenceSource, .board)
+    }
+
+    func testMakeCanvasSnapshotAppliesGroupRotationPreviewToOverlayBounds() throws {
+        let firstItem = CanvasTextItem(
+            text: "first",
+            center: CGPoint(x: 20, y: 0),
+            size: CGSize(width: 40, height: 20)
+        )
+        let secondItem = CanvasTextItem(
+            text: "second",
+            center: CGPoint(x: 80, y: 40),
+            size: CGSize(width: 60, height: 24)
+        )
+        let interactionState = CanvasInteractionState(
+            selectedItemIDs: [firstItem.id, secondItem.id],
+            primarySelectedItemID: secondItem.id
+        )
+        let session = makeAlignmentOverlayTestSession(
+            items: [.text(firstItem), .text(secondItem)],
+            interactionState: interactionState
+        )
+        let transformSnapshot = try XCTUnwrap(
+            CanvasSelectionTransformSnapshot(
+                scene: session.scene,
+                interactionState: interactionState
+            )
+        )
+        let rotatedGeometries = transformSnapshot.rotatedMemberGeometries(
+            by: .pi / 2
+        )
+        session.rotationInteractionState = CanvasRotationInteractionState(
+            primaryItemID: secondItem.id,
+            memberItemIDs: [firstItem.id, secondItem.id]
+        )
+        session.rotationPreviewState = CanvasRotationPreviewState(
+            snapshot: transformSnapshot,
+            draftGeometries: rotatedGeometries,
+            displayRotationRadians: .pi / 2
+        )
+
+        let snapshot = session.makeCanvasSnapshot()
+        let interactionOverlay = try XCTUnwrap(snapshot.interactionOverlay)
+        let editOverlay = try XCTUnwrap(snapshot.editOverlay)
+        guard case let .rotation(payload) = interactionOverlay.payload else {
+            XCTFail("Expected rotation overlay payload for group rotation.")
+            return
+        }
+
+        let expectedBounds = CanvasSelectionTransformSnapshot.selectionBounds(
+            for: rotatedGeometries
+        )
+        let expectedScreenCenter = session.camera.worldToViewport(
+            CGPoint(x: expectedBounds.midX, y: expectedBounds.midY)
+        )
+        let actualBounds = editOverlay.activeWorldQuad.boundingRect.standardized
+        XCTAssertEqual(interactionOverlay.itemID, secondItem.id)
+        XCTAssertEqual(payload.currentRotationRadians, .pi / 2, accuracy: 0.0001)
+        XCTAssertEqual(payload.screenCenter.x, expectedScreenCenter.x, accuracy: 0.0001)
+        XCTAssertEqual(payload.screenCenter.y, expectedScreenCenter.y, accuracy: 0.0001)
+        XCTAssertEqual(actualBounds.minX, expectedBounds.minX, accuracy: 0.0001)
+        XCTAssertEqual(actualBounds.minY, expectedBounds.minY, accuracy: 0.0001)
+        XCTAssertEqual(actualBounds.width, expectedBounds.width, accuracy: 0.0001)
+        XCTAssertEqual(actualBounds.height, expectedBounds.height, accuracy: 0.0001)
+    }
 }
 
 private enum CanvasEditorSessionAlignmentOverlayTestRetainer {

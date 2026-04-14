@@ -16,7 +16,7 @@ todos:
     status: completed
   - id: phase4-group-transform
     content: 落地组平移、组缩放、组旋转以及按组选框对齐的共享几何/solver。
-    status: pending
+    status: completed
   - id: phase5-polish-tests
     content: 收口上下文菜单和模式边界，并补齐迁移、历史、渲染和交互回归测试。
     status: pending
