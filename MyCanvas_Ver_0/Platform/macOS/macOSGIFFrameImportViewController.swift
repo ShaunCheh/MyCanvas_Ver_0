@@ -4,7 +4,6 @@ import ImageIO
 
 final class macOSGIFFrameImportViewController: NSViewController, NSCollectionViewDataSource, NSCollectionViewDelegate {
     private enum Layout {
-        static let titleTopInset: CGFloat = 20
         static let horizontalInset: CGFloat = 24
         static let summaryTopSpacing: CGFloat = 16
         static let collectionTopSpacing: CGFloat = 18
@@ -28,28 +27,9 @@ final class macOSGIFFrameImportViewController: NSViewController, NSCollectionVie
     private lazy var imageSource: CGImageSource? = CanvasGIFFrameService.makeImageSource(
         from: editorContext.gifData
     )
-    private let titleLabel: NSTextField = {
-        let label = NSTextField(labelWithString: "Import GIF Frames")
-        label.translatesAutoresizingMaskIntoConstraints = false
-        label.font = .systemFont(ofSize: 24, weight: .semibold)
-        return label
-    }()
-    private let cancelButton: NSButton = {
-        let button = NSButton(title: "Cancel", target: nil, action: nil)
-        button.translatesAutoresizingMaskIntoConstraints = false
-        button.controlSize = .large
-        button.bezelStyle = .rounded
-        button.keyEquivalent = "\u{1b}"
-        return button
-    }()
-    private let importButton: NSButton = {
-        let button = NSButton(title: "Import", target: nil, action: nil)
-        button.translatesAutoresizingMaskIntoConstraints = false
-        button.controlSize = .large
-        button.bezelStyle = .rounded
-        button.keyEquivalent = "\r"
-        return button
-    }()
+    private let shellView = macOSCanvasEditorShellView(
+        titleAlignment: .centered
+    )
     private let summaryLabel: NSTextField = {
         let label = NSTextField(wrappingLabelWithString: "")
         label.translatesAutoresizingMaskIntoConstraints = false
@@ -99,6 +79,14 @@ final class macOSGIFFrameImportViewController: NSViewController, NSCollectionVie
         }
     }
 
+    private var cancelButton: NSButton {
+        shellView.leadingButton
+    }
+
+    private var importButton: NSButton {
+        shellView.trailingButton
+    }
+
     init(
         editorContext: CanvasGIFFrameImportEditorContext,
         onImportSelectedFrames: @escaping ([Int]) throws -> Void
@@ -118,14 +106,13 @@ final class macOSGIFFrameImportViewController: NSViewController, NSCollectionVie
     }
 
     override func loadView() {
-        view = NSView()
+        view = shellView
     }
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        preferredContentSize = CGSize(width: 760, height: 620)
-        view.wantsLayer = true
-        view.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        preferredContentSize = macOSCanvasEditorShellView.defaultPreferredContentSize
+        configureShell()
         setupViewHierarchy()
         setupConstraints()
         configureButtons()
@@ -147,45 +134,16 @@ final class macOSGIFFrameImportViewController: NSViewController, NSCollectionVie
     }
 
     private func setupViewHierarchy() {
-        view.addSubview(titleLabel)
-        view.addSubview(cancelButton)
-        view.addSubview(importButton)
-        view.addSubview(summaryLabel)
-        view.addSubview(collectionScrollView)
+        shellView.contentView.addSubview(summaryLabel)
+        shellView.contentView.addSubview(collectionScrollView)
     }
 
     private func setupConstraints() {
-        let safeArea = view.safeAreaLayoutGuide
+        let contentView = shellView.contentView
+        let safeArea = contentView.safeAreaLayoutGuide
         NSLayoutConstraint.activate([
-            titleLabel.topAnchor.constraint(
-                equalTo: safeArea.topAnchor,
-                constant: Layout.titleTopInset
-            ),
-            titleLabel.centerXAnchor.constraint(equalTo: safeArea.centerXAnchor),
-
-            cancelButton.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
-            cancelButton.leadingAnchor.constraint(
-                equalTo: safeArea.leadingAnchor,
-                constant: Layout.horizontalInset
-            ),
-
-            importButton.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
-            importButton.trailingAnchor.constraint(
-                equalTo: safeArea.trailingAnchor,
-                constant: -Layout.horizontalInset
-            ),
-
-            titleLabel.leadingAnchor.constraint(
-                greaterThanOrEqualTo: cancelButton.trailingAnchor,
-                constant: 12
-            ),
-            titleLabel.trailingAnchor.constraint(
-                lessThanOrEqualTo: importButton.leadingAnchor,
-                constant: -12
-            ),
-
             summaryLabel.topAnchor.constraint(
-                equalTo: titleLabel.bottomAnchor,
+                equalTo: contentView.topAnchor,
                 constant: Layout.summaryTopSpacing
             ),
             summaryLabel.leadingAnchor.constraint(
@@ -201,10 +159,23 @@ final class macOSGIFFrameImportViewController: NSViewController, NSCollectionVie
                 equalTo: summaryLabel.bottomAnchor,
                 constant: Layout.collectionTopSpacing
             ),
-            collectionScrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            collectionScrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            collectionScrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+            collectionScrollView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            collectionScrollView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            collectionScrollView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
         ])
+    }
+
+    private func configureShell() {
+        shellView.configureTitle(
+            "Import GIF Frames",
+            alignment: .centered
+        )
+        shellView.setLeadingButtonHidden(false)
+        shellView.setTrailingButtonHidden(false)
+
+        cancelButton.title = "Cancel"
+        cancelButton.keyEquivalent = "\u{1b}"
+        importButton.keyEquivalent = "\r"
     }
 
     private func configureButtons() {

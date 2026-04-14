@@ -11,20 +11,9 @@ final class macOSVideoDisplayFrameEditorViewController: NSViewController {
         qos: .userInitiated
     )
     private let player = AVPlayer()
-    private let titleLabel: NSTextField = {
-        let label = NSTextField(labelWithString: "Set Display Frame")
-        label.translatesAutoresizingMaskIntoConstraints = false
-        label.font = .systemFont(ofSize: 24, weight: .semibold)
-        return label
-    }()
-    private let closeButton: NSButton = {
-        let button = NSButton(title: "Cancel", target: nil, action: nil)
-        button.translatesAutoresizingMaskIntoConstraints = false
-        button.controlSize = .large
-        button.bezelStyle = .rounded
-        button.keyEquivalent = "\u{1b}"
-        return button
-    }()
+    private let shellView = macOSCanvasEditorShellView(
+        titleAlignment: .leading
+    )
     private let playerView: macOSVideoDisplayFramePlayerView = {
         let view = macOSVideoDisplayFramePlayerView()
         view.translatesAutoresizingMaskIntoConstraints = false
@@ -91,6 +80,10 @@ final class macOSVideoDisplayFrameEditorViewController: NSViewController {
     private var timelineLoadGeneration = 0
     private var timelineLoadWorkItem: DispatchWorkItem?
 
+    private var closeButton: NSButton {
+        shellView.trailingButton
+    }
+
     init(
         editorContext: CanvasVideoEditorContext,
         loadTimelineStrip: @escaping (CanvasVideoTimelineStripRequest) throws -> CanvasVideoTimelineStrip,
@@ -123,14 +116,13 @@ final class macOSVideoDisplayFrameEditorViewController: NSViewController {
     }
 
     override func loadView() {
-        view = NSView()
+        view = shellView
     }
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        preferredContentSize = CGSize(width: 760, height: 620)
-        view.wantsLayer = true
-        view.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        preferredContentSize = macOSCanvasEditorShellView.defaultPreferredContentSize
+        configureShell()
         configureTimelineView()
         configureButtons()
         configurePlayer()
@@ -246,18 +238,17 @@ final class macOSVideoDisplayFrameEditorViewController: NSViewController {
 
     private func setupViewHierarchy() {
         playerView.addSubview(playPauseButton)
-        view.addSubview(titleLabel)
-        view.addSubview(closeButton)
-        view.addSubview(playerView)
-        view.addSubview(currentTimeLabel)
-        view.addSubview(timeSlider)
-        view.addSubview(durationLabel)
-        view.addSubview(timelineView)
-        view.addSubview(setDisplayFrameButton)
+        shellView.contentView.addSubview(playerView)
+        shellView.contentView.addSubview(currentTimeLabel)
+        shellView.contentView.addSubview(timeSlider)
+        shellView.contentView.addSubview(durationLabel)
+        shellView.contentView.addSubview(timelineView)
+        shellView.contentView.addSubview(setDisplayFrameButton)
     }
 
     private func setupConstraints() {
-        let safeArea = view.safeAreaLayoutGuide
+        let contentView = shellView.contentView
+        let safeArea = contentView.safeAreaLayoutGuide
         let videoAspectRatio = max(
             min(
                 editorContext.naturalPixelSize.height /
@@ -268,16 +259,7 @@ final class macOSVideoDisplayFrameEditorViewController: NSViewController {
         )
 
         NSLayoutConstraint.activate([
-            titleLabel.topAnchor.constraint(equalTo: safeArea.topAnchor, constant: 20),
-            titleLabel.leadingAnchor.constraint(equalTo: safeArea.leadingAnchor, constant: 24),
-            closeButton.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
-            closeButton.trailingAnchor.constraint(equalTo: safeArea.trailingAnchor, constant: -24),
-            titleLabel.trailingAnchor.constraint(
-                lessThanOrEqualTo: closeButton.leadingAnchor,
-                constant: -12
-            ),
-
-            playerView.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 24),
+            playerView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 24),
             playerView.leadingAnchor.constraint(equalTo: safeArea.leadingAnchor, constant: 24),
             playerView.trailingAnchor.constraint(equalTo: safeArea.trailingAnchor, constant: -24),
             playerView.heightAnchor.constraint(
@@ -323,6 +305,18 @@ final class macOSVideoDisplayFrameEditorViewController: NSViewController {
                 constant: -20
             )
         ])
+    }
+
+    private func configureShell() {
+        shellView.configureTitle(
+            "Set Display Frame",
+            alignment: .leading
+        )
+        shellView.setLeadingButtonHidden(true)
+        shellView.setTrailingButtonHidden(false)
+
+        closeButton.title = "Cancel"
+        closeButton.keyEquivalent = "\u{1b}"
     }
 
     private func applyInitialState() {
