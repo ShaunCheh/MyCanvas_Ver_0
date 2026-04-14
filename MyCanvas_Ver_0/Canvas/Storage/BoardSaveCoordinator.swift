@@ -49,16 +49,19 @@ struct BoardSaveSnapshot {
 final class BoardSaveCoordinator {
     private let autosaveDelay: TimeInterval
     private let logPrefix: String
+    private let userDefaults: UserDefaults
     private let saveQueue: DispatchQueue
     private var pendingAutosaveWorkItem: DispatchWorkItem?
 
     init(
         queueLabel: String,
         logPrefix: String,
+        userDefaults: UserDefaults = .standard,
         autosaveDelay: TimeInterval = 0.35
     ) {
         self.autosaveDelay = autosaveDelay
         self.logPrefix = logPrefix
+        self.userDefaults = userDefaults
         saveQueue = DispatchQueue(label: queueLabel, qos: .utility)
     }
 
@@ -113,10 +116,13 @@ final class BoardSaveCoordinator {
         reason: String,
         completion: ((Result<Void, Error>) -> Void)? = nil
     ) {
-        saveQueue.async { [logPrefix] in
+        saveQueue.async { [logPrefix, userDefaults] in
             let result: Result<Void, Error>
             do {
-                try BoardStore.saveBoard(snapshot)
+                try BoardStore.saveBoard(
+                    snapshot,
+                    userDefaults: userDefaults
+                )
                 result = .success(())
             } catch {
                 print("\(logPrefix) Failed to save board (\(reason)): \(error)")

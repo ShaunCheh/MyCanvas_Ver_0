@@ -16,7 +16,8 @@ enum CanvasMediaImportServiceError: LocalizedError {
 enum CanvasMediaImportService {
     static func makeImportRequest(
         from transferRequest: CanvasTransferRequest,
-        boardID: UUID? = nil
+        boardID: UUID? = nil,
+        userDefaults: UserDefaults = .standard
     ) throws -> CanvasImportRequest? {
         guard transferRequest.isEmpty == false else {
             return nil
@@ -42,7 +43,8 @@ enum CanvasMediaImportService {
                 }
 
                 assetsDirectoryURL = try BoardStore.ensureAssetsDirectoryURL(
-                    for: boardID
+                    for: boardID,
+                    userDefaults: userDefaults
                 )
             } else {
                 assetsDirectoryURL = nil

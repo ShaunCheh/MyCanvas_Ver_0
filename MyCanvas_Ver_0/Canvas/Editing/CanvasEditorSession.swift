@@ -43,6 +43,7 @@ final class CanvasEditorSession {
     private let renderer = CanvasRenderer()
     private let miniMapRenderer = CanvasMiniMapRenderer()
     private let contextResolver = CanvasContextResolver()
+    private let userDefaults: UserDefaults
     private let saveCoordinator: BoardSaveCoordinator
     private let historyController = BoardHistoryController()
     private let boardStoreLogPrefix: String
@@ -85,7 +86,8 @@ final class CanvasEditorSession {
 
         guard let data = try? BoardStore.loadImageAssetData(
             boardID: activeBoardID,
-            filename: assetReference.stableAssetFilename
+            filename: assetReference.stableAssetFilename,
+            userDefaults: userDefaults
         ) else {
             return nil
         }
@@ -99,12 +101,15 @@ final class CanvasEditorSession {
 
     init(
         saveQueueLabel: String,
-        logPrefix: String
+        logPrefix: String,
+        userDefaults: UserDefaults = .standard
     ) {
+        self.userDefaults = userDefaults
         boardStoreLogPrefix = logPrefix
         saveCoordinator = BoardSaveCoordinator(
             queueLabel: saveQueueLabel,
-            logPrefix: logPrefix
+            logPrefix: logPrefix,
+            userDefaults: userDefaults
         )
     }
 
@@ -280,7 +285,10 @@ final class CanvasEditorSession {
     }
 
     func loadBoard(id: UUID) throws {
-        let runtimeState = try BoardStore.loadBoard(id: id)
+        let runtimeState = try BoardStore.loadBoard(
+            id: id,
+            userDefaults: userDefaults
+        )
         print(
             "[Canvas Shared][RuntimeRestore] " +
             "action=loadBoard " +
@@ -313,7 +321,9 @@ final class CanvasEditorSession {
 
     func restorePersistedBoardIfPossible() {
         do {
-            let runtimeState = try BoardStore.loadOrCreateInitialBoard()
+            let runtimeState = try BoardStore.loadOrCreateInitialBoard(
+                userDefaults: userDefaults
+            )
             print(
                 "[Canvas Shared][RuntimeRestore] " +
                 "action=restorePersistedBoardIfPossible " +
@@ -1228,7 +1238,9 @@ final class CanvasEditorSession {
             return true
         }
 
-        guard FolderBookmarkStore.hasStoredBookmarkData() else {
+        guard FolderBookmarkStore.hasStoredBookmarkData(
+            userDefaults: userDefaults
+        ) else {
             return false
         }
 

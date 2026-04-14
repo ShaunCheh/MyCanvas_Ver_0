@@ -65,6 +65,26 @@
 			path = MyCanvas_Ver_0;
 			sourceTree = "<group>";
 		};
+		28F1A0012F8E0001004160FE /* App */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = MyCanvas_Ver_0/App;
+			sourceTree = "<group>";
+		};
+		28F1A0022F8E0001004160FE /* Canvas */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = MyCanvas_Ver_0/Canvas;
+			sourceTree = "<group>";
+		};
+		28F1A0032F8E0001004160FE /* BoardList */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = MyCanvas_Ver_0/Platform/Shared/BoardList;
+			sourceTree = "<group>";
+		};
+		28F1A0042F8E0001004160FE /* Rendering */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = MyCanvas_Ver_0/Platform/Shared/Rendering;
+			sourceTree = "<group>";
+		};
 		28A9EB782F8DEFCD004160FE /* Add To Canvas */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
@@ -175,6 +195,10 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
+				28F1A0012F8E0001004160FE /* App */,
+				28F1A0022F8E0001004160FE /* Canvas */,
+				28F1A0032F8E0001004160FE /* BoardList */,
+				28F1A0042F8E0001004160FE /* Rendering */,
 				28A9EB782F8DEFCD004160FE /* Add To Canvas */,
 			);
 			name = "Add To Canvas";
@@ -433,6 +457,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "MyCanvas_Ver_0/MyCanvas_Ver_0.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = JWWZTL2S7W;
@@ -475,6 +500,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "MyCanvas_Ver_0/MyCanvas_Ver_0.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = JWWZTL2S7W;
@@ -515,6 +541,7 @@
 		28A9EB832F8DEFCD004160FE /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = "Add To Canvas/Add To Canvas.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = JWWZTL2S7W;
@@ -545,6 +572,7 @@
 		28A9EB842F8DEFCD004160FE /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = "Add To Canvas/Add To Canvas.entitlements";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = JWWZTL2S7W;

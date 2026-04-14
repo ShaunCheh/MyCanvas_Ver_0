@@ -19,6 +19,7 @@ final class iOSAppDelegate: UIResponder, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
+        FolderBookmarkStore.mirrorStoredBookmarkToSharedStoreIfNeeded()
         FolderBookmarkStore.logStoredBookmarkPresence()
         let window = UIWindow(frame: UIScreen.main.bounds)
         window.rootViewController = iOSAppRootViewController()

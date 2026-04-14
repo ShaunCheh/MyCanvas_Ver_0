@@ -21,6 +21,7 @@ final class macOSAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        FolderBookmarkStore.mirrorStoredBookmarkToSharedStoreIfNeeded()
         FolderBookmarkStore.logStoredBookmarkPresence()
         let viewController = macOSAppRootViewController()
         let window = NSWindow(

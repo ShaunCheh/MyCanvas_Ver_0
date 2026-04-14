@@ -1,30 +1,41 @@
-//
-//  ShareViewController.swift
-//  Add To Canvas
-//
-//  Created by Shaun on 2026/4/14.
-//
-
+import SwiftUI
 import UIKit
-import Social
 
-class ShareViewController: SLComposeServiceViewController {
+final class ShareViewController: UIViewController {
+    private lazy var viewModel = ShareImportViewModel(
+        extensionContext: extensionContext,
+        finishHandler: { [weak self] in
+            self?.extensionContext?.completeRequest(
+                returningItems: nil,
+                completionHandler: nil
+            )
+        },
+        cancelHandler: { [weak self] error in
+            self?.extensionContext?.cancelRequest(withError: error)
+        }
+    )
 
-    override func isContentValid() -> Bool {
-        // Do validation of contentText and/or NSExtensionContext attachments here
-        return true
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .systemBackground
+        preferredContentSize = CGSize(width: 0, height: 560)
+        embedHostingController()
     }
 
-    override func didSelectPost() {
-        // This is called after the user selects Post. Do the upload of contentText and/or NSExtensionContext attachments.
-    
-        // Inform the host that we're done, so it un-blocks its UI. Note: Alternatively you could call super's -didSelectPost, which will similarly complete the extension context.
-        self.extensionContext!.completeRequest(returningItems: [], completionHandler: nil)
+    private func embedHostingController() {
+        let hostingController = UIHostingController(
+            rootView: ShareImportView(viewModel: viewModel)
+        )
+        addChild(hostingController)
+        hostingController.view.translatesAutoresizingMaskIntoConstraints = false
+        hostingController.view.backgroundColor = .clear
+        view.addSubview(hostingController.view)
+        NSLayoutConstraint.activate([
+            hostingController.view.topAnchor.constraint(equalTo: view.topAnchor),
+            hostingController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            hostingController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            hostingController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        ])
+        hostingController.didMove(toParent: self)
     }
-
-    override func configurationItems() -> [Any]! {
-        // To add configuration options via table cells at the bottom of the sheet, return an array of SLComposeSheetConfigurationItem here.
-        return []
-    }
-
 }
