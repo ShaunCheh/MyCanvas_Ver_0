@@ -113,9 +113,9 @@ final class iOSCanvasViewportView: UIView {
     private var animatedPlaybackObservers: [NSObjectProtocol] = []
     private var isApplicationPlaybackActive =
         UIApplication.shared.applicationState == .active
-    var onPointerDown: ((CGPoint) -> Void)?
+    var onPointerDown: ((CGPoint, CanvasPointerModifiers) -> Void)?
     var onPointerMove: ((CGPoint, CGPoint) -> Void)?
-    var onPointerUp: ((CGPoint) -> Void)?
+    var onPointerUp: ((CGPoint, CanvasPointerModifiers) -> Void)?
     var onPointerCancel: (() -> Void)?
     var onLongPress: ((CGPoint) -> Void)?
     var onPan: ((CGPoint) -> Void)?
@@ -258,7 +258,7 @@ final class iOSCanvasViewportView: UIView {
         }
 
         if let pointerUpLocation {
-            onPointerUp?(pointerUpLocation)
+            onPointerUp?(pointerUpLocation, .none)
         }
 
         reconcileTouchInteractionState()
@@ -1325,7 +1325,7 @@ final class iOSCanvasViewportView: UIView {
             pressedLocation: location,
             lastLocation: location
         )
-        onPointerDown?(location)
+        onPointerDown?(location, .none)
     }
 
     private func touchMatching(_ trackedTouch: UITouch, in touches: Set<UITouch>) -> UITouch? {

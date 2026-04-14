@@ -52,7 +52,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         case idle
         case pressed(
             pressedLocation: CGPoint,
-            pressContext: CanvasPointerPressContext
+            pressContext: CanvasPointerPressContext,
+            pointerModifiers: CanvasPointerModifiers
         )
         case croppingSelectedItem(PointerCropState)
         case movingCropFrame(PointerCropTranslationState)
@@ -149,6 +150,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     private let commandCatalog = CanvasCommandCatalog()
     private let toolbarStateBuilder = CanvasToolbarStateBuilder()
     private let contextMenuActionResolver = CanvasContextMenuActionResolver()
+    private let clickSelectionResolver = CanvasClickSelectionResolver()
     private let interactionPolicy = CanvasInteractionPolicy()
     private let inputRoutingResolver = CanvasInputRoutingResolver()
     private let canvasHostView: UIView = {
@@ -250,6 +252,11 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         button.translatesAutoresizingMaskIntoConstraints = false
         return button
     }()
+    private let multiSelectButton: UIButton = {
+        let button = UIButton(type: .system)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }()
     private let textButton: UIButton = {
         let button = UIButton(type: .system)
         button.translatesAutoresizingMaskIntoConstraints = false
@@ -270,6 +277,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             .undo: undoButton,
             .redo: redoButton,
             .crop: cropButton,
+            .multiSelect: multiSelectButton,
             .save: saveButton,
             .text: textButton,
             .importMedia: importButton
@@ -279,6 +287,16 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     private var canvasContentView: UIView?
     private var pendingRefreshReason: String?
     private var pointerDragState: PointerDragState = .idle
+    private var isMultiSelectModeActive = false {
+        didSet {
+            guard oldValue != isMultiSelectModeActive else {
+                return
+            }
+
+            dismissContextMenu()
+            renderToolbar()
+        }
+    }
     private var isTransitionInteractionFrozen = false
     private var transitionChromeHidden = false
     private var lastZoomDispatchTimestamp: TimeInterval?
@@ -729,6 +747,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         setupImportButton()
         setupSaveButton()
         setupCropButton()
+        setupMultiSelectButton()
         setupTextButton()
         setupUndoButton()
         setupRedoButton()
@@ -1088,6 +1107,15 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         updateInlineEditButtonsAppearance()
     }
 
+    private func setupMultiSelectButton() {
+        multiSelectButton.addTarget(
+            self,
+            action: #selector(handleMultiSelectButtonTap),
+            for: .touchUpInside
+        )
+        renderToolbar()
+    }
+
     private func setupTextButton() {
         textButton.addTarget(self, action: #selector(handleTextButtonTap), for: .touchUpInside)
         updateInlineEditButtonsAppearance()
@@ -1148,11 +1176,11 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         canvasViewportView.resolveAnimatedImagePlaybackSource = { [weak self] assetReference in
             self?.editorSession.animatedImagePlaybackSource(for: assetReference)
         }
-        canvasViewportView.onPointerDown = { [weak self] location in
+        canvasViewportView.onPointerDown = { [weak self] location, modifiers in
             guard self?.isTransitionInteractionFrozen == false else {
                 return
             }
-            self?.handlePrimaryPointerDown(at: location)
+            self?.handlePrimaryPointerDown(at: location, modifiers: modifiers)
         }
         canvasViewportView.onPointerMove = { [weak self] location, previousLocation in
             guard self?.isTransitionInteractionFrozen == false else {
@@ -1160,11 +1188,11 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             }
             self?.handlePrimaryPointerMove(to: location, from: previousLocation)
         }
-        canvasViewportView.onPointerUp = { [weak self] location in
+        canvasViewportView.onPointerUp = { [weak self] location, modifiers in
             guard self?.isTransitionInteractionFrozen == false else {
                 return
             }
-            self?.handlePrimaryPointerUp(at: location)
+            self?.handlePrimaryPointerUp(at: location, modifiers: modifiers)
         }
         canvasViewportView.onPointerCancel = { [weak self] in
             guard self?.isTransitionInteractionFrozen == false else {
@@ -1291,7 +1319,10 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         }
     }
 
-    private func handlePrimaryPointerDown(at location: CGPoint) {
+    private func handlePrimaryPointerDown(
+        at location: CGPoint,
+        modifiers: CanvasPointerModifiers
+    ) {
         syncCameraViewportSizeFromCurrentBoundsIfPossible()
         guard hasRenderableViewportSize else {
             logIgnoredCanvasInput("pointer down \(describe(point: location))")
@@ -1310,7 +1341,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         let pressContext = resolvePointerPressContext(at: location)
         pointerDragState = .pressed(
             pressedLocation: location,
-            pressContext: pressContext
+            pressContext: pressContext,
+            pointerModifiers: modifiers
         )
         beginPointerHistoryTransactionIfNeeded(for: pressContext)
     }
@@ -1385,7 +1417,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         }
 
         switch pointerDragState {
-        case let .pressed(pressedLocation, pressContext):
+        case let .pressed(pressedLocation, pressContext, _):
             guard hasExceededPointerDragActivationDistance(from: pressedLocation, to: location) else {
                 return
             }
@@ -1513,13 +1545,16 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         }
     }
 
-    private func handlePrimaryPointerUp(at location: CGPoint) {
+    private func handlePrimaryPointerUp(
+        at location: CGPoint,
+        modifiers: CanvasPointerModifiers
+    ) {
         defer {
             pointerDragState = .idle
         }
 
         switch pointerDragState {
-        case let .pressed(_, pressContext):
+        case let .pressed(_, pressContext, pressedModifiers):
             observeRawInput(
                 .touchTapGesture,
                 sourceDescription: RawInputDeliverySource.tapGesture.debugName
@@ -1534,80 +1569,30 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             let pressedItemID = pressContext.targetItemID
             let releasedContext = resolvePointerPressContext(at: location)
             let releasedItemID = releasedContext.targetItemID
-            let previousSelectedItemID = interactionState.selectedItemID
-            var clickTarget = "blank"
-            var clickResult = "selection_unchanged"
-            var affectedItemID: CanvasItemID?
-            var didTriggerPressedRefresh = false
-
-            switch pressContext.targetKind {
-            case .rotateHandle:
-                clickTarget = "rotate_handle"
-                affectedItemID = pressContext.targetItemID
-            case .groupRotateHandle:
-                clickTarget = "group_rotate_handle"
-                affectedItemID = pressContext.targetItemID
-            case .cropHandle:
-                clickTarget = "crop_handle"
-                affectedItemID = pressContext.targetItemID
-            case .cropTranslationArea:
-                clickTarget = "crop_translation_area"
-                affectedItemID = pressContext.targetItemID
-            case .selectionHandle:
-                clickTarget = "handle"
-                affectedItemID = pressContext.targetItemID
-            case .groupSelectionHandle:
-                clickTarget = "group_handle"
-                affectedItemID = pressContext.targetItemID
-            case .selectedItemBody, .unselectedItemBody:
-                if let itemID = pressContext.targetItemID,
-                   releasedItemID == itemID
-                {
-                    clickTarget = "item"
-                    affectedItemID = itemID
-                    selectItem(
-                        withID: itemID,
-                        recordHistory: true
-                    )
-                    if previousSelectedItemID != itemID {
-                        clickResult = "item_selected"
-                        didTriggerPressedRefresh = true
-                    } else {
-                        if case .selectedItemBody = pressContext.targetKind,
-                           beginTextEditIfPossible(for: itemID)
-                        {
-                            clickResult = "text_edit_began"
-                            didTriggerPressedRefresh = true
-                        }
-                    }
-                } else {
-                    clickTarget = "mismatched_hit_test"
-                    affectedItemID = releasedItemID ?? pressContext.targetItemID
-                }
-            case .blank:
-                if releasedItemID == nil {
-                    affectedItemID = previousSelectedItemID
-                    clearSelectionIfNeeded(recordHistory: true)
-                    if previousSelectedItemID != nil {
-                        clickResult = "item_deselected"
-                        didTriggerPressedRefresh = true
-                    }
-                } else {
-                    clickTarget = "mismatched_hit_test"
-                    affectedItemID = releasedItemID
-                }
-            }
+            let previousInteractionState = interactionState
+            let clickDecision = clickSelectionResolver.resolve(
+                pressTargetKind: pressContext.targetKind,
+                pressedItemID: pressContext.targetItemID,
+                releasedItemID: releasedItemID,
+                selection: previousInteractionState,
+                isPersistentMultiSelectModeEnabled: isMultiSelectModeActive,
+                pressedModifiers: pressedModifiers,
+                releasedModifiers: modifiers
+            )
+            let executionResult = executeClickSelectionDecision(clickDecision)
 
             logClickResult(
-                target: clickTarget,
-                result: clickResult,
+                target: clickDecision.target,
+                result: executionResult.result,
                 pressedItemID: pressedItemID,
                 releasedItemID: releasedItemID,
-                previousSelectedItemID: previousSelectedItemID,
-                currentSelectedItemID: interactionState.selectedItemID,
-                affectedItemID: affectedItemID
+                previousInteractionState: previousInteractionState,
+                currentInteractionState: interactionState,
+                affectedItemID: clickDecision.affectedItemID
             )
-            if clearedAlignmentInteractionState, didTriggerPressedRefresh == false {
+            if clearedAlignmentInteractionState,
+               executionResult.didTriggerPressedRefresh == false
+            {
                 requestCanvasRefresh(
                     reason: "clear alignment interaction on pointer up"
                 )
@@ -1838,6 +1823,12 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     @objc
     private func handleCropButtonTap() {
         performCommand(.crop)
+    }
+
+    @objc
+    private func handleMultiSelectButtonTap() {
+        commitActiveTextEditIfNeeded()
+        isMultiSelectModeActive.toggle()
     }
 
     @objc
@@ -3068,8 +3059,63 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         )
     }
 
+    private func toggleSelectionMembership(
+        of itemID: CanvasItemID,
+        recordHistory: Bool = false
+    ) {
+        performCommand(
+            .toggleSelectionMembership(
+                itemID: itemID,
+                recordHistory: recordHistory
+            )
+        )
+    }
+
     private func clearSelectionIfNeeded(recordHistory: Bool = false) {
         performCommand(.clearSelection(recordHistory: recordHistory))
+    }
+
+    private func executeClickSelectionDecision(
+        _ decision: CanvasClickSelectionDecision
+    ) -> (result: String, didTriggerPressedRefresh: Bool) {
+        let interactionStateBefore = interactionState
+
+        switch decision.action {
+        case .none:
+            return ("selection_unchanged", false)
+        case let .selectSingle(itemID):
+            selectItem(withID: itemID, recordHistory: true)
+            let didChangeSelection = interactionStateBefore != interactionState
+            return (
+                didChangeSelection ? "item_selected" : "selection_unchanged",
+                didChangeSelection
+            )
+        case let .toggleMembership(itemID):
+            let wasSelected = interactionStateBefore.selectedItemIDs.contains(itemID)
+            toggleSelectionMembership(of: itemID, recordHistory: true)
+            let didChangeSelection = interactionStateBefore != interactionState
+            guard didChangeSelection else {
+                return ("selection_unchanged", false)
+            }
+            return (
+                wasSelected
+                    ? "item_removed_from_selection"
+                    : "item_added_to_selection",
+                true
+            )
+        case .clearSelection:
+            clearSelectionIfNeeded(recordHistory: true)
+            let didChangeSelection = interactionStateBefore != interactionState
+            return (
+                didChangeSelection ? "selection_cleared" : "selection_unchanged",
+                didChangeSelection
+            )
+        case let .attemptTextEdit(itemID):
+            if beginTextEditIfPossible(for: itemID) {
+                return ("text_edit_began", true)
+            }
+            return ("selection_unchanged", false)
+        }
     }
 
     private func logClickResult(
@@ -3077,8 +3123,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         result: String,
         pressedItemID: CanvasItemID?,
         releasedItemID: CanvasItemID?,
-        previousSelectedItemID: CanvasItemID?,
-        currentSelectedItemID: CanvasItemID?,
+        previousInteractionState: CanvasInteractionState,
+        currentInteractionState: CanvasInteractionState,
         affectedItemID: CanvasItemID?
     ) {
         print(
@@ -3087,8 +3133,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             "result=\(result) " +
             "pressedItemID=\(describe(itemID: pressedItemID)) " +
             "releasedItemID=\(describe(itemID: releasedItemID)) " +
-            "previousSelectedItemID=\(describe(itemID: previousSelectedItemID)) " +
-            "currentSelectedItemID=\(describe(itemID: currentSelectedItemID)) " +
+            "previousSelection=\(describe(selectionState: previousInteractionState)) " +
+            "currentSelection=\(describe(selectionState: currentInteractionState)) " +
             "affectedItemID=\(describe(itemID: affectedItemID))"
         )
     }
@@ -4309,6 +4355,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             session: editorSession,
             saveState: saveButtonState,
             placement: toolbarPreferredPlacement(),
+            isMultiSelectModeActive: isMultiSelectModeActive,
             includesHistoryItems: true
         )
     }
@@ -4540,6 +4587,13 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
 
     private func describe(itemID: CanvasItemID?) -> String {
         itemID?.uuidString ?? "nil"
+    }
+
+    private func describe(selectionState: CanvasInteractionState) -> String {
+        let selectedItemIDs = selectionState.selectedItemIDs
+            .map(\.uuidString)
+            .joined(separator: ",")
+        return "primary=\(describe(itemID: selectionState.primarySelectedItemID)) members=[\(selectedItemIDs)]"
     }
 
     private func logContextMenuPresentation(

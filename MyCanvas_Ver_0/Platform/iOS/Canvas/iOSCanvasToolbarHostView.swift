@@ -213,13 +213,27 @@ final class iOSCanvasToolbarHostView: UIView {
             ? backgroundColor(for: itemState.visualRole)
             : .systemGray3
         configuration.baseForegroundColor = preservesVisualRole
-            ? .white
+            ? foregroundColor(for: itemState.visualRole)
             : .secondaryLabel
         configuration.cornerStyle = .capsule
         configuration.contentInsets = .zero
         button.configuration = configuration
         button.accessibilityLabel = itemState.accessibilityLabel
         button.accessibilityValue = itemState.accessibilityValue
+    }
+
+    private func foregroundColor(
+        for visualRole: CanvasToolbarItemVisualRole
+    ) -> UIColor {
+        switch visualRole {
+        case .neutral:
+            return .label
+        case .accent,
+             .success,
+             .warning,
+             .danger:
+            return .white
+        }
     }
 
     private func backgroundColor(
@@ -247,7 +261,7 @@ final class iOSCanvasToolbarHostView: UIView {
             return UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
         case .importMedia:
             return UIImage.SymbolConfiguration(pointSize: 20, weight: .bold)
-        case .crop, .text:
+        case .crop, .multiSelect, .text:
             return UIImage.SymbolConfiguration(pointSize: 17, weight: .semibold)
         }
     }

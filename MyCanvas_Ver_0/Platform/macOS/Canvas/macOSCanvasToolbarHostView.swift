@@ -301,7 +301,9 @@ final class macOSCanvasToolbarHostView: NSView {
         to button: NSButton
     ) {
         let preservesVisualRole = itemState.isEnabled || itemState.preservesVisualRoleWhenDisabled
-        let foregroundColor: NSColor = preservesVisualRole ? .white : .secondaryLabelColor
+        let foregroundColor: NSColor = preservesVisualRole
+            ? foregroundColor(for: itemState.visualRole)
+            : .secondaryLabelColor
         let accessibilityDescription: String
         if let accessibilityValue = itemState.accessibilityValue {
             accessibilityDescription = "\(itemState.accessibilityLabel) (\(accessibilityValue))"
@@ -327,6 +329,20 @@ final class macOSCanvasToolbarHostView: NSView {
             accessibilityDescription: accessibilityDescription
         )
         button.isEnabled = itemState.isEnabled
+    }
+
+    private func foregroundColor(
+        for visualRole: CanvasToolbarItemVisualRole
+    ) -> NSColor {
+        switch visualRole {
+        case .neutral:
+            return .labelColor
+        case .accent,
+             .success,
+             .warning,
+             .danger:
+            return .white
+        }
     }
 
     private func backgroundColor(

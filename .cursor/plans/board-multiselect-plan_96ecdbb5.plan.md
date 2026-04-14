@@ -13,7 +13,7 @@ todos:
     status: completed
   - id: phase3-toolbar-input
     content: 接入 iOS/macOS 多选工具条开关，并完成 macOS Command+Click 与共享点击决策器。
-    status: pending
+    status: completed
   - id: phase4-group-transform
     content: 落地组平移、组缩放、组旋转以及按组选框对齐的共享几何/solver。
     status: pending

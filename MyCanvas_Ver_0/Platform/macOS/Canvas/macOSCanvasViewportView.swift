@@ -81,9 +81,9 @@ final class macOSCanvasViewportView: NSView {
     }
     private var animatedPlaybackObservers: [NSObjectProtocol] = []
     private var isApplicationPlaybackActive = NSApplication.shared.isActive
-    var onPointerDown: ((CGPoint) -> Void)?
+    var onPointerDown: ((CGPoint, CanvasPointerModifiers) -> Void)?
     var onPointerMove: ((CGPoint, CGPoint) -> Void)?
-    var onPointerUp: ((CGPoint) -> Void)?
+    var onPointerUp: ((CGPoint, CanvasPointerModifiers) -> Void)?
     var onPointerCancel: (() -> Void)?
     var onSecondaryClick: ((CGPoint) -> Void)?
     var onPan: ((CGPoint) -> Void)?
@@ -1139,7 +1139,7 @@ final class macOSCanvasViewportView: NSView {
         window?.makeFirstResponder(self)
         let location = convert(event.locationInWindow, from: nil)
         lastPrimaryPointerLocation = location
-        onPointerDown?(location)
+        onPointerDown?(location, pointerModifiers(for: event.modifierFlags))
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -1156,7 +1156,7 @@ final class macOSCanvasViewportView: NSView {
     override func mouseUp(with event: NSEvent) {
         let location = convert(event.locationInWindow, from: nil)
         lastPrimaryPointerLocation = nil
-        onPointerUp?(location)
+        onPointerUp?(location, pointerModifiers(for: event.modifierFlags))
     }
 
     override func rightMouseDown(with event: NSEvent) {
@@ -1170,6 +1170,18 @@ final class macOSCanvasViewportView: NSView {
             "viewFrame=\(macOSViewportDescribe(frame))"
         )
         onSecondaryClick?(location)
+    }
+
+    private func pointerModifiers(
+        for modifierFlags: NSEvent.ModifierFlags
+    ) -> CanvasPointerModifiers {
+        let normalizedFlags = modifierFlags.intersection(.deviceIndependentFlagsMask)
+        return CanvasPointerModifiers(
+            isCommandPressed: normalizedFlags.contains(.command),
+            isShiftPressed: normalizedFlags.contains(.shift),
+            isOptionPressed: normalizedFlags.contains(.option),
+            isControlPressed: normalizedFlags.contains(.control)
+        )
     }
 
     override func scrollWheel(with event: NSEvent) {

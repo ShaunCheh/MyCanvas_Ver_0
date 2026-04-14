@@ -7,6 +7,7 @@ struct CanvasToolbarStateBuilder {
         session: CanvasEditorSession,
         saveState: CanvasSaveState,
         placement: CanvasToolbarPlacement,
+        isMultiSelectModeActive: Bool = false,
         isImportEnabled: Bool = true,
         showsBackground: Bool = true,
         includesHistoryItems: Bool = false
@@ -26,6 +27,9 @@ struct CanvasToolbarStateBuilder {
         if shouldShowCropItem(session: session) {
             itemStates.append(cropItemState(session: session))
         }
+        itemStates.append(
+            multiSelectItemState(isActive: isMultiSelectModeActive)
+        )
         itemStates.append(saveItemState(saveState: saveState))
         itemStates.append(textItemState(session: session))
         itemStates.append(importItemState(isEnabled: isImportEnabled))
@@ -100,6 +104,17 @@ struct CanvasToolbarStateBuilder {
             accessibilityValue: saveState.accessibilityValue,
             visualRole: saveState.visualRole,
             preservesVisualRoleWhenDisabled: saveState == .saving
+        )
+    }
+
+    func multiSelectItemState(isActive: Bool) -> CanvasToolbarItemState {
+        CanvasToolbarItemState(
+            id: .multiSelect,
+            systemImageName: "checklist",
+            isActive: isActive,
+            accessibilityLabel: "Multi-select",
+            accessibilityValue: isActive ? "On" : "Off",
+            visualRole: isActive ? .accent : .neutral
         )
     }
 
