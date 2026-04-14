@@ -42,14 +42,26 @@ final class CanvasScene {
 
     @discardableResult
     func removeItem(withID id: CanvasImageItemID) -> Bool {
-        var orderedItems = orderedBoardItems()
-        guard let index = orderedItems.firstIndex(where: { $0.id == id }) else {
-            return false
+        removeBoardItems(withIDs: [id]).isEmpty == false
+    }
+
+    @discardableResult
+    func removeBoardItems(withIDs itemIDs: [CanvasItemID]) -> [CanvasBoardItem] {
+        let itemIDSet = Set(itemIDs)
+        guard itemIDSet.isEmpty == false else {
+            return []
         }
 
-        orderedItems.remove(at: index)
-        items = normalizedZOrderItems(from: orderedItems)
-        return true
+        let orderedItems = orderedBoardItems()
+        let removedItems = orderedItems.filter { itemIDSet.contains($0.id) }
+        guard removedItems.isEmpty == false else {
+            return []
+        }
+
+        items = normalizedZOrderItems(
+            from: orderedItems.filter { itemIDSet.contains($0.id) == false }
+        )
+        return removedItems
     }
 
     func boardItem(withID id: CanvasItemID) -> CanvasBoardItem? {
@@ -280,19 +292,61 @@ final class CanvasScene {
         withID id: CanvasItemID,
         offsetInWorld: CGPoint = .zero
     ) -> CanvasBoardItem? {
-        var orderedItems = orderedBoardItems()
-        guard let index = orderedItems.firstIndex(where: { $0.id == id }) else {
-            return nil
+        duplicateBoardItems(
+            withIDs: [id],
+            offsetInWorld: offsetInWorld
+        ).first
+    }
+
+    @discardableResult
+    func duplicateBoardItems(
+        withIDs itemIDs: [CanvasItemID],
+        offsetInWorld: CGPoint = .zero
+    ) -> [CanvasBoardItem] {
+        let itemIDSet = Set(itemIDs)
+        guard itemIDSet.isEmpty == false else {
+            return []
         }
 
-        let sourceItem = orderedItems[index]
-        let duplicatedItem = duplicatedItem(
-            from: sourceItem,
-            offsetInWorld: offsetInWorld
-        )
-        orderedItems.insert(duplicatedItem, at: index + 1)
-        items = normalizedZOrderItems(from: orderedItems)
-        return boardItem(withID: duplicatedItem.id)
+        let orderedItems = orderedBoardItems()
+        var duplicatedItems: [CanvasBoardItem] = []
+        var rebuiltItems: [CanvasBoardItem] = []
+        rebuiltItems.reserveCapacity(orderedItems.count * 2)
+        duplicatedItems.reserveCapacity(itemIDSet.count)
+        var pendingDuplicateRun: [CanvasBoardItem] = []
+
+        func flushPendingDuplicateRun() {
+            guard pendingDuplicateRun.isEmpty == false else {
+                return
+            }
+
+            let duplicatedRun = pendingDuplicateRun.map { sourceItem in
+                duplicatedItem(
+                    from: sourceItem,
+                    offsetInWorld: offsetInWorld
+                )
+            }
+            rebuiltItems.append(contentsOf: duplicatedRun)
+            duplicatedItems.append(contentsOf: duplicatedRun)
+            pendingDuplicateRun.removeAll(keepingCapacity: true)
+        }
+
+        for item in orderedItems {
+            rebuiltItems.append(item)
+            if itemIDSet.contains(item.id) {
+                pendingDuplicateRun.append(item)
+            } else {
+                flushPendingDuplicateRun()
+            }
+        }
+        flushPendingDuplicateRun()
+
+        guard duplicatedItems.isEmpty == false else {
+            return []
+        }
+
+        items = normalizedZOrderItems(from: rebuiltItems)
+        return duplicatedItems
     }
 
     @discardableResult
@@ -307,39 +361,124 @@ final class CanvasScene {
     }
 
     func canBringItemForward(withID id: CanvasImageItemID) -> Bool {
-        guard let index = orderedBoardItems().firstIndex(where: { $0.id == id }) else {
+        canBringBoardItemsForward(withIDs: [id])
+    }
+
+    func canBringBoardItemsForward(withIDs itemIDs: [CanvasItemID]) -> Bool {
+        let itemIDSet = Set(itemIDs)
+        guard itemIDSet.isEmpty == false else {
             return false
         }
 
-        return index < (items.count - 1)
+        let orderedItems = orderedBoardItems()
+        guard orderedItems.count > 1 else {
+            return false
+        }
+
+        for index in stride(from: orderedItems.count - 2, through: 0, by: -1) {
+            let currentItemID = orderedItems[index].id
+            let nextItemID = orderedItems[index + 1].id
+            guard itemIDSet.contains(currentItemID) else {
+                continue
+            }
+
+            if itemIDSet.contains(nextItemID) == false {
+                return true
+            }
+        }
+
+        return false
     }
 
     func canSendItemBackward(withID id: CanvasImageItemID) -> Bool {
-        guard let index = orderedBoardItems().firstIndex(where: { $0.id == id }) else {
+        canSendBoardItemsBackward(withIDs: [id])
+    }
+
+    func canSendBoardItemsBackward(withIDs itemIDs: [CanvasItemID]) -> Bool {
+        let itemIDSet = Set(itemIDs)
+        guard itemIDSet.isEmpty == false else {
             return false
         }
 
-        return index > 0
+        let orderedItems = orderedBoardItems()
+        guard orderedItems.count > 1 else {
+            return false
+        }
+
+        for index in 1..<orderedItems.count {
+            let currentItemID = orderedItems[index].id
+            let previousItemID = orderedItems[index - 1].id
+            guard itemIDSet.contains(currentItemID) else {
+                continue
+            }
+
+            if itemIDSet.contains(previousItemID) == false {
+                return true
+            }
+        }
+
+        return false
     }
 
     func canBringItemToFront(withID id: CanvasImageItemID) -> Bool {
-        canBringItemForward(withID: id)
+        canBringBoardItemsForward(withIDs: [id])
+    }
+
+    func canBringBoardItemsToFront(withIDs itemIDs: [CanvasItemID]) -> Bool {
+        canBringBoardItemsForward(withIDs: itemIDs)
     }
 
     func canSendItemToBack(withID id: CanvasImageItemID) -> Bool {
-        canSendItemBackward(withID: id)
+        canSendBoardItemsBackward(withIDs: [id])
+    }
+
+    func canSendBoardItemsToBack(withIDs itemIDs: [CanvasItemID]) -> Bool {
+        canSendBoardItemsBackward(withIDs: itemIDs)
     }
 
     @discardableResult
     func bringBoardItemForward(withID id: CanvasItemID) -> CanvasBoardItem? {
-        guard let currentIndex = orderedBoardItems().firstIndex(where: { $0.id == id }) else {
+        guard bringBoardItemsForward(withIDs: [id]) else {
             return nil
         }
 
-        return reorderBoardItem(
-            withID: id,
-            toOrderedIndex: currentIndex + 1
-        )
+        return boardItem(withID: id)
+    }
+
+    @discardableResult
+    func bringBoardItemsForward(withIDs itemIDs: [CanvasItemID]) -> Bool {
+        let itemIDSet = Set(itemIDs)
+        guard itemIDSet.isEmpty == false else {
+            return false
+        }
+
+        var orderedItems = orderedBoardItems()
+        guard orderedItems.count > 1 else {
+            return false
+        }
+
+        var didChangeOrder = false
+        for index in stride(from: orderedItems.count - 2, through: 0, by: -1) {
+            let currentItemID = orderedItems[index].id
+            let nextItemID = orderedItems[index + 1].id
+            guard itemIDSet.contains(currentItemID) else {
+                continue
+            }
+
+            guard itemIDSet.contains(nextItemID) == false else {
+                continue
+            }
+
+            orderedItems.swapAt(index, index + 1)
+            didChangeOrder = true
+        }
+
+        guard didChangeOrder else {
+            return false
+        }
+
+        items = normalizedZOrderItems(from: orderedItems)
+        return true
     }
 
     @discardableResult
@@ -349,14 +488,47 @@ final class CanvasScene {
 
     @discardableResult
     func sendBoardItemBackward(withID id: CanvasItemID) -> CanvasBoardItem? {
-        guard let currentIndex = orderedBoardItems().firstIndex(where: { $0.id == id }) else {
+        guard sendBoardItemsBackward(withIDs: [id]) else {
             return nil
         }
 
-        return reorderBoardItem(
-            withID: id,
-            toOrderedIndex: currentIndex - 1
-        )
+        return boardItem(withID: id)
+    }
+
+    @discardableResult
+    func sendBoardItemsBackward(withIDs itemIDs: [CanvasItemID]) -> Bool {
+        let itemIDSet = Set(itemIDs)
+        guard itemIDSet.isEmpty == false else {
+            return false
+        }
+
+        var orderedItems = orderedBoardItems()
+        guard orderedItems.count > 1 else {
+            return false
+        }
+
+        var didChangeOrder = false
+        for index in 1..<orderedItems.count {
+            let currentItemID = orderedItems[index].id
+            let previousItemID = orderedItems[index - 1].id
+            guard itemIDSet.contains(currentItemID) else {
+                continue
+            }
+
+            guard itemIDSet.contains(previousItemID) == false else {
+                continue
+            }
+
+            orderedItems.swapAt(index - 1, index)
+            didChangeOrder = true
+        }
+
+        guard didChangeOrder else {
+            return false
+        }
+
+        items = normalizedZOrderItems(from: orderedItems)
+        return true
     }
 
     @discardableResult
@@ -366,10 +538,35 @@ final class CanvasScene {
 
     @discardableResult
     func bringBoardItemToFront(withID id: CanvasItemID) -> CanvasBoardItem? {
-        reorderBoardItem(
-            withID: id,
-            toOrderedIndex: max(items.count - 1, 0)
-        )
+        guard bringBoardItemsToFront(withIDs: [id]) else {
+            return nil
+        }
+
+        return boardItem(withID: id)
+    }
+
+    @discardableResult
+    func bringBoardItemsToFront(withIDs itemIDs: [CanvasItemID]) -> Bool {
+        let itemIDSet = Set(itemIDs)
+        guard itemIDSet.isEmpty == false else {
+            return false
+        }
+
+        let orderedItems = orderedBoardItems()
+        let selectedItems = orderedItems.filter { itemIDSet.contains($0.id) }
+        guard selectedItems.isEmpty == false else {
+            return false
+        }
+
+        let reorderedItems =
+            orderedItems.filter { itemIDSet.contains($0.id) == false } +
+            selectedItems
+        guard reorderedItems.map(\.id) != orderedItems.map(\.id) else {
+            return false
+        }
+
+        items = normalizedZOrderItems(from: reorderedItems)
+        return true
     }
 
     @discardableResult
@@ -379,10 +576,35 @@ final class CanvasScene {
 
     @discardableResult
     func sendBoardItemToBack(withID id: CanvasItemID) -> CanvasBoardItem? {
-        reorderBoardItem(
-            withID: id,
-            toOrderedIndex: 0
-        )
+        guard sendBoardItemsToBack(withIDs: [id]) else {
+            return nil
+        }
+
+        return boardItem(withID: id)
+    }
+
+    @discardableResult
+    func sendBoardItemsToBack(withIDs itemIDs: [CanvasItemID]) -> Bool {
+        let itemIDSet = Set(itemIDs)
+        guard itemIDSet.isEmpty == false else {
+            return false
+        }
+
+        let orderedItems = orderedBoardItems()
+        let selectedItems = orderedItems.filter { itemIDSet.contains($0.id) }
+        guard selectedItems.isEmpty == false else {
+            return false
+        }
+
+        let reorderedItems =
+            selectedItems +
+            orderedItems.filter { itemIDSet.contains($0.id) == false }
+        guard reorderedItems.map(\.id) != orderedItems.map(\.id) else {
+            return false
+        }
+
+        items = normalizedZOrderItems(from: reorderedItems)
+        return true
     }
 
     @discardableResult
@@ -429,30 +651,6 @@ final class CanvasScene {
             normalizedItem.zIndex = CGFloat(index)
             return normalizedItem
         }
-    }
-
-    @discardableResult
-    private func reorderBoardItem(
-        withID id: CanvasItemID,
-        toOrderedIndex destinationIndex: Int
-    ) -> CanvasBoardItem? {
-        var orderedItems = orderedBoardItems()
-        guard let currentIndex = orderedItems.firstIndex(where: { $0.id == id }) else {
-            return nil
-        }
-
-        let clampedDestinationIndex = min(
-            max(destinationIndex, 0),
-            max(orderedItems.count - 1, 0)
-        )
-        guard currentIndex != clampedDestinationIndex else {
-            return nil
-        }
-
-        let reorderedItem = orderedItems.remove(at: currentIndex)
-        orderedItems.insert(reorderedItem, at: clampedDestinationIndex)
-        items = normalizedZOrderItems(from: orderedItems)
-        return boardItem(withID: id)
     }
 
     private func duplicatedItem(

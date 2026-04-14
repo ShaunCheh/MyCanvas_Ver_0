@@ -93,6 +93,209 @@ final class CanvasCommandPolicyParityTests: XCTestCase {
         XCTAssertEqual(decision, .block(reason: .readingMode, feedback: nil))
         XCTAssertFalse(executor.canExecute(.importMedia(request)))
     }
+
+    func testToggleSelectionMembershipExecutorBuildsAndShrinksSelectionSet() {
+        let session = makeCommandPolicyParityTestSession(workspaceMode: .editing)
+        let executor = CanvasCommandExecutor(session: session)
+        CanvasCommandPolicyParityTestRetainer.executors.append(executor)
+        let firstItem = makeCommandPolicyParityTextItem(
+            text: "First",
+            center: CGPoint(x: 20, y: 20),
+            zIndex: 0
+        )
+        let secondItem = makeCommandPolicyParityTextItem(
+            text: "Second",
+            center: CGPoint(x: 60, y: 40),
+            zIndex: 1
+        )
+        session.scene.append(firstItem)
+        session.scene.append(secondItem)
+
+        XCTAssertNotNil(
+            executor.execute(
+                .selectItem(itemID: firstItem.id, recordHistory: true)
+            )
+        )
+        XCTAssertNotNil(
+            executor.execute(
+                .toggleSelectionMembership(
+                    itemID: secondItem.id,
+                    recordHistory: true
+                )
+            )
+        )
+        XCTAssertEqual(session.selectedItemIDs, [firstItem.id, secondItem.id])
+        XCTAssertEqual(session.primarySelectedItemID, secondItem.id)
+
+        XCTAssertNotNil(
+            executor.execute(
+                .toggleSelectionMembership(
+                    itemID: firstItem.id,
+                    recordHistory: true
+                )
+            )
+        )
+        XCTAssertEqual(session.selectedItemIDs, [secondItem.id])
+        XCTAssertEqual(session.primarySelectedItemID, secondItem.id)
+    }
+
+    func testDuplicateSelectionExecutorSelectsDuplicatedItems() {
+        let session = makeCommandPolicyParityTestSession(workspaceMode: .editing)
+        let executor = CanvasCommandExecutor(session: session)
+        CanvasCommandPolicyParityTestRetainer.executors.append(executor)
+        let firstItem = makeCommandPolicyParityTextItem(
+            text: "First",
+            center: CGPoint(x: 12, y: 24),
+            zIndex: 0
+        )
+        let secondItem = makeCommandPolicyParityTextItem(
+            text: "Second",
+            center: CGPoint(x: 96, y: 72),
+            zIndex: 1
+        )
+        session.scene.append(firstItem)
+        session.scene.append(secondItem)
+        session.interactionState = CanvasInteractionState(
+            selectedItemIDs: [firstItem.id, secondItem.id],
+            primarySelectedItemID: secondItem.id
+        )
+
+        XCTAssertNotNil(executor.execute(.duplicateSelection(recordHistory: true)))
+
+        let duplicatedItems = session.selectedBoardItems
+        let offset = session.duplicateOffsetInWorld()
+        XCTAssertEqual(session.scene.orderedBoardItems().count, 4)
+        XCTAssertEqual(duplicatedItems.count, 2)
+        XCTAssertEqual(session.selectionCount, 2)
+        XCTAssertFalse(duplicatedItems.map(\.id).contains(firstItem.id))
+        XCTAssertFalse(duplicatedItems.map(\.id).contains(secondItem.id))
+        XCTAssertEqual(
+            duplicatedItems.map(\.center),
+            [
+                CGPoint(
+                    x: firstItem.center.x + offset.x,
+                    y: firstItem.center.y + offset.y
+                ),
+                CGPoint(
+                    x: secondItem.center.x + offset.x,
+                    y: secondItem.center.y + offset.y
+                )
+            ]
+        )
+        XCTAssertEqual(session.primarySelectedItemID, duplicatedItems.last?.id)
+    }
+
+    func testDeleteSelectionExecutorRemovesAllSelectedItems() {
+        let session = makeCommandPolicyParityTestSession(workspaceMode: .editing)
+        let executor = CanvasCommandExecutor(session: session)
+        CanvasCommandPolicyParityTestRetainer.executors.append(executor)
+        let firstItem = makeCommandPolicyParityTextItem(
+            text: "First",
+            center: CGPoint(x: 10, y: 10),
+            zIndex: 0
+        )
+        let secondItem = makeCommandPolicyParityTextItem(
+            text: "Second",
+            center: CGPoint(x: 40, y: 40),
+            zIndex: 1
+        )
+        let thirdItem = makeCommandPolicyParityTextItem(
+            text: "Third",
+            center: CGPoint(x: 80, y: 60),
+            zIndex: 2
+        )
+        session.scene.append(firstItem)
+        session.scene.append(secondItem)
+        session.scene.append(thirdItem)
+        session.interactionState = CanvasInteractionState(
+            selectedItemIDs: [firstItem.id, secondItem.id],
+            primarySelectedItemID: secondItem.id
+        )
+
+        XCTAssertNotNil(executor.execute(.deleteSelection(recordHistory: true)))
+
+        XCTAssertEqual(session.scene.orderedBoardItems().map(\.id), [thirdItem.id])
+        XCTAssertEqual(session.selectedItemIDs, [])
+        XCTAssertNil(session.primarySelectedItemID)
+    }
+
+    func testBringSelectionForwardExecutorPreservesRelativeOrder() {
+        let session = makeCommandPolicyParityTestSession(workspaceMode: .editing)
+        let executor = CanvasCommandExecutor(session: session)
+        CanvasCommandPolicyParityTestRetainer.executors.append(executor)
+        let firstItem = makeCommandPolicyParityTextItem(
+            text: "First",
+            center: CGPoint(x: 0, y: 0),
+            zIndex: 0
+        )
+        let secondItem = makeCommandPolicyParityTextItem(
+            text: "Second",
+            center: CGPoint(x: 20, y: 20),
+            zIndex: 1
+        )
+        let thirdItem = makeCommandPolicyParityTextItem(
+            text: "Third",
+            center: CGPoint(x: 40, y: 40),
+            zIndex: 2
+        )
+        let fourthItem = makeCommandPolicyParityTextItem(
+            text: "Fourth",
+            center: CGPoint(x: 60, y: 60),
+            zIndex: 3
+        )
+        session.scene.append(firstItem)
+        session.scene.append(secondItem)
+        session.scene.append(thirdItem)
+        session.scene.append(fourthItem)
+        session.interactionState = CanvasInteractionState(
+            selectedItemIDs: [secondItem.id, thirdItem.id],
+            primarySelectedItemID: thirdItem.id
+        )
+
+        XCTAssertNotNil(
+            executor.execute(.bringSelectionForward(recordHistory: true))
+        )
+
+        XCTAssertEqual(
+            session.scene.orderedBoardItems().map(\.id),
+            [firstItem.id, fourthItem.id, secondItem.id, thirdItem.id]
+        )
+        XCTAssertEqual(session.selectedItemIDs, [secondItem.id, thirdItem.id])
+        XCTAssertEqual(session.primarySelectedItemID, thirdItem.id)
+    }
+
+    func testTargetDuplicateCommandPreservesCurrentSelection() {
+        let session = makeCommandPolicyParityTestSession(workspaceMode: .editing)
+        let executor = CanvasCommandExecutor(session: session)
+        CanvasCommandPolicyParityTestRetainer.executors.append(executor)
+        let selectedItem = makeCommandPolicyParityTextItem(
+            text: "Selected",
+            center: CGPoint(x: 16, y: 16),
+            zIndex: 0
+        )
+        let targetItem = makeCommandPolicyParityTextItem(
+            text: "Target",
+            center: CGPoint(x: 80, y: 48),
+            zIndex: 1
+        )
+        session.scene.append(selectedItem)
+        session.scene.append(targetItem)
+        session.interactionState = CanvasInteractionState(selectedItemID: selectedItem.id)
+
+        XCTAssertNotNil(
+            executor.execute(
+                .duplicateItem(
+                    itemID: targetItem.id,
+                    selectDuplicatedItem: false,
+                    recordHistory: true
+                )
+            )
+        )
+
+        XCTAssertEqual(session.scene.orderedBoardItems().count, 3)
+        XCTAssertEqual(session.selectedItemIDs, [selectedItem.id])
+        XCTAssertEqual(session.primarySelectedItemID, selectedItem.id)
+    }
 }
 
 private enum CanvasCommandPolicyParityTestRetainer {
@@ -124,6 +327,19 @@ private func makeCommandPolicyParityImportRequest() throws -> CanvasImportReques
     return CanvasImportRequest(
         images: [image],
         sourceDescription: "command policy parity"
+    )
+}
+
+private func makeCommandPolicyParityTextItem(
+    text: String,
+    center: CGPoint,
+    zIndex: CGFloat
+) -> CanvasTextItem {
+    CanvasTextItem(
+        text: text,
+        center: center,
+        size: CGSize(width: 120, height: 56),
+        zIndex: zIndex
     )
 }
 

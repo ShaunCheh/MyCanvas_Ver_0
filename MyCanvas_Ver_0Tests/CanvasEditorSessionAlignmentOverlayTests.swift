@@ -317,7 +317,8 @@ private func makeAlignmentOverlayTestRuntimeState(
         boardID: UUID(),
         title: "Alignment Test Board",
         createdAt: Date(timeIntervalSince1970: 0),
-        updatedAt: Date(timeIntervalSince1970: 0),
+        contentUpdatedAt: Date(timeIntervalSince1970: 0),
+        viewStateUpdatedAt: Date(timeIntervalSince1970: 0),
         items: items,
         boardState: nil,
         camera: CanvasCamera(

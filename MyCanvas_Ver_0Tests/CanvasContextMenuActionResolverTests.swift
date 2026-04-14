@@ -214,6 +214,118 @@ final class CanvasContextMenuActionResolverTests: XCTestCase {
 
         XCTAssertTrue(actionStates.isEmpty)
     }
+
+    func testSelectedContextResolvesDuplicateToSelectionCommand() {
+        let session = makeContextMenuActionResolverTestSession()
+        let firstItem = makeContextMenuActionResolverTestTextItem(
+            text: "First",
+            center: CGPoint(x: 24, y: 32),
+            zIndex: 0
+        )
+        let secondItem = makeContextMenuActionResolverTestTextItem(
+            text: "Second",
+            center: CGPoint(x: 80, y: 44),
+            zIndex: 1
+        )
+        session.scene.append(firstItem)
+        session.scene.append(secondItem)
+        session.interactionState = CanvasInteractionState(
+            selectedItemIDs: [firstItem.id, secondItem.id],
+            primarySelectedItemID: secondItem.id
+        )
+
+        let command = CanvasContextMenuActionResolver().command(
+            for: .duplicateItem,
+            context: makeContextMenuContext(
+                targetKind: .selectedItemBody,
+                targetItemID: firstItem.id,
+                selectedItemID: secondItem.id
+            ),
+            session: session
+        )
+
+        guard case let .duplicateSelection(recordHistory)? = command else {
+            XCTFail("Expected selected context to resolve to duplicateSelection.")
+            return
+        }
+
+        XCTAssertTrue(recordHistory)
+    }
+
+    func testUnselectedContextResolvesDuplicateToTargetCommand() {
+        let session = makeContextMenuActionResolverTestSession()
+        let selectedItem = makeContextMenuActionResolverTestTextItem(
+            text: "Selected",
+            center: CGPoint(x: 18, y: 20),
+            zIndex: 0
+        )
+        let targetItem = makeContextMenuActionResolverTestTextItem(
+            text: "Target",
+            center: CGPoint(x: 92, y: 66),
+            zIndex: 1
+        )
+        session.scene.append(selectedItem)
+        session.scene.append(targetItem)
+        session.interactionState = CanvasInteractionState(selectedItemID: selectedItem.id)
+
+        let command = CanvasContextMenuActionResolver().command(
+            for: .duplicateItem,
+            context: makeContextMenuContext(
+                targetKind: .unselectedItemBody,
+                targetItemID: targetItem.id,
+                selectedItemID: selectedItem.id
+            ),
+            session: session
+        )
+
+        guard case let .duplicateItem(itemID, selectDuplicatedItem, recordHistory)? = command else {
+            XCTFail("Expected unselected context to resolve to duplicateItem.")
+            return
+        }
+
+        XCTAssertEqual(itemID, targetItem.id)
+        XCTAssertFalse(selectDuplicatedItem)
+        XCTAssertTrue(recordHistory)
+    }
+
+    func testMultiSelectionTextContextHidesBeginTextEditAction() {
+        let session = makeContextMenuActionResolverTestSession()
+        let firstItem = makeContextMenuActionResolverTestTextItem(
+            text: "First",
+            center: CGPoint(x: 10, y: 10),
+            zIndex: 0
+        )
+        let secondItem = makeContextMenuActionResolverTestTextItem(
+            text: "Second",
+            center: CGPoint(x: 60, y: 30),
+            zIndex: 1
+        )
+        session.scene.append(firstItem)
+        session.scene.append(secondItem)
+        session.interactionState = CanvasInteractionState(
+            selectedItemIDs: [firstItem.id, secondItem.id],
+            primarySelectedItemID: firstItem.id
+        )
+
+        let actionStates = CanvasContextMenuActionResolver().actionStates(
+            for: makeContextMenuContext(
+                targetKind: .selectedItemBody,
+                targetItemID: firstItem.id,
+                selectedItemID: firstItem.id
+            ),
+            session: session
+        )
+
+        XCTAssertFalse(
+            actionStates.contains { actionState in
+                if case .command(.beginTextEdit) = actionState.actionID {
+                    return true
+                }
+
+                return false
+            }
+        )
+    }
 }
 
 private enum CanvasContextMenuActionResolverTestRetainer {
@@ -254,6 +366,19 @@ private func makeContextMenuEnvironment(
     CanvasInteractionEnvironment(
         workspaceMode: workspaceMode,
         isTransitionInteractionFrozen: isFrozen
+    )
+}
+
+private func makeContextMenuActionResolverTestTextItem(
+    text: String,
+    center: CGPoint,
+    zIndex: CGFloat
+) -> CanvasTextItem {
+    CanvasTextItem(
+        text: text,
+        center: center,
+        size: CGSize(width: 140, height: 60),
+        zIndex: zIndex
     )
 }
 

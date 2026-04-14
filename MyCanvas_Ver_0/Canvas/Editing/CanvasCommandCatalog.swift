@@ -27,15 +27,21 @@ struct CanvasCommandCatalog {
                 isActive: false
             )
         case .beginTextEdit:
+            let resolvedTargetItemID = targetItemID(
+                in: context,
+                session: session
+            )
+            let usesCurrentSelection = operatesOnCurrentSelection(in: context)
             descriptor = CanvasCommandDescriptor(
                 id: .beginTextEdit,
                 title: "Edit Text",
                 systemImageName: "pencil",
-                isEnabled: targetItemID(
-                    in: context,
-                    session: session
-                ).map { itemID in
-                    session.canBeginTextEdit(withID: itemID)
+                isEnabled: resolvedTargetItemID.map { itemID in
+                    if usesCurrentSelection, session.singleSelectedItemID != itemID {
+                        return false
+                    }
+
+                    return session.canBeginTextEdit(withID: itemID)
                 } ?? false,
                 isActive: false
             )
@@ -95,9 +101,10 @@ struct CanvasCommandCatalog {
                 id: .duplicateItem,
                 title: "Duplicate",
                 systemImageName: "square.on.square",
-                isEnabled: targetItemID(in: context, session: session).map { itemID in
-                    session.canDuplicateItem(withID: itemID)
-                } ?? false,
+                isEnabled: duplicateCommandIsEnabled(
+                    in: context,
+                    session: session
+                ),
                 isActive: false
             )
         case .deleteItem:
@@ -105,9 +112,10 @@ struct CanvasCommandCatalog {
                 id: .deleteItem,
                 title: "Delete",
                 systemImageName: "trash",
-                isEnabled: targetItemID(in: context, session: session).map { itemID in
-                    session.canDeleteItem(withID: itemID)
-                } ?? false,
+                isEnabled: deleteCommandIsEnabled(
+                    in: context,
+                    session: session
+                ),
                 isActive: false
             )
         case .bringItemForward:
@@ -115,9 +123,10 @@ struct CanvasCommandCatalog {
                 id: .bringItemForward,
                 title: "Bring Forward",
                 systemImageName: "chevron.up",
-                isEnabled: targetItemID(in: context, session: session).map { itemID in
-                    session.canBringItemForward(withID: itemID)
-                } ?? false,
+                isEnabled: bringForwardCommandIsEnabled(
+                    in: context,
+                    session: session
+                ),
                 isActive: false
             )
         case .sendItemBackward:
@@ -125,9 +134,10 @@ struct CanvasCommandCatalog {
                 id: .sendItemBackward,
                 title: "Send Backward",
                 systemImageName: "chevron.down",
-                isEnabled: targetItemID(in: context, session: session).map { itemID in
-                    session.canSendItemBackward(withID: itemID)
-                } ?? false,
+                isEnabled: sendBackwardCommandIsEnabled(
+                    in: context,
+                    session: session
+                ),
                 isActive: false
             )
         case .bringItemToFront:
@@ -135,9 +145,10 @@ struct CanvasCommandCatalog {
                 id: .bringItemToFront,
                 title: "Bring To Front",
                 systemImageName: "chevron.up.2",
-                isEnabled: targetItemID(in: context, session: session).map { itemID in
-                    session.canBringItemToFront(withID: itemID)
-                } ?? false,
+                isEnabled: bringToFrontCommandIsEnabled(
+                    in: context,
+                    session: session
+                ),
                 isActive: false
             )
         case .sendItemToBack:
@@ -145,9 +156,10 @@ struct CanvasCommandCatalog {
                 id: .sendItemToBack,
                 title: "Send To Back",
                 systemImageName: "chevron.down.2",
-                isEnabled: targetItemID(in: context, session: session).map { itemID in
-                    session.canSendItemToBack(withID: itemID)
-                } ?? false,
+                isEnabled: sendToBackCommandIsEnabled(
+                    in: context,
+                    session: session
+                ),
                 isActive: false
             )
         }
@@ -162,7 +174,102 @@ struct CanvasCommandCatalog {
         in context: CanvasContextMenuContext?,
         session: CanvasEditorSession
     ) -> CanvasItemID? {
-        context?.targetItemID ?? session.interactionState.selectedItemID
+        context?.targetItemID ?? session.primarySelectedItemID
+    }
+
+    private func operatesOnCurrentSelection(
+        in context: CanvasContextMenuContext?
+    ) -> Bool {
+        switch context?.targetKind {
+        case nil,
+             .selectedItemBody,
+             .selectionHandle,
+             .rotateHandle,
+             .cropHandle,
+             .cropOutline:
+            return true
+        case .unselectedItemBody,
+             .blank:
+            return false
+        }
+    }
+
+    private func duplicateCommandIsEnabled(
+        in context: CanvasContextMenuContext?,
+        session: CanvasEditorSession
+    ) -> Bool {
+        if operatesOnCurrentSelection(in: context) {
+            return session.canDuplicateSelection
+        }
+
+        return targetItemID(in: context, session: session).map { itemID in
+            session.canDuplicateItem(withID: itemID)
+        } ?? false
+    }
+
+    private func deleteCommandIsEnabled(
+        in context: CanvasContextMenuContext?,
+        session: CanvasEditorSession
+    ) -> Bool {
+        if operatesOnCurrentSelection(in: context) {
+            return session.canDeleteSelection
+        }
+
+        return targetItemID(in: context, session: session).map { itemID in
+            session.canDeleteItem(withID: itemID)
+        } ?? false
+    }
+
+    private func bringForwardCommandIsEnabled(
+        in context: CanvasContextMenuContext?,
+        session: CanvasEditorSession
+    ) -> Bool {
+        if operatesOnCurrentSelection(in: context) {
+            return session.canBringSelectionForward
+        }
+
+        return targetItemID(in: context, session: session).map { itemID in
+            session.canBringItemForward(withID: itemID)
+        } ?? false
+    }
+
+    private func sendBackwardCommandIsEnabled(
+        in context: CanvasContextMenuContext?,
+        session: CanvasEditorSession
+    ) -> Bool {
+        if operatesOnCurrentSelection(in: context) {
+            return session.canSendSelectionBackward
+        }
+
+        return targetItemID(in: context, session: session).map { itemID in
+            session.canSendItemBackward(withID: itemID)
+        } ?? false
+    }
+
+    private func bringToFrontCommandIsEnabled(
+        in context: CanvasContextMenuContext?,
+        session: CanvasEditorSession
+    ) -> Bool {
+        if operatesOnCurrentSelection(in: context) {
+            return session.canBringSelectionToFront
+        }
+
+        return targetItemID(in: context, session: session).map { itemID in
+            session.canBringItemToFront(withID: itemID)
+        } ?? false
+    }
+
+    private func sendToBackCommandIsEnabled(
+        in context: CanvasContextMenuContext?,
+        session: CanvasEditorSession
+    ) -> Bool {
+        if operatesOnCurrentSelection(in: context) {
+            return session.canSendSelectionToBack
+        }
+
+        return targetItemID(in: context, session: session).map { itemID in
+            session.canSendItemToBack(withID: itemID)
+        } ?? false
     }
 
     private func workspaceModeAdjustedDescriptor(

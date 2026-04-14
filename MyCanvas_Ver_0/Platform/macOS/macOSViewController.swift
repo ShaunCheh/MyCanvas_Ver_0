@@ -525,7 +525,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         case let .command(commandID):
             guard let command = contextMenuActionResolver.command(
                 for: commandID,
-                context: contextMenuState.resolvedContext
+                context: contextMenuState.resolvedContext,
+                session: editorSession
             ) else {
                 dismissContextMenu()
                 return

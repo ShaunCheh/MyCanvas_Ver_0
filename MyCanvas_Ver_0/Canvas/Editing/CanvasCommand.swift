@@ -53,13 +53,24 @@ enum CanvasCommand {
     case undo
     case redo
     case selectItem(itemID: CanvasItemID, recordHistory: Bool)
+    case toggleSelectionMembership(itemID: CanvasItemID, recordHistory: Bool)
     case clearSelection(recordHistory: Bool)
-    case duplicateItem(itemID: CanvasItemID, recordHistory: Bool)
+    case duplicateItem(
+        itemID: CanvasItemID,
+        selectDuplicatedItem: Bool,
+        recordHistory: Bool
+    )
+    case duplicateSelection(recordHistory: Bool)
     case deleteItem(itemID: CanvasItemID, recordHistory: Bool)
+    case deleteSelection(recordHistory: Bool)
     case bringItemForward(itemID: CanvasItemID, recordHistory: Bool)
+    case bringSelectionForward(recordHistory: Bool)
     case sendItemBackward(itemID: CanvasItemID, recordHistory: Bool)
+    case sendSelectionBackward(recordHistory: Bool)
     case bringItemToFront(itemID: CanvasItemID, recordHistory: Bool)
+    case bringSelectionToFront(recordHistory: Bool)
     case sendItemToBack(itemID: CanvasItemID, recordHistory: Bool)
+    case sendSelectionToBack(recordHistory: Bool)
 
     var id: CanvasCommandID {
         switch self {
@@ -79,19 +90,33 @@ enum CanvasCommand {
             return .redo
         case .selectItem:
             return .selectItem
+        case .toggleSelectionMembership:
+            return .selectItem
         case .clearSelection:
             return .clearSelection
         case .duplicateItem:
             return .duplicateItem
+        case .duplicateSelection:
+            return .duplicateItem
         case .deleteItem:
+            return .deleteItem
+        case .deleteSelection:
             return .deleteItem
         case .bringItemForward:
             return .bringItemForward
+        case .bringSelectionForward:
+            return .bringItemForward
         case .sendItemBackward:
+            return .sendItemBackward
+        case .sendSelectionBackward:
             return .sendItemBackward
         case .bringItemToFront:
             return .bringItemToFront
+        case .bringSelectionToFront:
+            return .bringItemToFront
         case .sendItemToBack:
+            return .sendItemToBack
+        case .sendSelectionToBack:
             return .sendItemToBack
         }
     }
@@ -112,13 +137,20 @@ enum CanvasCommand {
              .undo,
              .redo,
              .selectItem,
+             .toggleSelectionMembership,
              .clearSelection,
              .duplicateItem,
+             .duplicateSelection,
              .deleteItem,
+             .deleteSelection,
              .bringItemForward,
+             .bringSelectionForward,
              .sendItemBackward,
+             .sendSelectionBackward,
              .bringItemToFront,
-             .sendItemToBack:
+             .bringSelectionToFront,
+             .sendItemToBack,
+             .sendSelectionToBack:
             return true
         }
     }

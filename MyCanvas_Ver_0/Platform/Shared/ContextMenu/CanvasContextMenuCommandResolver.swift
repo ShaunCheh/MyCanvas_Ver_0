@@ -68,7 +68,8 @@ struct CanvasContextMenuActionResolver {
 
     func command(
         for commandID: CanvasCommandID,
-        context: CanvasContextMenuContext
+        context: CanvasContextMenuContext,
+        session _: CanvasEditorSession
     ) -> CanvasCommand? {
         switch commandID {
         case .importMedia:
@@ -101,55 +102,74 @@ struct CanvasContextMenuActionResolver {
         case .clearSelection:
             return .clearSelection(recordHistory: true)
         case .duplicateItem:
+            if operatesOnCurrentSelection(in: context) {
+                return .duplicateSelection(recordHistory: true)
+            }
+
             guard let itemID = context.targetItemID else {
                 return nil
             }
-
             return .duplicateItem(
                 itemID: itemID,
+                selectDuplicatedItem: false,
                 recordHistory: true
             )
         case .deleteItem:
+            if operatesOnCurrentSelection(in: context) {
+                return .deleteSelection(recordHistory: true)
+            }
+
             guard let itemID = context.targetItemID else {
                 return nil
             }
-
             return .deleteItem(
                 itemID: itemID,
                 recordHistory: true
             )
         case .bringItemForward:
+            if operatesOnCurrentSelection(in: context) {
+                return .bringSelectionForward(recordHistory: true)
+            }
+
             guard let itemID = context.targetItemID else {
                 return nil
             }
-
             return .bringItemForward(
                 itemID: itemID,
                 recordHistory: true
             )
         case .sendItemBackward:
+            if operatesOnCurrentSelection(in: context) {
+                return .sendSelectionBackward(recordHistory: true)
+            }
+
             guard let itemID = context.targetItemID else {
                 return nil
             }
-
             return .sendItemBackward(
                 itemID: itemID,
                 recordHistory: true
             )
         case .bringItemToFront:
+            if operatesOnCurrentSelection(in: context) {
+                return .bringSelectionToFront(recordHistory: true)
+            }
+
             guard let itemID = context.targetItemID else {
                 return nil
             }
-
             return .bringItemToFront(
                 itemID: itemID,
                 recordHistory: true
             )
         case .sendItemToBack:
+            if operatesOnCurrentSelection(in: context) {
+                return .sendSelectionToBack(recordHistory: true)
+            }
+
             guard let itemID = context.targetItemID else {
                 return nil
             }
-
             return .sendItemToBack(
                 itemID: itemID,
                 recordHistory: true
@@ -313,6 +333,22 @@ struct CanvasContextMenuActionResolver {
             .command(.redo)
         ])
         return actionIDs
+    }
+
+    private func operatesOnCurrentSelection(
+        in context: CanvasContextMenuContext
+    ) -> Bool {
+        switch context.targetKind {
+        case .selectedItemBody,
+             .selectionHandle,
+             .rotateHandle,
+             .cropHandle,
+             .cropOutline:
+            return true
+        case .unselectedItemBody,
+             .blank:
+            return false
+        }
     }
 
     private func targetVideoItemID(

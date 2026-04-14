@@ -4,10 +4,10 @@ overview: 按方案 3 为图板实现真正的多选能力：升级选择模型�
 todos:
   - id: phase0-contract-migration
     content: 升级选择状态契约，完成文档格式迁移与旧数据兼容解码。
-    status: pending
+    status: completed
   - id: phase1-session-commands
     content: 重构 CanvasEditorSession 与 command lane，让批量选择与批量命令成为共享真相。
-    status: pending
+    status: completed
   - id: phase2-render-hit-testing
     content: 实现成员高亮、组选框、组手柄与对应命中模型。
     status: pending

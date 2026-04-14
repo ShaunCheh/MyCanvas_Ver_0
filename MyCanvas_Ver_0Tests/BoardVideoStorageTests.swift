@@ -25,7 +25,8 @@ final class BoardVideoStorageTests: XCTestCase {
             item: item
         )
         runtimeState.title = "Video Mapper"
-        runtimeState.updatedAt = Date(timeIntervalSince1970: 1_710_000_123)
+        runtimeState.contentUpdatedAt = Date(timeIntervalSince1970: 1_710_000_123)
+        runtimeState.viewStateUpdatedAt = Date(timeIntervalSince1970: 1_710_000_123)
 
         let document = BoardDocumentMapper.makeDocument(from: runtimeState)
         let imageRecord = try XCTUnwrap(document.imageItemRecords.first)

@@ -165,6 +165,30 @@ final class CanvasEditorSession {
         hasSelection
     }
 
+    var canDeleteSelection: Bool {
+        selectedBoardItems.isEmpty == false
+    }
+
+    var canDuplicateSelection: Bool {
+        selectedBoardItems.isEmpty == false
+    }
+
+    var canBringSelectionForward: Bool {
+        scene.canBringBoardItemsForward(withIDs: selectedItemIDs)
+    }
+
+    var canSendSelectionBackward: Bool {
+        scene.canSendBoardItemsBackward(withIDs: selectedItemIDs)
+    }
+
+    var canBringSelectionToFront: Bool {
+        scene.canBringBoardItemsToFront(withIDs: selectedItemIDs)
+    }
+
+    var canSendSelectionToBack: Bool {
+        scene.canSendBoardItemsToBack(withIDs: selectedItemIDs)
+    }
+
     var isInlineCropModeActive: Bool {
         inlineEditState?.mode == .crop
     }
@@ -514,7 +538,10 @@ final class CanvasEditorSession {
             return false
         }
 
-        interactionState.selectedItemID = itemID
+        _ = replaceSelection(
+            with: [itemID],
+            primarySelectedItemID: itemID
+        )
         inlineEditState = CanvasInlineEditState(item: item)
         return true
     }
@@ -549,9 +576,7 @@ final class CanvasEditorSession {
         }
 
         guard let item = scene.textItem(withID: itemID) else {
-            if interactionState.selectedItemID == itemID {
-                interactionState.selectedItemID = nil
-            }
+            _ = normalizeSelectionAfterMutation()
             return CanvasTextEditCommitResult(
                 itemID: itemID,
                 didDeleteItem: false,
@@ -578,9 +603,7 @@ final class CanvasEditorSession {
                 )
             }
 
-            if interactionState.selectedItemID == itemID {
-                interactionState.selectedItemID = nil
-            }
+            _ = normalizeSelectionAfterMutation()
             let changeReason = "delete empty text item"
             _ = recordImmediateHistoryChange(
                 from: beforeSnapshot,
@@ -836,7 +859,7 @@ final class CanvasEditorSession {
     func beginCropModeIfPossible() -> Bool {
         guard
             canBeginCropMode,
-            let selectedItemID = interactionState.selectedItemID,
+            let selectedItemID = singleSelectedItemID,
             let item = scene.item(withID: selectedItemID)
         else {
             return false
@@ -861,7 +884,10 @@ final class CanvasEditorSession {
             return
         }
 
-        guard interactionState.selectedItemID == inlineEditState.itemID else {
+        guard
+            selectionCount == 1,
+            singleSelectedItemID == inlineEditState.itemID
+        else {
             self.inlineEditState = nil
             return
         }
@@ -888,7 +914,16 @@ final class CanvasEditorSession {
             return false
         }
 
-        return interactionState.selectedItemID != itemID
+        let normalizedSelection = normalizedSelectionStateForExistingItems(
+            selectedItemIDs: [itemID],
+            primarySelectedItemID: itemID
+        )
+        return interactionState.selectedItemIDs != normalizedSelection.selectedItemIDs
+            || interactionState.primarySelectedItemID != normalizedSelection.primarySelectedItemID
+    }
+
+    func canToggleSelectionMembership(withID itemID: CanvasItemID) -> Bool {
+        scene.boardItem(withID: itemID) != nil
     }
 
     func canDeleteItem(withID itemID: CanvasItemID) -> Bool {
@@ -916,43 +951,54 @@ final class CanvasEditorSession {
     }
 
     @discardableResult
-    func selectItem(
-        withID itemID: CanvasItemID,
+    func replaceSelection(
+        with itemIDs: [CanvasItemID],
+        primarySelectedItemID: CanvasItemID? = nil,
         recordHistory: Bool = false
     ) -> Bool {
-        guard canSelectItem(withID: itemID) else {
+        let normalizedSelection = normalizedSelectionStateForExistingItems(
+            selectedItemIDs: itemIDs,
+            primarySelectedItemID: primarySelectedItemID
+        )
+        guard
+            interactionState.selectedItemIDs != normalizedSelection.selectedItemIDs
+                || interactionState.primarySelectedItemID != normalizedSelection.primarySelectedItemID
+        else {
             print(
                 "[Canvas Shared][SelectionMutation] " +
-                "action=select " +
+                "action=replace " +
                 "result=rejected " +
-                "requestedItemID=\(itemID.uuidString) " +
                 "recordHistory=\(recordHistory) " +
-                "previousSelectedItemID=\(describeSelectionMutationItemID(interactionState.selectedItemID))"
+                "requestedSelectedItemIDs=\(describeSelectionMutationItemIDs(itemIDs)) " +
+                "requestedPrimarySelectedItemID=\(describeSelectionMutationItemID(primarySelectedItemID)) " +
+                "currentSelection=\(describeSelectionMutationState(interactionState))"
             )
             return false
         }
 
         let beforeSnapshot = recordHistory ? currentBoardHistorySnapshot() : nil
-        let previousSelectedItemID = interactionState.selectedItemID
+        let previousInteractionState = interactionState
         let inlineEditModeBefore = inlineEditState.map(\.mode)
-        interactionState.selectedItemID = itemID
-        syncInlineEditStateWithSelection()
+        applySelectionState(normalizedSelection)
 
         if let beforeSnapshot {
             _ = recordImmediateHistoryChange(
                 from: beforeSnapshot,
-                reason: "select item"
+                reason: normalizedSelection.selectedItemIDs.isEmpty
+                    ? "clear selection"
+                    : "replace selection"
             )
         }
 
         print(
             "[Canvas Shared][SelectionMutation] " +
-            "action=select " +
+            "action=replace " +
             "result=applied " +
-            "requestedItemID=\(itemID.uuidString) " +
             "recordHistory=\(recordHistory) " +
-            "previousSelectedItemID=\(describeSelectionMutationItemID(previousSelectedItemID)) " +
-            "currentSelectedItemID=\(describeSelectionMutationItemID(interactionState.selectedItemID)) " +
+            "requestedSelectedItemIDs=\(describeSelectionMutationItemIDs(itemIDs)) " +
+            "requestedPrimarySelectedItemID=\(describeSelectionMutationItemID(primarySelectedItemID)) " +
+            "previousSelection=\(describeSelectionMutationState(previousInteractionState)) " +
+            "currentSelection=\(describeSelectionMutationState(interactionState)) " +
             "inlineEditModeBefore=\(describeSelectionMutationInlineEditMode(inlineEditModeBefore)) " +
             "inlineEditModeAfter=\(describeSelectionMutationInlineEditMode(inlineEditState.map(\.mode)))"
         )
@@ -961,43 +1007,121 @@ final class CanvasEditorSession {
     }
 
     @discardableResult
-    func clearSelection(recordHistory: Bool = false) -> Bool {
-        guard canClearSelection else {
+    func selectItem(
+        withID itemID: CanvasItemID,
+        recordHistory: Bool = false
+    ) -> Bool {
+        replaceSelection(
+            with: [itemID],
+            primarySelectedItemID: itemID,
+            recordHistory: recordHistory
+        )
+    }
+
+    @discardableResult
+    func addToSelection(
+        withID itemID: CanvasItemID,
+        recordHistory: Bool = false
+    ) -> Bool {
+        guard scene.boardItem(withID: itemID) != nil else {
             print(
                 "[Canvas Shared][SelectionMutation] " +
-                "action=clear " +
+                "action=add " +
                 "result=rejected " +
                 "recordHistory=\(recordHistory) " +
-                "previousSelectedItemID=\(describeSelectionMutationItemID(interactionState.selectedItemID))"
+                "requestedItemID=\(itemID.uuidString) " +
+                "currentSelection=\(describeSelectionMutationState(interactionState))"
             )
             return false
         }
 
-        let beforeSnapshot = recordHistory ? currentBoardHistorySnapshot() : nil
-        let previousSelectedItemID = interactionState.selectedItemID
-        let inlineEditModeBefore = inlineEditState.map(\.mode)
-        interactionState.selectedItemID = nil
-        syncInlineEditStateWithSelection()
+        return replaceSelection(
+            with: interactionState.selectedItemIDs + [itemID],
+            primarySelectedItemID: itemID,
+            recordHistory: recordHistory
+        )
+    }
 
-        if let beforeSnapshot {
-            _ = recordImmediateHistoryChange(
-                from: beforeSnapshot,
-                reason: "clear selection"
+    @discardableResult
+    func removeFromSelection(
+        withID itemID: CanvasItemID,
+        recordHistory: Bool = false
+    ) -> Bool {
+        guard interactionState.selectedItemIDs.contains(itemID) else {
+            print(
+                "[Canvas Shared][SelectionMutation] " +
+                "action=remove " +
+                "result=rejected " +
+                "recordHistory=\(recordHistory) " +
+                "requestedItemID=\(itemID.uuidString) " +
+                "currentSelection=\(describeSelectionMutationState(interactionState))"
+            )
+            return false
+        }
+
+        return replaceSelection(
+            with: interactionState.selectedItemIDs.filter { $0 != itemID },
+            primarySelectedItemID: interactionState.primarySelectedItemID == itemID
+                ? nil
+                : interactionState.primarySelectedItemID,
+            recordHistory: recordHistory
+        )
+    }
+
+    @discardableResult
+    func toggleSelectionMembership(
+        of itemID: CanvasItemID,
+        recordHistory: Bool = false
+    ) -> Bool {
+        guard canToggleSelectionMembership(withID: itemID) else {
+            print(
+                "[Canvas Shared][SelectionMutation] " +
+                "action=toggle " +
+                "result=rejected " +
+                "recordHistory=\(recordHistory) " +
+                "requestedItemID=\(itemID.uuidString) " +
+                "currentSelection=\(describeSelectionMutationState(interactionState))"
+            )
+            return false
+        }
+
+        if interactionState.selectedItemIDs.contains(itemID) {
+            return removeFromSelection(
+                withID: itemID,
+                recordHistory: recordHistory
             )
         }
 
-        print(
-            "[Canvas Shared][SelectionMutation] " +
-            "action=clear " +
-            "result=applied " +
-            "recordHistory=\(recordHistory) " +
-            "previousSelectedItemID=\(describeSelectionMutationItemID(previousSelectedItemID)) " +
-            "currentSelectedItemID=\(describeSelectionMutationItemID(interactionState.selectedItemID)) " +
-            "inlineEditModeBefore=\(describeSelectionMutationInlineEditMode(inlineEditModeBefore)) " +
-            "inlineEditModeAfter=\(describeSelectionMutationInlineEditMode(inlineEditState.map(\.mode)))"
+        return addToSelection(
+            withID: itemID,
+            recordHistory: recordHistory
         )
+    }
 
-        return true
+    @discardableResult
+    func clearSelection(recordHistory: Bool = false) -> Bool {
+        replaceSelection(with: [], recordHistory: recordHistory)
+    }
+
+    @discardableResult
+    func normalizeSelectionAfterMutation(
+        preferredPrimarySelectedItemID: CanvasItemID? = nil
+    ) -> Bool {
+        let normalizedSelection = normalizedSelectionStateForExistingItems(
+            selectedItemIDs: interactionState.selectedItemIDs,
+            primarySelectedItemID: preferredPrimarySelectedItemID
+                ?? interactionState.primarySelectedItemID
+        )
+        let didChangeSelection =
+            interactionState.selectedItemIDs != normalizedSelection.selectedItemIDs
+            || interactionState.primarySelectedItemID != normalizedSelection.primarySelectedItemID
+        if didChangeSelection {
+            applySelectionState(normalizedSelection)
+        } else {
+            syncInlineEditStateWithSelection()
+        }
+
+        return didChangeSelection
     }
 
     @discardableResult
@@ -1010,14 +1134,11 @@ final class CanvasEditorSession {
         }
 
         let beforeSnapshot = recordHistory ? currentBoardHistorySnapshot() : nil
-        guard scene.removeItem(withID: itemID) else {
+        guard scene.removeBoardItems(withIDs: [itemID]).isEmpty == false else {
             return false
         }
 
-        if interactionState.selectedItemID == itemID {
-            interactionState.selectedItemID = nil
-        }
-        syncInlineEditStateWithSelection()
+        _ = normalizeSelectionAfterMutation()
 
         if let beforeSnapshot {
             _ = recordImmediateHistoryChange(
@@ -1030,9 +1151,35 @@ final class CanvasEditorSession {
     }
 
     @discardableResult
+    func deleteSelection(recordHistory: Bool = false) -> Bool {
+        let itemIDsToDelete = filteredExistingItemIDs(from: interactionState.selectedItemIDs)
+        guard itemIDsToDelete.isEmpty == false else {
+            return false
+        }
+
+        let beforeSnapshot = recordHistory ? currentBoardHistorySnapshot() : nil
+        guard scene.removeBoardItems(withIDs: itemIDsToDelete).isEmpty == false else {
+            return false
+        }
+
+        _ = normalizeSelectionAfterMutation()
+
+        if let beforeSnapshot {
+            _ = recordImmediateHistoryChange(
+                from: beforeSnapshot,
+                reason: itemIDsToDelete.count == 1
+                    ? "delete selection item"
+                    : "delete selection"
+            )
+        }
+
+        return true
+    }
+
+    @discardableResult
     func duplicateItem(
         withID itemID: CanvasItemID,
-        selectDuplicatedItem: Bool = true,
+        selectDuplicatedItem: Bool = false,
         recordHistory: Bool = false
     ) -> CanvasBoardItem? {
         guard canDuplicateItem(withID: itemID) else {
@@ -1049,9 +1196,13 @@ final class CanvasEditorSession {
 
         expandBoardIfNeeded(toInclude: duplicatedItem.worldBounds)
         if selectDuplicatedItem {
-            interactionState.selectedItemID = duplicatedItem.id
+            _ = replaceSelection(
+                with: [duplicatedItem.id],
+                primarySelectedItemID: duplicatedItem.id
+            )
+        } else {
+            _ = normalizeSelectionAfterMutation()
         }
-        syncInlineEditStateWithSelection()
 
         if let beforeSnapshot {
             _ = recordImmediateHistoryChange(
@@ -1064,6 +1215,49 @@ final class CanvasEditorSession {
     }
 
     @discardableResult
+    func duplicateSelection(
+        selectDuplicatedItems: Bool = true,
+        recordHistory: Bool = false
+    ) -> [CanvasBoardItem]? {
+        let sourceItemIDs = filteredExistingItemIDs(from: interactionState.selectedItemIDs)
+        guard sourceItemIDs.isEmpty == false else {
+            return nil
+        }
+
+        let beforeSnapshot = recordHistory ? currentBoardHistorySnapshot() : nil
+        let duplicatedItems = scene.duplicateBoardItems(
+            withIDs: sourceItemIDs,
+            offsetInWorld: duplicateOffsetInWorld()
+        )
+        guard duplicatedItems.isEmpty == false else {
+            return nil
+        }
+
+        for duplicatedItem in duplicatedItems {
+            expandBoardIfNeeded(toInclude: duplicatedItem.worldBounds)
+        }
+        if selectDuplicatedItems {
+            _ = replaceSelection(
+                with: duplicatedItems.map(\.id),
+                primarySelectedItemID: duplicatedItems.last?.id
+            )
+        } else {
+            _ = normalizeSelectionAfterMutation()
+        }
+
+        if let beforeSnapshot {
+            _ = recordImmediateHistoryChange(
+                from: beforeSnapshot,
+                reason: duplicatedItems.count == 1
+                    ? "duplicate selection item"
+                    : "duplicate selection"
+            )
+        }
+
+        return duplicatedItems
+    }
+
+    @discardableResult
     func bringItemForward(
         withID itemID: CanvasItemID,
         recordHistory: Bool = false
@@ -1073,7 +1267,7 @@ final class CanvasEditorSession {
         }
 
         let beforeSnapshot = recordHistory ? currentBoardHistorySnapshot() : nil
-        guard scene.bringItemForward(withID: itemID) != nil else {
+        guard scene.bringBoardItemForward(withID: itemID) != nil else {
             return false
         }
         syncInlineEditStateWithSelection()
@@ -1082,6 +1276,30 @@ final class CanvasEditorSession {
             _ = recordImmediateHistoryChange(
                 from: beforeSnapshot,
                 reason: "bring item forward"
+            )
+        }
+
+        return true
+    }
+
+    @discardableResult
+    func bringSelectionForward(recordHistory: Bool = false) -> Bool {
+        guard canBringSelectionForward else {
+            return false
+        }
+
+        let beforeSnapshot = recordHistory ? currentBoardHistorySnapshot() : nil
+        guard scene.bringBoardItemsForward(withIDs: selectedItemIDs) else {
+            return false
+        }
+        syncInlineEditStateWithSelection()
+
+        if let beforeSnapshot {
+            _ = recordImmediateHistoryChange(
+                from: beforeSnapshot,
+                reason: selectionCount == 1
+                    ? "bring selection item forward"
+                    : "bring selection forward"
             )
         }
 
@@ -1098,7 +1316,7 @@ final class CanvasEditorSession {
         }
 
         let beforeSnapshot = recordHistory ? currentBoardHistorySnapshot() : nil
-        guard scene.sendItemBackward(withID: itemID) != nil else {
+        guard scene.sendBoardItemBackward(withID: itemID) != nil else {
             return false
         }
         syncInlineEditStateWithSelection()
@@ -1107,6 +1325,30 @@ final class CanvasEditorSession {
             _ = recordImmediateHistoryChange(
                 from: beforeSnapshot,
                 reason: "send item backward"
+            )
+        }
+
+        return true
+    }
+
+    @discardableResult
+    func sendSelectionBackward(recordHistory: Bool = false) -> Bool {
+        guard canSendSelectionBackward else {
+            return false
+        }
+
+        let beforeSnapshot = recordHistory ? currentBoardHistorySnapshot() : nil
+        guard scene.sendBoardItemsBackward(withIDs: selectedItemIDs) else {
+            return false
+        }
+        syncInlineEditStateWithSelection()
+
+        if let beforeSnapshot {
+            _ = recordImmediateHistoryChange(
+                from: beforeSnapshot,
+                reason: selectionCount == 1
+                    ? "send selection item backward"
+                    : "send selection backward"
             )
         }
 
@@ -1123,7 +1365,7 @@ final class CanvasEditorSession {
         }
 
         let beforeSnapshot = recordHistory ? currentBoardHistorySnapshot() : nil
-        guard scene.bringItemToFront(withID: itemID) != nil else {
+        guard scene.bringBoardItemToFront(withID: itemID) != nil else {
             return false
         }
         syncInlineEditStateWithSelection()
@@ -1132,6 +1374,30 @@ final class CanvasEditorSession {
             _ = recordImmediateHistoryChange(
                 from: beforeSnapshot,
                 reason: "bring item to front"
+            )
+        }
+
+        return true
+    }
+
+    @discardableResult
+    func bringSelectionToFront(recordHistory: Bool = false) -> Bool {
+        guard canBringSelectionToFront else {
+            return false
+        }
+
+        let beforeSnapshot = recordHistory ? currentBoardHistorySnapshot() : nil
+        guard scene.bringBoardItemsToFront(withIDs: selectedItemIDs) else {
+            return false
+        }
+        syncInlineEditStateWithSelection()
+
+        if let beforeSnapshot {
+            _ = recordImmediateHistoryChange(
+                from: beforeSnapshot,
+                reason: selectionCount == 1
+                    ? "bring selection item to front"
+                    : "bring selection to front"
             )
         }
 
@@ -1148,7 +1414,7 @@ final class CanvasEditorSession {
         }
 
         let beforeSnapshot = recordHistory ? currentBoardHistorySnapshot() : nil
-        guard scene.sendItemToBack(withID: itemID) != nil else {
+        guard scene.sendBoardItemToBack(withID: itemID) != nil else {
             return false
         }
         syncInlineEditStateWithSelection()
@@ -1157,6 +1423,30 @@ final class CanvasEditorSession {
             _ = recordImmediateHistoryChange(
                 from: beforeSnapshot,
                 reason: "send item to back"
+            )
+        }
+
+        return true
+    }
+
+    @discardableResult
+    func sendSelectionToBack(recordHistory: Bool = false) -> Bool {
+        guard canSendSelectionToBack else {
+            return false
+        }
+
+        let beforeSnapshot = recordHistory ? currentBoardHistorySnapshot() : nil
+        guard scene.sendBoardItemsToBack(withIDs: selectedItemIDs) else {
+            return false
+        }
+        syncInlineEditStateWithSelection()
+
+        if let beforeSnapshot {
+            _ = recordImmediateHistoryChange(
+                from: beforeSnapshot,
+                reason: selectionCount == 1
+                    ? "send selection item to back"
+                    : "send selection to back"
             )
         }
 
@@ -1500,7 +1790,10 @@ final class CanvasEditorSession {
             zIndex: nextBoardItemZIndex()
         )
         scene.append(item)
-        interactionState.selectedItemID = item.id
+        _ = replaceSelection(
+            with: [item.id],
+            primarySelectedItemID: item.id
+        )
         inlineEditState = CanvasInlineEditState(item: item)
         expandBoardIfNeeded(toInclude: item.worldFrame)
         let changeReason = "add text item"
@@ -1599,10 +1892,59 @@ final class CanvasEditorSession {
 
         return item
     }
+
+    private func filteredExistingItemIDs(
+        from itemIDs: [CanvasItemID]
+    ) -> [CanvasItemID] {
+        itemIDs.filter { itemID in
+            scene.boardItem(withID: itemID) != nil
+        }
+    }
+
+    private func normalizedSelectionStateForExistingItems(
+        selectedItemIDs: [CanvasItemID],
+        primarySelectedItemID: CanvasItemID?
+    ) -> CanvasNormalizedSelectionState<CanvasItemID> {
+        let existingSelectedItemIDs = filteredExistingItemIDs(from: selectedItemIDs)
+        let existingPrimarySelectedItemID = primarySelectedItemID.flatMap { itemID in
+            scene.boardItem(withID: itemID) != nil ? itemID : nil
+        }
+        return normalizeCanvasSelectionState(
+            selectedItemIDs: existingSelectedItemIDs,
+            primarySelectedItemID: existingPrimarySelectedItemID
+        )
+    }
+
+    private func applySelectionState(
+        _ selectionState: CanvasNormalizedSelectionState<CanvasItemID>
+    ) {
+        interactionState = CanvasInteractionState(
+            selectedItemIDs: selectionState.selectedItemIDs,
+            primarySelectedItemID: selectionState.primarySelectedItemID
+        )
+        syncInlineEditStateWithSelection()
+    }
 }
 
 private func describeSelectionMutationItemID(_ itemID: CanvasItemID?) -> String {
     itemID?.uuidString ?? "nil"
+}
+
+private func describeSelectionMutationItemIDs(
+    _ itemIDs: [CanvasItemID]
+) -> String {
+    guard itemIDs.isEmpty == false else {
+        return "[]"
+    }
+
+    return "[" + itemIDs.map(\.uuidString).joined(separator: ",") + "]"
+}
+
+private func describeSelectionMutationState(
+    _ state: CanvasInteractionState
+) -> String {
+    "selectedItemIDs=\(describeSelectionMutationItemIDs(state.selectedItemIDs)) " +
+        "primarySelectedItemID=\(describeSelectionMutationItemID(state.primarySelectedItemID))"
 }
 
 private func describeSelectionMutationInlineEditMode(

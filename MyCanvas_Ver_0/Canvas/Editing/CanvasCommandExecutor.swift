@@ -33,20 +33,34 @@ final class CanvasCommandExecutor {
             return session.canRedoCommand
         case let .selectItem(itemID, _):
             return session.canSelectItem(withID: itemID)
+        case let .toggleSelectionMembership(itemID, _):
+            return session.canToggleSelectionMembership(withID: itemID)
         case .clearSelection:
             return session.canClearSelection
-        case let .duplicateItem(itemID, _):
+        case let .duplicateItem(itemID, _, _):
             return session.canDuplicateItem(withID: itemID)
+        case .duplicateSelection:
+            return session.canDuplicateSelection
         case let .deleteItem(itemID, _):
             return session.canDeleteItem(withID: itemID)
+        case .deleteSelection:
+            return session.canDeleteSelection
         case let .bringItemForward(itemID, _):
             return session.canBringItemForward(withID: itemID)
+        case .bringSelectionForward:
+            return session.canBringSelectionForward
         case let .sendItemBackward(itemID, _):
             return session.canSendItemBackward(withID: itemID)
+        case .sendSelectionBackward:
+            return session.canSendSelectionBackward
         case let .bringItemToFront(itemID, _):
             return session.canBringItemToFront(withID: itemID)
+        case .bringSelectionToFront:
+            return session.canBringSelectionToFront
         case let .sendItemToBack(itemID, _):
             return session.canSendItemToBack(withID: itemID)
+        case .sendSelectionToBack:
+            return session.canSendSelectionToBack
         }
     }
 
@@ -150,6 +164,17 @@ final class CanvasCommandExecutor {
             return CanvasCommandExecutionResult(
                 refreshReason: "select item \(itemID.uuidString)"
             )
+        case let .toggleSelectionMembership(itemID, recordHistory):
+            guard session.toggleSelectionMembership(
+                of: itemID,
+                recordHistory: recordHistory
+            ) else {
+                return nil
+            }
+
+            return CanvasCommandExecutionResult(
+                refreshReason: "toggle selection membership \(itemID.uuidString)"
+            )
         case let .clearSelection(recordHistory):
             guard session.clearSelection(recordHistory: recordHistory) else {
                 return nil
@@ -158,9 +183,10 @@ final class CanvasCommandExecutor {
             return CanvasCommandExecutionResult(
                 refreshReason: "clear selection"
             )
-        case let .duplicateItem(itemID, recordHistory):
+        case let .duplicateItem(itemID, selectDuplicatedItem, recordHistory):
             guard let duplicatedItem = session.duplicateItem(
                 withID: itemID,
+                selectDuplicatedItem: selectDuplicatedItem,
                 recordHistory: recordHistory
             ) else {
                 return nil
@@ -169,6 +195,19 @@ final class CanvasCommandExecutor {
             session.scheduleAutosave(reason: "duplicate item")
             return CanvasCommandExecutionResult(
                 refreshReason: "duplicate item \(duplicatedItem.id.uuidString)"
+            )
+        case let .duplicateSelection(recordHistory):
+            guard let duplicatedItems = session.duplicateSelection(
+                recordHistory: recordHistory
+            ) else {
+                return nil
+            }
+
+            let duplicatedItemCount = duplicatedItems.count
+            let itemLabel = duplicatedItemCount == 1 ? "item" : "items"
+            session.scheduleAutosave(reason: "duplicate selection")
+            return CanvasCommandExecutionResult(
+                refreshReason: "duplicate selection \(duplicatedItemCount) \(itemLabel)"
             )
         case let .deleteItem(itemID, recordHistory):
             guard session.deleteItem(
@@ -182,6 +221,17 @@ final class CanvasCommandExecutor {
             return CanvasCommandExecutionResult(
                 refreshReason: "delete item \(itemID.uuidString)"
             )
+        case let .deleteSelection(recordHistory):
+            let selectedItemCount = session.selectedBoardItems.count
+            guard session.deleteSelection(recordHistory: recordHistory) else {
+                return nil
+            }
+
+            let itemLabel = selectedItemCount == 1 ? "item" : "items"
+            session.scheduleAutosave(reason: "delete selection")
+            return CanvasCommandExecutionResult(
+                refreshReason: "delete selection \(selectedItemCount) \(itemLabel)"
+            )
         case let .bringItemForward(itemID, recordHistory):
             guard session.bringItemForward(
                 withID: itemID,
@@ -193,6 +243,17 @@ final class CanvasCommandExecutor {
             session.scheduleAutosave(reason: "bring item forward")
             return CanvasCommandExecutionResult(
                 refreshReason: "bring item forward \(itemID.uuidString)"
+            )
+        case let .bringSelectionForward(recordHistory):
+            let selectedItemCount = session.selectedBoardItems.count
+            guard session.bringSelectionForward(recordHistory: recordHistory) else {
+                return nil
+            }
+
+            let itemLabel = selectedItemCount == 1 ? "item" : "items"
+            session.scheduleAutosave(reason: "bring selection forward")
+            return CanvasCommandExecutionResult(
+                refreshReason: "bring selection forward \(selectedItemCount) \(itemLabel)"
             )
         case let .sendItemBackward(itemID, recordHistory):
             guard session.sendItemBackward(
@@ -206,6 +267,17 @@ final class CanvasCommandExecutor {
             return CanvasCommandExecutionResult(
                 refreshReason: "send item backward \(itemID.uuidString)"
             )
+        case let .sendSelectionBackward(recordHistory):
+            let selectedItemCount = session.selectedBoardItems.count
+            guard session.sendSelectionBackward(recordHistory: recordHistory) else {
+                return nil
+            }
+
+            let itemLabel = selectedItemCount == 1 ? "item" : "items"
+            session.scheduleAutosave(reason: "send selection backward")
+            return CanvasCommandExecutionResult(
+                refreshReason: "send selection backward \(selectedItemCount) \(itemLabel)"
+            )
         case let .bringItemToFront(itemID, recordHistory):
             guard session.bringItemToFront(
                 withID: itemID,
@@ -218,6 +290,17 @@ final class CanvasCommandExecutor {
             return CanvasCommandExecutionResult(
                 refreshReason: "bring item to front \(itemID.uuidString)"
             )
+        case let .bringSelectionToFront(recordHistory):
+            let selectedItemCount = session.selectedBoardItems.count
+            guard session.bringSelectionToFront(recordHistory: recordHistory) else {
+                return nil
+            }
+
+            let itemLabel = selectedItemCount == 1 ? "item" : "items"
+            session.scheduleAutosave(reason: "bring selection to front")
+            return CanvasCommandExecutionResult(
+                refreshReason: "bring selection to front \(selectedItemCount) \(itemLabel)"
+            )
         case let .sendItemToBack(itemID, recordHistory):
             guard session.sendItemToBack(
                 withID: itemID,
@@ -229,6 +312,17 @@ final class CanvasCommandExecutor {
             session.scheduleAutosave(reason: "send item to back")
             return CanvasCommandExecutionResult(
                 refreshReason: "send item to back \(itemID.uuidString)"
+            )
+        case let .sendSelectionToBack(recordHistory):
+            let selectedItemCount = session.selectedBoardItems.count
+            guard session.sendSelectionToBack(recordHistory: recordHistory) else {
+                return nil
+            }
+
+            let itemLabel = selectedItemCount == 1 ? "item" : "items"
+            session.scheduleAutosave(reason: "send selection to back")
+            return CanvasCommandExecutionResult(
+                refreshReason: "send selection to back \(selectedItemCount) \(itemLabel)"
             )
         }
     }

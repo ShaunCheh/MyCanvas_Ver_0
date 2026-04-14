@@ -536,7 +536,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         case let .command(commandID):
             guard let command = contextMenuActionResolver.command(
                 for: commandID,
-                context: contextMenuState.resolvedContext
+                context: contextMenuState.resolvedContext,
+                session: editorSession
             ) else {
                 dismissContextMenu()
                 return
