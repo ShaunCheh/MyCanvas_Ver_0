@@ -239,7 +239,9 @@ final class CanvasContextMenuActionResolverTests: XCTestCase {
             context: makeContextMenuContext(
                 targetKind: .selectedItemBody,
                 targetItemID: firstItem.id,
-                selectedItemID: secondItem.id
+                selectedItemID: secondItem.id,
+                selectedItemIDs: [firstItem.id, secondItem.id],
+                primarySelectedItemID: secondItem.id
             ),
             session: session
         )
@@ -250,6 +252,112 @@ final class CanvasContextMenuActionResolverTests: XCTestCase {
         }
 
         XCTAssertTrue(recordHistory)
+    }
+
+    func testUnselectedImageIncludesCropCommandAndResolvesToTargetCropCommand() throws {
+        let session = makeContextMenuActionResolverTestSession()
+        let selectedItem = makeContextMenuActionResolverTestTextItem(
+            text: "Selected",
+            center: CGPoint(x: 24, y: 18),
+            zIndex: 0
+        )
+        let targetImage = CanvasImageItem(
+            asset: CanvasImageAsset.transientStaticImage(
+                cgImage: try makeContextMenuActionResolverTestImage(
+                    red: 0.2,
+                    green: 0.4,
+                    blue: 0.8
+                )
+            ),
+            center: CGPoint(x: 90, y: 60),
+            size: CGSize(width: 120, height: 80),
+            zIndex: 1
+        )
+        session.scene.append(selectedItem)
+        session.scene.append(targetImage)
+        session.interactionState = CanvasInteractionState(selectedItemID: selectedItem.id)
+        let context = makeContextMenuContext(
+            targetKind: .unselectedItemBody,
+            targetItemID: targetImage.id,
+            selectedItemID: selectedItem.id
+        )
+        let resolver = CanvasContextMenuActionResolver()
+
+        let actionStates = resolver.actionStates(
+            for: context,
+            session: session
+        )
+        let command = resolver.command(
+            for: .crop,
+            context: context,
+            session: session
+        )
+
+        XCTAssertTrue(
+            actionStates.contains { actionState in
+                if case .command(.crop) = actionState.actionID {
+                    return true
+                }
+                return false
+            }
+        )
+        guard case let .beginCropMode(itemID)? = command else {
+            XCTFail("Expected unselected target crop to resolve to beginCropMode.")
+            return
+        }
+        XCTAssertEqual(itemID, targetImage.id)
+    }
+
+    func testSelectedVideoInMultiSelectionHidesSingleItemVideoAction() throws {
+        let session = makeContextMenuActionResolverTestSession()
+        let videoItem = CanvasImageItem(
+            asset: CanvasImageAsset.transientStaticImage(
+                cgImage: try makeContextMenuActionResolverTestImage(
+                    red: 1,
+                    green: 0.6,
+                    blue: 0.1
+                )
+            ),
+            videoSource: CanvasVideoSource(
+                assetReference: .persisted(filename: "selection.mov")
+            ),
+            posterTimeSeconds: 0.25,
+            center: CGPoint(x: 40, y: 50),
+            size: CGSize(width: 140, height: 90),
+            zIndex: 0
+        )
+        let otherItem = makeContextMenuActionResolverTestTextItem(
+            text: "Other",
+            center: CGPoint(x: 130, y: 80),
+            zIndex: 1
+        )
+        session.scene.append(videoItem)
+        session.scene.append(otherItem)
+        session.interactionState = CanvasInteractionState(
+            selectedItemIDs: [videoItem.id, otherItem.id],
+            primarySelectedItemID: videoItem.id
+        )
+
+        let actionStates = CanvasContextMenuActionResolver().actionStates(
+            for: makeContextMenuContext(
+                targetKind: .selectedItemBody,
+                targetItemID: videoItem.id,
+                selectedItemID: videoItem.id,
+                selectedItemIDs: [videoItem.id, otherItem.id],
+                primarySelectedItemID: videoItem.id
+            ),
+            session: session
+        )
+
+        XCTAssertFalse(actionStates.contains(where: isVideoDisplayFrameAction))
+        XCTAssertFalse(
+            actionStates.contains { actionState in
+                if case .command(.crop) = actionState.actionID {
+                    return true
+                }
+                return false
+            }
+        )
     }
 
     func testUnselectedContextResolvesDuplicateToTargetCommand() {
@@ -311,7 +419,9 @@ final class CanvasContextMenuActionResolverTests: XCTestCase {
             for: makeContextMenuContext(
                 targetKind: .selectedItemBody,
                 targetItemID: firstItem.id,
-                selectedItemID: firstItem.id
+                selectedItemID: firstItem.id,
+                selectedItemIDs: [firstItem.id, secondItem.id],
+                primarySelectedItemID: firstItem.id
             ),
             session: session
         )
@@ -348,7 +458,9 @@ final class CanvasContextMenuActionResolverTests: XCTestCase {
         let context = makeContextMenuContext(
             targetKind: .groupSelectionHandle(role: .topLeading),
             targetItemID: secondItem.id,
-            selectedItemID: secondItem.id
+            selectedItemID: secondItem.id,
+            selectedItemIDs: [firstItem.id, secondItem.id],
+            primarySelectedItemID: secondItem.id
         )
 
         let resolver = CanvasContextMenuActionResolver()
@@ -387,6 +499,65 @@ final class CanvasContextMenuActionResolverTests: XCTestCase {
         }
         XCTAssertTrue(recordHistory)
     }
+
+    func testInlineTextEditSuppressesContextMenuActions() {
+        let session = makeContextMenuActionResolverTestSession()
+        let textItem = makeContextMenuActionResolverTestTextItem(
+            text: "Editing",
+            center: CGPoint(x: 40, y: 30),
+            zIndex: 0
+        )
+        session.scene.append(textItem)
+
+        let actionStates = CanvasContextMenuActionResolver().actionStates(
+            for: makeContextMenuContext(
+                targetKind: .selectedItemBody,
+                targetItemID: textItem.id,
+                selectedItemID: textItem.id,
+                isInlineEditModeActive: true
+            ),
+            session: session
+        )
+
+        XCTAssertTrue(actionStates.isEmpty)
+    }
+
+    func testInlineCropContextOnlyExposesCropDoneCommand() throws {
+        let session = makeContextMenuActionResolverTestSession()
+        let imageItem = CanvasImageItem(
+            asset: CanvasImageAsset.transientStaticImage(
+                cgImage: try makeContextMenuActionResolverTestImage(
+                    red: 0.3,
+                    green: 0.7,
+                    blue: 0.4
+                )
+            ),
+            center: CGPoint(x: 48, y: 42),
+            size: CGSize(width: 132, height: 84),
+            zIndex: 0
+        )
+        session.scene.append(imageItem)
+        session.interactionState = CanvasInteractionState(selectedItemID: imageItem.id)
+        XCTAssertTrue(session.beginCropModeIfPossible())
+
+        let actionStates = CanvasContextMenuActionResolver().actionStates(
+            for: makeContextMenuContext(
+                targetKind: .cropOutline,
+                targetItemID: imageItem.id,
+                selectedItemID: imageItem.id,
+                isInlineEditModeActive: true,
+                isInlineCropModeActive: true
+            ),
+            session: session
+        )
+
+        XCTAssertEqual(actionStates.count, 1)
+        guard case .command(.crop) = try XCTUnwrap(actionStates.first).actionID else {
+            XCTFail("Expected crop outline context to only expose crop.")
+            return
+        }
+        XCTAssertEqual(actionStates.first?.descriptor.title, "Done")
+    }
 }
 
 private enum CanvasContextMenuActionResolverTestRetainer {
@@ -405,18 +576,25 @@ private func makeContextMenuActionResolverTestSession() -> CanvasEditorSession {
 private func makeContextMenuContext(
     targetKind: CanvasContextMenuTargetKind,
     targetItemID: CanvasItemID,
-    selectedItemID: CanvasItemID?
+    selectedItemID: CanvasItemID? = nil,
+    selectedItemIDs: [CanvasItemID]? = nil,
+    primarySelectedItemID: CanvasItemID? = nil,
+    isInlineEditModeActive: Bool = false,
+    isInlineCropModeActive: Bool = false
 ) -> CanvasContextMenuContext {
-    CanvasContextMenuContext(
+    let resolvedSelectedItemIDs = selectedItemIDs ?? selectedItemID.map { [$0] } ?? []
+    let resolvedPrimarySelectedItemID = primarySelectedItemID ?? selectedItemID
+    return CanvasContextMenuContext(
         invocationViewportPoint: CGPoint(x: 12, y: 18),
         invocationWorldPoint: CGPoint(x: 12, y: 18),
         targetKind: targetKind,
         editOverlayHitTargetKind: nil,
         targetItemID: targetItemID,
         anchorRect: nil,
-        selectedItemID: selectedItemID,
-        isInlineEditModeActive: false,
-        isInlineCropModeActive: false
+        currentSelectedItemIDs: resolvedSelectedItemIDs,
+        currentPrimarySelectedItemID: resolvedPrimarySelectedItemID,
+        isInlineEditModeActive: isInlineEditModeActive,
+        isInlineCropModeActive: isInlineCropModeActive
     )
 }
 

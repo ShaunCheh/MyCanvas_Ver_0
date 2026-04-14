@@ -27,6 +27,8 @@ final class CanvasCommandExecutor {
             return session.canCommitTextEdit
         case .crop:
             return session.isInlineCropModeActive || session.canBeginCropMode
+        case let .beginCropMode(itemID):
+            return session.canBeginCropMode(withID: itemID)
         case .undo:
             return session.canUndoCommand
         case .redo:
@@ -135,6 +137,14 @@ final class CanvasCommandExecutor {
 
             return CanvasCommandExecutionResult(
                 refreshReason: "enter crop mode"
+            )
+        case let .beginCropMode(itemID):
+            guard session.beginCropModeIfPossible(withID: itemID) else {
+                return nil
+            }
+
+            return CanvasCommandExecutionResult(
+                refreshReason: "enter crop mode \(itemID.uuidString)"
             )
         case .undo:
             guard let snapshot = session.undoHistorySnapshot() else {

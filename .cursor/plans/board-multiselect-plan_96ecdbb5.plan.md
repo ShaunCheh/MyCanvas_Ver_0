@@ -19,7 +19,7 @@ todos:
     status: completed
   - id: phase5-polish-tests
     content: 收口上下文菜单和模式边界，并补齐迁移、历史、渲染和交互回归测试。
-    status: pending
+    status: completed
 isProject: false
 ---
 

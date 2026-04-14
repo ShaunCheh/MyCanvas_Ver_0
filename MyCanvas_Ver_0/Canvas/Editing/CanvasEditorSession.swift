@@ -154,7 +154,7 @@ final class CanvasEditorSession {
             return false
         }
 
-        return scene.item(withID: selectedItemID) != nil
+        return canBeginCropMode(withID: selectedItemID)
     }
 
     var canCommitTextEdit: Bool {
@@ -530,6 +530,14 @@ final class CanvasEditorSession {
         return scene.textItem(withID: itemID) != nil
     }
 
+    func canBeginCropMode(withID itemID: CanvasItemID) -> Bool {
+        guard inlineEditState == nil else {
+            return false
+        }
+
+        return scene.item(withID: itemID) != nil
+    }
+
     @discardableResult
     func beginTextEdit(withID itemID: CanvasItemID) -> Bool {
         guard
@@ -859,13 +867,27 @@ final class CanvasEditorSession {
     @discardableResult
     func beginCropModeIfPossible() -> Bool {
         guard
-            canBeginCropMode,
-            let selectedItemID = singleSelectedItemID,
-            let item = scene.item(withID: selectedItemID)
+            let selectedItemID = singleSelectedItemID
         else {
             return false
         }
 
+        return beginCropModeIfPossible(withID: selectedItemID)
+    }
+
+    @discardableResult
+    func beginCropModeIfPossible(withID itemID: CanvasItemID) -> Bool {
+        guard
+            canBeginCropMode(withID: itemID),
+            let item = scene.item(withID: itemID)
+        else {
+            return false
+        }
+
+        _ = replaceSelection(
+            with: [itemID],
+            primarySelectedItemID: itemID
+        )
         inlineEditState = CanvasInlineEditState(item: item, mode: .crop)
         return true
     }

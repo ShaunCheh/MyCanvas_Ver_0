@@ -28,7 +28,10 @@ struct CanvasToolbarStateBuilder {
             itemStates.append(cropItemState(session: session))
         }
         itemStates.append(
-            multiSelectItemState(isActive: isMultiSelectModeActive)
+            multiSelectItemState(
+                isActive: isMultiSelectModeActive,
+                isEnabled: canToggleMultiSelectMode(session: session)
+            )
         )
         itemStates.append(saveItemState(saveState: saveState))
         itemStates.append(textItemState(session: session))
@@ -107,10 +110,14 @@ struct CanvasToolbarStateBuilder {
         )
     }
 
-    func multiSelectItemState(isActive: Bool) -> CanvasToolbarItemState {
+    func multiSelectItemState(
+        isActive: Bool,
+        isEnabled: Bool = true
+    ) -> CanvasToolbarItemState {
         CanvasToolbarItemState(
             id: .multiSelect,
             systemImageName: "checklist",
+            isEnabled: isEnabled,
             isActive: isActive,
             accessibilityLabel: "Multi-select",
             accessibilityValue: isActive ? "On" : "Off",
@@ -149,5 +156,11 @@ struct CanvasToolbarStateBuilder {
         }
 
         return session.selectedBoardItemKind != .text
+    }
+
+    private func canToggleMultiSelectMode(
+        session: CanvasEditorSession
+    ) -> Bool {
+        session.isInlineEditModeActive == false
     }
 }

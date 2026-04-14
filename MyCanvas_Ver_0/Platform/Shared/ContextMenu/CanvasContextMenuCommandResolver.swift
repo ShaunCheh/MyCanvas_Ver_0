@@ -77,7 +77,7 @@ struct CanvasContextMenuActionResolver {
         case .addTextItem:
             return .addTextItem
         case .beginTextEdit:
-            guard let itemID = context.targetItemID else {
+            guard let itemID = context.singleEffectiveItemID else {
                 return nil
             }
 
@@ -85,7 +85,19 @@ struct CanvasContextMenuActionResolver {
         case .commitTextEdit:
             return .commitTextEdit
         case .crop:
-            return .crop
+            if context.isInlineCropModeActive {
+                return .crop
+            }
+
+            guard let itemID = context.singleEffectiveItemID else {
+                return nil
+            }
+
+            if context.operatesOnCurrentSelection {
+                return .crop
+            }
+
+            return .beginCropMode(itemID: itemID)
         case .undo:
             return .undo
         case .redo:
@@ -233,9 +245,32 @@ struct CanvasContextMenuActionResolver {
         for context: CanvasContextMenuContext,
         session: CanvasEditorSession
     ) -> [CanvasContextMenuActionID] {
-        let targetTextItem = context.targetItemID.flatMap { itemID in
+        if context.isInlineCropModeActive {
+            switch context.targetKind {
+            case .cropHandle, .cropOutline:
+                return [.command(.crop)]
+            case .rotateHandle,
+                 .groupRotateHandle,
+                 .selectionHandle,
+                 .groupSelectionHandle,
+                 .selectedItemBody,
+                 .unselectedItemBody,
+                 .blank:
+                return []
+            }
+        }
+
+        if context.isInlineEditModeActive {
+            return []
+        }
+
+        let targetTextItem = context.singleEffectiveItemID.flatMap { itemID in
             session.scene.textItem(withID: itemID)
         }
+        let includeCropCommand = context.singleEffectiveItemID.map { itemID in
+            session.scene.textItem(withID: itemID) == nil
+                && session.scene.item(withID: itemID) != nil
+        } ?? false
         let includeVideoDisplayFrameAction =
             targetVideoItemID(in: context, session: session) != nil
         let includeGIFFrameImportAction =
@@ -250,7 +285,7 @@ struct CanvasContextMenuActionResolver {
             ]
         case .selectedItemBody, .selectionHandle, .rotateHandle:
             return selectedItemActionIDs(
-                includeCropCommand: targetTextItem == nil,
+                includeCropCommand: includeCropCommand,
                 includeBeginTextEditCommand: targetTextItem != nil,
                 includeVideoDisplayFrameAction: includeVideoDisplayFrameAction,
                 includeGIFFrameImportAction: includeGIFFrameImportAction
@@ -267,17 +302,13 @@ struct CanvasContextMenuActionResolver {
             // menu does not rewrite selection/history before the user chooses an
             // explicit command.
             return unselectedItemActionIDs(
+                includeCropCommand: includeCropCommand,
                 includeBeginTextEditCommand: targetTextItem != nil,
                 includeVideoDisplayFrameAction: includeVideoDisplayFrameAction,
                 includeGIFFrameImportAction: includeGIFFrameImportAction
             )
         case .cropHandle, .cropOutline:
-            return selectedItemActionIDs(
-                includeCropCommand: true,
-                includeBeginTextEditCommand: false,
-                includeVideoDisplayFrameAction: false,
-                includeGIFFrameImportAction: false
-            )
+            return [.command(.crop)]
         }
     }
 
@@ -315,11 +346,15 @@ struct CanvasContextMenuActionResolver {
     }
 
     private func unselectedItemActionIDs(
+        includeCropCommand: Bool,
         includeBeginTextEditCommand: Bool,
         includeVideoDisplayFrameAction: Bool,
         includeGIFFrameImportAction: Bool
     ) -> [CanvasContextMenuActionID] {
         var actionIDs: [CanvasContextMenuActionID] = [.command(.selectItem)]
+        if includeCropCommand {
+            actionIDs.append(.command(.crop))
+        }
         if includeBeginTextEditCommand {
             actionIDs.append(.command(.beginTextEdit))
         }
@@ -345,19 +380,7 @@ struct CanvasContextMenuActionResolver {
     private func operatesOnCurrentSelection(
         in context: CanvasContextMenuContext
     ) -> Bool {
-        switch context.targetKind {
-        case .selectedItemBody,
-             .selectionHandle,
-             .groupSelectionHandle,
-             .rotateHandle,
-             .groupRotateHandle,
-             .cropHandle,
-             .cropOutline:
-            return true
-        case .unselectedItemBody,
-             .blank:
-            return false
-        }
+        context.operatesOnCurrentSelection
     }
 
     private func targetVideoItemID(
@@ -365,7 +388,7 @@ struct CanvasContextMenuActionResolver {
         session: CanvasEditorSession
     ) -> CanvasItemID? {
         guard
-            let itemID = context.targetItemID,
+            let itemID = context.singleEffectiveItemID,
             let item = session.scene.item(withID: itemID),
             item.isVideo
         else {
@@ -380,7 +403,7 @@ struct CanvasContextMenuActionResolver {
         session: CanvasEditorSession
     ) -> CanvasItemID? {
         guard
-            let itemID = context.targetItemID,
+            let itemID = context.singleEffectiveItemID,
             let item = session.scene.item(withID: itemID),
             item.isVideo == false,
             item.assetKind == .animatedGIF

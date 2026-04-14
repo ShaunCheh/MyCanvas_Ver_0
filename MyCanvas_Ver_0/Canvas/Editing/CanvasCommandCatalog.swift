@@ -27,20 +27,15 @@ struct CanvasCommandCatalog {
                 isActive: false
             )
         case .beginTextEdit:
-            let resolvedTargetItemID = targetItemID(
+            let resolvedTargetItemID = singleEffectiveItemID(
                 in: context,
                 session: session
             )
-            let usesCurrentSelection = operatesOnCurrentSelection(in: context)
             descriptor = CanvasCommandDescriptor(
                 id: .beginTextEdit,
                 title: "Edit Text",
                 systemImageName: "pencil",
                 isEnabled: resolvedTargetItemID.map { itemID in
-                    if usesCurrentSelection, session.singleSelectedItemID != itemID {
-                        return false
-                    }
-
                     return session.canBeginTextEdit(withID: itemID)
                 } ?? false,
                 isActive: false
@@ -55,11 +50,17 @@ struct CanvasCommandCatalog {
             )
         case .crop:
             let isActive = session.isInlineCropModeActive
+            let resolvedTargetItemID = singleEffectiveItemID(
+                in: context,
+                session: session
+            )
             descriptor = CanvasCommandDescriptor(
                 id: .crop,
                 title: isActive ? "Done" : "Crop",
                 systemImageName: isActive ? "checkmark" : "crop",
-                isEnabled: isActive || session.canBeginCropMode,
+                isEnabled: isActive || resolvedTargetItemID.map { itemID in
+                    session.canBeginCropMode(withID: itemID)
+                } ?? false,
                 isActive: isActive
             )
         case .undo:
@@ -177,23 +178,17 @@ struct CanvasCommandCatalog {
         context?.targetItemID ?? session.primarySelectedItemID
     }
 
+    private func singleEffectiveItemID(
+        in context: CanvasContextMenuContext?,
+        session: CanvasEditorSession
+    ) -> CanvasItemID? {
+        context?.singleEffectiveItemID ?? session.singleSelectedItemID
+    }
+
     private func operatesOnCurrentSelection(
         in context: CanvasContextMenuContext?
     ) -> Bool {
-        switch context?.targetKind {
-        case nil,
-             .selectedItemBody,
-             .selectionHandle,
-             .groupSelectionHandle,
-             .rotateHandle,
-             .groupRotateHandle,
-             .cropHandle,
-             .cropOutline:
-            return true
-        case .unselectedItemBody,
-             .blank:
-            return false
-        }
+        context?.operatesOnCurrentSelection ?? true
     }
 
     private func duplicateCommandIsEnabled(

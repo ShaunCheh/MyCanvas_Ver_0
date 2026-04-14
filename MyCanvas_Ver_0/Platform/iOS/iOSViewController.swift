@@ -599,7 +599,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         for context: CanvasContextMenuContext
     ) -> CanvasItemID? {
         guard
-            let itemID = context.targetItemID,
+            let itemID = context.singleEffectiveItemID,
             let item = scene.item(withID: itemID),
             item.isVideo
         else {
@@ -613,7 +613,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         for context: CanvasContextMenuContext
     ) -> CanvasItemID? {
         guard
-            let itemID = context.targetItemID,
+            let itemID = context.singleEffectiveItemID,
             let item = scene.item(withID: itemID),
             item.isVideo == false,
             item.assetKind == .animatedGIF
@@ -1896,7 +1896,13 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
 
     @objc
     private func handleMultiSelectButtonTap() {
-        commitActiveTextEditIfNeeded()
+        guard
+            editorSession.isInlineEditModeActive == false,
+            editorSession.isReadingModeActive == false
+        else {
+            return
+        }
+
         isMultiSelectModeActive.toggle()
     }
 

@@ -69,7 +69,8 @@ struct CanvasContextResolver {
             viewportPoint: viewportPoint,
             worldPoint: invocationWorldPoint,
             resolvedTarget: resolution.resolvedTarget,
-            selectedItemID: primarySelectedItemID,
+            selectedItemIDs: selectedItemIDs,
+            primarySelectedItemID: primarySelectedItemID,
             isInlineEditModeActive: isInlineEditModeActive,
             isInlineCropModeActive: isInlineCropModeActive
         )
@@ -250,7 +251,8 @@ struct CanvasContextResolver {
         viewportPoint: CGPoint,
         worldPoint: CGPoint,
         resolvedTarget: ResolvedTarget,
-        selectedItemID: CanvasItemID?,
+        selectedItemIDs: [CanvasItemID],
+        primarySelectedItemID: CanvasItemID?,
         isInlineEditModeActive: Bool,
         isInlineCropModeActive: Bool
     ) -> CanvasContextMenuContext {
@@ -263,7 +265,8 @@ struct CanvasContextResolver {
             editOverlayHitTargetKind: resolvedTarget.editOverlayHitTargetKind,
             targetItemID: resolvedTarget.targetItemID,
             anchorRect: resolvedTarget.anchorRect,
-            selectedItemID: selectedItemID,
+            currentSelectedItemIDs: selectedItemIDs,
+            currentPrimarySelectedItemID: primarySelectedItemID,
             isInlineEditModeActive: isInlineEditModeActive,
             isInlineCropModeActive: isInlineCropModeActive
         )

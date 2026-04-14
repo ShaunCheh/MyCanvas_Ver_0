@@ -588,7 +588,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         for context: CanvasContextMenuContext
     ) -> CanvasItemID? {
         guard
-            let itemID = context.targetItemID,
+            let itemID = context.singleEffectiveItemID,
             let item = scene.item(withID: itemID),
             item.isVideo
         else {
@@ -602,7 +602,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         for context: CanvasContextMenuContext
     ) -> CanvasItemID? {
         guard
-            let itemID = context.targetItemID,
+            let itemID = context.singleEffectiveItemID,
             let item = scene.item(withID: itemID),
             item.isVideo == false,
             item.assetKind == .animatedGIF
@@ -2151,7 +2151,13 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
 
     @objc
     private func handleMultiSelectButtonClick() {
-        commitActiveTextEditIfNeeded()
+        guard
+            editorSession.isInlineEditModeActive == false,
+            editorSession.isReadingModeActive == false
+        else {
+            return
+        }
+
         isMultiSelectModeActive.toggle()
     }
 

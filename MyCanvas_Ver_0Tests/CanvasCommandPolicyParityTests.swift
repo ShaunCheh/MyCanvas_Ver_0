@@ -296,6 +296,34 @@ final class CanvasCommandPolicyParityTests: XCTestCase {
         XCTAssertEqual(session.selectedItemIDs, [selectedItem.id])
         XCTAssertEqual(session.primarySelectedItemID, selectedItem.id)
     }
+
+    func testBeginCropModeCommandTargetsUnselectedItemAndReplacesSelection() throws {
+        let session = makeCommandPolicyParityTestSession(workspaceMode: .editing)
+        let executor = CanvasCommandExecutor(session: session)
+        CanvasCommandPolicyParityTestRetainer.executors.append(executor)
+        let selectedItem = makeCommandPolicyParityTextItem(
+            text: "Selected",
+            center: CGPoint(x: 24, y: 24),
+            zIndex: 0
+        )
+        let targetItem = CanvasImageItem(
+            asset: CanvasImageAsset.transientStaticImage(
+                cgImage: try makeCommandPolicyParityImage(width: 24, height: 16)
+            ),
+            center: CGPoint(x: 100, y: 60),
+            size: CGSize(width: 140, height: 90),
+            zIndex: 1
+        )
+        session.scene.append(selectedItem)
+        session.scene.append(targetItem)
+        session.interactionState = CanvasInteractionState(selectedItemID: selectedItem.id)
+
+        XCTAssertTrue(executor.canExecute(.beginCropMode(itemID: targetItem.id)))
+        XCTAssertNotNil(executor.execute(.beginCropMode(itemID: targetItem.id)))
+        XCTAssertEqual(session.selectedItemIDs, [targetItem.id])
+        XCTAssertEqual(session.primarySelectedItemID, targetItem.id)
+        XCTAssertTrue(session.isInlineCropModeActive)
+    }
 }
 
 private enum CanvasCommandPolicyParityTestRetainer {

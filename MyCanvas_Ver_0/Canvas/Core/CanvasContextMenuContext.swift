@@ -56,9 +56,106 @@ struct CanvasContextMenuContext {
     let editOverlayHitTargetKind: CanvasEditOverlayHitTargetKind?
     let targetItemID: CanvasItemID?
     let anchorRect: CGRect?
-    let selectedItemID: CanvasItemID?
+    let currentSelectedItemIDs: [CanvasItemID]
+    let currentPrimarySelectedItemID: CanvasItemID?
+    let effectiveSelectedItemIDs: [CanvasItemID]
+    let effectivePrimarySelectedItemID: CanvasItemID?
+    let operatesOnCurrentSelection: Bool
     let isInlineEditModeActive: Bool
     let isInlineCropModeActive: Bool
+
+    init(
+        invocationViewportPoint: CGPoint,
+        invocationWorldPoint: CGPoint,
+        targetKind: CanvasContextMenuTargetKind,
+        editOverlayHitTargetKind: CanvasEditOverlayHitTargetKind?,
+        targetItemID: CanvasItemID?,
+        anchorRect: CGRect?,
+        currentSelectedItemIDs: [CanvasItemID] = [],
+        currentPrimarySelectedItemID: CanvasItemID? = nil,
+        effectiveSelectedItemIDs: [CanvasItemID]? = nil,
+        effectivePrimarySelectedItemID: CanvasItemID? = nil,
+        operatesOnCurrentSelection: Bool? = nil,
+        isInlineEditModeActive: Bool,
+        isInlineCropModeActive: Bool
+    ) {
+        self.invocationViewportPoint = invocationViewportPoint
+        self.invocationWorldPoint = invocationWorldPoint
+        self.targetKind = targetKind
+        self.editOverlayHitTargetKind = editOverlayHitTargetKind
+        self.targetItemID = targetItemID
+        self.anchorRect = anchorRect
+        let normalizedCurrentSelection = normalizeCanvasSelectionState(
+            selectedItemIDs: currentSelectedItemIDs,
+            primarySelectedItemID: currentPrimarySelectedItemID
+        )
+        self.currentSelectedItemIDs = normalizedCurrentSelection.selectedItemIDs
+        self.currentPrimarySelectedItemID = normalizedCurrentSelection.primarySelectedItemID
+        let resolvedOperatesOnCurrentSelection =
+            operatesOnCurrentSelection
+            ?? CanvasContextMenuContext.defaultOperatesOnCurrentSelection(
+                for: targetKind
+            )
+        self.operatesOnCurrentSelection = resolvedOperatesOnCurrentSelection
+        let normalizedEffectiveSelection: CanvasNormalizedSelectionState<CanvasItemID>
+        if let effectiveSelectedItemIDs {
+            normalizedEffectiveSelection = normalizeCanvasSelectionState(
+                selectedItemIDs: effectiveSelectedItemIDs,
+                primarySelectedItemID: effectivePrimarySelectedItemID
+            )
+        } else if resolvedOperatesOnCurrentSelection {
+            let fallbackSelectedItemIDs =
+                normalizedCurrentSelection.selectedItemIDs.isEmpty
+                ? targetItemID.map { [$0] } ?? []
+                : normalizedCurrentSelection.selectedItemIDs
+            let fallbackPrimarySelectedItemID =
+                normalizedCurrentSelection.primarySelectedItemID ?? targetItemID
+            normalizedEffectiveSelection = normalizeCanvasSelectionState(
+                selectedItemIDs: fallbackSelectedItemIDs,
+                primarySelectedItemID: fallbackPrimarySelectedItemID
+            )
+        } else if let targetItemID {
+            normalizedEffectiveSelection = normalizeCanvasSelectionState(
+                selectedItemIDs: [targetItemID],
+                primarySelectedItemID: targetItemID
+            )
+        } else {
+            normalizedEffectiveSelection = normalizeCanvasSelectionState(
+                selectedItemIDs: [],
+                primarySelectedItemID: nil
+            )
+        }
+        self.effectiveSelectedItemIDs =
+            normalizedEffectiveSelection.selectedItemIDs
+        self.effectivePrimarySelectedItemID =
+            normalizedEffectiveSelection.primarySelectedItemID
+        self.isInlineEditModeActive = isInlineEditModeActive
+        self.isInlineCropModeActive = isInlineCropModeActive
+    }
+
+    var selectedItemID: CanvasItemID? {
+        currentPrimarySelectedItemID
+    }
+
+    var selectedItemIDs: [CanvasItemID] {
+        currentSelectedItemIDs
+    }
+
+    var primarySelectedItemID: CanvasItemID? {
+        currentPrimarySelectedItemID
+    }
+
+    var selectionCount: Int {
+        currentSelectedItemIDs.count
+    }
+
+    var effectiveSelectionCount: Int {
+        effectiveSelectedItemIDs.count
+    }
+
+    var singleEffectiveItemID: CanvasItemID? {
+        effectiveSelectionCount == 1 ? effectivePrimarySelectedItemID : nil
+    }
 
     var anchorPoint: CGPoint {
         switch targetKind {
@@ -85,16 +182,37 @@ struct CanvasContextMenuContext {
     var debugSummary: String {
         [
             "target=\(targetKind.debugName)",
+            "targetsCurrentSelection=\(operatesOnCurrentSelection)",
             "overlayTarget=\(editOverlayHitTargetKind?.debugName ?? "nil")",
             "invocationViewportPoint=\(contextMenuDescribe(invocationViewportPoint))",
             "invocationWorldPoint=\(contextMenuDescribe(invocationWorldPoint))",
             "anchorRect=\(anchorRect.map(contextMenuDescribe) ?? "nil")",
             "anchorPoint=\(contextMenuDescribe(anchorPoint))",
             "targetItemID=\(targetItemID?.uuidString ?? "nil")",
-            "selectedItemID=\(selectedItemID?.uuidString ?? "nil")",
+            "currentSelectedItemIDs=\(contextMenuDescribe(currentSelectedItemIDs))",
+            "currentPrimarySelectedItemID=\(currentPrimarySelectedItemID?.uuidString ?? "nil")",
+            "effectiveSelectedItemIDs=\(contextMenuDescribe(effectiveSelectedItemIDs))",
+            "effectivePrimarySelectedItemID=\(effectivePrimarySelectedItemID?.uuidString ?? "nil")",
             "inlineEdit=\(isInlineEditModeActive)",
             "inlineCrop=\(isInlineCropModeActive)"
         ].joined(separator: " ")
+    }
+
+    private static func defaultOperatesOnCurrentSelection(
+        for targetKind: CanvasContextMenuTargetKind
+    ) -> Bool {
+        switch targetKind {
+        case .rotateHandle,
+             .groupRotateHandle,
+             .cropHandle,
+             .cropOutline,
+             .selectionHandle,
+             .groupSelectionHandle,
+             .selectedItemBody:
+            return true
+        case .unselectedItemBody, .blank:
+            return false
+        }
     }
 }
 
@@ -104,6 +222,10 @@ private func contextMenuDescribe(_ point: CGPoint) -> String {
 
 private func contextMenuDescribe(_ rect: CGRect) -> String {
     "{{\(contextMenuFormat(rect.origin.x)), \(contextMenuFormat(rect.origin.y))}, {\(contextMenuFormat(rect.size.width)), \(contextMenuFormat(rect.size.height))}}"
+}
+
+private func contextMenuDescribe(_ itemIDs: [CanvasItemID]) -> String {
+    "[\(itemIDs.map(\.uuidString).joined(separator: ","))]"
 }
 
 private func contextMenuFormat(_ value: CGFloat) -> String {

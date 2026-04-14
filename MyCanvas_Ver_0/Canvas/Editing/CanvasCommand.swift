@@ -50,6 +50,7 @@ enum CanvasCommand {
     case beginTextEdit(itemID: CanvasItemID)
     case commitTextEdit
     case crop
+    case beginCropMode(itemID: CanvasItemID)
     case undo
     case redo
     case selectItem(itemID: CanvasItemID, recordHistory: Bool)
@@ -83,6 +84,8 @@ enum CanvasCommand {
         case .commitTextEdit:
             return .commitTextEdit
         case .crop:
+            return .crop
+        case .beginCropMode:
             return .crop
         case .undo:
             return .undo
@@ -134,6 +137,7 @@ enum CanvasCommand {
              .beginTextEdit,
              .commitTextEdit,
              .crop,
+             .beginCropMode,
              .undo,
              .redo,
              .selectItem,
