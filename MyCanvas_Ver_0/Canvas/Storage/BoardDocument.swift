@@ -85,7 +85,41 @@ struct BoardDocument: Codable {
     var boardRect: BoardRectRecord?
     var cameraCenter: BoardPointRecord
     var cameraZoomScale: Double
-    var selectedItemID: UUID?
+    private var storedSelectedItemIDs: [UUID]
+    private var storedPrimarySelectedItemID: UUID?
+    var selectedItemIDs: [UUID] {
+        get {
+            storedSelectedItemIDs
+        }
+        set {
+            applyNormalizedSelection(
+                selectedItemIDs: newValue,
+                primarySelectedItemID: storedPrimarySelectedItemID
+            )
+        }
+    }
+    var primarySelectedItemID: UUID? {
+        get {
+            storedPrimarySelectedItemID
+        }
+        set {
+            applyNormalizedSelection(
+                selectedItemIDs: storedSelectedItemIDs,
+                primarySelectedItemID: newValue
+            )
+        }
+    }
+    var selectedItemID: UUID? {
+        get {
+            primarySelectedItemID
+        }
+        set {
+            applyNormalizedSelection(
+                selectedItemIDs: newValue.map { [$0] } ?? [],
+                primarySelectedItemID: newValue
+            )
+        }
+    }
     var workspaceMode: CanvasWorkspaceMode?
     var items: [BoardItemRecord]
 
@@ -104,7 +138,8 @@ struct BoardDocument: Codable {
         boardRect: BoardRectRecord?,
         cameraCenter: BoardPointRecord,
         cameraZoomScale: Double,
-        selectedItemID: UUID?,
+        selectedItemIDs: [UUID] = [],
+        primarySelectedItemID: UUID? = nil,
         workspaceMode: CanvasWorkspaceMode?,
         items: [BoardItemRecord]
     ) {
@@ -118,9 +153,47 @@ struct BoardDocument: Codable {
         self.boardRect = boardRect
         self.cameraCenter = cameraCenter
         self.cameraZoomScale = cameraZoomScale
-        self.selectedItemID = selectedItemID
+        storedSelectedItemIDs = []
+        storedPrimarySelectedItemID = nil
         self.workspaceMode = workspaceMode
         self.items = items
+        applyNormalizedSelection(
+            selectedItemIDs: selectedItemIDs,
+            primarySelectedItemID: primarySelectedItemID
+        )
+    }
+
+    init(
+        formatVersion: Int,
+        boardID: UUID,
+        title: String,
+        createdAt: Date,
+        contentUpdatedAt: Date,
+        viewStateUpdatedAt: Date,
+        boardBaseSize: BoardSizeRecord?,
+        boardRect: BoardRectRecord?,
+        cameraCenter: BoardPointRecord,
+        cameraZoomScale: Double,
+        selectedItemID: UUID?,
+        workspaceMode: CanvasWorkspaceMode?,
+        items: [BoardItemRecord]
+    ) {
+        self.init(
+            formatVersion: formatVersion,
+            boardID: boardID,
+            title: title,
+            createdAt: createdAt,
+            contentUpdatedAt: contentUpdatedAt,
+            viewStateUpdatedAt: viewStateUpdatedAt,
+            boardBaseSize: boardBaseSize,
+            boardRect: boardRect,
+            cameraCenter: cameraCenter,
+            cameraZoomScale: cameraZoomScale,
+            selectedItemIDs: selectedItemID.map { [$0] } ?? [],
+            primarySelectedItemID: selectedItemID,
+            workspaceMode: workspaceMode,
+            items: items
+        )
     }
 
     var summary: BoardSummary {
@@ -160,7 +233,8 @@ struct BoardDocument: Codable {
             boardBaseSize: boardBaseSize,
             cameraCenter: cameraCenter,
             cameraZoomScale: cameraZoomScale,
-            selectedItemID: selectedItemID,
+            selectedItemIDs: selectedItemIDs,
+            primarySelectedItemID: primarySelectedItemID,
             workspaceMode: workspaceMode
         )
     }
@@ -175,7 +249,10 @@ struct BoardDocument: Codable {
         boardBaseSize = other.boardBaseSize
         cameraCenter = other.cameraCenter
         cameraZoomScale = other.cameraZoomScale
-        selectedItemID = other.selectedItemID
+        applyNormalizedSelection(
+            selectedItemIDs: other.selectedItemIDs,
+            primarySelectedItemID: other.primarySelectedItemID
+        )
         workspaceMode = other.workspaceMode
     }
 
@@ -192,6 +269,8 @@ struct BoardDocument: Codable {
         case cameraCenter
         case cameraZoomScale
         case selectedItemID
+        case selectedItemIDs
+        case primarySelectedItemID
         case workspaceMode
         case items
     }
@@ -230,15 +309,29 @@ struct BoardDocument: Codable {
             Double.self,
             forKey: .cameraZoomScale
         )
-        selectedItemID = try container.decodeIfPresent(
+        let legacySelectedItemID = try container.decodeIfPresent(
             UUID.self,
             forKey: .selectedItemID
         )
+        let decodedSelectedItemIDs = try container.decodeIfPresent(
+            [UUID].self,
+            forKey: .selectedItemIDs
+        ) ?? legacySelectedItemID.map { [$0] } ?? []
+        let decodedPrimarySelectedItemID = try container.decodeIfPresent(
+            UUID.self,
+            forKey: .primarySelectedItemID
+        ) ?? legacySelectedItemID
         workspaceMode = try container.decodeIfPresent(
             CanvasWorkspaceMode.self,
             forKey: .workspaceMode
         )
         items = try container.decode([BoardItemRecord].self, forKey: .items)
+        storedSelectedItemIDs = []
+        storedPrimarySelectedItemID = nil
+        applyNormalizedSelection(
+            selectedItemIDs: decodedSelectedItemIDs,
+            primarySelectedItemID: decodedPrimarySelectedItemID
+        )
     }
 
     func encode(to encoder: Encoder) throws {
@@ -254,9 +347,26 @@ struct BoardDocument: Codable {
         try container.encodeIfPresent(boardRect, forKey: .boardRect)
         try container.encode(cameraCenter, forKey: .cameraCenter)
         try container.encode(cameraZoomScale, forKey: .cameraZoomScale)
+        try container.encode(selectedItemIDs, forKey: .selectedItemIDs)
+        try container.encodeIfPresent(
+            primarySelectedItemID,
+            forKey: .primarySelectedItemID
+        )
         try container.encodeIfPresent(selectedItemID, forKey: .selectedItemID)
         try container.encodeIfPresent(workspaceMode, forKey: .workspaceMode)
         try container.encode(items, forKey: .items)
+    }
+
+    private mutating func applyNormalizedSelection(
+        selectedItemIDs: [UUID],
+        primarySelectedItemID: UUID?
+    ) {
+        let normalized = normalizeCanvasSelectionState(
+            selectedItemIDs: selectedItemIDs,
+            primarySelectedItemID: primarySelectedItemID
+        )
+        storedSelectedItemIDs = normalized.selectedItemIDs
+        storedPrimarySelectedItemID = normalized.primarySelectedItemID
     }
 }
 
@@ -270,8 +380,91 @@ struct BoardDocumentViewState: Equatable {
     var boardBaseSize: BoardSizeRecord?
     var cameraCenter: BoardPointRecord
     var cameraZoomScale: Double
-    var selectedItemID: UUID?
+    private var storedSelectedItemIDs: [UUID]
+    private var storedPrimarySelectedItemID: UUID?
+    var selectedItemIDs: [UUID] {
+        get {
+            storedSelectedItemIDs
+        }
+        set {
+            applyNormalizedSelection(
+                selectedItemIDs: newValue,
+                primarySelectedItemID: storedPrimarySelectedItemID
+            )
+        }
+    }
+    var primarySelectedItemID: UUID? {
+        get {
+            storedPrimarySelectedItemID
+        }
+        set {
+            applyNormalizedSelection(
+                selectedItemIDs: storedSelectedItemIDs,
+                primarySelectedItemID: newValue
+            )
+        }
+    }
+    var selectedItemID: UUID? {
+        get {
+            primarySelectedItemID
+        }
+        set {
+            applyNormalizedSelection(
+                selectedItemIDs: newValue.map { [$0] } ?? [],
+                primarySelectedItemID: newValue
+            )
+        }
+    }
     var workspaceMode: CanvasWorkspaceMode?
+
+    init(
+        boardBaseSize: BoardSizeRecord?,
+        cameraCenter: BoardPointRecord,
+        cameraZoomScale: Double,
+        selectedItemIDs: [UUID] = [],
+        primarySelectedItemID: UUID? = nil,
+        workspaceMode: CanvasWorkspaceMode?
+    ) {
+        self.boardBaseSize = boardBaseSize
+        self.cameraCenter = cameraCenter
+        self.cameraZoomScale = cameraZoomScale
+        storedSelectedItemIDs = []
+        storedPrimarySelectedItemID = nil
+        self.workspaceMode = workspaceMode
+        applyNormalizedSelection(
+            selectedItemIDs: selectedItemIDs,
+            primarySelectedItemID: primarySelectedItemID
+        )
+    }
+
+    init(
+        boardBaseSize: BoardSizeRecord?,
+        cameraCenter: BoardPointRecord,
+        cameraZoomScale: Double,
+        selectedItemID: UUID?,
+        workspaceMode: CanvasWorkspaceMode?
+    ) {
+        self.init(
+            boardBaseSize: boardBaseSize,
+            cameraCenter: cameraCenter,
+            cameraZoomScale: cameraZoomScale,
+            selectedItemIDs: selectedItemID.map { [$0] } ?? [],
+            primarySelectedItemID: selectedItemID,
+            workspaceMode: workspaceMode
+        )
+    }
+
+    private mutating func applyNormalizedSelection(
+        selectedItemIDs: [UUID],
+        primarySelectedItemID: UUID?
+    ) {
+        let normalized = normalizeCanvasSelectionState(
+            selectedItemIDs: selectedItemIDs,
+            primarySelectedItemID: primarySelectedItemID
+        )
+        storedSelectedItemIDs = normalized.selectedItemIDs
+        storedPrimarySelectedItemID = normalized.primarySelectedItemID
+    }
 }
 
 struct BoardImageItemRecord: Codable, Equatable {

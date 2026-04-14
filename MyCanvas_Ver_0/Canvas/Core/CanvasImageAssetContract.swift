@@ -42,7 +42,7 @@ struct CanvasImageAssetContract: Equatable {
         editPolicy: .geometryOnlyNonDestructiveCrop,
         duplicationMode: .shareUnderlyingAssetReference,
         historyMode: .trackDocumentStateExcludingPlaybackProgress,
-        targetDocumentFormatVersion: 4
+        targetDocumentFormatVersion: 5
     )
 
     func previewMode(

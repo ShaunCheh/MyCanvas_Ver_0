@@ -125,12 +125,32 @@ final class CanvasEditorSession {
         inlineEditState == nil
     }
 
+    var hasSelection: Bool {
+        interactionState.hasSelection
+    }
+
+    var selectionCount: Int {
+        interactionState.selectionCount
+    }
+
+    var selectedItemIDs: [CanvasItemID] {
+        interactionState.selectedItemIDs
+    }
+
+    var primarySelectedItemID: CanvasItemID? {
+        interactionState.primarySelectedItemID
+    }
+
+    var singleSelectedItemID: CanvasItemID? {
+        interactionState.singleSelectedItemID
+    }
+
     var canBeginCropMode: Bool {
         guard inlineEditState == nil else {
             return false
         }
 
-        guard let selectedItemID = interactionState.selectedItemID else {
+        guard let selectedItemID = singleSelectedItemID else {
             return false
         }
 
@@ -142,7 +162,7 @@ final class CanvasEditorSession {
     }
 
     var canClearSelection: Bool {
-        interactionState.selectedItemID != nil
+        hasSelection
     }
 
     var isInlineCropModeActive: Bool {
@@ -190,11 +210,17 @@ final class CanvasEditorSession {
     }
 
     var selectedBoardItem: CanvasBoardItem? {
-        guard let selectedItemID = interactionState.selectedItemID else {
+        guard let selectedItemID = singleSelectedItemID else {
             return nil
         }
 
         return scene.boardItem(withID: selectedItemID)
+    }
+
+    var selectedBoardItems: [CanvasBoardItem] {
+        selectedItemIDs.compactMap { itemID in
+            scene.boardItem(withID: itemID)
+        }
     }
 
     var selectedBoardItemKind: CanvasBoardItemKind? {

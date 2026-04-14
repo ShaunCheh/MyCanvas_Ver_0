@@ -65,32 +65,32 @@
 			path = MyCanvas_Ver_0;
 			sourceTree = "<group>";
 		};
-		28F1A0012F8E0001004160FE /* App */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = MyCanvas_Ver_0/App;
-			sourceTree = "<group>";
-		};
-		28F1A0022F8E0001004160FE /* Canvas */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = MyCanvas_Ver_0/Canvas;
-			sourceTree = "<group>";
-		};
-		28F1A0032F8E0001004160FE /* BoardList */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = MyCanvas_Ver_0/Platform/Shared/BoardList;
-			sourceTree = "<group>";
-		};
-		28F1A0042F8E0001004160FE /* Rendering */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = MyCanvas_Ver_0/Platform/Shared/Rendering;
-			sourceTree = "<group>";
-		};
 		28A9EB782F8DEFCD004160FE /* Add To Canvas */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				28A9EB852F8DEFCD004160FE /* Exceptions for "Add To Canvas" folder in "Add To Canvas" target */,
 			);
 			path = "Add To Canvas";
+			sourceTree = "<group>";
+		};
+		28F1A0012F8E0001004160FE /* MyCanvas_Ver_0/App */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = MyCanvas_Ver_0/App;
+			sourceTree = "<group>";
+		};
+		28F1A0022F8E0001004160FE /* MyCanvas_Ver_0/Canvas */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = MyCanvas_Ver_0/Canvas;
+			sourceTree = "<group>";
+		};
+		28F1A0032F8E0001004160FE /* MyCanvas_Ver_0/Platform/Shared/BoardList */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = MyCanvas_Ver_0/Platform/Shared/BoardList;
+			sourceTree = "<group>";
+		};
+		28F1A0042F8E0001004160FE /* MyCanvas_Ver_0/Platform/Shared/Rendering */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = MyCanvas_Ver_0/Platform/Shared/Rendering;
 			sourceTree = "<group>";
 		};
 		9A9B9C042F600001005B952A /* MyCanvas_Ver_0Tests */ = {
@@ -134,6 +134,7 @@
 				28A9EB782F8DEFCD004160FE /* Add To Canvas */,
 				28BA821A2F7D0526004BBBD4 /* Frameworks */,
 				286105592F4C51A4005B952A /* Products */,
+				28A9EF892F8E1400004160FE /* Recovered References */,
 			);
 			sourceTree = "<group>";
 		};
@@ -145,6 +146,17 @@
 				28A9EB772F8DEFCD004160FE /* Add To Canvas.appex */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		28A9EF892F8E1400004160FE /* Recovered References */ = {
+			isa = PBXGroup;
+			children = (
+				28F1A0012F8E0001004160FE /* MyCanvas_Ver_0/App */,
+				28F1A0022F8E0001004160FE /* MyCanvas_Ver_0/Canvas */,
+				28F1A0032F8E0001004160FE /* MyCanvas_Ver_0/Platform/Shared/BoardList */,
+				28F1A0042F8E0001004160FE /* MyCanvas_Ver_0/Platform/Shared/Rendering */,
+			);
+			name = "Recovered References";
 			sourceTree = "<group>";
 		};
 		28BA821A2F7D0526004BBBD4 /* Frameworks */ = {
@@ -195,11 +207,11 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				28F1A0012F8E0001004160FE /* App */,
-				28F1A0022F8E0001004160FE /* Canvas */,
-				28F1A0032F8E0001004160FE /* BoardList */,
-				28F1A0042F8E0001004160FE /* Rendering */,
 				28A9EB782F8DEFCD004160FE /* Add To Canvas */,
+				28F1A0012F8E0001004160FE /* MyCanvas_Ver_0/App */,
+				28F1A0022F8E0001004160FE /* MyCanvas_Ver_0/Canvas */,
+				28F1A0032F8E0001004160FE /* MyCanvas_Ver_0/Platform/Shared/BoardList */,
+				28F1A0042F8E0001004160FE /* MyCanvas_Ver_0/Platform/Shared/Rendering */,
 			);
 			name = "Add To Canvas";
 			packageProductDependencies = (
@@ -457,7 +469,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = "MyCanvas_Ver_0/MyCanvas_Ver_0.entitlements";
+				CODE_SIGN_ENTITLEMENTS = MyCanvas_Ver_0/MyCanvas_Ver_0.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = JWWZTL2S7W;
@@ -500,7 +512,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = "MyCanvas_Ver_0/MyCanvas_Ver_0.entitlements";
+				CODE_SIGN_ENTITLEMENTS = MyCanvas_Ver_0/MyCanvas_Ver_0.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = JWWZTL2S7W;

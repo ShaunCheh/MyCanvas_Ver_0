@@ -11,7 +11,7 @@ extension BoardHistorySnapshot: Equatable {
     static func == (lhs: BoardHistorySnapshot, rhs: BoardHistorySnapshot) -> Bool {
         itemsMatch(lhs.items, rhs.items) &&
         boardStatesMatch(lhs.boardState, rhs.boardState) &&
-        lhs.interactionState.selectedItemID == rhs.interactionState.selectedItemID
+        lhs.interactionState == rhs.interactionState
     }
 
     private static func itemsMatch(
