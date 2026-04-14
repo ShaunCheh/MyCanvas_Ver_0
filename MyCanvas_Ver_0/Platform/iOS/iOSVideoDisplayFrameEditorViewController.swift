@@ -11,21 +11,9 @@ final class iOSVideoDisplayFrameEditorViewController: UIViewController {
         qos: .userInitiated
     )
     private let player = AVPlayer()
-    private let titleLabel: UILabel = {
-        let label = UILabel()
-        label.translatesAutoresizingMaskIntoConstraints = false
-        label.font = .systemFont(ofSize: 28, weight: .semibold)
-        label.text = "Set Display Frame"
-        return label
-    }()
-    private let closeButton: UIButton = {
-        let button = UIButton(type: .system)
-        button.translatesAutoresizingMaskIntoConstraints = false
-        var configuration = UIButton.Configuration.plain()
-        configuration.title = "Close"
-        button.configuration = configuration
-        return button
-    }()
+    private let shellView = iOSCanvasEditorShellView(
+        titleAlignment: .leading
+    )
     private let playerView: iOSVideoDisplayFramePlayerView = {
         let view = iOSVideoDisplayFramePlayerView()
         view.translatesAutoresizingMaskIntoConstraints = false
@@ -84,6 +72,10 @@ final class iOSVideoDisplayFrameEditorViewController: UIViewController {
     private var timelineLoadGeneration = 0
     private var timelineLoadWorkItem: DispatchWorkItem?
 
+    private var closeButton: UIButton {
+        shellView.trailingButton
+    }
+
     init(
         editorContext: CanvasVideoEditorContext,
         loadTimelineStrip: @escaping (CanvasVideoTimelineStripRequest) throws -> CanvasVideoTimelineStrip,
@@ -107,6 +99,10 @@ final class iOSVideoDisplayFrameEditorViewController: UIViewController {
         fatalError("init(coder:) has not been implemented")
     }
 
+    override func loadView() {
+        view = shellView
+    }
+
     deinit {
         timelineLoadWorkItem?.cancel()
         if let playerTimeObserver {
@@ -119,7 +115,7 @@ final class iOSVideoDisplayFrameEditorViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .systemBackground
+        configureShell()
         configureTimelineView()
         configureButtons()
         configurePlayer()
@@ -238,18 +234,17 @@ final class iOSVideoDisplayFrameEditorViewController: UIViewController {
 
     private func setupViewHierarchy() {
         playerView.addSubview(playPauseButton)
-        view.addSubview(titleLabel)
-        view.addSubview(closeButton)
-        view.addSubview(playerView)
-        view.addSubview(currentTimeLabel)
-        view.addSubview(timeSlider)
-        view.addSubview(durationLabel)
-        view.addSubview(timelineView)
-        view.addSubview(setDisplayFrameButton)
+        shellView.contentView.addSubview(playerView)
+        shellView.contentView.addSubview(currentTimeLabel)
+        shellView.contentView.addSubview(timeSlider)
+        shellView.contentView.addSubview(durationLabel)
+        shellView.contentView.addSubview(timelineView)
+        shellView.contentView.addSubview(setDisplayFrameButton)
     }
 
     private func setupConstraints() {
-        let safeArea = view.safeAreaLayoutGuide
+        let contentView = shellView.contentView
+        let safeArea = contentView.safeAreaLayoutGuide
         let videoAspectRatio = max(
             min(
                 editorContext.naturalPixelSize.height /
@@ -260,26 +255,8 @@ final class iOSVideoDisplayFrameEditorViewController: UIViewController {
         )
 
         NSLayoutConstraint.activate([
-            titleLabel.topAnchor.constraint(
-                equalTo: safeArea.topAnchor,
-                constant: 20
-            ),
-            titleLabel.leadingAnchor.constraint(
-                equalTo: safeArea.leadingAnchor,
-                constant: 24
-            ),
-            closeButton.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
-            closeButton.trailingAnchor.constraint(
-                equalTo: safeArea.trailingAnchor,
-                constant: -24
-            ),
-            titleLabel.trailingAnchor.constraint(
-                lessThanOrEqualTo: closeButton.leadingAnchor,
-                constant: -12
-            ),
-
             playerView.topAnchor.constraint(
-                equalTo: titleLabel.bottomAnchor,
+                equalTo: contentView.topAnchor,
                 constant: 24
             ),
             playerView.leadingAnchor.constraint(
@@ -359,6 +336,19 @@ final class iOSVideoDisplayFrameEditorViewController: UIViewController {
             ),
             setDisplayFrameButton.heightAnchor.constraint(equalToConstant: 50)
         ])
+    }
+
+    private func configureShell() {
+        shellView.configureTitle(
+            "Set Display Frame",
+            alignment: .leading
+        )
+        shellView.setLeadingButtonHidden(true)
+        shellView.setTrailingButtonHidden(false)
+
+        var configuration = UIButton.Configuration.plain()
+        configuration.title = "Close"
+        closeButton.configuration = configuration
     }
 
     private func applyInitialState() {

@@ -4,7 +4,6 @@ import UIKit
 
 final class iOSGIFFrameImportViewController: UIViewController, UICollectionViewDataSource, UICollectionViewDelegateFlowLayout {
     private enum Layout {
-        static let titleTopInset: CGFloat = 20
         static let horizontalInset: CGFloat = 24
         static let summaryTopSpacing: CGFloat = 16
         static let collectionTopSpacing: CGFloat = 18
@@ -28,26 +27,9 @@ final class iOSGIFFrameImportViewController: UIViewController, UICollectionViewD
     private lazy var imageSource: CGImageSource? = CanvasGIFFrameService.makeImageSource(
         from: editorContext.gifData
     )
-    private let titleLabel: UILabel = {
-        let label = UILabel()
-        label.translatesAutoresizingMaskIntoConstraints = false
-        label.font = .systemFont(ofSize: 28, weight: .semibold)
-        label.text = "Import GIF Frames"
-        return label
-    }()
-    private let cancelButton: UIButton = {
-        let button = UIButton(type: .system)
-        button.translatesAutoresizingMaskIntoConstraints = false
-        var configuration = UIButton.Configuration.plain()
-        configuration.title = "Cancel"
-        button.configuration = configuration
-        return button
-    }()
-    private let importButton: UIButton = {
-        let button = UIButton(type: .system)
-        button.translatesAutoresizingMaskIntoConstraints = false
-        return button
-    }()
+    private let shellView = iOSCanvasEditorShellView(
+        titleAlignment: .centered
+    )
     private let summaryLabel: UILabel = {
         let label = UILabel()
         label.translatesAutoresizingMaskIntoConstraints = false
@@ -94,6 +76,14 @@ final class iOSGIFFrameImportViewController: UIViewController, UICollectionViewD
         }
     }
 
+    private var cancelButton: UIButton {
+        shellView.leadingButton
+    }
+
+    private var importButton: UIButton {
+        shellView.trailingButton
+    }
+
     init(
         editorContext: CanvasGIFFrameImportEditorContext,
         onImportSelectedFrames: @escaping ([Int]) throws -> Void
@@ -110,13 +100,17 @@ final class iOSGIFFrameImportViewController: UIViewController, UICollectionViewD
         fatalError("init(coder:) has not been implemented")
     }
 
+    override func loadView() {
+        view = shellView
+    }
+
     deinit {
         cancelAllThumbnailLoads()
     }
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .systemBackground
+        configureShell()
         setupViewHierarchy()
         setupConstraints()
         configureButtons()
@@ -134,45 +128,16 @@ final class iOSGIFFrameImportViewController: UIViewController, UICollectionViewD
     }
 
     private func setupViewHierarchy() {
-        view.addSubview(titleLabel)
-        view.addSubview(cancelButton)
-        view.addSubview(importButton)
-        view.addSubview(summaryLabel)
-        view.addSubview(collectionView)
+        shellView.contentView.addSubview(summaryLabel)
+        shellView.contentView.addSubview(collectionView)
     }
 
     private func setupConstraints() {
-        let safeArea = view.safeAreaLayoutGuide
+        let contentView = shellView.contentView
+        let safeArea = contentView.safeAreaLayoutGuide
         NSLayoutConstraint.activate([
-            titleLabel.topAnchor.constraint(
-                equalTo: safeArea.topAnchor,
-                constant: Layout.titleTopInset
-            ),
-            titleLabel.centerXAnchor.constraint(equalTo: safeArea.centerXAnchor),
-
-            cancelButton.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
-            cancelButton.leadingAnchor.constraint(
-                equalTo: safeArea.leadingAnchor,
-                constant: Layout.horizontalInset
-            ),
-
-            importButton.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
-            importButton.trailingAnchor.constraint(
-                equalTo: safeArea.trailingAnchor,
-                constant: -Layout.horizontalInset
-            ),
-
-            titleLabel.leadingAnchor.constraint(
-                greaterThanOrEqualTo: cancelButton.trailingAnchor,
-                constant: 12
-            ),
-            titleLabel.trailingAnchor.constraint(
-                lessThanOrEqualTo: importButton.leadingAnchor,
-                constant: -12
-            ),
-
             summaryLabel.topAnchor.constraint(
-                equalTo: titleLabel.bottomAnchor,
+                equalTo: contentView.topAnchor,
                 constant: Layout.summaryTopSpacing
             ),
             summaryLabel.leadingAnchor.constraint(
@@ -188,10 +153,23 @@ final class iOSGIFFrameImportViewController: UIViewController, UICollectionViewD
                 equalTo: summaryLabel.bottomAnchor,
                 constant: Layout.collectionTopSpacing
             ),
-            collectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            collectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            collectionView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+            collectionView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            collectionView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            collectionView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
         ])
+    }
+
+    private func configureShell() {
+        shellView.configureTitle(
+            "Import GIF Frames",
+            alignment: .centered
+        )
+        shellView.setLeadingButtonHidden(false)
+        shellView.setTrailingButtonHidden(false)
+
+        var configuration = UIButton.Configuration.plain()
+        configuration.title = "Cancel"
+        cancelButton.configuration = configuration
     }
 
     private func configureButtons() {
@@ -244,7 +222,7 @@ final class iOSGIFFrameImportViewController: UIViewController, UICollectionViewD
 
     private func updateCollectionLayout() {
         let selectionGrid = editorContext.selectionGrid
-        let safeAreaInsets = view.safeAreaInsets
+        let safeAreaInsets = shellView.contentView.safeAreaInsets
         collectionViewLayout.scrollDirection = .vertical
         collectionViewLayout.sectionInset = UIEdgeInsets(
             top: selectionGrid.contentInsets.top,
