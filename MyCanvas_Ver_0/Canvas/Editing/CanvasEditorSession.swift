@@ -287,7 +287,8 @@ final class CanvasEditorSession {
             scene: scene,
             camera: camera,
             renderSnapshot: lastRenderSnapshot,
-            selectedItemID: interactionState.selectedItemID,
+            selectedItemIDs: interactionState.selectedItemIDs,
+            primarySelectedItemID: interactionState.primarySelectedItemID,
             isInlineEditModeActive: isInlineEditModeActive,
             isInlineCropModeActive: isInlineCropModeActive,
             isReadingModeActive: isReadingModeActive,
@@ -304,7 +305,7 @@ final class CanvasEditorSession {
             scene: scene,
             camera: camera,
             renderSnapshot: lastRenderSnapshot,
-            selectedItemID: interactionState.selectedItemID,
+            selectedItemIDs: interactionState.selectedItemIDs,
             isInlineEditModeActive: isInlineEditModeActive,
             isReadingModeActive: isReadingModeActive,
             interactionMetrics: interactionMetrics

@@ -326,6 +326,67 @@ final class CanvasContextMenuActionResolverTests: XCTestCase {
             }
         )
     }
+
+    func testGroupSelectionHandleContextExposesBatchActionsWithoutSingleItemEditActions() {
+        let session = makeContextMenuActionResolverTestSession()
+        let firstItem = makeContextMenuActionResolverTestTextItem(
+            text: "First",
+            center: CGPoint(x: 20, y: 20),
+            zIndex: 0
+        )
+        let secondItem = makeContextMenuActionResolverTestTextItem(
+            text: "Second",
+            center: CGPoint(x: 90, y: 48),
+            zIndex: 1
+        )
+        session.scene.append(firstItem)
+        session.scene.append(secondItem)
+        session.interactionState = CanvasInteractionState(
+            selectedItemIDs: [firstItem.id, secondItem.id],
+            primarySelectedItemID: secondItem.id
+        )
+        let context = makeContextMenuContext(
+            targetKind: .groupSelectionHandle(role: .topLeading),
+            targetItemID: secondItem.id,
+            selectedItemID: secondItem.id
+        )
+
+        let resolver = CanvasContextMenuActionResolver()
+        let actionStates = resolver.actionStates(
+            for: context,
+            session: session
+        )
+        let duplicateCommand = resolver.command(
+            for: .duplicateItem,
+            context: context,
+            session: session
+        )
+
+        XCTAssertFalse(
+            actionStates.contains { actionState in
+                if case .command(.crop) = actionState.actionID {
+                    return true
+                }
+                if case .command(.beginTextEdit) = actionState.actionID {
+                    return true
+                }
+                return false
+            }
+        )
+        XCTAssertTrue(
+            actionStates.contains { actionState in
+                if case .command(.duplicateItem) = actionState.actionID {
+                    return true
+                }
+                return false
+            }
+        )
+        guard case let .duplicateSelection(recordHistory)? = duplicateCommand else {
+            XCTFail("Expected group handle duplicate to resolve to duplicateSelection.")
+            return
+        }
+        XCTAssertTrue(recordHistory)
+    }
 }
 
 private enum CanvasContextMenuActionResolverTestRetainer {

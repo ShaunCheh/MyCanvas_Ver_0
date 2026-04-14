@@ -14,7 +14,14 @@ final class iOSCanvasViewportView: UIView {
         blue: 1,
         alpha: 1
     )
+    private static let selectionHighlightStrokeColor = CGColor(
+        red: 0,
+        green: 122.0 / 255.0,
+        blue: 1,
+        alpha: 0.35
+    )
     private static let selectionHandleFillColor = CGColor(gray: 1, alpha: 1)
+    private static let selectionHighlightLineWidth: CGFloat = 1.5
     private static let selectionOutlineLineWidth: CGFloat = 2
     private static let selectionHandleLineWidth: CGFloat = 2
     private static let selectionHandleSize: CGFloat = 12
@@ -77,6 +84,7 @@ final class iOSCanvasViewportView: UIView {
     private let boardSurfaceLayer = CAShapeLayer()
     private let itemsLayer = CALayer()
     private let overlayLayer = CALayer()
+    private let selectionHighlightsLayer = CAShapeLayer()
     private let selectionOutlineLayer = CAShapeLayer()
     private let interactionOverlayLayer = CALayer()
     private let alignmentGuideLayer = CAShapeLayer()
@@ -302,6 +310,7 @@ final class iOSCanvasViewportView: UIView {
         layer.addSublayer(boardSurfaceLayer)
         layer.addSublayer(itemsLayer)
         layer.addSublayer(overlayLayer)
+        overlayLayer.addSublayer(selectionHighlightsLayer)
         overlayLayer.addSublayer(selectionOutlineLayer)
         overlayLayer.addSublayer(interactionOverlayLayer)
         overlayLayer.addSublayer(cropMaskLayer)
@@ -320,6 +329,7 @@ final class iOSCanvasViewportView: UIView {
 
         configureWorkspaceGridLayers()
         configureBoardSurfaceLayer()
+        configureSelectionHighlightsLayer()
         configureSelectionOutlineLayer()
         configureInteractionOverlayLayer()
         configureAlignmentGuideLayer()
@@ -364,6 +374,10 @@ final class iOSCanvasViewportView: UIView {
 
         if overlayLayer.frame != bounds {
             overlayLayer.frame = bounds
+        }
+
+        if selectionHighlightsLayer.frame != bounds {
+            selectionHighlightsLayer.frame = bounds
         }
 
         if selectionOutlineLayer.frame != bounds {
@@ -545,6 +559,15 @@ final class iOSCanvasViewportView: UIView {
         selectionOutlineLayer.strokeColor = Self.selectionStrokeColor
         selectionOutlineLayer.lineWidth = Self.selectionOutlineLineWidth
         selectionOutlineLayer.isHidden = true
+    }
+
+    private func configureSelectionHighlightsLayer() {
+        selectionHighlightsLayer.fillColor = nil
+        selectionHighlightsLayer.strokeColor = Self.selectionHighlightStrokeColor
+        selectionHighlightsLayer.lineWidth = Self.selectionHighlightLineWidth
+        selectionHighlightsLayer.lineJoin = .round
+        selectionHighlightsLayer.lineCap = .round
+        selectionHighlightsLayer.isHidden = true
     }
 
     private func configureInteractionOverlayLayer() {
@@ -802,6 +825,7 @@ final class iOSCanvasViewportView: UIView {
             hideSelectionOverlay()
             return
         }
+        refreshSelectionHighlights()
 
         // Selection owns both the outline/resize handles and the rotate
         // affordance so the viewport can keep one coherent blue chrome.
@@ -832,6 +856,23 @@ final class iOSCanvasViewportView: UIView {
         }
 
         refreshRotateAffordance(payload.rotateAffordance)
+    }
+
+    private func refreshSelectionHighlights() {
+        guard snapshot.selectionHighlights.isEmpty == false else {
+            selectionHighlightsLayer.path = nil
+            selectionHighlightsLayer.isHidden = true
+            return
+        }
+
+        let path = CGMutablePath()
+        for highlight in snapshot.selectionHighlights {
+            path.addPath(Self.quadPath(for: highlight.screenQuad))
+        }
+        selectionHighlightsLayer.frame = bounds
+        selectionHighlightsLayer.path = path
+        selectionHighlightsLayer.isHidden = false
+        selectionHighlightsLayer.contentsScale = currentContentsScale
     }
 
     private func refreshRotateAffordance(
@@ -980,6 +1021,8 @@ final class iOSCanvasViewportView: UIView {
     }
 
     private func hideSelectionOverlay() {
+        selectionHighlightsLayer.path = nil
+        selectionHighlightsLayer.isHidden = true
         selectionOutlineLayer.path = nil
         selectionOutlineLayer.isHidden = true
 

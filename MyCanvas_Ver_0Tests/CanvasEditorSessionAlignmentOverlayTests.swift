@@ -232,6 +232,156 @@ final class CanvasEditorSessionAlignmentOverlayTests: XCTestCase {
         )
         XCTAssertNil(session.scene.boardItem(withID: currentItem.id))
     }
+
+    func testMakeCanvasSnapshotProducesSelectionHighlightsAndGroupOverlayForMultiSelection() {
+        let firstItem = CanvasTextItem(
+            text: "first",
+            center: CGPoint(x: -40, y: 10),
+            size: CGSize(width: 80, height: 40),
+            rotationRadians: .pi / 12
+        )
+        let secondItem = CanvasTextItem(
+            text: "second",
+            center: CGPoint(x: 60, y: 40),
+            size: CGSize(width: 120, height: 50),
+            rotationRadians: -.pi / 18
+        )
+        let session = makeAlignmentOverlayTestSession(
+            items: [.text(firstItem), .text(secondItem)],
+            interactionState: CanvasInteractionState(
+                selectedItemIDs: [firstItem.id, secondItem.id],
+                primarySelectedItemID: secondItem.id
+            )
+        )
+
+        let snapshot = session.makeCanvasSnapshot()
+        let editOverlay = try? XCTUnwrap(snapshot.editOverlay)
+
+        XCTAssertEqual(snapshot.selectionHighlights.map(\.itemID), [firstItem.id, secondItem.id])
+        XCTAssertEqual(snapshot.selectionHighlights.count, 2)
+        guard
+            let editOverlay,
+            case let .selection(payload) = editOverlay.payload,
+            case let .group(primaryItemID, memberItemIDs) = payload.subject
+        else {
+            XCTFail("Expected multi-selection snapshot to expose a group selection overlay.")
+            return
+        }
+
+        let expectedWorldBounds = firstItem.worldBounds
+            .union(secondItem.worldBounds)
+            .standardized
+        XCTAssertEqual(primaryItemID, secondItem.id)
+        XCTAssertEqual(memberItemIDs, [firstItem.id, secondItem.id])
+        XCTAssertEqual(editOverlay.activeWorldQuad.boundingRect.standardized, expectedWorldBounds)
+        XCTAssertEqual(editOverlay.handles.count, CanvasSelectionHandleRole.allCases.count)
+    }
+
+    func testResolvePointerTargetTreatsEverySelectedMemberBodyAsSelected() {
+        let firstItem = CanvasTextItem(
+            text: "first",
+            center: CGPoint(x: -30, y: 0),
+            size: CGSize(width: 80, height: 40)
+        )
+        let secondItem = CanvasTextItem(
+            text: "second",
+            center: CGPoint(x: 70, y: 20),
+            size: CGSize(width: 100, height: 44)
+        )
+        let session = makeAlignmentOverlayTestSession(
+            items: [.text(firstItem), .text(secondItem)],
+            interactionState: CanvasInteractionState(
+                selectedItemIDs: [firstItem.id, secondItem.id],
+                primarySelectedItemID: secondItem.id
+            )
+        )
+        _ = session.makeCanvasSnapshot()
+
+        let pressContext = session.resolvePointerTarget(
+            at: session.camera.worldToViewport(firstItem.center),
+            interactionMetrics: makeAlignmentOverlayTestContextResolverMetrics()
+        )
+
+        guard case .selectedItemBody = pressContext.targetKind else {
+            XCTFail("Expected every selected member body to resolve as selected.")
+            return
+        }
+        XCTAssertEqual(pressContext.targetItemID, firstItem.id)
+    }
+
+    func testResolvePointerTargetHitsGroupSelectionHandleForMultiSelection() throws {
+        let firstItem = CanvasTextItem(
+            text: "first",
+            center: CGPoint(x: -20, y: 10),
+            size: CGSize(width: 80, height: 40)
+        )
+        let secondItem = CanvasTextItem(
+            text: "second",
+            center: CGPoint(x: 80, y: 50),
+            size: CGSize(width: 120, height: 60)
+        )
+        let session = makeAlignmentOverlayTestSession(
+            items: [.text(firstItem), .text(secondItem)],
+            interactionState: CanvasInteractionState(
+                selectedItemIDs: [firstItem.id, secondItem.id],
+                primarySelectedItemID: secondItem.id
+            )
+        )
+        let snapshot = session.makeCanvasSnapshot()
+        let editOverlay = try XCTUnwrap(snapshot.editOverlay)
+        let topLeadingHandle = try XCTUnwrap(
+            editOverlay.handles.first(where: { $0.role == .topLeading })
+        )
+
+        let pressContext = session.resolvePointerTarget(
+            at: topLeadingHandle.screenCenter,
+            interactionMetrics: makeAlignmentOverlayTestContextResolverMetrics()
+        )
+
+        guard case let .groupSelectionHandle(role) = pressContext.targetKind else {
+            XCTFail("Expected multi-selection handle hit to resolve as groupSelectionHandle.")
+            return
+        }
+        XCTAssertEqual(role, .topLeading)
+        XCTAssertEqual(pressContext.targetItemID, secondItem.id)
+    }
+
+    func testResolvePointerTargetHitsGroupRotateHandleForMultiSelection() throws {
+        let firstItem = CanvasTextItem(
+            text: "first",
+            center: CGPoint(x: -10, y: 0),
+            size: CGSize(width: 80, height: 40)
+        )
+        let secondItem = CanvasTextItem(
+            text: "second",
+            center: CGPoint(x: 90, y: 40),
+            size: CGSize(width: 120, height: 60)
+        )
+        let session = makeAlignmentOverlayTestSession(
+            items: [.text(firstItem), .text(secondItem)],
+            interactionState: CanvasInteractionState(
+                selectedItemIDs: [firstItem.id, secondItem.id],
+                primarySelectedItemID: secondItem.id
+            )
+        )
+        let snapshot = session.makeCanvasSnapshot()
+        let editOverlay = try XCTUnwrap(snapshot.editOverlay)
+        guard case let .selection(payload) = editOverlay.payload else {
+            XCTFail("Expected selection payload.")
+            return
+        }
+
+        let pressContext = session.resolvePointerTarget(
+            at: payload.rotateAffordance.handle.screenCenter,
+            interactionMetrics: makeAlignmentOverlayTestContextResolverMetrics()
+        )
+
+        guard case .groupRotateHandle = pressContext.targetKind else {
+            XCTFail("Expected multi-selection rotate hit to resolve as groupRotateHandle.")
+            return
+        }
+        XCTAssertEqual(pressContext.targetItemID, secondItem.id)
+    }
 }
 
 private enum CanvasEditorSessionAlignmentOverlayTestRetainer {
@@ -260,6 +410,16 @@ private func makeAlignmentOverlayTestSession(
     items: [CanvasBoardItem],
     selectedItemID: CanvasItemID
 ) -> CanvasEditorSession {
+    makeAlignmentOverlayTestSession(
+        items: items,
+        interactionState: CanvasInteractionState(selectedItemID: selectedItemID)
+    )
+}
+
+private func makeAlignmentOverlayTestSession(
+    items: [CanvasBoardItem],
+    interactionState: CanvasInteractionState
+) -> CanvasEditorSession {
     let session = CanvasEditorSession(
         saveQueueLabel: "CanvasEditorSessionAlignmentOverlayTests.save",
         logPrefix: "[CanvasEditorSessionAlignmentOverlayTests]"
@@ -270,7 +430,7 @@ private func makeAlignmentOverlayTestSession(
         zoomScale: 1,
         viewportSize: CGSize(width: 600, height: 400)
     )
-    session.interactionState.selectedItemID = selectedItemID
+    session.interactionState = interactionState
     CanvasEditorSessionAlignmentOverlayTestRetainer.sessions.append(session)
     return session
 }
@@ -361,6 +521,15 @@ private func makeAlignmentOverlayTestCGImage() throws -> CGImage {
         throw AlignmentOverlayTestImageError.failedToCreateImage
     }
     return image
+}
+
+private func makeAlignmentOverlayTestContextResolverMetrics() -> CanvasContextResolverMetrics {
+    CanvasContextResolverMetrics(
+        selectionHandleHitTargetSize: 28,
+        cropHandleHitTargetSize: 28,
+        cropOutlineHitTargetWidth: 24,
+        rotateHandleHitTargetSize: 28
+    )
 }
 
 private enum AlignmentOverlayTestImageError: Error {

@@ -16,7 +16,7 @@ struct CanvasContextResolver {
         scene: CanvasScene,
         camera: CanvasCamera,
         renderSnapshot: CanvasRenderSnapshot,
-        selectedItemID: CanvasItemID?,
+        selectedItemIDs: [CanvasItemID],
         isInlineEditModeActive: Bool,
         isReadingModeActive: Bool,
         interactionMetrics: CanvasContextResolverMetrics
@@ -27,7 +27,7 @@ struct CanvasContextResolver {
             invocationWorldPoint: invocationWorldPoint,
             scene: scene,
             renderSnapshot: renderSnapshot,
-            selectedItemID: selectedItemID,
+            selectedItemIDs: Set(selectedItemIDs),
             isInlineEditModeActive: isInlineEditModeActive,
             isReadingModeActive: isReadingModeActive,
             interactionMetrics: interactionMetrics
@@ -45,7 +45,8 @@ struct CanvasContextResolver {
         scene: CanvasScene,
         camera: CanvasCamera,
         renderSnapshot: CanvasRenderSnapshot,
-        selectedItemID: CanvasItemID?,
+        selectedItemIDs: [CanvasItemID],
+        primarySelectedItemID: CanvasItemID?,
         isInlineEditModeActive: Bool,
         isInlineCropModeActive: Bool,
         isReadingModeActive: Bool,
@@ -58,7 +59,7 @@ struct CanvasContextResolver {
             invocationWorldPoint: invocationWorldPoint,
             scene: scene,
             renderSnapshot: renderSnapshot,
-            selectedItemID: selectedItemID,
+            selectedItemIDs: Set(selectedItemIDs),
             isInlineEditModeActive: isInlineEditModeActive,
             isReadingModeActive: isReadingModeActive,
             interactionMetrics: interactionMetrics
@@ -68,7 +69,7 @@ struct CanvasContextResolver {
             viewportPoint: viewportPoint,
             worldPoint: invocationWorldPoint,
             resolvedTarget: resolution.resolvedTarget,
-            selectedItemID: selectedItemID,
+            selectedItemID: primarySelectedItemID,
             isInlineEditModeActive: isInlineEditModeActive,
             isInlineCropModeActive: isInlineCropModeActive
         )
@@ -79,7 +80,7 @@ struct CanvasContextResolver {
             "worldPoint=\(describeContextResolverPoint(invocationWorldPoint)) " +
             "viewportBounds=\(describeContextResolverRect(renderSnapshot.viewportBounds)) " +
             "visibleWorldRect=\(describeContextResolverRect(renderSnapshot.visibleWorldRect)) " +
-            "selectedItemID=\(describeContextResolverItemID(selectedItemID)) " +
+            "selectedItemID=\(describeContextResolverItemID(primarySelectedItemID)) " +
             "sceneHitItemID=\(describeContextResolverItemID(resolution.sceneHitItemID)) " +
             "renderItems=\(renderSnapshot.items.count) " +
             "editOverlay=\(editOverlayDescription) " +
@@ -93,7 +94,7 @@ struct CanvasContextResolver {
         invocationWorldPoint: CGPoint,
         scene: CanvasScene,
         renderSnapshot: CanvasRenderSnapshot,
-        selectedItemID: CanvasItemID?,
+        selectedItemIDs: Set<CanvasItemID>,
         isInlineEditModeActive: Bool,
         isReadingModeActive: Bool,
         interactionMetrics: CanvasContextResolverMetrics
@@ -137,7 +138,9 @@ struct CanvasContextResolver {
         }
 
         let targetKind: CanvasPointerTargetKind =
-            itemID == selectedItemID ? .selectedItemBody : .unselectedItemBody
+            selectedItemIDs.contains(itemID)
+            ? .selectedItemBody
+            : .unselectedItemBody
 
         return ResolutionResult(
             branch: "itemBody",
@@ -157,7 +160,11 @@ struct CanvasContextResolver {
         for hitTarget: CanvasEditOverlayHitTarget
     ) -> String {
         switch hitTarget.kind {
-        case .rotateHandle, .selectionHandle, .cropHandle:
+        case .rotateHandle,
+             .groupRotateHandle,
+             .selectionHandle,
+             .groupSelectionHandle,
+             .cropHandle:
             return "editHandle"
         case .cropTranslationArea:
             return hitTarget.kind.debugName
@@ -171,8 +178,12 @@ struct CanvasContextResolver {
         switch hitTarget.kind {
         case .rotateHandle:
             pointerTargetKind = .rotateHandle
+        case .groupRotateHandle:
+            pointerTargetKind = .groupRotateHandle
         case let .selectionHandle(role):
             pointerTargetKind = .selectionHandle(role: role)
+        case let .groupSelectionHandle(role):
+            pointerTargetKind = .groupSelectionHandle(role: role)
         case let .cropHandle(role):
             pointerTargetKind = .cropHandle(role: role)
         case .cropTranslationArea:
@@ -191,10 +202,11 @@ struct CanvasContextResolver {
         for itemID: CanvasItemID,
         renderSnapshot: CanvasRenderSnapshot
     ) -> CGRect? {
-        if let editOverlay = renderSnapshot.editOverlay,
-           editOverlay.itemID == itemID
-        {
-            return editOverlay.activeScreenQuad.boundingRect.standardized
+        if let overlayAnchorRect = overlayAnchorRect(
+            for: itemID,
+            renderSnapshot: renderSnapshot
+        ) {
+            return overlayAnchorRect
         }
 
         return renderSnapshot.items
@@ -202,6 +214,36 @@ struct CanvasContextResolver {
             .screenQuad
             .boundingRect
             .standardized
+    }
+
+    private func overlayAnchorRect(
+        for itemID: CanvasItemID,
+        renderSnapshot: CanvasRenderSnapshot
+    ) -> CGRect? {
+        guard let editOverlay = renderSnapshot.editOverlay else {
+            return nil
+        }
+
+        switch editOverlay.kind {
+        case .crop:
+            guard editOverlay.itemID == itemID else {
+                return nil
+            }
+            return editOverlay.activeScreenQuad.boundingRect.standardized
+        case .selection:
+            guard case let .selection(payload) = editOverlay.payload else {
+                return nil
+            }
+            switch payload.subject {
+            case let .singleItem(selectedItemID):
+                guard selectedItemID == itemID else {
+                    return nil
+                }
+                return editOverlay.activeScreenQuad.boundingRect.standardized
+            case .group:
+                return nil
+            }
+        }
     }
 
     private func makeContext(
@@ -247,12 +289,16 @@ struct CanvasContextResolver {
         switch pointerTargetKind {
         case .rotateHandle:
             return .rotateHandle
+        case .groupRotateHandle:
+            return .groupRotateHandle
         case let .cropHandle(role):
             return .cropHandle(role: role)
         case .cropTranslationArea:
             return .cropOutline
         case let .selectionHandle(role):
             return .selectionHandle(role: role)
+        case let .groupSelectionHandle(role):
+            return .groupSelectionHandle(role: role)
         case .selectedItemBody:
             return .selectedItemBody
         case .unselectedItemBody:

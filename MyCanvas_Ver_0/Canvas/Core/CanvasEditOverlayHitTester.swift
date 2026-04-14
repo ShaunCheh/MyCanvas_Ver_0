@@ -3,7 +3,9 @@ import Foundation
 
 enum CanvasEditOverlayHitTargetKind {
     case rotateHandle
+    case groupRotateHandle
     case selectionHandle(role: CanvasSelectionHandleRole)
+    case groupSelectionHandle(role: CanvasSelectionHandleRole)
     case cropHandle(role: CanvasCropHandleRole)
     // Crop translation now covers both the visible crop interior and the edge
     // hit slop so controllers can treat the whole movable area uniformly.
@@ -13,8 +15,12 @@ enum CanvasEditOverlayHitTargetKind {
         switch self {
         case .rotateHandle:
             return "rotateHandle"
+        case .groupRotateHandle:
+            return "groupRotateHandle"
         case let .selectionHandle(role):
             return "selectionHandle(\(String(describing: role)))"
+        case let .groupSelectionHandle(role):
+            return "groupSelectionHandle(\(String(describing: role)))"
         case let .cropHandle(role):
             return "cropHandle(\(String(describing: role)))"
         case .cropTranslationArea:
@@ -105,6 +111,9 @@ struct CanvasEditOverlayHitTester {
         guard case let .selection(payload) = editOverlay.payload else {
             return nil
         }
+        let rotateHitTargetKind: CanvasEditOverlayHitTargetKind = payload.subject.isGroupSelection
+            ? .groupRotateHandle
+            : .rotateHandle
 
         let rotateHitRect = rect(
             centeredAt: payload.rotateAffordance.handle.screenCenter,
@@ -112,7 +121,7 @@ struct CanvasEditOverlayHitTester {
         )
         if rotateHitRect.contains(viewportPoint) {
             return CanvasEditOverlayHitTarget(
-                kind: .rotateHandle,
+                kind: rotateHitTargetKind,
                 itemID: editOverlay.itemID,
                 anchorRect: rotateHitRect
             )
@@ -128,8 +137,11 @@ struct CanvasEditOverlayHitTester {
                 size: metrics.selectionHandleHitTargetSize
             )
             if hitRect.contains(viewportPoint) {
+                let handleHitTargetKind: CanvasEditOverlayHitTargetKind = payload.subject.isGroupSelection
+                    ? .groupSelectionHandle(role: role)
+                    : .selectionHandle(role: role)
                 return CanvasEditOverlayHitTarget(
-                    kind: .selectionHandle(role: role),
+                    kind: handleHitTargetKind,
                     itemID: editOverlay.itemID,
                     anchorRect: hitRect
                 )

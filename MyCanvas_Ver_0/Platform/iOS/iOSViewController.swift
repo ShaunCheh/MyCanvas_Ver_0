@@ -1410,6 +1410,9 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
                 pointerDragState = .rotatingSelectedItem(rotateState)
                 beginRotationInteraction(for: itemID)
                 updateRotationDraft(using: rotateState, to: location)
+            case .groupRotateHandle:
+                editorSession.cancelPendingHistoryTransaction()
+                pointerDragState = .idle
             case let .cropHandle(handleRole):
                 guard let itemID = pressContext.targetItemID else {
                     editorSession.cancelPendingHistoryTransaction()
@@ -1456,6 +1459,9 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
 
                 pointerDragState = .resizingSelectedItem(resizeState)
                 resizeSelectedItem(using: resizeState, to: location)
+            case .groupSelectionHandle:
+                editorSession.cancelPendingHistoryTransaction()
+                pointerDragState = .idle
             case .selectedItemBody:
                 guard let itemID = pressContext.targetItemID else {
                     pointerDragState = .idle
@@ -1538,6 +1544,9 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             case .rotateHandle:
                 clickTarget = "rotate_handle"
                 affectedItemID = pressContext.targetItemID
+            case .groupRotateHandle:
+                clickTarget = "group_rotate_handle"
+                affectedItemID = pressContext.targetItemID
             case .cropHandle:
                 clickTarget = "crop_handle"
                 affectedItemID = pressContext.targetItemID
@@ -1546,6 +1555,9 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
                 affectedItemID = pressContext.targetItemID
             case .selectionHandle:
                 clickTarget = "handle"
+                affectedItemID = pressContext.targetItemID
+            case .groupSelectionHandle:
+                clickTarget = "group_handle"
                 affectedItemID = pressContext.targetItemID
             case .selectedItemBody, .unselectedItemBody:
                 if let itemID = pressContext.targetItemID,
@@ -4099,10 +4111,14 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         switch pressContext.targetKind {
         case .rotateHandle:
             reason = "rotate item"
+        case .groupRotateHandle:
+            return
         case .cropHandle, .cropTranslationArea:
             reason = "crop item"
         case .selectionHandle:
             reason = "resize item"
+        case .groupSelectionHandle:
+            return
         case .selectedItemBody:
             reason = "move item"
         case .unselectedItemBody, .blank:

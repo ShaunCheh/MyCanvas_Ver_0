@@ -10,7 +10,7 @@ todos:
     status: completed
   - id: phase2-render-hit-testing
     content: 实现成员高亮、组选框、组手柄与对应命中模型。
-    status: pending
+    status: completed
   - id: phase3-toolbar-input
     content: 接入 iOS/macOS 多选工具条开关，并完成 macOS Command+Click 与共享点击决策器。
     status: pending

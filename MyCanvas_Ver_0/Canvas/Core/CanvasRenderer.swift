@@ -69,6 +69,13 @@ struct CanvasRenderer {
             inlineEditState: inlineEditState,
             rotationPreviewState: rotationPreviewState
         )
+        let selectionHighlights = makeSelectionHighlights(
+            scene: scene,
+            camera: camera,
+            interactionState: interactionState,
+            inlineEditState: inlineEditState,
+            rotationPreviewState: rotationPreviewState
+        )
         let interactionOverlay = makeInteractionOverlay(
             scene: scene,
             camera: camera,
@@ -84,6 +91,7 @@ struct CanvasRenderer {
             visibleWorldRect: visibleWorldRect,
             workspaceOverlay: workspaceOverlay,
             items: renderItems,
+            selectionHighlights: selectionHighlights,
             editOverlay: editOverlay,
             interactionOverlay: interactionOverlay
         )
@@ -285,34 +293,85 @@ struct CanvasRenderer {
             return nil
         }
 
+        let selectedItems = selectedOverlayItems(
+            scene: scene,
+            interactionState: interactionState,
+            rotationPreviewState: rotationPreviewState
+        )
         guard
-            let selectedItemID = interactionState.selectedItemID,
-            let selectedItem = scene.boardItem(withID: selectedItemID)
+            let primarySelectedItemID = interactionState.primarySelectedItemID,
+            selectedItems.isEmpty == false
         else {
             return nil
         }
+        let resolvedPrimarySelectedItemID =
+            selectedItems.contains(where: { $0.id == primarySelectedItemID })
+            ? primarySelectedItemID
+            : selectedItems.last?.id ?? primarySelectedItemID
 
-        let effectiveItem = effectiveBoardItem(
-            from: selectedItem,
-            rotationPreviewState: rotationPreviewState
-        )
-        let worldQuad = effectiveItem.worldQuad
-        let screenQuad = camera.worldToViewport(worldQuad)
+        let subject: CanvasEditSelectionOverlaySubject
+        let worldQuad: CanvasQuad
+        let screenQuad: CanvasQuad
+        let screenCenter: CGPoint
+        if selectedItems.count == 1,
+           let effectiveItem = selectedItems.first
+        {
+            subject = .singleItem(itemID: effectiveItem.id)
+            worldQuad = effectiveItem.worldQuad
+            screenQuad = camera.worldToViewport(worldQuad)
+            screenCenter = camera.worldToViewport(effectiveItem.center)
+        } else {
+            let groupWorldBounds = groupSelectionWorldBounds(for: selectedItems)
+            subject = .group(
+                primaryItemID: resolvedPrimarySelectedItemID,
+                memberItemIDs: selectedItems.map(\.id)
+            )
+            worldQuad = CanvasQuad(rect: groupWorldBounds)
+            screenQuad = camera.worldToViewport(worldQuad)
+            screenCenter = camera.worldToViewport(
+                CGPoint(x: groupWorldBounds.midX, y: groupWorldBounds.midY)
+            )
+        }
         let selectionPayload = CanvasEditSelectionOverlayPayload(
+            subject: subject,
             rotateAffordance: makeRotateAffordance(
-                screenCenter: camera.worldToViewport(effectiveItem.center),
+                screenCenter: screenCenter,
                 screenQuad: screenQuad
             )
         )
 
         return CanvasEditRenderOverlay(
-            itemID: effectiveItem.id,
+            itemID: subject.primaryItemID,
             kind: .selection,
             activeWorldQuad: worldQuad,
             activeScreenQuad: screenQuad,
             handles: makeCornerEditHandles(for: screenQuad),
             payload: .selection(selectionPayload)
         )
+    }
+
+    private func makeSelectionHighlights(
+        scene: CanvasScene,
+        camera: CanvasCamera,
+        interactionState: CanvasInteractionState,
+        inlineEditState: CanvasInlineEditState?,
+        rotationPreviewState: CanvasRotationPreviewState?
+    ) -> [CanvasSelectionHighlight] {
+        guard inlineEditState == nil, interactionState.selectionCount > 1 else {
+            return []
+        }
+
+        return selectedOverlayItems(
+            scene: scene,
+            interactionState: interactionState,
+            rotationPreviewState: rotationPreviewState
+        ).map { item in
+            CanvasSelectionHighlight(
+                itemID: item.id,
+                screenQuad: camera.worldToViewport(item.worldQuad),
+                isPrimary: item.id == interactionState.primarySelectedItemID
+            )
+        }
     }
 
     private func makeCropEditOverlay(
@@ -398,7 +457,7 @@ struct CanvasRenderer {
 
         guard
             let rotationInteractionState,
-            interactionState.selectedItemID == rotationInteractionState.itemID,
+            interactionState.singleSelectedItemID == rotationInteractionState.itemID,
             let item = scene.boardItem(withID: rotationInteractionState.itemID)
         else {
             return nil
@@ -491,7 +550,7 @@ struct CanvasRenderer {
         guard
             let alignmentInteractionState,
             alignmentInteractionState.isActive,
-            interactionState.selectedItemID == alignmentInteractionState.itemID,
+            interactionState.singleSelectedItemID == alignmentInteractionState.itemID,
             scene.boardItem(withID: alignmentInteractionState.itemID) != nil
         else {
             return nil
@@ -532,6 +591,30 @@ struct CanvasRenderer {
         var effectiveItem = item
         effectiveItem.rotationRadians = rotationPreviewState.draftRotationRadians
         return effectiveItem
+    }
+
+    private func selectedOverlayItems(
+        scene: CanvasScene,
+        interactionState: CanvasInteractionState,
+        rotationPreviewState: CanvasRotationPreviewState?
+    ) -> [CanvasBoardItem] {
+        interactionState.selectedItemIDs.compactMap { itemID in
+            scene.boardItem(withID: itemID)
+        }.map { item in
+            effectiveBoardItem(
+                from: item,
+                rotationPreviewState: rotationPreviewState
+            )
+        }
+    }
+
+    private func groupSelectionWorldBounds(
+        for items: [CanvasBoardItem]
+    ) -> CGRect {
+        let bounds = items.reduce(into: CGRect.null) { partialResult, item in
+            partialResult = partialResult.union(item.worldQuad.boundingRect.standardized)
+        }
+        return bounds.isNull ? .zero : bounds.standardized
     }
 
     private func makeRenderItem(

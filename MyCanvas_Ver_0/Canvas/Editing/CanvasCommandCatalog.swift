@@ -184,7 +184,9 @@ struct CanvasCommandCatalog {
         case nil,
              .selectedItemBody,
              .selectionHandle,
+             .groupSelectionHandle,
              .rotateHandle,
+             .groupRotateHandle,
              .cropHandle,
              .cropOutline:
             return true

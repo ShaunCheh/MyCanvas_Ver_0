@@ -3,16 +3,22 @@ import Foundation
 
 enum CanvasContextMenuTargetKind {
     case rotateHandle
+    case groupRotateHandle
     case cropHandle(role: CanvasCropHandleRole)
     case cropOutline
     case selectionHandle(role: CanvasSelectionHandleRole)
+    case groupSelectionHandle(role: CanvasSelectionHandleRole)
     case selectedItemBody
     case unselectedItemBody
     case blank
 
     var isEditHandle: Bool {
         switch self {
-        case .rotateHandle, .cropHandle, .selectionHandle:
+        case .rotateHandle,
+             .groupRotateHandle,
+             .cropHandle,
+             .selectionHandle,
+             .groupSelectionHandle:
             return true
         case .cropOutline, .selectedItemBody, .unselectedItemBody, .blank:
             return false
@@ -23,12 +29,16 @@ enum CanvasContextMenuTargetKind {
         switch self {
         case .rotateHandle:
             return "rotateHandle"
+        case .groupRotateHandle:
+            return "groupRotateHandle"
         case let .cropHandle(role):
             return "cropHandle(\(String(describing: role)))"
         case .cropOutline:
             return "cropOutline"
         case let .selectionHandle(role):
             return "selectionHandle(\(String(describing: role)))"
+        case let .groupSelectionHandle(role):
+            return "groupSelectionHandle(\(String(describing: role)))"
         case .selectedItemBody:
             return "selectedItemBody"
         case .unselectedItemBody:
@@ -52,7 +62,11 @@ struct CanvasContextMenuContext {
 
     var anchorPoint: CGPoint {
         switch targetKind {
-        case .rotateHandle, .cropHandle, .selectionHandle:
+        case .rotateHandle,
+             .groupRotateHandle,
+             .cropHandle,
+             .selectionHandle,
+             .groupSelectionHandle:
             guard let anchorRect else {
                 return invocationViewportPoint
             }

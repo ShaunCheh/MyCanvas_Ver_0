@@ -98,7 +98,46 @@ struct CanvasEditRotateOverlayPayload {
     let handle: CanvasEditHandleGeometry
 }
 
+struct CanvasSelectionHighlight: Equatable {
+    let itemID: CanvasItemID
+    let screenQuad: CanvasQuad
+    let isPrimary: Bool
+}
+
+enum CanvasEditSelectionOverlaySubject: Equatable {
+    case singleItem(itemID: CanvasItemID)
+    case group(primaryItemID: CanvasItemID, memberItemIDs: [CanvasItemID])
+
+    var primaryItemID: CanvasItemID {
+        switch self {
+        case let .singleItem(itemID):
+            return itemID
+        case let .group(primaryItemID, _):
+            return primaryItemID
+        }
+    }
+
+    var memberItemIDs: [CanvasItemID] {
+        switch self {
+        case let .singleItem(itemID):
+            return [itemID]
+        case let .group(_, memberItemIDs):
+            return memberItemIDs
+        }
+    }
+
+    var isGroupSelection: Bool {
+        switch self {
+        case .singleItem:
+            return false
+        case .group:
+            return true
+        }
+    }
+}
+
 struct CanvasEditSelectionOverlayPayload {
+    let subject: CanvasEditSelectionOverlaySubject
     let rotateAffordance: CanvasEditRotateOverlayPayload
 }
 
@@ -272,6 +311,7 @@ struct CanvasRenderSnapshot {
     let visibleWorldRect: CGRect
     let workspaceOverlay: CanvasWorkspaceRenderOverlay?
     let items: [CanvasRenderItem]
+    let selectionHighlights: [CanvasSelectionHighlight]
     let editOverlay: CanvasEditRenderOverlay?
     let interactionOverlay: CanvasInteractionRenderOverlay?
 
@@ -280,6 +320,7 @@ struct CanvasRenderSnapshot {
         visibleWorldRect: .zero,
         workspaceOverlay: nil,
         items: [],
+        selectionHighlights: [],
         editOverlay: nil,
         interactionOverlay: nil
     )
