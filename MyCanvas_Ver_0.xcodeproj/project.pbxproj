@@ -7,7 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		28A9EB812F8DEFCD004160FE /* Add To Canvas.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 28A9EB772F8DEFCD004160FE /* Add To Canvas.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		28A9EB812F8DEFCD004160FE /* Add To Canvas.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 28A9EB772F8DEFCD004160FE /* Add To Canvas.appex */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		9A9B9C032F600001005B952A /* XCTest.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9A9B9C022F600001005B952A /* XCTest.framework */; };
 /* End PBXBuildFile section */
 
@@ -337,6 +337,7 @@
 /* Begin PBXTargetDependency section */
 		28A9EB802F8DEFCD004160FE /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
+			platformFilter = ios;
 			target = 28A9EB762F8DEFCD004160FE /* Add To Canvas */;
 			targetProxy = 28A9EB7F2F8DEFCD004160FE /* PBXContainerItemProxy */;
 		};
