@@ -301,15 +301,18 @@ final class CanvasScene {
     @discardableResult
     func updateTextItem(
         withID id: CanvasItemID,
-        text: String
+        text: String,
+        style: CanvasTextStyle,
+        size: CGSize
     ) -> CanvasTextItem? {
-        updateBoardItem(withID: id) { item in
-            guard case var .text(textItem) = item else {
-                return nil
-            }
+        guard size.width > 0, size.height > 0 else {
+            return nil
+        }
 
+        return updateTextItem(withID: id) { textItem in
             textItem.text = text
-            item = .text(textItem)
+            textItem.style = style
+            textItem.size = size
             return textItem
         } ?? nil
     }
@@ -723,6 +726,24 @@ final class CanvasScene {
                 )
             )
         }
+    }
+
+    @discardableResult
+    private func updateTextItem<T>(
+        withID id: CanvasItemID,
+        _ mutate: (inout CanvasTextItem) -> T
+    ) -> T? {
+        guard let index = items.firstIndex(where: { $0.id == id }) else {
+            return nil
+        }
+
+        guard case var .text(item) = items[index] else {
+            return nil
+        }
+
+        let result = mutate(&item)
+        items[index] = .text(item)
+        return result
     }
 
     @discardableResult

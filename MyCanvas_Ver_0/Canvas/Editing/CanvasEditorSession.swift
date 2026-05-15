@@ -626,7 +626,7 @@ final class CanvasEditorSession {
             )
         }
 
-        guard scene.updateTextItem(withID: itemID, text: draftText) != nil else {
+        guard updateTextItemContent(withID: itemID, text: draftText, style: item.style) != nil else {
             return CanvasTextEditCommitResult(
                 itemID: itemID,
                 didDeleteItem: false,
@@ -1617,12 +1617,31 @@ final class CanvasEditorSession {
         )
     }
 
-    func defaultTextItemSize(
-        for style: CanvasTextStyle = .default
+    func measuredTextItemSize(
+        for text: String,
+        style: CanvasTextStyle
     ) -> CGSize {
-        CGSize(
-            width: max(style.fontSize * 7.5, 240),
-            height: max(style.fontSize * 3, 96)
+        CanvasTextLayoutMeasurer.intrinsicItemSize(
+            for: text,
+            style: style
+        )
+    }
+
+    @discardableResult
+    func updateTextItemContent(
+        withID itemID: CanvasItemID,
+        text: String,
+        style: CanvasTextStyle
+    ) -> CanvasTextItem? {
+        let size = measuredTextItemSize(
+            for: text,
+            style: style
+        )
+        return scene.updateTextItem(
+            withID: itemID,
+            text: text,
+            style: style,
+            size: size
         )
     }
 
@@ -1809,7 +1828,10 @@ final class CanvasEditorSession {
             text: text,
             style: style,
             center: camera.center,
-            size: defaultTextItemSize(for: style),
+            size: measuredTextItemSize(
+                for: text,
+                style: style
+            ),
             zIndex: nextBoardItemZIndex()
         )
         scene.append(item)
