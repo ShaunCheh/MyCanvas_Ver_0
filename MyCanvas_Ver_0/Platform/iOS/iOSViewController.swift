@@ -1519,10 +1519,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
 
                 pointerDragState = .resizingSelection(resizeState)
                 resizeSelection(using: resizeState, to: location)
-            case .selectionTranslationArea:
-                editorSession.cancelPendingHistoryTransaction()
-                pointerDragState = .idle
-            case .selectedItemBody:
+            case .selectionTranslationArea, .selectedItemBody:
                 guard let itemID = pressContext.targetItemID else {
                     pointerDragState = .idle
                     return
@@ -4484,9 +4481,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             reason = "resize item"
         case .groupSelectionHandle:
             reason = "resize selection"
-        case .selectionTranslationArea:
-            return
-        case .selectedItemBody:
+        case .selectionTranslationArea, .selectedItemBody:
             reason = interactionState.selectionCount > 1
                 ? "move selection"
                 : "move item"
