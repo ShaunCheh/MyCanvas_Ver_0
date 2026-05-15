@@ -46,17 +46,7 @@ enum BoardDocumentMapper {
                     )
                 )
             case let .text(textRecord):
-                return CanvasBoardItem.text(
-                    CanvasTextItem(
-                        id: textRecord.id,
-                        text: textRecord.text,
-                        style: textRecord.style.canvasTextStyle,
-                        center: textRecord.center.cgPoint,
-                        size: textRecord.size.cgSize,
-                        zIndex: CGFloat(textRecord.zIndex),
-                        rotationRadians: CGFloat(textRecord.rotationRadians ?? 0)
-                    )
-                )
+                return CanvasBoardItem.text(makeTextItem(from: textRecord))
             }
         }
 
@@ -69,7 +59,8 @@ enum BoardDocumentMapper {
             items: items,
             boardState: makeBoardState(
                 boardBaseSize: document.boardBaseSize,
-                boardRect: document.boardRect
+                boardRect: document.boardRect,
+                items: items
             ),
             camera: CanvasCamera(
                 center: document.cameraCenter.cgPoint,
@@ -105,6 +96,22 @@ enum BoardDocumentMapper {
         }
     }
 
+    private static func makeTextItem(from textRecord: BoardTextItemRecord) -> CanvasTextItem {
+        let style = textRecord.style.canvasTextStyle
+        return CanvasTextItem(
+            id: textRecord.id,
+            text: textRecord.text,
+            style: style,
+            center: textRecord.center.cgPoint,
+            size: CanvasTextLayoutMeasurer.intrinsicItemSize(
+                for: textRecord.text,
+                style: style
+            ),
+            zIndex: CGFloat(textRecord.zIndex),
+            rotationRadians: CGFloat(textRecord.rotationRadians ?? 0)
+        )
+    }
+
     private static func makeImageRecord(from item: CanvasImageItem) -> BoardImageItemRecord {
         BoardImageItemRecord(
             id: item.id,
@@ -135,17 +142,22 @@ enum BoardDocumentMapper {
 
     private static func makeBoardState(
         boardBaseSize: BoardSizeRecord?,
-        boardRect: BoardRectRecord?
+        boardRect: BoardRectRecord?,
+        items: [CanvasBoardItem]
     ) -> CanvasBoardState? {
         guard let boardRect else {
             return nil
         }
 
         let baseSize = boardBaseSize?.cgSize ?? boardRect.size.cgSize
-        return CanvasBoardState(
+        var boardState = CanvasBoardState(
             baseSize: baseSize,
             worldRect: boardRect.cgRect
         )
+        for item in items {
+            _ = boardState.expandIfNeeded(toInclude: item.worldBounds)
+        }
+        return boardState
     }
 }
 
