@@ -3870,11 +3870,11 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         }
 
         guard
-            let resizedGeometries = resizeState.resizedMemberGeometries(
+            let resizedItems = resizeState.resizedMemberItems(
                 for: camera.viewportToWorld(viewportLocation)
             ),
-            let resizedItems = scene.applyBoardItemGeometries(resizedGeometries),
-            let resizedBounds = worldBounds(for: resizedItems)
+            let appliedItems = scene.applyBoardItems(resizedItems),
+            let resizedBounds = worldBounds(for: appliedItems)
         else {
             return
         }

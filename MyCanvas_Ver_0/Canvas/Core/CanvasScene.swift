@@ -121,41 +121,56 @@ final class CanvasScene {
             return []
         }
 
-        var geometryByItemID: [CanvasItemID: CanvasBoardItemGeometry] = [:]
-        for geometry in geometries {
-            guard
-                geometry.size.width > 0,
-                geometry.size.height > 0,
-                geometryByItemID[geometry.itemID] == nil
-            else {
-                return nil
-            }
-            geometryByItemID[geometry.itemID] = geometry
-        }
-
-        for geometry in geometries {
-            guard items.contains(where: { $0.id == geometry.itemID }) else {
-                return nil
-            }
-        }
-
-        var updatedItems = items
         var updatedBoardItems: [CanvasBoardItem] = []
         updatedBoardItems.reserveCapacity(geometries.count)
-
         for geometry in geometries {
             guard
-                let index = updatedItems.firstIndex(where: { $0.id == geometry.itemID }),
-                let updatedItem = updatedItems[index].applyingGeometry(geometry)
+                let currentItem = boardItem(withID: geometry.itemID),
+                let updatedItem = currentItem.applyingGeometry(geometry)
             else {
                 return nil
             }
-
-            updatedItems[index] = updatedItem
             updatedBoardItems.append(updatedItem)
         }
 
-        items = updatedItems
+        return applyBoardItems(updatedBoardItems)
+    }
+
+    @discardableResult
+    // Some shared transforms, such as content-driven text group resize, must
+    // update more than raw geometry. Apply complete board items atomically here
+    // so controllers still dispatch one shared write regardless of item kind.
+    func applyBoardItems(
+        _ updatedBoardItems: [CanvasBoardItem]
+    ) -> [CanvasBoardItem]? {
+        guard updatedBoardItems.isEmpty == false else {
+            return []
+        }
+
+        var updatedItemIDs = Set<CanvasItemID>()
+        for updatedItem in updatedBoardItems {
+            guard
+                updatedItem.size.width > 0,
+                updatedItem.size.height > 0,
+                updatedItemIDs.insert(updatedItem.id).inserted
+            else {
+                return nil
+            }
+        }
+
+        var nextItems = items
+        for updatedItem in updatedBoardItems {
+            guard
+                let index = nextItems.firstIndex(where: { $0.id == updatedItem.id }),
+                nextItems[index].kind == updatedItem.kind
+            else {
+                return nil
+            }
+
+            nextItems[index] = updatedItem
+        }
+
+        items = nextItems
         return updatedBoardItems
     }
 

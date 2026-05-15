@@ -313,6 +313,7 @@ struct CanvasRenderer {
         let worldQuad: CanvasQuad
         let screenQuad: CanvasQuad
         let screenCenter: CGPoint
+        let selectionHandles: [CanvasEditHandleGeometry]
         if selectedItems.count == 1,
            let effectiveItem = selectedItems.first
         {
@@ -320,6 +321,9 @@ struct CanvasRenderer {
             worldQuad = effectiveItem.worldQuad
             screenQuad = camera.worldToViewport(worldQuad)
             screenCenter = camera.worldToViewport(effectiveItem.center)
+            selectionHandles = effectiveItem.kind == .text
+                ? []
+                : makeCornerEditHandles(for: screenQuad)
         } else {
             let groupWorldBounds = groupSelectionWorldBounds(for: selectedItems)
             subject = .group(
@@ -331,6 +335,7 @@ struct CanvasRenderer {
             screenCenter = camera.worldToViewport(
                 CGPoint(x: groupWorldBounds.midX, y: groupWorldBounds.midY)
             )
+            selectionHandles = makeCornerEditHandles(for: screenQuad)
         }
         let selectionPayload = CanvasEditSelectionOverlayPayload(
             subject: subject,
@@ -345,7 +350,7 @@ struct CanvasRenderer {
             kind: .selection,
             activeWorldQuad: worldQuad,
             activeScreenQuad: screenQuad,
-            handles: makeCornerEditHandles(for: screenQuad),
+            handles: selectionHandles,
             payload: .selection(selectionPayload)
         )
     }

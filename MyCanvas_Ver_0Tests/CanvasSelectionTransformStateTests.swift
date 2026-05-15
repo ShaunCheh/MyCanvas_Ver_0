@@ -121,4 +121,101 @@ final class CanvasSelectionTransformStateTests: XCTestCase {
             accuracy: 0.0001
         )
     }
+
+    func testResizedMemberItemsScaleTextFontSizeAndRecomputeIntrinsicSize() throws {
+        let textStyle = CanvasTextStyle(fontSize: 20)
+        let textItem = CanvasTextItem(
+            text: "Scale me",
+            style: textStyle,
+            center: CGPoint(x: 25, y: 25),
+            size: CanvasTextLayoutMeasurer.intrinsicItemSize(
+                for: "Scale me",
+                style: textStyle
+            )
+        )
+        let imageItem = try makeSelectionTransformTestImageItem(
+            center: CGPoint(x: 75, y: 75),
+            size: CGSize(width: 40, height: 20)
+        )
+        let snapshot = CanvasSelectionTransformSnapshot(
+            primaryItemID: imageItem.id,
+            memberItems: [
+                .text(textItem),
+                .image(imageItem)
+            ],
+            selectionBounds: CGRect(x: 0, y: 0, width: 100, height: 100)
+        )
+
+        let resizedItems = try XCTUnwrap(
+            snapshot.resizedMemberItems(
+                handleRole: .bottomTrailing,
+                draggedWorldCorner: CGPoint(x: 150, y: 150),
+                minimumScale: 0.1
+            )
+        )
+        let resizedTextItem = try XCTUnwrap(
+            resizedItems.first(where: { $0.id == textItem.id })?.textItem
+        )
+        let resizedImageItem = try XCTUnwrap(
+            resizedItems.first(where: { $0.id == imageItem.id })?.imageItem
+        )
+        let expectedTextStyle = CanvasTextStyle(
+            fontName: textStyle.fontName,
+            fontSize: 30,
+            color: textStyle.color
+        )
+
+        XCTAssertEqual(resizedTextItem.center, CGPoint(x: 37.5, y: 37.5))
+        XCTAssertEqual(resizedTextItem.style, expectedTextStyle)
+        XCTAssertEqual(
+            resizedTextItem.size,
+            CanvasTextLayoutMeasurer.intrinsicItemSize(
+                for: textItem.text,
+                style: expectedTextStyle
+            )
+        )
+        XCTAssertEqual(resizedImageItem.center, CGPoint(x: 112.5, y: 112.5))
+        XCTAssertEqual(resizedImageItem.size, CGSize(width: 60, height: 30))
+    }
+}
+
+private func makeSelectionTransformTestImageItem(
+    center: CGPoint,
+    size: CGSize
+) throws -> CanvasImageItem {
+    CanvasImageItem(
+        asset: .transientStaticImage(
+            cgImage: try makeSelectionTransformTestCGImage()
+        ),
+        center: center,
+        size: size
+    )
+}
+
+private func makeSelectionTransformTestCGImage() throws -> CGImage {
+    let colorSpace = CGColorSpaceCreateDeviceRGB()
+    let bitmapInfo = CGImageAlphaInfo.premultipliedLast.rawValue
+    guard let context = CGContext(
+        data: nil,
+        width: 2,
+        height: 2,
+        bitsPerComponent: 8,
+        bytesPerRow: 2 * 4,
+        space: colorSpace,
+        bitmapInfo: bitmapInfo
+    ) else {
+        throw CanvasSelectionTransformTestImageError.failedToCreateBitmapContext
+    }
+
+    context.setFillColor(red: 0.9, green: 0.4, blue: 0.2, alpha: 1)
+    context.fill(CGRect(x: 0, y: 0, width: 2, height: 2))
+    guard let image = context.makeImage() else {
+        throw CanvasSelectionTransformTestImageError.failedToCreateImage
+    }
+    return image
+}
+
+private enum CanvasSelectionTransformTestImageError: Error {
+    case failedToCreateBitmapContext
+    case failedToCreateImage
 }

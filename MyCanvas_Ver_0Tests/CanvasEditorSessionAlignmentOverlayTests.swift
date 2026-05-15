@@ -277,6 +277,38 @@ final class CanvasEditorSessionAlignmentOverlayTests: XCTestCase {
         XCTAssertEqual(editOverlay.handles.count, CanvasSelectionHandleRole.allCases.count)
     }
 
+    func testMakeCanvasSnapshotOmitsResizeHandlesForSingleTextSelection() throws {
+        let item = CanvasTextItem(
+            text: "single text",
+            center: CGPoint(x: 40, y: 20),
+            size: CGSize(width: 120, height: 48)
+        )
+        let session = makeAlignmentOverlayTestSession(with: item)
+
+        let snapshot = session.makeCanvasSnapshot()
+        let editOverlay = try XCTUnwrap(snapshot.editOverlay)
+
+        guard case let .selection(payload) = editOverlay.payload else {
+            XCTFail("Expected single text selection overlay payload.")
+            return
+        }
+
+        XCTAssertEqual(editOverlay.itemID, item.id)
+        XCTAssertTrue(editOverlay.handles.isEmpty)
+        XCTAssertFalse(payload.rotateAffordance.handle.screenCenter.x.isNaN)
+    }
+
+    func testMakeCanvasSnapshotKeepsResizeHandlesForSingleImageSelection() throws {
+        let item = try makeAlignmentOverlayTestImageItem()
+        let session = makeAlignmentOverlayTestSession(with: item)
+
+        let snapshot = session.makeCanvasSnapshot()
+        let editOverlay = try XCTUnwrap(snapshot.editOverlay)
+
+        XCTAssertEqual(editOverlay.itemID, item.id)
+        XCTAssertEqual(editOverlay.handles.count, CanvasSelectionHandleRole.allCases.count)
+    }
+
     func testResolvePointerTargetHitsSelectionTranslationAreaForSingleSelectionOutline() throws {
         let item = CanvasTextItem(
             text: "single",

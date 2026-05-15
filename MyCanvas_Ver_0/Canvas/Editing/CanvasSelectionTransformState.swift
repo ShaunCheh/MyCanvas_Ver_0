@@ -52,24 +52,39 @@ struct CanvasSelectionTransformSnapshot: Equatable {
     let primaryItemID: CanvasItemID
     let memberGeometries: [CanvasBoardItemGeometry]
     let selectionBounds: CGRect
+    private let sourceItemsByID: [CanvasItemID: CanvasBoardItem]
+
+    static func == (
+        lhs: CanvasSelectionTransformSnapshot,
+        rhs: CanvasSelectionTransformSnapshot
+    ) -> Bool {
+        lhs.primaryItemID == rhs.primaryItemID &&
+        lhs.memberGeometries == rhs.memberGeometries &&
+        lhs.selectionBounds == rhs.selectionBounds
+    }
 
     init?(
         scene: CanvasScene,
         interactionState: CanvasInteractionState
     ) {
-        let memberItems = interactionState.selectedItemIDs.compactMap { itemID in
+        let normalizedSelection = normalizeCanvasSelectionState(
+            selectedItemIDs: interactionState.selectedItemIDs,
+            primarySelectedItemID: interactionState.primarySelectedItemID
+        )
+        let memberItems = normalizedSelection.selectedItemIDs.compactMap { itemID in
             scene.boardItem(withID: itemID)
         }
         guard
             memberItems.isEmpty == false,
-            let primaryItemID = interactionState.primarySelectedItemID
+            memberItems.count == normalizedSelection.selectedItemIDs.count,
+            let primaryItemID = normalizedSelection.primarySelectedItemID
         else {
             return nil
         }
 
         self.init(
             primaryItemID: primaryItemID,
-            memberGeometries: memberItems.map(CanvasBoardItemGeometry.init(item:)),
+            memberItems: memberItems,
             selectionBounds: Self.selectionBounds(
                 for: memberItems.map(CanvasBoardItemGeometry.init(item:))
             )
@@ -81,6 +96,35 @@ struct CanvasSelectionTransformSnapshot: Equatable {
         memberGeometries: [CanvasBoardItemGeometry],
         selectionBounds: CGRect? = nil
     ) {
+        self.init(
+            primaryItemID: primaryItemID,
+            memberGeometries: memberGeometries,
+            sourceItemsByID: [:],
+            selectionBounds: selectionBounds
+        )
+    }
+
+    init(
+        primaryItemID: CanvasItemID,
+        memberItems: [CanvasBoardItem],
+        selectionBounds: CGRect? = nil
+    ) {
+        self.init(
+            primaryItemID: primaryItemID,
+            memberGeometries: memberItems.map(CanvasBoardItemGeometry.init(item:)),
+            sourceItemsByID: Dictionary(
+                uniqueKeysWithValues: memberItems.map { ($0.id, $0) }
+            ),
+            selectionBounds: selectionBounds
+        )
+    }
+
+    private init(
+        primaryItemID: CanvasItemID,
+        memberGeometries: [CanvasBoardItemGeometry],
+        sourceItemsByID: [CanvasItemID: CanvasBoardItem],
+        selectionBounds: CGRect? = nil
+    ) {
         let normalized = normalizeCanvasSelectionState(
             selectedItemIDs: memberGeometries.map(\.itemID),
             primarySelectedItemID: primaryItemID
@@ -88,6 +132,12 @@ struct CanvasSelectionTransformSnapshot: Equatable {
         self.primaryItemID = normalized.primarySelectedItemID ?? primaryItemID
         self.memberGeometries = normalized.selectedItemIDs.compactMap { itemID in
             memberGeometries.first(where: { $0.itemID == itemID })
+        }
+        self.sourceItemsByID = normalized.selectedItemIDs.reduce(into: [:]) { partialResult, itemID in
+            guard let item = sourceItemsByID[itemID] else {
+                return
+            }
+            partialResult[itemID] = item
         }
         self.selectionBounds = (selectionBounds ?? Self.selectionBounds(
             for: self.memberGeometries
@@ -146,20 +196,42 @@ struct CanvasSelectionTransformSnapshot: Equatable {
         }
 
         return memberGeometries.map { geometry in
-            CanvasBoardItemGeometry(
-                itemID: geometry.itemID,
-                center: canvasScalePoint(
-                    geometry.center,
-                    around: resizeDraft.fixedCorner,
-                    by: resizeDraft.scale
-                ),
-                size: CGSize(
-                    width: geometry.size.width * resizeDraft.scale,
-                    height: geometry.size.height * resizeDraft.scale
-                ),
-                rotationRadians: geometry.rotationRadians
+            scaledGeometry(
+                from: geometry,
+                using: resizeDraft
             )
         }
+    }
+
+    func resizedMemberItems(
+        handleRole: CanvasSelectionHandleRole,
+        draggedWorldCorner: CGPoint,
+        minimumScale: CGFloat
+    ) -> [CanvasBoardItem]? {
+        guard
+            let resizeDraft = resizeDraft(
+                handleRole: handleRole,
+                draggedWorldCorner: draggedWorldCorner,
+                minimumScale: minimumScale
+            )
+        else {
+            return nil
+        }
+
+        var resizedItems: [CanvasBoardItem] = []
+        resizedItems.reserveCapacity(memberItemIDs.count)
+        for itemID in memberItemIDs {
+            guard let item = sourceItemsByID[itemID] else {
+                return nil
+            }
+            resizedItems.append(
+                resizedItem(
+                    item,
+                    using: resizeDraft
+                )
+            )
+        }
+        return resizedItems
     }
 
     func rotatedMemberGeometries(
@@ -225,6 +297,74 @@ struct CanvasSelectionTransformSnapshot: Equatable {
         return CanvasSelectionResizeDraft(
             fixedCorner: fixedCorner,
             scale: scale
+        )
+    }
+
+    private func scaledGeometry(
+        from geometry: CanvasBoardItemGeometry,
+        using resizeDraft: CanvasSelectionResizeDraft
+    ) -> CanvasBoardItemGeometry {
+        CanvasBoardItemGeometry(
+            itemID: geometry.itemID,
+            center: canvasScalePoint(
+                geometry.center,
+                around: resizeDraft.fixedCorner,
+                by: resizeDraft.scale
+            ),
+            size: CGSize(
+                width: geometry.size.width * resizeDraft.scale,
+                height: geometry.size.height * resizeDraft.scale
+            ),
+            rotationRadians: geometry.rotationRadians
+        )
+    }
+
+    private func resizedItem(
+        _ item: CanvasBoardItem,
+        using resizeDraft: CanvasSelectionResizeDraft
+    ) -> CanvasBoardItem {
+        let scaledItemGeometry = scaledGeometry(
+            from: CanvasBoardItemGeometry(item: item),
+            using: resizeDraft
+        )
+        switch item {
+        case .image:
+            return item.applyingGeometry(scaledItemGeometry) ?? item
+        case let .text(textItem):
+            return .text(
+                resizedTextItem(
+                    textItem,
+                    scaledCenter: scaledItemGeometry.center,
+                    scale: resizeDraft.scale
+                )
+            )
+        }
+    }
+
+    private func resizedTextItem(
+        _ item: CanvasTextItem,
+        scaledCenter: CGPoint,
+        scale: CGFloat
+    ) -> CanvasTextItem {
+        let resizedStyle = CanvasTextStyle(
+            fontName: item.style.fontName,
+            fontSize: CanvasTextLayoutMeasurer.renderFontSize(
+                for: item.style,
+                scale: scale
+            ),
+            color: item.style.color
+        )
+        return CanvasTextItem(
+            id: item.id,
+            text: item.text,
+            style: resizedStyle,
+            center: scaledCenter,
+            size: CanvasTextLayoutMeasurer.intrinsicItemSize(
+                for: item.text,
+                style: resizedStyle
+            ),
+            zIndex: item.zIndex,
+            rotationRadians: item.rotationRadians
         )
     }
 
@@ -341,6 +481,16 @@ struct CanvasSelectionResizeState: Equatable {
         for draggedWorldCorner: CGPoint
     ) -> [CanvasBoardItemGeometry]? {
         snapshot.resizedMemberGeometries(
+            handleRole: handleRole,
+            draggedWorldCorner: draggedWorldCorner,
+            minimumScale: minimumScale
+        )
+    }
+
+    func resizedMemberItems(
+        for draggedWorldCorner: CGPoint
+    ) -> [CanvasBoardItem]? {
+        snapshot.resizedMemberItems(
             handleRole: handleRole,
             draggedWorldCorner: draggedWorldCorner,
             minimumScale: minimumScale
