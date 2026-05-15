@@ -59,6 +59,7 @@ struct CanvasEditOverlayHitTester {
             return resolveSelectionHitTarget(
                 at: viewportPoint,
                 editOverlay: editOverlay,
+                renderSnapshot: renderSnapshot,
                 metrics: metrics
             )
         }
@@ -109,6 +110,7 @@ struct CanvasEditOverlayHitTester {
     private func resolveSelectionHitTarget(
         at viewportPoint: CGPoint,
         editOverlay: CanvasEditRenderOverlay,
+        renderSnapshot: CanvasRenderSnapshot,
         metrics: CanvasContextResolverMetrics
     ) -> CanvasEditOverlayHitTarget? {
         guard case let .selection(payload) = editOverlay.payload else {
@@ -151,6 +153,24 @@ struct CanvasEditOverlayHitTester {
             }
         }
 
+        let selectedMemberScreenQuads = selectionMemberScreenQuads(
+            for: payload.subject.memberItemIDs,
+            renderSnapshot: renderSnapshot
+        )
+        if isWithinSelectionTranslationArea(
+            viewportPoint,
+            selectionScreenQuad: editOverlay.activeScreenQuad,
+            selectedMemberScreenQuads: selectedMemberScreenQuads,
+            expectedMemberCount: payload.subject.memberItemIDs.count,
+            outlineHitSlopWidth: metrics.selectionOutlineHitTargetWidth
+        ) {
+            return CanvasEditOverlayHitTarget(
+                kind: .selectionTranslationArea,
+                itemID: editOverlay.itemID,
+                anchorRect: editOverlay.activeScreenQuad.boundingRect.standardized
+            )
+        }
+
         return nil
     }
 
@@ -171,16 +191,96 @@ struct CanvasEditOverlayHitTester {
         cropScreenQuad: CanvasQuad,
         hitSlopWidth: CGFloat
     ) -> Bool {
-        if cropScreenQuad.contains(viewportPoint) {
+        isWithinQuadTranslationArea(
+            viewportPoint,
+            screenQuad: cropScreenQuad,
+            hitSlopWidth: hitSlopWidth
+        )
+    }
+
+    private func selectionMemberScreenQuads(
+        for memberItemIDs: [CanvasItemID],
+        renderSnapshot: CanvasRenderSnapshot
+    ) -> [CanvasQuad] {
+        let screenQuadByItemID = Dictionary(
+            uniqueKeysWithValues: renderSnapshot.items.map { item in
+                (item.id, item.screenQuad)
+            }
+        )
+        return memberItemIDs.compactMap { memberItemID in
+            screenQuadByItemID[memberItemID]
+        }
+    }
+
+    private func isWithinSelectionTranslationArea(
+        _ viewportPoint: CGPoint,
+        selectionScreenQuad: CanvasQuad,
+        selectedMemberScreenQuads: [CanvasQuad],
+        expectedMemberCount: Int,
+        outlineHitSlopWidth: CGFloat
+    ) -> Bool {
+        if isWithinQuadOutlineHitArea(
+            viewportPoint,
+            screenQuad: selectionScreenQuad,
+            hitSlopWidth: outlineHitSlopWidth
+        ) {
             return true
         }
 
+        return isWithinSelectionInteriorBlankArea(
+            viewportPoint,
+            selectionScreenQuad: selectionScreenQuad,
+            selectedMemberScreenQuads: selectedMemberScreenQuads,
+            expectedMemberCount: expectedMemberCount
+        )
+    }
+
+    private func isWithinSelectionInteriorBlankArea(
+        _ viewportPoint: CGPoint,
+        selectionScreenQuad: CanvasQuad,
+        selectedMemberScreenQuads: [CanvasQuad],
+        expectedMemberCount: Int
+    ) -> Bool {
+        guard
+            selectionScreenQuad.contains(viewportPoint),
+            expectedMemberCount > 0,
+            selectedMemberScreenQuads.count == expectedMemberCount
+        else {
+            return false
+        }
+
+        return selectedMemberScreenQuads.contains(where: { screenQuad in
+            screenQuad.contains(viewportPoint)
+        }) == false
+    }
+
+    private func isWithinQuadTranslationArea(
+        _ viewportPoint: CGPoint,
+        screenQuad: CanvasQuad,
+        hitSlopWidth: CGFloat
+    ) -> Bool {
+        if screenQuad.contains(viewportPoint) {
+            return true
+        }
+
+        return isWithinQuadOutlineHitArea(
+            viewportPoint,
+            screenQuad: screenQuad,
+            hitSlopWidth: hitSlopWidth
+        )
+    }
+
+    private func isWithinQuadOutlineHitArea(
+        _ viewportPoint: CGPoint,
+        screenQuad: CanvasQuad,
+        hitSlopWidth: CGFloat
+    ) -> Bool {
         let halfHitSlopWidth = max(hitSlopWidth, 0) / 2
         guard halfHitSlopWidth > 0 else {
             return false
         }
 
-        return cropScreenQuad.edges.contains { edge in
+        return screenQuad.edges.contains { edge in
             canvasDistance(
                 from: viewportPoint,
                 toSegmentStart: edge.start,
