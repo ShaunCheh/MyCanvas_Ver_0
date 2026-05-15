@@ -135,6 +135,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     private static let isPinchZoomDiagnosticLoggingEnabled = true
     private static let pointerDragActivationDistance: CGFloat = 4
     private static let selectionHandleHitTargetSize: CGFloat = 28
+    private static let selectionOutlineHitTargetWidth: CGFloat = 20
     private static let minimumResizeViewportDimension: CGFloat = 28
     private static let cropHandleHitTargetSize: CGFloat = 28
     private static let cropOutlineHitTargetWidth: CGFloat = 20
@@ -370,6 +371,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     private var contextResolverMetrics: CanvasContextResolverMetrics {
         CanvasContextResolverMetrics(
             selectionHandleHitTargetSize: Self.selectionHandleHitTargetSize,
+            selectionOutlineHitTargetWidth: Self.selectionOutlineHitTargetWidth,
             cropHandleHitTargetSize: Self.cropHandleHitTargetSize,
             cropOutlineHitTargetWidth: Self.cropOutlineHitTargetWidth,
             rotateHandleHitTargetSize: Self.rotateHandleHitTargetSize
@@ -1517,6 +1519,9 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
 
                 pointerDragState = .resizingSelection(resizeState)
                 resizeSelection(using: resizeState, to: location)
+            case .selectionTranslationArea:
+                editorSession.cancelPendingHistoryTransaction()
+                pointerDragState = .idle
             case .selectedItemBody:
                 guard let itemID = pressContext.targetItemID else {
                     pointerDragState = .idle
@@ -4479,6 +4484,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             reason = "resize item"
         case .groupSelectionHandle:
             reason = "resize selection"
+        case .selectionTranslationArea:
+            return
         case .selectedItemBody:
             reason = interactionState.selectionCount > 1
                 ? "move selection"

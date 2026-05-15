@@ -6,6 +6,7 @@ enum CanvasEditOverlayHitTargetKind {
     case groupRotateHandle
     case selectionHandle(role: CanvasSelectionHandleRole)
     case groupSelectionHandle(role: CanvasSelectionHandleRole)
+    case selectionTranslationArea
     case cropHandle(role: CanvasCropHandleRole)
     // Crop translation now covers both the visible crop interior and the edge
     // hit slop so controllers can treat the whole movable area uniformly.
@@ -21,6 +22,8 @@ enum CanvasEditOverlayHitTargetKind {
             return "selectionHandle(\(String(describing: role)))"
         case let .groupSelectionHandle(role):
             return "groupSelectionHandle(\(String(describing: role)))"
+        case .selectionTranslationArea:
+            return "selectionTranslationArea"
         case let .cropHandle(role):
             return "cropHandle(\(String(describing: role)))"
         case .cropTranslationArea:

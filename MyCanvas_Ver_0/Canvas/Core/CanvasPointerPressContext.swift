@@ -8,6 +8,7 @@ enum CanvasPointerTargetKind {
     case cropTranslationArea
     case selectionHandle(role: CanvasSelectionHandleRole)
     case groupSelectionHandle(role: CanvasSelectionHandleRole)
+    case selectionTranslationArea
     case selectedItemBody
     case unselectedItemBody
     case blank
@@ -26,6 +27,8 @@ enum CanvasPointerTargetKind {
             return "selectionHandle(\(String(describing: role)))"
         case let .groupSelectionHandle(role):
             return "groupSelectionHandle(\(String(describing: role)))"
+        case .selectionTranslationArea:
+            return "selectionTranslationArea"
         case .selectedItemBody:
             return "selectedItemBody"
         case .unselectedItemBody:

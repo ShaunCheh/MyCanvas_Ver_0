@@ -643,6 +643,7 @@ private func makeAlignmentOverlayTestCGImage() throws -> CGImage {
 private func makeAlignmentOverlayTestContextResolverMetrics() -> CanvasContextResolverMetrics {
     CanvasContextResolverMetrics(
         selectionHandleHitTargetSize: 28,
+        selectionOutlineHitTargetWidth: 24,
         cropHandleHitTargetSize: 28,
         cropOutlineHitTargetWidth: 24,
         rotateHandleHitTargetSize: 28

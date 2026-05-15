@@ -3,6 +3,7 @@ import Foundation
 
 struct CanvasContextResolverMetrics {
     let selectionHandleHitTargetSize: CGFloat
+    let selectionOutlineHitTargetWidth: CGFloat
     let cropHandleHitTargetSize: CGFloat
     let cropOutlineHitTargetWidth: CGFloat
     let rotateHandleHitTargetSize: CGFloat
@@ -167,7 +168,8 @@ struct CanvasContextResolver {
              .groupSelectionHandle,
              .cropHandle:
             return "editHandle"
-        case .cropTranslationArea:
+        case .selectionTranslationArea,
+             .cropTranslationArea:
             return hitTarget.kind.debugName
         }
     }
@@ -185,6 +187,8 @@ struct CanvasContextResolver {
             pointerTargetKind = .selectionHandle(role: role)
         case let .groupSelectionHandle(role):
             pointerTargetKind = .groupSelectionHandle(role: role)
+        case .selectionTranslationArea:
+            pointerTargetKind = .selectionTranslationArea
         case let .cropHandle(role):
             pointerTargetKind = .cropHandle(role: role)
         case .cropTranslationArea:
@@ -302,6 +306,8 @@ struct CanvasContextResolver {
             return .selectionHandle(role: role)
         case let .groupSelectionHandle(role):
             return .groupSelectionHandle(role: role)
+        case .selectionTranslationArea:
+            return .selectedItemBody
         case .selectedItemBody:
             return .selectedItemBody
         case .unselectedItemBody:

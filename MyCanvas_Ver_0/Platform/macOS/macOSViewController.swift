@@ -122,6 +122,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
 
     private static let pointerDragActivationDistance: CGFloat = 4
     private static let selectionHandleHitTargetSize: CGFloat = 18
+    private static let selectionOutlineHitTargetWidth: CGFloat = 14
     private static let minimumResizeViewportDimension: CGFloat = 20
     private static let cropHandleHitTargetSize: CGFloat = 18
     private static let cropOutlineHitTargetWidth: CGFloat = 14
@@ -364,6 +365,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     private var contextResolverMetrics: CanvasContextResolverMetrics {
         CanvasContextResolverMetrics(
             selectionHandleHitTargetSize: Self.selectionHandleHitTargetSize,
+            selectionOutlineHitTargetWidth: Self.selectionOutlineHitTargetWidth,
             cropHandleHitTargetSize: Self.cropHandleHitTargetSize,
             cropOutlineHitTargetWidth: Self.cropOutlineHitTargetWidth,
             rotateHandleHitTargetSize: Self.rotateHandleHitTargetSize
@@ -1809,6 +1811,9 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
 
                 pointerDragState = .resizingSelection(resizeState)
                 resizeSelection(using: resizeState, to: location)
+            case .selectionTranslationArea:
+                editorSession.cancelPendingHistoryTransaction()
+                pointerDragState = .idle
             case .selectedItemBody:
                 guard let itemID = pressContext.targetItemID else {
                     pointerDragState = .idle
@@ -4759,6 +4764,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             reason = "resize item"
         case .groupSelectionHandle:
             reason = "resize selection"
+        case .selectionTranslationArea:
+            return
         case .selectedItemBody:
             reason = interactionState.selectionCount > 1
                 ? "move selection"
