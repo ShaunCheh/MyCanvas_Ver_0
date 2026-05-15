@@ -5,6 +5,8 @@ enum CanvasCommandID: String {
     case addTextItem
     case beginTextEdit
     case commitTextEdit
+    case decreaseTextFontSize
+    case increaseTextFontSize
     case crop
     case undo
     case redo
@@ -26,6 +28,8 @@ enum CanvasCommandID: String {
              .addTextItem,
              .beginTextEdit,
              .commitTextEdit,
+             .decreaseTextFontSize,
+             .increaseTextFontSize,
              .crop,
              .undo,
              .redo,
@@ -49,6 +53,8 @@ enum CanvasCommand {
     case addTextItem
     case beginTextEdit(itemID: CanvasItemID)
     case commitTextEdit
+    case decreaseTextFontSize
+    case increaseTextFontSize
     case crop
     case beginCropMode(itemID: CanvasItemID)
     case undo
@@ -83,6 +89,10 @@ enum CanvasCommand {
             return .beginTextEdit
         case .commitTextEdit:
             return .commitTextEdit
+        case .decreaseTextFontSize:
+            return .decreaseTextFontSize
+        case .increaseTextFontSize:
+            return .increaseTextFontSize
         case .crop:
             return .crop
         case .beginCropMode:
@@ -128,6 +138,38 @@ enum CanvasCommand {
         id.isAllowedInReadingMode
     }
 
+    var shouldCommitActiveInlineTextBeforeExecuting: Bool {
+        switch self {
+        case .commitTextEdit,
+             .decreaseTextFontSize,
+             .increaseTextFontSize:
+            return false
+        case .importMedia,
+             .addTextItem,
+             .beginTextEdit,
+             .crop,
+             .beginCropMode,
+             .undo,
+             .redo,
+             .selectItem,
+             .toggleSelectionMembership,
+             .clearSelection,
+             .duplicateItem,
+             .duplicateSelection,
+             .deleteItem,
+             .deleteSelection,
+             .bringItemForward,
+             .bringSelectionForward,
+             .sendItemBackward,
+             .sendSelectionBackward,
+             .bringItemToFront,
+             .bringSelectionToFront,
+             .sendItemToBack,
+             .sendSelectionToBack:
+            return true
+        }
+    }
+
     // Command execution can invalidate rotation preview / interaction state, so
     // controllers should cancel active rotation before applying these commands.
     var shouldCancelActiveRotation: Bool {
@@ -136,6 +178,8 @@ enum CanvasCommand {
              .addTextItem,
              .beginTextEdit,
              .commitTextEdit,
+             .decreaseTextFontSize,
+             .increaseTextFontSize,
              .crop,
              .beginCropMode,
              .undo,

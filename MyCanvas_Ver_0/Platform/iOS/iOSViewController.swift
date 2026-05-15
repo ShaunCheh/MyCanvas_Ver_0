@@ -412,7 +412,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             return
         }
 
-        if command.id != .commitTextEdit,
+        if command.shouldCommitActiveInlineTextBeforeExecuting,
            isInlineTextModeActive,
            workspaceMode == .editing
         {
@@ -1098,6 +1098,12 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         textEditorOverlayView.textView.delegate = self
         textEditorOverlayView.onObservedShortcut = { [weak self] shortcut in
             self?.handleObservedTextEditorShortcut(shortcut)
+        }
+        textEditorOverlayView.onDecreaseFontSize = { [weak self] in
+            self?.performCommand(.decreaseTextFontSize)
+        }
+        textEditorOverlayView.onIncreaseFontSize = { [weak self] in
+            self?.performCommand(.increaseTextFontSize)
         }
         syncTextEditorPresentation()
     }
@@ -4631,7 +4637,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
 
         guard
             let inlineEditState = presentationInlineEditState,
-            inlineEditState.mode == .text
+            inlineEditState.mode == .text,
+            let textItem = editorSession.activeInlineTextItem
         else {
             if textEditorOverlayView.textView.isFirstResponder {
                 textEditorOverlayView.textView.resignFirstResponder()
@@ -4645,11 +4652,16 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         let didChangeEditedItem = activeTextEditorItemID != inlineEditState.itemID
         activeTextEditorItemID = inlineEditState.itemID
         textEditorOverlayView.isHidden = false
-        if textEditorOverlayView.textView.text != inlineEditState.draftText {
-            isSyncingTextEditorContent = true
-            textEditorOverlayView.apply(text: inlineEditState.draftText)
-            isSyncingTextEditorContent = false
-        }
+        let decreaseFontSizeDescriptor = commandDescriptor(for: .decreaseTextFontSize)
+        let increaseFontSizeDescriptor = commandDescriptor(for: .increaseTextFontSize)
+        isSyncingTextEditorContent = true
+        textEditorOverlayView.apply(
+            text: inlineEditState.draftText,
+            style: textItem.style,
+            canDecreaseFontSize: decreaseFontSizeDescriptor.isEnabled,
+            canIncreaseFontSize: increaseFontSizeDescriptor.isEnabled
+        )
+        isSyncingTextEditorContent = false
 
         guard textEditorOverlayView.window != nil else {
             return

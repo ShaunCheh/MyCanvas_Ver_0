@@ -25,6 +25,10 @@ final class CanvasCommandExecutor {
             return session.canBeginTextEdit(withID: itemID)
         case .commitTextEdit:
             return session.canCommitTextEdit
+        case .decreaseTextFontSize:
+            return session.canDecreaseInlineTextFontSize
+        case .increaseTextFontSize:
+            return session.canIncreaseInlineTextFontSize
         case .crop:
             return session.isInlineCropModeActive || session.canBeginCropMode
         case let .beginCropMode(itemID):
@@ -119,6 +123,22 @@ final class CanvasCommandExecutor {
 
             return CanvasCommandExecutionResult(
                 refreshReason: refreshReason
+            )
+        case .decreaseTextFontSize:
+            guard let updatedItem = session.decreaseInlineTextFontSize() else {
+                return nil
+            }
+
+            return CanvasCommandExecutionResult(
+                refreshReason: "decrease inline text font size \(updatedItem.id.uuidString)"
+            )
+        case .increaseTextFontSize:
+            guard let updatedItem = session.increaseInlineTextFontSize() else {
+                return nil
+            }
+
+            return CanvasCommandExecutionResult(
+                refreshReason: "increase inline text font size \(updatedItem.id.uuidString)"
             )
         case .crop:
             if session.isInlineCropModeActive {

@@ -6,6 +6,9 @@ final class macOSCanvasTextEditorOverlayView: NSView {
         static let cornerRadius: CGFloat = 18
         static let horizontalInset: CGFloat = 12
         static let verticalInset: CGFloat = 10
+        static let controlsSpacing: CGFloat = 10
+        static let controlsBottomSpacing: CGFloat = 8
+        static let fontButtonMinimumWidth: CGFloat = 48
         static let shadowOpacity: Float = 0.12
         static let shadowRadius: CGFloat = 10
         static let shadowOffset = CGSize(width: 0, height: 4)
@@ -66,6 +69,41 @@ final class macOSCanvasTextEditorOverlayView: NSView {
         return textView
     }()
 
+    private let fontSizeLabel: NSTextField = {
+        let label = NSTextField(labelWithString: "")
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
+        label.textColor = .secondaryLabelColor
+        label.alignment = .center
+        return label
+    }()
+
+    private let decreaseFontSizeButton = macOSCanvasTextEditorOverlayView.makeFontSizeButton(
+        title: "A-",
+        accessibilityLabel: "Decrease font size"
+    )
+
+    private let increaseFontSizeButton = macOSCanvasTextEditorOverlayView.makeFontSizeButton(
+        title: "A+",
+        accessibilityLabel: "Increase font size"
+    )
+
+    private lazy var fontSizeControlStackView: NSStackView = {
+        let stackView = NSStackView(views: [
+            decreaseFontSizeButton,
+            fontSizeLabel,
+            increaseFontSizeButton
+        ])
+        stackView.translatesAutoresizingMaskIntoConstraints = false
+        stackView.orientation = .horizontal
+        stackView.alignment = .centerY
+        stackView.spacing = Layout.controlsSpacing
+        return stackView
+    }()
+
+    var onDecreaseFontSize: (() -> Void)?
+    var onIncreaseFontSize: (() -> Void)?
+
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         translatesAutoresizingMaskIntoConstraints = false
@@ -73,14 +111,40 @@ final class macOSCanvasTextEditorOverlayView: NSView {
         layer?.backgroundColor = NSColor.clear.cgColor
         isHidden = true
         addSubview(backgroundView)
+        addSubview(fontSizeControlStackView)
         addSubview(scrollView)
         scrollView.documentView = textView
+        decreaseFontSizeButton.target = self
+        decreaseFontSizeButton.action = #selector(handleDecreaseFontSizeClick)
+        increaseFontSizeButton.target = self
+        increaseFontSizeButton.action = #selector(handleIncreaseFontSizeClick)
         NSLayoutConstraint.activate([
             backgroundView.topAnchor.constraint(equalTo: topAnchor),
             backgroundView.leadingAnchor.constraint(equalTo: leadingAnchor),
             backgroundView.trailingAnchor.constraint(equalTo: trailingAnchor),
             backgroundView.bottomAnchor.constraint(equalTo: bottomAnchor),
-            scrollView.topAnchor.constraint(equalTo: topAnchor, constant: Layout.verticalInset),
+            decreaseFontSizeButton.widthAnchor.constraint(
+                greaterThanOrEqualToConstant: Layout.fontButtonMinimumWidth
+            ),
+            increaseFontSizeButton.widthAnchor.constraint(
+                greaterThanOrEqualToConstant: Layout.fontButtonMinimumWidth
+            ),
+            fontSizeControlStackView.topAnchor.constraint(
+                equalTo: topAnchor,
+                constant: Layout.verticalInset
+            ),
+            fontSizeControlStackView.leadingAnchor.constraint(
+                equalTo: leadingAnchor,
+                constant: Layout.horizontalInset
+            ),
+            fontSizeControlStackView.trailingAnchor.constraint(
+                lessThanOrEqualTo: trailingAnchor,
+                constant: -Layout.horizontalInset
+            ),
+            scrollView.topAnchor.constraint(
+                equalTo: fontSizeControlStackView.bottomAnchor,
+                constant: Layout.controlsBottomSpacing
+            ),
             scrollView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Layout.horizontalInset),
             scrollView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -Layout.horizontalInset),
             scrollView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -Layout.verticalInset)
@@ -96,10 +160,55 @@ final class macOSCanvasTextEditorOverlayView: NSView {
         return hitView === self ? nil : hitView
     }
 
-    func apply(text: String) {
+    func apply(
+        text: String,
+        style: CanvasTextStyle,
+        canDecreaseFontSize: Bool,
+        canIncreaseFontSize: Bool
+    ) {
         if textView.string != text {
             textView.string = text
         }
+        textView.font = platformFont(for: style)
+        fontSizeLabel.stringValue = fontSizeDescription(for: style.fontSize)
+        decreaseFontSizeButton.isEnabled = canDecreaseFontSize
+        increaseFontSizeButton.isEnabled = canIncreaseFontSize
+    }
+
+    private static func makeFontSizeButton(
+        title: String,
+        accessibilityLabel: String
+    ) -> NSButton {
+        let button = NSButton(title: title, target: nil, action: nil)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.setButtonType(.momentaryPushIn)
+        button.bezelStyle = .rounded
+        button.toolTip = accessibilityLabel
+        return button
+    }
+
+    @objc
+    private func handleDecreaseFontSizeClick() {
+        onDecreaseFontSize?()
+    }
+
+    @objc
+    private func handleIncreaseFontSizeClick() {
+        onIncreaseFontSize?()
+    }
+
+    private func platformFont(for style: CanvasTextStyle) -> NSFont {
+        NSFont(name: style.fontName, size: style.fontSize)
+            ?? .systemFont(ofSize: style.fontSize)
+    }
+
+    private func fontSizeDescription(for fontSize: CGFloat) -> String {
+        let roundedFontSize = fontSize.rounded()
+        if abs(fontSize - roundedFontSize) < 0.05 {
+            return "\(Int(roundedFontSize)) pt"
+        }
+
+        return String(format: "%.1f pt", Double(fontSize))
     }
 }
 #endif

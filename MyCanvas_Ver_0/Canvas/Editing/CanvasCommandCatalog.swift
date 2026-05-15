@@ -48,6 +48,22 @@ struct CanvasCommandCatalog {
                 isEnabled: session.canCommitTextEdit,
                 isActive: session.isInlineTextModeActive
             )
+        case .decreaseTextFontSize:
+            descriptor = CanvasCommandDescriptor(
+                id: .decreaseTextFontSize,
+                title: "Smaller Text",
+                systemImageName: "minus",
+                isEnabled: session.canDecreaseInlineTextFontSize,
+                isActive: false
+            )
+        case .increaseTextFontSize:
+            descriptor = CanvasCommandDescriptor(
+                id: .increaseTextFontSize,
+                title: "Larger Text",
+                systemImageName: "plus",
+                isEnabled: session.canIncreaseInlineTextFontSize,
+                isActive: false
+            )
         case .crop:
             let isActive = session.isInlineCropModeActive
             let resolvedTargetItemID = singleEffectiveItemID(

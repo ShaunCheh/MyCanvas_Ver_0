@@ -23,6 +23,8 @@ private struct CanvasPreparedImportItem {
 }
 
 final class CanvasEditorSession {
+    private static let inlineTextFontSizeStep: CGFloat = 2
+
     let scene = CanvasScene()
     var camera = CanvasCamera()
     var boardState: CanvasBoardState?
@@ -161,6 +163,14 @@ final class CanvasEditorSession {
         isInlineTextModeActive
     }
 
+    var canDecreaseInlineTextFontSize: Bool {
+        canAdjustInlineTextFontSize(by: -Self.inlineTextFontSizeStep)
+    }
+
+    var canIncreaseInlineTextFontSize: Bool {
+        canAdjustInlineTextFontSize(by: Self.inlineTextFontSizeStep)
+    }
+
     var canClearSelection: Bool {
         hasSelection
     }
@@ -249,6 +259,17 @@ final class CanvasEditorSession {
 
     var selectedBoardItemKind: CanvasBoardItemKind? {
         selectedBoardItem?.kind
+    }
+
+    var activeInlineTextItem: CanvasTextItem? {
+        guard
+            let inlineEditState,
+            inlineEditState.mode == .text
+        else {
+            return nil
+        }
+
+        return scene.textItem(withID: inlineEditState.itemID)
     }
 
     func makeCanvasSnapshot() -> CanvasRenderSnapshot {
@@ -571,6 +592,16 @@ final class CanvasEditorSession {
     }
 
     @discardableResult
+    func decreaseInlineTextFontSize() -> CanvasTextItem? {
+        adjustInlineTextFontSize(by: -Self.inlineTextFontSizeStep)
+    }
+
+    @discardableResult
+    func increaseInlineTextFontSize() -> CanvasTextItem? {
+        adjustInlineTextFontSize(by: Self.inlineTextFontSizeStep)
+    }
+
+    @discardableResult
     func commitTextEdit() -> CanvasTextEditCommitResult? {
         guard
             let inlineEditState,
@@ -594,16 +625,8 @@ final class CanvasEditorSession {
         }
 
         let draftText = inlineEditState.draftText
-        if draftText == item.text {
-            return CanvasTextEditCommitResult(
-                itemID: itemID,
-                didDeleteItem: false,
-                didChangeDocument: false
-            )
-        }
-
-        let beforeSnapshot = currentBoardHistorySnapshot()
         if draftText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let beforeSnapshot = currentBoardHistorySnapshot()
             guard scene.removeItem(withID: itemID) else {
                 return CanvasTextEditCommitResult(
                     itemID: itemID,
@@ -625,6 +648,16 @@ final class CanvasEditorSession {
                 didChangeDocument: true
             )
         }
+
+        if draftText == item.text {
+            return CanvasTextEditCommitResult(
+                itemID: itemID,
+                didDeleteItem: false,
+                didChangeDocument: false
+            )
+        }
+
+        let beforeSnapshot = currentBoardHistorySnapshot()
 
         guard updateTextItemContent(withID: itemID, text: draftText, style: item.style) != nil else {
             return CanvasTextEditCommitResult(
@@ -1848,6 +1881,70 @@ final class CanvasEditorSession {
             autosaveReason: changeReason
         )
         return item
+    }
+
+    private func canAdjustInlineTextFontSize(by delta: CGFloat) -> Bool {
+        guard
+            let item = activeInlineTextItem,
+            delta != 0
+        else {
+            return false
+        }
+
+        return adjustedInlineTextStyle(
+            from: item.style,
+            fontSizeDelta: delta
+        ) != item.style
+    }
+
+    @discardableResult
+    private func adjustInlineTextFontSize(by delta: CGFloat) -> CanvasTextItem? {
+        guard
+            let inlineEditState,
+            inlineEditState.mode == .text,
+            let item = activeInlineTextItem
+        else {
+            return nil
+        }
+
+        let updatedStyle = adjustedInlineTextStyle(
+            from: item.style,
+            fontSizeDelta: delta
+        )
+        guard updatedStyle != item.style else {
+            return nil
+        }
+
+        let beforeSnapshot = currentBoardHistorySnapshot()
+        guard let updatedItem = updateTextItemContent(
+            withID: item.id,
+            text: inlineEditState.draftText,
+            style: updatedStyle
+        ) else {
+            return nil
+        }
+
+        expandBoardIfNeeded(toInclude: updatedItem.worldBounds)
+        let changeReason = delta < 0
+            ? "decrease inline text font size"
+            : "increase inline text font size"
+        _ = recordImmediateHistoryChange(
+            from: beforeSnapshot,
+            reason: changeReason,
+            autosaveReason: changeReason
+        )
+        return updatedItem
+    }
+
+    private func adjustedInlineTextStyle(
+        from style: CanvasTextStyle,
+        fontSizeDelta: CGFloat
+    ) -> CanvasTextStyle {
+        CanvasTextStyle(
+            fontName: style.fontName,
+            fontSize: style.fontSize + fontSizeDelta,
+            color: style.color
+        )
     }
 
     @discardableResult

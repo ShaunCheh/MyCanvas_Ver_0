@@ -13,6 +13,9 @@ final class iOSCanvasTextEditorOverlayView: UIView {
         static let cornerRadius: CGFloat = 18
         static let horizontalInset: CGFloat = 12
         static let verticalInset: CGFloat = 10
+        static let controlsSpacing: CGFloat = 10
+        static let controlsBottomSpacing: CGFloat = 8
+        static let fontButtonMinimumWidth: CGFloat = 44
         static let shadowOpacity: Float = 0.12
         static let shadowRadius: CGFloat = 10
         static let shadowOffset = CGSize(width: 0, height: 4)
@@ -54,10 +57,48 @@ final class iOSCanvasTextEditorOverlayView: UIView {
         return textView
     }()
 
+    private let fontSizeLabel: UILabel = {
+        let label = UILabel()
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.font = .monospacedDigitSystemFont(ofSize: 13, weight: .medium)
+        label.textAlignment = .center
+        label.textColor = .secondaryLabel
+        label.accessibilityLabel = "Font size"
+        return label
+    }()
+
+    private let decreaseFontSizeButton = iOSCanvasTextEditorOverlayView.makeFontSizeButton(
+        title: "A-",
+        accessibilityLabel: "Decrease font size"
+    )
+
+    private let increaseFontSizeButton = iOSCanvasTextEditorOverlayView.makeFontSizeButton(
+        title: "A+",
+        accessibilityLabel: "Increase font size"
+    )
+
+    private lazy var fontSizeControlStackView: UIStackView = {
+        let stackView = UIStackView(
+            arrangedSubviews: [
+                decreaseFontSizeButton,
+                fontSizeLabel,
+                increaseFontSizeButton
+            ]
+        )
+        stackView.translatesAutoresizingMaskIntoConstraints = false
+        stackView.axis = .horizontal
+        stackView.alignment = .center
+        stackView.spacing = Layout.controlsSpacing
+        return stackView
+    }()
+
     var onObservedShortcut: ((iOSCanvasTextEditorObservedShortcut) -> Void)? {
         get { textView.onObservedShortcut }
         set { textView.onObservedShortcut = newValue }
     }
+
+    var onDecreaseFontSize: (() -> Void)?
+    var onIncreaseFontSize: (() -> Void)?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -66,13 +107,45 @@ final class iOSCanvasTextEditorOverlayView: UIView {
         isOpaque = false
         isHidden = true
         addSubview(backgroundView)
+        addSubview(fontSizeControlStackView)
         addSubview(textView)
+        decreaseFontSizeButton.addTarget(
+            self,
+            action: #selector(handleDecreaseFontSizeTap),
+            for: .touchUpInside
+        )
+        increaseFontSizeButton.addTarget(
+            self,
+            action: #selector(handleIncreaseFontSizeTap),
+            for: .touchUpInside
+        )
         NSLayoutConstraint.activate([
             backgroundView.topAnchor.constraint(equalTo: topAnchor),
             backgroundView.leadingAnchor.constraint(equalTo: leadingAnchor),
             backgroundView.trailingAnchor.constraint(equalTo: trailingAnchor),
             backgroundView.bottomAnchor.constraint(equalTo: bottomAnchor),
-            textView.topAnchor.constraint(equalTo: topAnchor, constant: Layout.verticalInset),
+            decreaseFontSizeButton.widthAnchor.constraint(
+                greaterThanOrEqualToConstant: Layout.fontButtonMinimumWidth
+            ),
+            increaseFontSizeButton.widthAnchor.constraint(
+                greaterThanOrEqualToConstant: Layout.fontButtonMinimumWidth
+            ),
+            fontSizeControlStackView.topAnchor.constraint(
+                equalTo: topAnchor,
+                constant: Layout.verticalInset
+            ),
+            fontSizeControlStackView.leadingAnchor.constraint(
+                equalTo: leadingAnchor,
+                constant: Layout.horizontalInset
+            ),
+            fontSizeControlStackView.trailingAnchor.constraint(
+                lessThanOrEqualTo: trailingAnchor,
+                constant: -Layout.horizontalInset
+            ),
+            textView.topAnchor.constraint(
+                equalTo: fontSizeControlStackView.bottomAnchor,
+                constant: Layout.controlsBottomSpacing
+            ),
             textView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Layout.horizontalInset),
             textView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -Layout.horizontalInset),
             textView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -Layout.verticalInset)
@@ -89,10 +162,62 @@ final class iOSCanvasTextEditorOverlayView: UIView {
         return hitView === self ? nil : hitView
     }
 
-    func apply(text: String) {
+    func apply(
+        text: String,
+        style: CanvasTextStyle,
+        canDecreaseFontSize: Bool,
+        canIncreaseFontSize: Bool
+    ) {
         if textView.text != text {
             textView.text = text
         }
+        textView.font = platformFont(for: style)
+        fontSizeLabel.text = fontSizeDescription(for: style.fontSize)
+        decreaseFontSizeButton.isEnabled = canDecreaseFontSize
+        increaseFontSizeButton.isEnabled = canIncreaseFontSize
+    }
+
+    private static func makeFontSizeButton(
+        title: String,
+        accessibilityLabel: String
+    ) -> UIButton {
+        var configuration = UIButton.Configuration.tinted()
+        configuration.title = title
+        configuration.cornerStyle = .capsule
+        configuration.contentInsets = NSDirectionalEdgeInsets(
+            top: 6,
+            leading: 10,
+            bottom: 6,
+            trailing: 10
+        )
+        let button = UIButton(configuration: configuration)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.accessibilityLabel = accessibilityLabel
+        return button
+    }
+
+    @objc
+    private func handleDecreaseFontSizeTap() {
+        onDecreaseFontSize?()
+    }
+
+    @objc
+    private func handleIncreaseFontSizeTap() {
+        onIncreaseFontSize?()
+    }
+
+    private func platformFont(for style: CanvasTextStyle) -> UIFont {
+        UIFont(name: style.fontName, size: style.fontSize)
+            ?? .systemFont(ofSize: style.fontSize)
+    }
+
+    private func fontSizeDescription(for fontSize: CGFloat) -> String {
+        let roundedFontSize = fontSize.rounded()
+        if abs(fontSize - roundedFontSize) < 0.05 {
+            return "\(Int(roundedFontSize)) pt"
+        }
+
+        return String(format: "%.1f pt", Double(fontSize))
     }
 }
 

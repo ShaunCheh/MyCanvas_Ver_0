@@ -406,7 +406,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             return
         }
 
-        if command.id != .commitTextEdit,
+        if command.shouldCommitActiveInlineTextBeforeExecuting,
            isInlineTextModeActive,
            workspaceMode == .editing
         {
@@ -712,6 +712,10 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             }
         case .commitTextEdit:
             performCommand(.commitTextEdit)
+        case .decreaseTextFontSize:
+            performCommand(.decreaseTextFontSize)
+        case .increaseTextFontSize:
+            performCommand(.increaseTextFontSize)
         case .crop:
             performCommand(CanvasCommand.crop)
         case .undo:
@@ -1331,6 +1335,12 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
 
     private func setupTextEditorOverlay() {
         textEditorOverlayView.textView.delegate = self
+        textEditorOverlayView.onDecreaseFontSize = { [weak self] in
+            self?.performCommand(.decreaseTextFontSize)
+        }
+        textEditorOverlayView.onIncreaseFontSize = { [weak self] in
+            self?.performCommand(.increaseTextFontSize)
+        }
         syncTextEditorPresentation()
     }
 
@@ -4911,7 +4921,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
 
         guard
             let inlineEditState = presentationInlineEditState,
-            inlineEditState.mode == .text
+            inlineEditState.mode == .text,
+            let textItem = editorSession.activeInlineTextItem
         else {
             if view.window?.firstResponder === textEditorOverlayView.textView {
                 view.window?.makeFirstResponder(canvasViewportView)
@@ -4924,11 +4935,16 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         let didChangeEditedItem = activeTextEditorItemID != inlineEditState.itemID
         activeTextEditorItemID = inlineEditState.itemID
         textEditorOverlayView.isHidden = false
-        if textEditorOverlayView.textView.string != inlineEditState.draftText {
-            isSyncingTextEditorContent = true
-            textEditorOverlayView.apply(text: inlineEditState.draftText)
-            isSyncingTextEditorContent = false
-        }
+        let decreaseFontSizeDescriptor = commandDescriptor(for: .decreaseTextFontSize)
+        let increaseFontSizeDescriptor = commandDescriptor(for: .increaseTextFontSize)
+        isSyncingTextEditorContent = true
+        textEditorOverlayView.apply(
+            text: inlineEditState.draftText,
+            style: textItem.style,
+            canDecreaseFontSize: decreaseFontSizeDescriptor.isEnabled,
+            canIncreaseFontSize: increaseFontSizeDescriptor.isEnabled
+        )
+        isSyncingTextEditorContent = false
 
         guard let window = view.window else {
             return

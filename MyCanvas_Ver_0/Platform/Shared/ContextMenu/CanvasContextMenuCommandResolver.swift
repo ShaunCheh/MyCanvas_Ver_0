@@ -84,6 +84,9 @@ struct CanvasContextMenuActionResolver {
             return .beginTextEdit(itemID: itemID)
         case .commitTextEdit:
             return .commitTextEdit
+        case .decreaseTextFontSize,
+             .increaseTextFontSize:
+            return nil
         case .crop:
             if context.isInlineCropModeActive {
                 return .crop

@@ -64,6 +64,128 @@ final class CanvasCommandPolicyParityTests: XCTestCase {
         XCTAssertFalse(executor.canExecute(.commitTextEdit))
     }
 
+    func testInlineTextFontSizeCommandsDoNotForceInlineCommit() {
+        XCTAssertFalse(CanvasCommand.decreaseTextFontSize.shouldCommitActiveInlineTextBeforeExecuting)
+        XCTAssertFalse(CanvasCommand.increaseTextFontSize.shouldCommitActiveInlineTextBeforeExecuting)
+        XCTAssertTrue(CanvasCommand.undo.shouldCommitActiveInlineTextBeforeExecuting)
+    }
+
+    func testInlineTextFontSizeDescriptorAndExecutorMatchPolicyInEditingMode() throws {
+        let session = makeCommandPolicyParityTestSession(workspaceMode: .editing)
+        let executor = CanvasCommandExecutor(session: session)
+        CanvasCommandPolicyParityTestRetainer.executors.append(executor)
+
+        XCTAssertNotNil(session.addTextItem())
+
+        let increaseDescriptor = commandCatalog.descriptor(
+            for: .increaseTextFontSize,
+            session: session
+        )
+        let decreaseDescriptor = commandCatalog.descriptor(
+            for: .decreaseTextFontSize,
+            session: session
+        )
+        let increaseDecision = policy.commandDecision(
+            for: .increaseTextFontSize,
+            workspaceMode: session.workspaceMode
+        )
+        let decreaseDecision = policy.commandDecision(
+            for: .decreaseTextFontSize,
+            workspaceMode: session.workspaceMode
+        )
+
+        XCTAssertEqual(increaseDecision, .allow)
+        XCTAssertEqual(decreaseDecision, .allow)
+        XCTAssertTrue(increaseDescriptor.isEnabled)
+        XCTAssertTrue(decreaseDescriptor.isEnabled)
+        XCTAssertFalse(increaseDescriptor.isActive)
+        XCTAssertFalse(decreaseDescriptor.isActive)
+        XCTAssertTrue(executor.canExecute(.increaseTextFontSize))
+        XCTAssertTrue(executor.canExecute(.decreaseTextFontSize))
+    }
+
+    func testInlineTextFontSizeDescriptorResetsWhenPolicyBlocksInReadingMode() {
+        let session = makeCommandPolicyParityTestSession(workspaceMode: .editing)
+        let executor = CanvasCommandExecutor(session: session)
+        CanvasCommandPolicyParityTestRetainer.executors.append(executor)
+
+        XCTAssertNotNil(session.addTextItem())
+        session.workspaceMode = .reading
+
+        let increaseDescriptor = commandCatalog.descriptor(
+            for: .increaseTextFontSize,
+            session: session
+        )
+        let decreaseDescriptor = commandCatalog.descriptor(
+            for: .decreaseTextFontSize,
+            session: session
+        )
+        let increaseDecision = policy.commandDecision(
+            for: .increaseTextFontSize,
+            workspaceMode: session.workspaceMode
+        )
+        let decreaseDecision = policy.commandDecision(
+            for: .decreaseTextFontSize,
+            workspaceMode: session.workspaceMode
+        )
+
+        XCTAssertEqual(increaseDecision, .block(reason: .readingMode, feedback: nil))
+        XCTAssertEqual(decreaseDecision, .block(reason: .readingMode, feedback: nil))
+        XCTAssertFalse(increaseDescriptor.isEnabled)
+        XCTAssertFalse(decreaseDescriptor.isEnabled)
+        XCTAssertFalse(executor.canExecute(.increaseTextFontSize))
+        XCTAssertFalse(executor.canExecute(.decreaseTextFontSize))
+    }
+
+    func testIncreaseTextFontSizeCommandRecordsHistoryAndSupportsUndoRedo() throws {
+        let session = makeCommandPolicyParityTestSession(workspaceMode: .editing)
+        let executor = CanvasCommandExecutor(session: session)
+        CanvasCommandPolicyParityTestRetainer.executors.append(executor)
+        let initialStyle = CanvasTextStyle(fontSize: 20)
+        let item = try XCTUnwrap(
+            session.addTextItem(
+                text: "Seed",
+                style: initialStyle
+            )
+        )
+        let originalItem = try XCTUnwrap(session.scene.textItem(withID: item.id))
+
+        XCTAssertTrue(session.updateTextEditDraft("A much longer edited draft"))
+        XCTAssertTrue(session.isInlineTextModeActive)
+        XCTAssertNotNil(executor.execute(.increaseTextFontSize))
+
+        let resizedItem = try XCTUnwrap(session.scene.textItem(withID: item.id))
+        XCTAssertTrue(session.isInlineTextModeActive)
+        XCTAssertGreaterThan(resizedItem.style.fontSize, originalItem.style.fontSize)
+        XCTAssertEqual(
+            resizedItem.size,
+            CanvasTextLayoutMeasurer.intrinsicItemSize(
+                for: "A much longer edited draft",
+                style: resizedItem.style
+            )
+        )
+
+        XCTAssertNotNil(executor.execute(.commitTextEdit))
+        XCTAssertFalse(session.isInlineTextModeActive)
+        XCTAssertNotNil(executor.execute(.undo))
+
+        let undoneItem = try XCTUnwrap(session.scene.textItem(withID: item.id))
+        XCTAssertEqual(undoneItem.style, originalItem.style)
+        XCTAssertEqual(
+            undoneItem.size,
+            CanvasTextLayoutMeasurer.intrinsicItemSize(
+                for: undoneItem.text,
+                style: undoneItem.style
+            )
+        )
+
+        XCTAssertNotNil(executor.execute(.redo))
+
+        let redoneItem = try XCTUnwrap(session.scene.textItem(withID: item.id))
+        XCTAssertEqual(redoneItem.style, resizedItem.style)
+        XCTAssertEqual(redoneItem.size, resizedItem.size)
+    }
+
     func testImportMediaExecutorMatchesPolicyInEditingMode() throws {
         let session = makeCommandPolicyParityTestSession(workspaceMode: .editing)
         let executor = CanvasCommandExecutor(session: session)
