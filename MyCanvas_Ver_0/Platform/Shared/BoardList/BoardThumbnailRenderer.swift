@@ -680,8 +680,7 @@ final class BoardThumbnailRenderer {
             for: text,
             style: style,
             availableSize: availableSize,
-            worldToPixelScale: worldToPixelScale,
-            paragraphStyle: paragraphStyle
+            worldToPixelScale: worldToPixelScale
         )
         let attributedText = NSAttributedString(
             string: text,
@@ -714,15 +713,14 @@ final class BoardThumbnailRenderer {
         for text: String,
         style: BoardTextStyleRecord,
         availableSize: CGSize,
-        worldToPixelScale: CGFloat,
-        paragraphStyle: CTParagraphStyle
+        worldToPixelScale: CGFloat
     ) -> CTFont {
         let baseFontSize = max(CGFloat(style.fontSize) * worldToPixelScale, 1)
         let baseFont = textFont(named: style.fontName, size: baseFontSize)
-        let intrinsicSize = measureText(
-            text,
-            font: baseFont,
-            paragraphStyle: paragraphStyle
+        let intrinsicSize = CanvasTextLayoutMeasurer.intrinsicContentSize(
+            for: text,
+            style: style.canvasTextStyle,
+            scale: worldToPixelScale
         )
         guard
             availableSize.width > 0,
@@ -744,37 +742,6 @@ final class BoardThumbnailRenderer {
         return textFont(
             named: style.fontName,
             size: max(baseFontSize * scale, 1)
-        )
-    }
-
-    private func measureText(
-        _ text: String,
-        font: CTFont,
-        paragraphStyle: CTParagraphStyle
-    ) -> CGSize {
-        let attributedText = NSAttributedString(
-            string: text,
-            attributes: textAttributes(
-                font: font,
-                paragraphStyle: paragraphStyle
-            )
-        )
-        let framesetter = CTFramesetterCreateWithAttributedString(
-            attributedText as CFAttributedString
-        )
-        let measuredSize = CTFramesetterSuggestFrameSizeWithConstraints(
-            framesetter,
-            CFRange(location: 0, length: attributedText.length),
-            nil,
-            CGSize(
-                width: CGFloat.greatestFiniteMagnitude,
-                height: CGFloat.greatestFiniteMagnitude
-            ),
-            nil
-        )
-        return CGSize(
-            width: ceil(max(measuredSize.width, 0)),
-            height: ceil(max(measuredSize.height, 0))
         )
     }
 

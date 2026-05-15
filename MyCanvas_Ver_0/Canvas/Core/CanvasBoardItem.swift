@@ -63,6 +63,9 @@ struct CanvasTextItem {
     var text: String
     var style: CanvasTextStyle
     var center: CGPoint
+    // Text size is the shared layout bounds consumed by rendering, hit-testing,
+    // and selection geometry. Shared text measurement should own new text sizes
+    // so every surface follows the same contract.
     var size: CGSize
     var zIndex: CGFloat
     var rotationRadians: CGFloat

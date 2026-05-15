@@ -151,8 +151,7 @@ final class CanvasTextLayer: CATextLayer {
 
         let font = fittedFont(
             for: textPayload,
-            availableSize: availableSize,
-            paragraphStyle: paragraphStyle
+            availableSize: availableSize
         )
         let textColor = platformColor(for: textPayload.style.color)
 
@@ -168,18 +167,17 @@ final class CanvasTextLayer: CATextLayer {
 
     private func fittedFont(
         for textPayload: CanvasTextRenderPayload,
-        availableSize: CGSize,
-        paragraphStyle: NSParagraphStyle
+        availableSize: CGSize
     ) -> CanvasPlatformFont {
         let baseFontSize = max(textPayload.style.fontSize * textPayload.zoomScale, 1)
         let baseFont = platformFont(
             named: textPayload.style.fontName,
             size: baseFontSize
         )
-        let intrinsicSize = measureText(
-            textPayload.text,
-            font: baseFont,
-            paragraphStyle: paragraphStyle
+        let intrinsicSize = CanvasTextLayoutMeasurer.intrinsicContentSize(
+            for: textPayload.text,
+            style: textPayload.style,
+            scale: textPayload.zoomScale
         )
         guard
             availableSize.width > 0,
@@ -202,31 +200,6 @@ final class CanvasTextLayer: CATextLayer {
             named: textPayload.style.fontName,
             size: max(baseFontSize * scale, 1)
         )
-    }
-
-    private func measureText(
-        _ text: String,
-        font: CanvasPlatformFont,
-        paragraphStyle: NSParagraphStyle
-    ) -> CGSize {
-        let attributedText = NSAttributedString(
-            string: text,
-            attributes: [
-                .font: font,
-                .paragraphStyle: paragraphStyle
-            ]
-        )
-        return attributedText.boundingRect(
-            with: CGSize(
-                width: CGFloat.greatestFiniteMagnitude,
-                height: CGFloat.greatestFiniteMagnitude
-            ),
-            options: [
-                .usesLineFragmentOrigin,
-                .usesFontLeading
-            ],
-            context: nil
-        ).integral.size
     }
 
     private func platformFont(
