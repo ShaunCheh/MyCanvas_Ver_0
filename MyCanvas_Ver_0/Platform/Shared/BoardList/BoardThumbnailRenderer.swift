@@ -676,10 +676,8 @@ final class BoardThumbnailRenderer {
         }
 
         let paragraphStyle = textParagraphStyle()
-        let font = fittedTextFont(
-            for: text,
+        let font = renderTextFont(
             style: style,
-            availableSize: availableSize,
             worldToPixelScale: worldToPixelScale
         )
         let attributedText = NSAttributedString(
@@ -709,39 +707,16 @@ final class BoardThumbnailRenderer {
         context.restoreGState()
     }
 
-    private func fittedTextFont(
-        for text: String,
+    private func renderTextFont(
         style: BoardTextStyleRecord,
-        availableSize: CGSize,
         worldToPixelScale: CGFloat
     ) -> CTFont {
-        let baseFontSize = max(CGFloat(style.fontSize) * worldToPixelScale, 1)
-        let baseFont = textFont(named: style.fontName, size: baseFontSize)
-        let intrinsicSize = CanvasTextLayoutMeasurer.intrinsicContentSize(
-            for: text,
-            style: style.canvasTextStyle,
-            scale: worldToPixelScale
-        )
-        guard
-            availableSize.width > 0,
-            availableSize.height > 0,
-            intrinsicSize.width > 0,
-            intrinsicSize.height > 0
-        else {
-            return baseFont
-        }
-
-        let scale = min(
-            availableSize.width / intrinsicSize.width,
-            availableSize.height / intrinsicSize.height
-        )
-        guard scale.isFinite, scale > 0 else {
-            return baseFont
-        }
-
         return textFont(
             named: style.fontName,
-            size: max(baseFontSize * scale, 1)
+            size: CanvasTextLayoutMeasurer.renderFontSize(
+                for: style.canvasTextStyle,
+                scale: worldToPixelScale
+            )
         )
     }
 

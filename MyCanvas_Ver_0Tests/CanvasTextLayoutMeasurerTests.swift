@@ -3,6 +3,17 @@ import XCTest
 @testable import MyCanvas_Ver_0
 
 final class CanvasTextLayoutMeasurerTests: XCTestCase {
+    func testRenderFontSizeMatchesFontSizeTimesScale() {
+        let style = CanvasTextStyle(fontSize: 18)
+
+        let renderFontSize = CanvasTextLayoutMeasurer.renderFontSize(
+            for: style,
+            scale: 2.5
+        )
+
+        XCTAssertEqual(renderFontSize, 45, accuracy: 0.0001)
+    }
+
     func testIntrinsicContentSizeGrowsWithFontSize() {
         let smallStyle = CanvasTextStyle(fontSize: 16)
         let largeStyle = CanvasTextStyle(fontSize: 48)

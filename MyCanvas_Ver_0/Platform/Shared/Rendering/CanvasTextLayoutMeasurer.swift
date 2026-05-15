@@ -15,8 +15,8 @@ struct CanvasTextLayoutMetrics: Hashable, Sendable {
         verticalInset: 10
     )
 
-    // Tight content measurement keeps today's shrink-to-fit call sites behaviorally
-    // stable while moving the intrinsic text sizing logic into one shared helper.
+    // Tight content measurement describes the raw glyph bounds surfaces can use
+    // when they need content-only sizing without extra padding/minimum rules.
     static let tightContent = CanvasTextLayoutMetrics(
         minimumSize: .zero,
         horizontalInset: 0,
@@ -27,6 +27,13 @@ struct CanvasTextLayoutMetrics: Hashable, Sendable {
 enum CanvasTextLayoutMeasurer {
     // Main canvas rendering, thumbnails, and future content-driven item sizing
     // should all measure text through the same helper so geometry stays in sync.
+    static func renderFontSize(
+        for style: CanvasTextStyle,
+        scale: CGFloat = 1
+    ) -> CGFloat {
+        max(style.fontSize * scale, 1)
+    }
+
     static func intrinsicContentSize(
         for text: String,
         style: CanvasTextStyle,
@@ -60,7 +67,10 @@ enum CanvasTextLayoutMeasurer {
         scale: CGFloat,
         metrics: CanvasTextLayoutMetrics
     ) -> CGSize {
-        let baseFontSize = max(style.fontSize * scale, 1)
+        let baseFontSize = renderFontSize(
+            for: style,
+            scale: scale
+        )
         let font = textFont(
             named: style.fontName,
             size: baseFontSize

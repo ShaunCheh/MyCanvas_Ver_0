@@ -23,7 +23,6 @@ final class CanvasTextLayer: CATextLayer {
     private var lastAppliedText: String
     private var lastAppliedStyle: CanvasTextStyle?
     private var lastAppliedZoomScale: CGFloat
-    private var lastAppliedLayoutBoundsSize: CGSize
 
     init(itemID: CanvasItemID) {
         self.itemID = itemID
@@ -35,7 +34,6 @@ final class CanvasTextLayer: CATextLayer {
         lastAppliedText = ""
         lastAppliedStyle = nil
         lastAppliedZoomScale = .nan
-        lastAppliedLayoutBoundsSize = CGSize(width: CGFloat.nan, height: CGFloat.nan)
         super.init()
         configureLayer()
     }
@@ -51,7 +49,6 @@ final class CanvasTextLayer: CATextLayer {
             lastAppliedText = textLayer.lastAppliedText
             lastAppliedStyle = textLayer.lastAppliedStyle
             lastAppliedZoomScale = textLayer.lastAppliedZoomScale
-            lastAppliedLayoutBoundsSize = textLayer.lastAppliedLayoutBoundsSize
         } else {
             itemID = UUID()
             lastAppliedPosition = CGPoint(x: CGFloat.nan, y: CGFloat.nan)
@@ -62,7 +59,6 @@ final class CanvasTextLayer: CATextLayer {
             lastAppliedText = ""
             lastAppliedStyle = nil
             lastAppliedZoomScale = .nan
-            lastAppliedLayoutBoundsSize = CGSize(width: CGFloat.nan, height: CGFloat.nan)
         }
 
         super.init(layer: layer)
@@ -107,17 +103,12 @@ final class CanvasTextLayer: CATextLayer {
         }
 
         if shouldRefreshAttributedText(
-            textPayload: textPayload,
-            layoutBoundsSize: item.screenBoundsSize
+            textPayload: textPayload
         ) {
-            string = makeAttributedText(
-                from: textPayload,
-                availableSize: item.screenBoundsSize
-            )
+            string = makeAttributedText(from: textPayload)
             lastAppliedText = textPayload.text
             lastAppliedStyle = textPayload.style
             lastAppliedZoomScale = textPayload.zoomScale
-            lastAppliedLayoutBoundsSize = item.screenBoundsSize
         }
 
         CATransaction.commit()
@@ -132,27 +123,21 @@ final class CanvasTextLayer: CATextLayer {
     }
 
     private func shouldRefreshAttributedText(
-        textPayload: CanvasTextRenderPayload,
-        layoutBoundsSize: CGSize
+        textPayload: CanvasTextRenderPayload
     ) -> Bool {
         lastAppliedText != textPayload.text ||
         lastAppliedStyle != textPayload.style ||
-        lastAppliedZoomScale != textPayload.zoomScale ||
-        lastAppliedLayoutBoundsSize != layoutBoundsSize
+        lastAppliedZoomScale != textPayload.zoomScale
     }
 
     private func makeAttributedText(
-        from textPayload: CanvasTextRenderPayload,
-        availableSize: CGSize
+        from textPayload: CanvasTextRenderPayload
     ) -> NSAttributedString {
         let paragraphStyle = NSMutableParagraphStyle()
         paragraphStyle.alignment = .center
         paragraphStyle.lineBreakMode = .byClipping
 
-        let font = fittedFont(
-            for: textPayload,
-            availableSize: availableSize
-        )
+        let font = renderFont(for: textPayload)
         let textColor = platformColor(for: textPayload.style.color)
 
         return NSAttributedString(
@@ -165,40 +150,15 @@ final class CanvasTextLayer: CATextLayer {
         )
     }
 
-    private func fittedFont(
-        for textPayload: CanvasTextRenderPayload,
-        availableSize: CGSize
+    private func renderFont(
+        for textPayload: CanvasTextRenderPayload
     ) -> CanvasPlatformFont {
-        let baseFontSize = max(textPayload.style.fontSize * textPayload.zoomScale, 1)
-        let baseFont = platformFont(
+        platformFont(
             named: textPayload.style.fontName,
-            size: baseFontSize
-        )
-        let intrinsicSize = CanvasTextLayoutMeasurer.intrinsicContentSize(
-            for: textPayload.text,
-            style: textPayload.style,
-            scale: textPayload.zoomScale
-        )
-        guard
-            availableSize.width > 0,
-            availableSize.height > 0,
-            intrinsicSize.width > 0,
-            intrinsicSize.height > 0
-        else {
-            return baseFont
-        }
-
-        let scale = min(
-            availableSize.width / intrinsicSize.width,
-            availableSize.height / intrinsicSize.height
-        )
-        guard scale.isFinite, scale > 0 else {
-            return baseFont
-        }
-
-        return platformFont(
-            named: textPayload.style.fontName,
-            size: max(baseFontSize * scale, 1)
+            size: CanvasTextLayoutMeasurer.renderFontSize(
+                for: textPayload.style,
+                scale: textPayload.zoomScale
+            )
         )
     }
 
