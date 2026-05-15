@@ -121,6 +121,32 @@ final class CanvasClickSelectionResolverTests: XCTestCase {
         )
     }
 
+    func testResolveReturnsNoOpForSelectionTranslationAreaClick() {
+        let tappedItemID = CanvasItemID()
+
+        let decision = resolver.resolve(
+            pressTargetKind: .selectionTranslationArea,
+            pressedItemID: tappedItemID,
+            releasedItemID: tappedItemID,
+            selection: CanvasInteractionState(
+                selectedItemIDs: [tappedItemID],
+                primarySelectedItemID: tappedItemID
+            ),
+            isPersistentMultiSelectModeEnabled: false,
+            pressedModifiers: .none,
+            releasedModifiers: .none
+        )
+
+        XCTAssertEqual(
+            decision,
+            CanvasClickSelectionDecision(
+                target: "selection_translation_area",
+                affectedItemID: tappedItemID,
+                action: .none
+            )
+        )
+    }
+
     func testResolveCollapsesExistingMultiSelectionToSingleItemInReplaceMode() {
         let tappedItemID = CanvasItemID()
         let otherSelectedItemID = CanvasItemID()

@@ -277,6 +277,89 @@ final class CanvasEditorSessionAlignmentOverlayTests: XCTestCase {
         XCTAssertEqual(editOverlay.handles.count, CanvasSelectionHandleRole.allCases.count)
     }
 
+    func testResolvePointerTargetHitsSelectionTranslationAreaForSingleSelectionOutline() throws {
+        let item = CanvasTextItem(
+            text: "single",
+            center: .zero,
+            size: CGSize(width: 160, height: 80)
+        )
+        let session = makeAlignmentOverlayTestSession(with: item)
+        let snapshot = session.makeCanvasSnapshot()
+        let editOverlay = try XCTUnwrap(snapshot.editOverlay)
+
+        let pressContext = session.resolvePointerTarget(
+            at: editOverlay.activeScreenQuad.leadingMidpoint,
+            interactionMetrics: makeAlignmentOverlayTestContextResolverMetrics()
+        )
+
+        guard case .selectionTranslationArea = pressContext.targetKind else {
+            XCTFail("Expected single-selection outline hit to resolve as selectionTranslationArea.")
+            return
+        }
+        XCTAssertEqual(pressContext.targetItemID, item.id)
+    }
+
+    func testResolvePointerTargetKeepsSingleSelectionBodyAsSelectedItemBody() {
+        let item = CanvasTextItem(
+            text: "single body",
+            center: CGPoint(x: 20, y: 10),
+            size: CGSize(width: 180, height: 90)
+        )
+        let session = makeAlignmentOverlayTestSession(with: item)
+        _ = session.makeCanvasSnapshot()
+
+        let pressContext = session.resolvePointerTarget(
+            at: session.camera.worldToViewport(item.center),
+            interactionMetrics: makeAlignmentOverlayTestContextResolverMetrics()
+        )
+
+        guard case .selectedItemBody = pressContext.targetKind else {
+            XCTFail("Expected single-selection body hit to stay as selectedItemBody.")
+            return
+        }
+        XCTAssertEqual(pressContext.targetItemID, item.id)
+    }
+
+    func testResolvePointerTargetHitsSelectionTranslationAreaForMultiSelectionInteriorBlank() throws {
+        let firstItem = CanvasTextItem(
+            text: "left",
+            center: CGPoint(x: -120, y: 0),
+            size: CGSize(width: 80, height: 40)
+        )
+        let secondItem = CanvasTextItem(
+            text: "right",
+            center: CGPoint(x: 120, y: 0),
+            size: CGSize(width: 80, height: 40)
+        )
+        let session = makeAlignmentOverlayTestSession(
+            items: [.text(firstItem), .text(secondItem)],
+            interactionState: CanvasInteractionState(
+                selectedItemIDs: [firstItem.id, secondItem.id],
+                primarySelectedItemID: secondItem.id
+            )
+        )
+        let snapshot = session.makeCanvasSnapshot()
+        let editOverlay = try XCTUnwrap(snapshot.editOverlay)
+        let interiorBlankPoint = editOverlay.activeScreenQuad.center
+
+        XCTAssertFalse(
+            snapshot.items.contains(where: { item in
+                item.screenQuad.contains(interiorBlankPoint)
+            })
+        )
+
+        let pressContext = session.resolvePointerTarget(
+            at: interiorBlankPoint,
+            interactionMetrics: makeAlignmentOverlayTestContextResolverMetrics()
+        )
+
+        guard case .selectionTranslationArea = pressContext.targetKind else {
+            XCTFail("Expected multi-selection interior blank hit to resolve as selectionTranslationArea.")
+            return
+        }
+        XCTAssertEqual(pressContext.targetItemID, secondItem.id)
+    }
+
     func testResolvePointerTargetTreatsEverySelectedMemberBodyAsSelected() {
         let firstItem = CanvasTextItem(
             text: "first",
