@@ -95,6 +95,49 @@ final class HandDrawingDocumentStoreTests: XCTestCase {
         }
     }
 
+    func testHandDrawingDocumentStorePersistsProvidedPreviewImageData() throws {
+        try withTemporaryHandDrawingBoardDirectory { boardDirectoryURL in
+            let documentID = UUID()
+            let contentRevision = UUID()
+            let previewImage = try makeHandDrawingDocumentStoreTestImage(
+                red: 0.25,
+                green: 0.7,
+                blue: 0.35
+            )
+            let previewImageData = try HandDrawingDocumentCodec.makePNGData(
+                for: previewImage,
+                documentID: documentID
+            )
+
+            try HandDrawingDocumentStore.persistDocument(
+                documentID: documentID,
+                paper: .square,
+                contentRevision: contentRevision,
+                isEmpty: false,
+                drawingData: Data("preview-image-data-round-trip".utf8),
+                previewImageData: previewImageData,
+                previewCGImage: nil,
+                boardDirectoryURL: boardDirectoryURL
+            )
+
+            let storedPreviewImageData = try HandDrawingDocumentStore
+                .loadPreviewImageData(
+                    documentID: documentID,
+                    boardDirectoryURL: boardDirectoryURL
+                )
+            let loadedPreviewImage = try HandDrawingDocumentStore.loadPreviewImage(
+                documentID: documentID,
+                boardDirectoryURL: boardDirectoryURL
+            )
+
+            XCTAssertEqual(storedPreviewImageData, previewImageData)
+            XCTAssertEqual(
+                BoardThumbnailImageSignature.describe(loadedPreviewImage),
+                BoardThumbnailImageSignature.describe(previewImage)
+            )
+        }
+    }
+
     func testHandDrawingDocumentStoreRemovesOrphanedBundles() throws {
         try withTemporaryHandDrawingBoardDirectory { boardDirectoryURL in
             let keptDocumentID = UUID()

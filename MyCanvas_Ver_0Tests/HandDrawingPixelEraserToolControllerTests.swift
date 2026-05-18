@@ -99,4 +99,36 @@ final class HandDrawingPixelEraserToolControllerTests: XCTestCase {
         XCTAssertEqual(eraseMask[0].samplePoints.count, 1)
         XCTAssertEqual(eraseMask[1].samplePoints.count, 1)
     }
+
+    func testHandDrawingPixelEraserToolControllerCancelRestoresOriginalDocument() {
+        let stroke = makeHandDrawingTestStroke(id: UUID())
+        var engine = HandDrawingEditorEngine(
+            document: HandDrawingDocument(
+                paper: HandDrawingPaper(
+                    id: "cancel-paper",
+                    size: CGSize(width: 120, height: 120)
+                ),
+                strokes: [stroke]
+            )
+        )
+        var controller = HandDrawingPixelEraserToolController()
+
+        controller.beginErasing(
+            with: HandDrawingInputSample(
+                location: CGPoint(x: 60, y: 60),
+                force: 1,
+                timestamp: 0
+            ),
+            baseSize: 18,
+            engine: &engine
+        )
+
+        XCTAssertTrue(controller.isActive)
+        XCTAssertEqual(engine.state.document.strokes[0].eraseMask.count, 1)
+
+        controller.cancelErasing(engine: &engine)
+
+        XCTAssertFalse(controller.isActive)
+        XCTAssertTrue(engine.state.document.strokes[0].eraseMask.isEmpty)
+    }
 }

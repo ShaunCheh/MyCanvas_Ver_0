@@ -56,4 +56,51 @@ final class HandDrawingLassoSelectionTests: XCTestCase {
         XCTAssertTrue(engine.redo())
         XCTAssertEqual(engine.state.selectedStrokeIDs, [enclosedStroke.id])
     }
+
+    func testHandDrawingLassoToolControllerExcludesPartiallyEnclosedStroke() {
+        let enclosedStroke = makeHandDrawingTestStroke(id: UUID())
+        let partiallyOverlappingStroke = makeHandDrawingTestStroke(
+            id: UUID(),
+            transform: HandDrawingStrokeTransform(translationX: 20)
+        )
+        var engine = HandDrawingEditorEngine(
+            document: HandDrawingDocument(
+                paper: HandDrawingPaper(
+                    id: "lasso-partial-paper",
+                    size: CGSize(width: 140, height: 140)
+                ),
+                strokes: [enclosedStroke, partiallyOverlappingStroke]
+            )
+        )
+        var controller = HandDrawingLassoToolController()
+
+        controller.beginLasso(
+            with: HandDrawingInputSample(
+                location: CGPoint(x: 18, y: 44),
+                timestamp: 0
+            )
+        )
+        controller.appendSamples(
+            [
+                HandDrawingInputSample(
+                    location: CGPoint(x: 102, y: 44),
+                    timestamp: 0.1
+                ),
+                HandDrawingInputSample(
+                    location: CGPoint(x: 102, y: 78),
+                    timestamp: 0.2
+                ),
+                HandDrawingInputSample(
+                    location: CGPoint(x: 18, y: 78),
+                    timestamp: 0.3
+                )
+            ]
+        )
+
+        XCTAssertTrue(controller.endLasso(engine: &engine))
+        XCTAssertEqual(engine.state.selectedStrokeIDs, [enclosedStroke.id])
+        XCTAssertFalse(
+            engine.state.selectedStrokeIDs.contains(partiallyOverlappingStroke.id)
+        )
+    }
 }

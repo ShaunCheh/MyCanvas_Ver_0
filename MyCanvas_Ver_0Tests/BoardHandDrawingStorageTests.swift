@@ -271,6 +271,131 @@ final class BoardHandDrawingStorageTests: XCTestCase {
         }
     }
 
+    func testBoardStoreRefreshesHandDrawingPreviewAndThumbnailAfterLocalEraseUpdate() throws {
+        try withTemporaryHandDrawingBoardWorkspace { _, userDefaults in
+            let boardID = UUID()
+            let itemID = UUID()
+            let initialDocument = makeHandDrawingTestDocument()
+            let erasedDocument = makeHandDrawingTestDocument(includeEraseMask: true)
+            let initialPreviewImage = try HandDrawingPreviewRenderer().renderPreviewImage(
+                for: initialDocument,
+                scale: 1
+            )
+            let erasedPreviewImage = try HandDrawingPreviewRenderer().renderPreviewImage(
+                for: erasedDocument,
+                scale: 1
+            )
+            let initialDocumentData = try HandDrawingDocumentCodec.makeDocumentData(
+                for: initialDocument
+            )
+            let erasedDocumentData = try HandDrawingDocumentCodec.makeDocumentData(
+                for: erasedDocument
+            )
+            let initialRevision = UUID()
+            let erasedRevision = UUID()
+
+            let initialItem = makeHandDrawingItem(
+                id: itemID,
+                previewImage: initialPreviewImage,
+                contentRevision: initialRevision
+            )
+            var runtimeState = makeHandDrawingRuntimeState(
+                boardID: boardID,
+                now: Date(timeIntervalSince1970: 1_720_000_300),
+                item: initialItem
+            )
+            try BoardStore.saveBoard(
+                BoardSaveSnapshot(
+                    runtimeState: runtimeState,
+                    transientImageAssetPayloads: [:],
+                    transientHandDrawingAssetPayloads: [
+                        itemID: BoardTransientHandDrawingAssetPayload(
+                            itemID: itemID,
+                            documentData: initialDocumentData,
+                            previewCGImage: initialPreviewImage
+                        )
+                    ]
+                ),
+                userDefaults: userDefaults
+            )
+
+            let firstEntry = try XCTUnwrap(
+                BoardStore.listBoardDocumentEntries(userDefaults: userDefaults).first
+            )
+            let initialThumbnailSignature = BoardThumbnailImageSignature.describe(
+                try decodeHandDrawingImage(
+                    at: BoardPersistedThumbnailStore.thumbnailURL(
+                        forBoardDirectoryURL: firstEntry.boardDirectoryURL
+                    )
+                )
+            )
+
+            runtimeState.items = [
+                .handDrawing(
+                    makeHandDrawingItem(
+                        id: itemID,
+                        documentID: initialItem.documentID,
+                        previewImage: erasedPreviewImage,
+                        contentRevision: erasedRevision
+                    )
+                )
+            ]
+            try BoardStore.saveBoard(
+                BoardSaveSnapshot(
+                    runtimeState: runtimeState,
+                    transientImageAssetPayloads: [:],
+                    transientHandDrawingAssetPayloads: [
+                        itemID: BoardTransientHandDrawingAssetPayload(
+                            itemID: itemID,
+                            documentData: erasedDocumentData,
+                            previewCGImage: erasedPreviewImage
+                        )
+                    ]
+                ),
+                userDefaults: userDefaults
+            )
+
+            let secondEntry = try XCTUnwrap(
+                BoardStore.listBoardDocumentEntries(userDefaults: userDefaults).first
+            )
+            let erasedThumbnailSignature = BoardThumbnailImageSignature.describe(
+                try decodeHandDrawingImage(
+                    at: BoardPersistedThumbnailStore.thumbnailURL(
+                        forBoardDirectoryURL: secondEntry.boardDirectoryURL
+                    )
+                )
+            )
+            let bundleLocator = HandDrawingBundleLocator(
+                documentID: initialItem.documentID
+            )
+            let persistedPreviewImage = try decodeHandDrawingImage(
+                at: bundleLocator.previewImageURL(in: secondEntry.boardDirectoryURL)
+            )
+
+            XCTAssertNotEqual(initialThumbnailSignature, erasedThumbnailSignature)
+            XCTAssertEqual(
+                BoardThumbnailImageSignature.describe(persistedPreviewImage),
+                BoardThumbnailImageSignature.describe(erasedPreviewImage)
+            )
+            XCTAssertEqual(
+                try BoardStore.loadHandDrawingDocumentData(
+                    boardID: boardID,
+                    documentID: initialItem.documentID,
+                    userDefaults: userDefaults
+                ),
+                erasedDocumentData
+            )
+            XCTAssertEqual(
+                secondEntry.document.handDrawingItemRecords.first?.contentRevision,
+                erasedRevision
+            )
+            XCTAssertEqual(
+                secondEntry.document.handDrawingItemRecords.first?.storage,
+                .bundle
+            )
+        }
+    }
+
     func testBoardStorePersistsVisibleThumbnailForEmptyHandDrawing() throws {
         try withTemporaryHandDrawingBoardWorkspace { _, userDefaults in
             let boardID = UUID()

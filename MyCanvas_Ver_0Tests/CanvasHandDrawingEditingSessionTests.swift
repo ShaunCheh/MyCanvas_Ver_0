@@ -1,4 +1,5 @@
 import CoreGraphics
+import Foundation
 import XCTest
 @testable import MyCanvas_Ver_0
 
@@ -80,16 +81,75 @@ final class CanvasHandDrawingEditingSessionTests: XCTestCase {
         XCTAssertEqual(editorContext.storage, .bundle)
         XCTAssertFalse(editorContext.didMigrateLegacyDocument)
     }
+
+    func testAddHandDrawingItemProvidesImmediateEmptyEditorContext() throws {
+        let session = makeHandDrawingEditingTestSession()
+        let item = try XCTUnwrap(session.addHandDrawingItem(paper: .square))
+
+        let editorContext = try session.handDrawingEditorContext(for: item.id)
+        XCTAssertEqual(editorContext.itemID, item.id)
+        XCTAssertTrue(editorContext.documentData.isEmpty)
+        XCTAssertTrue(editorContext.isEmpty)
+        XCTAssertEqual(editorContext.storage, .bundle)
+        XCTAssertFalse(editorContext.didMigrateLegacyDocument)
+    }
+
+    func testHandDrawingEditPersistsAcrossBoardReload() throws {
+        try withTemporaryHandDrawingEditingWorkspace { _, userDefaults in
+            let session = makeHandDrawingEditingTestSession(userDefaults: userDefaults)
+            session.startNewBoard(now: Date(timeIntervalSince1970: 1_720_300_000))
+
+            let item = try XCTUnwrap(session.addHandDrawingItem(paper: .square))
+            let boardID = try XCTUnwrap(session.activeBoardID)
+            let previewImage = try makeHandDrawingEditingTestImage(
+                red: 0.1,
+                green: 0.6,
+                blue: 0.85
+            )
+            let documentData = try HandDrawingDocumentCodec.makeDocumentData(
+                for: makeHandDrawingTestDocument(includeEraseMask: true)
+            )
+
+            _ = try session.commitHandDrawingEdit(
+                withID: item.id,
+                submission: CanvasHandDrawingEditSubmission(
+                    documentData: documentData,
+                    previewCGImage: previewImage,
+                    isEmpty: false,
+                    contentRevision: UUID()
+                )
+            )
+
+            let saveSnapshot = try XCTUnwrap(session.currentBoardSaveSnapshot())
+            try BoardStore.saveBoard(saveSnapshot, userDefaults: userDefaults)
+
+            let restartedSession = makeHandDrawingEditingTestSession(
+                userDefaults: userDefaults
+            )
+            try restartedSession.loadBoard(id: boardID)
+
+            let editorContext = try restartedSession.handDrawingEditorContext(
+                for: item.id
+            )
+            XCTAssertEqual(editorContext.documentData, documentData)
+            XCTAssertFalse(editorContext.isEmpty)
+            XCTAssertEqual(editorContext.storage, .bundle)
+            XCTAssertFalse(editorContext.didMigrateLegacyDocument)
+        }
+    }
 }
 
 private enum CanvasHandDrawingEditingSessionTestRetainer {
     static var sessions: [CanvasEditorSession] = []
 }
 
-private func makeHandDrawingEditingTestSession() -> CanvasEditorSession {
+private func makeHandDrawingEditingTestSession(
+    userDefaults: UserDefaults = .standard
+) -> CanvasEditorSession {
     let session = CanvasEditorSession(
         saveQueueLabel: "CanvasHandDrawingEditingSessionTests",
-        logPrefix: "[CanvasHandDrawingEditingSessionTests]"
+        logPrefix: "[CanvasHandDrawingEditingSessionTests]",
+        userDefaults: userDefaults
     )
     CanvasHandDrawingEditingSessionTestRetainer.sessions.append(session)
     return session
@@ -127,4 +187,48 @@ private func makeHandDrawingEditingTestImage(
 
 private enum CanvasHandDrawingEditingSessionTestError: Error {
     case invalidBitmapContext
+}
+
+private func withTemporaryHandDrawingEditingWorkspace(
+    _ body: (URL, UserDefaults) throws -> Void
+) throws {
+    let fileManager = FileManager.default
+    let identifier = UUID().uuidString
+    let selectedFolderURL = fileManager.temporaryDirectory.appendingPathComponent(
+        "CanvasHandDrawingEditingSessionTests-\(identifier)",
+        isDirectory: true
+    )
+    try fileManager.createDirectory(
+        at: selectedFolderURL,
+        withIntermediateDirectories: true
+    )
+
+    let suiteName = "CanvasHandDrawingEditingSessionTests.\(identifier)"
+    guard let userDefaults = UserDefaults(suiteName: suiteName) else {
+        XCTFail("Failed to create isolated UserDefaults suite.")
+        return
+    }
+    userDefaults.removePersistentDomain(forName: suiteName)
+
+    let bookmarkData = try selectedFolderURL.bookmarkData(
+        options: handDrawingEditingBookmarkCreationOptions(),
+        includingResourceValuesForKeys: nil,
+        relativeTo: nil
+    )
+    FolderBookmarkStore.save(bookmarkData, userDefaults: userDefaults)
+
+    defer {
+        userDefaults.removePersistentDomain(forName: suiteName)
+        try? fileManager.removeItem(at: selectedFolderURL)
+    }
+
+    try body(selectedFolderURL, userDefaults)
+}
+
+private func handDrawingEditingBookmarkCreationOptions() -> URL.BookmarkCreationOptions {
+    #if os(macOS)
+    return [.withSecurityScope]
+    #else
+    return []
+    #endif
 }
