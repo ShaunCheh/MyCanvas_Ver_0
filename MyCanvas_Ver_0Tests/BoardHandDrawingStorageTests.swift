@@ -61,14 +61,34 @@ final class BoardHandDrawingStorageTests: XCTestCase {
 
             try BoardStore.saveBoard(snapshot, userDefaults: userDefaults)
 
-            let assetLocator = BoardHandDrawingAssetLocator(documentID: documentID)
-            let previewURL = assetLocator.previewImageURL(in: assetsDirectoryURL)
-            let sourceURL = assetLocator.sourceDrawingURL(in: assetsDirectoryURL)
+            let entry = try XCTUnwrap(
+                BoardStore.listBoardDocumentEntries(userDefaults: userDefaults).first
+            )
+            let bundleLocator = HandDrawingBundleLocator(documentID: documentID)
+            let previewURL = bundleLocator.previewImageURL(
+                in: entry.boardDirectoryURL
+            )
+            let sourceURL = bundleLocator.documentURL(
+                in: entry.boardDirectoryURL
+            )
+            let legacyAssetLocator = BoardHandDrawingAssetLocator(
+                documentID: documentID
+            )
             XCTAssertEqual(
                 try CoordinatedFileIO.readData(at: sourceURL),
                 drawingData
             )
             XCTAssertNotNil(try CoordinatedFileIO.modificationDate(at: previewURL))
+            XCTAssertNil(
+                try CoordinatedFileIO.modificationDate(
+                    at: legacyAssetLocator.previewImageURL(in: assetsDirectoryURL)
+                )
+            )
+            XCTAssertNil(
+                try CoordinatedFileIO.modificationDate(
+                    at: legacyAssetLocator.sourceDrawingURL(in: assetsDirectoryURL)
+                )
+            )
             XCTAssertNil(try CoordinatedFileIO.modificationDate(at: orphanPreviewURL))
             XCTAssertNil(try CoordinatedFileIO.modificationDate(at: orphanDrawingURL))
 
@@ -84,13 +104,17 @@ final class BoardHandDrawingStorageTests: XCTestCase {
             XCTAssertEqual(loadedItem.contentRevision, item.contentRevision)
             XCTAssertEqual(
                 loadedItem.previewAsset.reference.stableAssetFilename,
-                assetLocator.previewImageFilename
+                item.previewImageFilename
             )
             XCTAssertEqual(
                 BoardThumbnailImageSignature.describe(
                     loadedItem.previewAsset.posterCGImage
                 ),
                 BoardThumbnailImageSignature.describe(previewImage)
+            )
+            XCTAssertEqual(
+                entry.document.handDrawingItemRecords.first?.storage,
+                .bundle
             )
             XCTAssertEqual(
                 try BoardStore.loadHandDrawingSourceData(
@@ -127,7 +151,7 @@ final class BoardHandDrawingStorageTests: XCTestCase {
                 previewImage: firstPreviewImage,
                 contentRevision: firstRevision
             )
-            let assetLocator = BoardHandDrawingAssetLocator(
+            let bundleLocator = HandDrawingBundleLocator(
                 documentID: firstItem.documentID
             )
             var runtimeState = makeHandDrawingRuntimeState(
@@ -200,8 +224,8 @@ final class BoardHandDrawingStorageTests: XCTestCase {
                     )
                 )
             )
-            let previewURL = assetLocator.previewImageURL(
-                in: secondEntry.assetsDirectoryURL
+            let previewURL = bundleLocator.previewImageURL(
+                in: secondEntry.boardDirectoryURL
             )
 
             XCTAssertNotEqual(firstThumbnailSignature, secondThumbnailSignature)
@@ -226,6 +250,10 @@ final class BoardHandDrawingStorageTests: XCTestCase {
             XCTAssertEqual(
                 secondEntry.document.handDrawingItemRecords.first?.contentRevision,
                 secondRevision
+            )
+            XCTAssertEqual(
+                secondEntry.document.handDrawingItemRecords.first?.storage,
+                .bundle
             )
 
             let loadedState = try BoardStore.loadBoard(
@@ -298,6 +326,10 @@ final class BoardHandDrawingStorageTests: XCTestCase {
             XCTAssertGreaterThan(averagePixel.red, 200)
             XCTAssertGreaterThan(averagePixel.green, 200)
             XCTAssertGreaterThan(averagePixel.blue, 200)
+            XCTAssertEqual(
+                entry.document.handDrawingItemRecords.first?.storage,
+                .bundle
+            )
         }
     }
 
@@ -368,6 +400,15 @@ final class BoardHandDrawingStorageTests: XCTestCase {
             )
 
             try BoardStore.saveBoard(duplicatedSnapshot, userDefaults: userDefaults)
+            let entry = try XCTUnwrap(
+                BoardStore.listBoardDocumentEntries(userDefaults: userDefaults).first
+            )
+            let sourceBundleLocator = HandDrawingBundleLocator(
+                documentID: sourceItem.documentID
+            )
+            let duplicatedBundleLocator = HandDrawingBundleLocator(
+                documentID: duplicatedHandDrawingItem.documentID
+            )
 
             let sourceReloadedData = try BoardStore.loadHandDrawingSourceData(
                 boardID: boardID,
@@ -394,6 +435,18 @@ final class BoardHandDrawingStorageTests: XCTestCase {
 
             XCTAssertEqual(sourceReloadedData, sourceDrawingData)
             XCTAssertEqual(duplicatedReloadedData, sourceDrawingData)
+            XCTAssertNotNil(
+                try CoordinatedFileIO.modificationDate(
+                    at: sourceBundleLocator.bundleDirectoryURL(in: entry.boardDirectoryURL)
+                )
+            )
+            XCTAssertNotNil(
+                try CoordinatedFileIO.modificationDate(
+                    at: duplicatedBundleLocator.bundleDirectoryURL(
+                        in: entry.boardDirectoryURL
+                    )
+                )
+            )
             XCTAssertEqual(loadedSourceItem.documentID, sourceItem.documentID)
             XCTAssertEqual(
                 loadedDuplicatedItem.documentID,
@@ -406,6 +459,122 @@ final class BoardHandDrawingStorageTests: XCTestCase {
             XCTAssertEqual(
                 loadedDuplicatedItem.previewAsset.reference.stableAssetFilename,
                 duplicatedHandDrawingItem.previewImageFilename
+            )
+            XCTAssertEqual(
+                Set(entry.document.handDrawingItemRecords.map(\.storage)),
+                [.bundle]
+            )
+        }
+    }
+
+    func testBoardStoreLoadHandDrawingSourceDataFallsBackToLegacyFlatAssets() throws {
+        try withTemporaryHandDrawingBoardWorkspace { selectedFolderURL, userDefaults in
+            let boardID = UUID()
+            let documentID = UUID()
+            let boardDirectoryURL = selectedFolderURL
+                .appendingPathComponent(
+                    SelectedFolderAccess.workspaceDirectoryName,
+                    isDirectory: true
+                )
+                .appendingPathComponent(
+                    SelectedFolderAccess.boardsDirectoryName,
+                    isDirectory: true
+                )
+                .appendingPathComponent(boardID.uuidString, isDirectory: true)
+            let assetsDirectoryURL = boardDirectoryURL.appendingPathComponent(
+                "assets",
+                isDirectory: true
+            )
+            try CoordinatedFileIO.ensureDirectory(at: assetsDirectoryURL)
+
+            let legacyAssetLocator = BoardHandDrawingAssetLocator(
+                documentID: documentID
+            )
+            let legacyDrawingData = Data("legacy-hand-drawing".utf8)
+            let previewImage = try makeHandDrawingTestImage(
+                red: 0.4,
+                green: 0.5,
+                blue: 0.6
+            )
+            try CoordinatedFileIO.writeData(
+                legacyDrawingData,
+                to: legacyAssetLocator.sourceDrawingURL(in: assetsDirectoryURL)
+            )
+            try CoordinatedFileIO.writeData(
+                try makeHandDrawingPNGData(for: previewImage),
+                to: legacyAssetLocator.previewImageURL(in: assetsDirectoryURL)
+            )
+
+            let legacyItemRecord = BoardHandDrawingItemRecord(
+                id: UUID(),
+                documentID: documentID,
+                center: BoardPointRecord(CGPoint(x: 80, y: 80)),
+                size: BoardSizeRecord(CGSize(width: 160, height: 160)),
+                zIndex: 1,
+                paper: BoardHandDrawingPaperRecord(.square),
+                isEmpty: false,
+                contentRevision: UUID(),
+                rotationRadians: 0,
+                storage: .legacyFlatAssetPair
+            )
+            let document = BoardDocument(
+                formatVersion: BoardDocument.currentFormatVersion,
+                boardID: boardID,
+                title: "Legacy Hand Drawing",
+                createdAt: Date(timeIntervalSince1970: 1_720_100_000),
+                contentUpdatedAt: Date(timeIntervalSince1970: 1_720_100_000),
+                viewStateUpdatedAt: Date(timeIntervalSince1970: 1_720_100_000),
+                boardBaseSize: BoardSizeRecord(CGSize(width: 160, height: 160)),
+                boardRect: BoardRectRecord(CGRect(x: 0, y: 0, width: 160, height: 160)),
+                cameraCenter: BoardPointRecord(CGPoint(x: 80, y: 80)),
+                cameraZoomScale: 1,
+                workspaceMode: .editing,
+                items: [.handDrawing(legacyItemRecord)]
+            )
+            try CoordinatedFileIO.writeData(
+                try makeBoardDocumentData(document),
+                to: boardDirectoryURL.appendingPathComponent("board.json")
+            )
+
+            XCTAssertEqual(
+                try BoardStore.loadHandDrawingSourceData(
+                    boardID: boardID,
+                    documentID: documentID,
+                    userDefaults: userDefaults
+                ),
+                legacyDrawingData
+            )
+
+            var loadedState = try BoardStore.loadBoard(
+                id: boardID,
+                userDefaults: userDefaults
+            )
+            let loadedItem = try XCTUnwrap(loadedState.handDrawingItems.first)
+            XCTAssertEqual(loadedItem.documentID, documentID)
+
+            var updatedLegacyItem = loadedItem
+            updatedLegacyItem.center = CGPoint(x: 96, y: 104)
+            loadedState.items = [.handDrawing(updatedLegacyItem)]
+            try BoardStore.saveBoard(loadedState, userDefaults: userDefaults)
+
+            let entry = try XCTUnwrap(
+                BoardStore.loadBoardDocumentEntry(id: boardID, userDefaults: userDefaults)
+            )
+            XCTAssertEqual(
+                entry.document.handDrawingItemRecords.first?.storage,
+                .legacyFlatAssetPair
+            )
+            XCTAssertNotNil(
+                try CoordinatedFileIO.modificationDate(
+                    at: legacyAssetLocator.sourceDrawingURL(in: assetsDirectoryURL)
+                )
+            )
+            XCTAssertNil(
+                try CoordinatedFileIO.modificationDate(
+                    at: HandDrawingBundleLocator(documentID: documentID).bundleDirectoryURL(
+                        in: boardDirectoryURL
+                    )
+                )
             )
         }
     }
@@ -535,6 +704,13 @@ private func makeHandDrawingPNGData(for image: CGImage) throws -> Data {
         throw BoardHandDrawingStorageTestError.invalidImageEncoding
     }
     return mutableData as Data
+}
+
+private func makeBoardDocumentData(_ document: BoardDocument) throws -> Data {
+    let encoder = JSONEncoder()
+    encoder.dateEncodingStrategy = .iso8601
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    return try encoder.encode(document)
 }
 
 private func sampleHandDrawingPixelColor(

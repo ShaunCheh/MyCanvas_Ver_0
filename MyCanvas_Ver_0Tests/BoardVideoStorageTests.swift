@@ -44,10 +44,11 @@ final class BoardVideoStorageTests: XCTestCase {
         )
 
         let roundTrippedState = try BoardDocumentMapper.makeRuntimeState(
-            from: document
-        ) { _ in
-            posterImage
-        }
+            from: document,
+            imageLoader: { _ in
+                posterImage
+            }
+        )
         let roundTrippedItem = try XCTUnwrap(roundTrippedState.imageItems.first)
 
         XCTAssertTrue(roundTrippedItem.isVideo)

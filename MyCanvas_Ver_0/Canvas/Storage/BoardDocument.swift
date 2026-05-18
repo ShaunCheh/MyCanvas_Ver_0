@@ -75,7 +75,7 @@ struct BoardRuntimeState {
 
 struct BoardDocument: Codable {
     // Board schema now evolves independently from image asset internals.
-    static let currentFormatVersion = 7
+    static let currentFormatVersion = 8
     static let defaultTitle = "Untitled Board"
 
     let formatVersion: Int
@@ -216,6 +216,12 @@ struct BoardDocument: Codable {
     var referencedAssetFilenames: Set<String> {
         items.reduce(into: Set<String>()) { partialResult, record in
             partialResult.formUnion(record.referencedAssetFilenames)
+        }
+    }
+
+    var referencedHandDrawingDocumentIDs: Set<HandDrawingDocumentID> {
+        items.reduce(into: Set<HandDrawingDocumentID>()) { partialResult, record in
+            partialResult.formUnion(record.referencedHandDrawingDocumentIDs)
         }
     }
 
@@ -792,6 +798,7 @@ struct BoardHandDrawingPaperRecord: Codable, Equatable {
 
 enum BoardHandDrawingStorageRecord: String, Codable, Equatable {
     case legacyFlatAssetPair
+    case bundle
 }
 
 struct BoardHandDrawingItemRecord: Codable, Equatable {
@@ -890,15 +897,39 @@ struct BoardHandDrawingItemRecord: Codable, Equatable {
     }
 
     var previewImageFilename: String {
-        assetLocator.previewImageFilename
+        switch storage {
+        case .legacyFlatAssetPair:
+            return legacyAssetLocator.previewImageFilename
+        case .bundle:
+            return bundleLocator.previewImageRelativePath
+        }
     }
 
     var sourceDrawingFilename: String {
-        assetLocator.sourceDrawingFilename
+        switch storage {
+        case .legacyFlatAssetPair:
+            return legacyAssetLocator.sourceDrawingFilename
+        case .bundle:
+            return bundleLocator.sourceDrawingRelativePath
+        }
     }
 
     var referencedAssetFilenames: Set<String> {
-        assetLocator.referencedAssetFilenames
+        switch storage {
+        case .legacyFlatAssetPair:
+            return legacyAssetLocator.referencedAssetFilenames
+        case .bundle:
+            return []
+        }
+    }
+
+    var referencedHandDrawingDocumentIDs: Set<HandDrawingDocumentID> {
+        switch storage {
+        case .legacyFlatAssetPair:
+            return []
+        case .bundle:
+            return [documentID]
+        }
     }
 
     var previewImageRecord: BoardImageItemRecord {
@@ -917,8 +948,12 @@ struct BoardHandDrawingItemRecord: Codable, Equatable {
         )
     }
 
-    var assetLocator: BoardHandDrawingAssetLocator {
+    var legacyAssetLocator: BoardHandDrawingAssetLocator {
         BoardHandDrawingAssetLocator(documentID: documentID)
+    }
+
+    var bundleLocator: HandDrawingBundleLocator {
+        HandDrawingBundleLocator(documentID: documentID)
     }
 }
 
@@ -1018,6 +1053,15 @@ enum BoardItemRecord: Codable, Equatable {
             return []
         case let .handDrawing(record):
             return record.referencedAssetFilenames
+        }
+    }
+
+    var referencedHandDrawingDocumentIDs: Set<HandDrawingDocumentID> {
+        switch self {
+        case .image, .text:
+            return []
+        case let .handDrawing(record):
+            return record.referencedHandDrawingDocumentIDs
         }
     }
 

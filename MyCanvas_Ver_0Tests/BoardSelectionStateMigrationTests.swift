@@ -90,10 +90,11 @@ final class BoardSelectionStateMigrationTests: XCTestCase {
         XCTAssertEqual(document.primarySelectedItemID, secondItem.id)
 
         let roundTrippedState = try BoardDocumentMapper.makeRuntimeState(
-            from: document
-        ) { _ in
-            throw BoardSelectionStateMigrationTestError.unexpectedImageDecode
-        }
+            from: document,
+            imageLoader: { _ in
+                throw BoardSelectionStateMigrationTestError.unexpectedImageDecode
+            }
+        )
 
         XCTAssertEqual(
             roundTrippedState.interactionState.selectedItemIDs,
@@ -125,10 +126,11 @@ final class BoardSelectionStateMigrationTests: XCTestCase {
         )
 
         let runtimeState = try BoardDocumentMapper.makeRuntimeState(
-            from: document
-        ) { _ in
-            throw BoardSelectionStateMigrationTestError.unexpectedImageDecode
-        }
+            from: document,
+            imageLoader: { _ in
+                throw BoardSelectionStateMigrationTestError.unexpectedImageDecode
+            }
+        )
         let textItem = try XCTUnwrap(runtimeState.textItems.first)
         let boardState = try XCTUnwrap(runtimeState.boardState)
         let expectedSize = CanvasTextLayoutMeasurer.intrinsicItemSize(
@@ -190,21 +192,22 @@ final class BoardSelectionStateMigrationTests: XCTestCase {
         XCTAssertEqual(handDrawingRecord.documentID, documentID)
         XCTAssertEqual(handDrawingRecord.paper.canvasPaperSpec, .square)
         XCTAssertEqual(handDrawingRecord.contentRevision, contentRevision)
-        XCTAssertEqual(handDrawingRecord.storage, .legacyFlatAssetPair)
+        XCTAssertEqual(handDrawingRecord.storage, .bundle)
         XCTAssertEqual(
             handDrawingRecord.previewImageFilename,
-            CanvasHandDrawingItem.defaultPreviewImageFilename(for: documentID)
+            HandDrawingBundleLocator(documentID: documentID).previewImageRelativePath
         )
 
         let roundTrippedState = try BoardDocumentMapper.makeRuntimeState(
-            from: document
-        ) { imageRecord in
-            XCTAssertEqual(
-                imageRecord.assetFilename,
-                handDrawingRecord.previewImageFilename
-            )
-            return previewImage
-        }
+            from: document,
+            imageLoader: { imageRecord in
+                XCTAssertEqual(
+                    imageRecord.assetFilename,
+                    handDrawingRecord.previewImageFilename
+                )
+                return previewImage
+            }
+        )
         let roundTrippedItem = try XCTUnwrap(roundTrippedState.handDrawingItems.first)
 
         XCTAssertEqual(roundTrippedItem.id, item.id)

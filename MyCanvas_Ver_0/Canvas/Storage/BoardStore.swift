@@ -76,19 +76,28 @@ enum BoardStore {
             )
             try validateReferencedHandDrawingAssets(
                 for: document.handDrawingItemRecords,
-                in: assetsDirectoryURL
+                boardDirectoryURL: boardDirectoryURL,
+                assetsDirectoryURL: assetsDirectoryURL
             )
-            let runtimeState = try BoardDocumentMapper.makeRuntimeState(from: document) { imageRecord in
-                let assetURL = assetsDirectoryURL.appendingPathComponent(imageRecord.assetFilename)
-                let assetData = try CoordinatedFileIO.readData(at: assetURL)
-                guard
-                    let imageSource = CGImageSourceCreateWithData(assetData as CFData, nil),
-                    let cgImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil)
-                else {
-                    throw BoardStoreError.invalidBoardImageAsset(filename: imageRecord.assetFilename)
+            let runtimeState = try BoardDocumentMapper.makeRuntimeState(
+                from: document,
+                imageLoader: { imageRecord in
+                    let assetURL = assetsDirectoryURL.appendingPathComponent(
+                        imageRecord.assetFilename
+                    )
+                    return try loadBoardImageAsset(
+                        at: assetURL,
+                        filename: imageRecord.assetFilename
+                    )
+                },
+                handDrawingPreviewLoader: { handDrawingRecord in
+                    try loadHandDrawingPreviewImage(
+                        for: handDrawingRecord,
+                        boardDirectoryURL: boardDirectoryURL,
+                        assetsDirectoryURL: assetsDirectoryURL
+                    )
                 }
-                return cgImage
-            }
+            )
             print(
                 "[BoardStore] " +
                 "action=loadBoard " +
@@ -136,6 +145,16 @@ enum BoardStore {
                 assetsDirectoryName,
                 isDirectory: true
             )
+            if HandDrawingDocumentStore.bundleExists(
+                documentID: documentID,
+                boardDirectoryURL: boardDirectoryURL
+            ) {
+                return try HandDrawingDocumentStore.loadDocumentData(
+                    documentID: documentID,
+                    boardDirectoryURL: boardDirectoryURL
+                )
+            }
+
             let sourceURL = BoardHandDrawingAssetLocator(documentID: documentID)
                 .sourceDrawingURL(in: assetsDirectoryURL)
             return try CoordinatedFileIO.readData(at: sourceURL)
@@ -199,6 +218,12 @@ enum BoardStore {
                     document.replaceViewState(with: existingDocument)
                 }
             }
+            if snapshot.updateKind.affectsContent {
+                normalizePersistedHandDrawingStorage(
+                    in: &document,
+                    existingDocument: existingDocument
+                )
+            }
 
             let now = Date()
             let contentChanged = existingDocument.map {
@@ -253,10 +278,18 @@ enum BoardStore {
                     }
                 }
 
+                let handDrawingRecordByID = Dictionary(
+                    uniqueKeysWithValues: document.handDrawingItemRecords.map { ($0.id, $0) }
+                )
                 for item in persistedState.handDrawingItems {
+                    guard let handDrawingRecord = handDrawingRecordByID[item.id] else {
+                        continue
+                    }
                     try persistHandDrawingAssetsIfNeeded(
                         for: item,
+                        record: handDrawingRecord,
                         snapshot: persistedSnapshot,
+                        boardDirectoryURL: boardDirectoryURL,
                         in: assetsDirectoryURL
                     )
                 }
@@ -264,6 +297,10 @@ enum BoardStore {
                 try removeOrphanedAssets(
                     keeping: document.referencedAssetFilenames,
                     in: assetsDirectoryURL
+                )
+                try HandDrawingDocumentStore.removeOrphanedBundles(
+                    keeping: document.referencedHandDrawingDocumentIDs,
+                    boardDirectoryURL: boardDirectoryURL
                 )
             }
 
@@ -513,6 +550,39 @@ enum BoardStore {
         }
     }
 
+    private static func loadBoardImageAsset(
+        at assetURL: URL,
+        filename: String
+    ) throws -> CGImage {
+        let assetData = try CoordinatedFileIO.readData(at: assetURL)
+        guard
+            let imageSource = CGImageSourceCreateWithData(assetData as CFData, nil),
+            let cgImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil)
+        else {
+            throw BoardStoreError.invalidBoardImageAsset(filename: filename)
+        }
+        return cgImage
+    }
+
+    private static func loadHandDrawingPreviewImage(
+        for record: BoardHandDrawingItemRecord,
+        boardDirectoryURL: URL,
+        assetsDirectoryURL: URL
+    ) throws -> CGImage {
+        switch record.storage {
+        case .legacyFlatAssetPair:
+            return try loadBoardImageAsset(
+                at: record.legacyAssetLocator.previewImageURL(in: assetsDirectoryURL),
+                filename: record.previewImageFilename
+            )
+        case .bundle:
+            return try HandDrawingDocumentStore.loadPreviewImage(
+                documentID: record.documentID,
+                boardDirectoryURL: boardDirectoryURL
+            )
+        }
+    }
+
     private static func validateReferencedVideoAssets(
         for imageRecords: [BoardImageItemRecord],
         in assetsDirectoryURL: URL
@@ -539,13 +609,24 @@ enum BoardStore {
 
     private static func validateReferencedHandDrawingAssets(
         for handDrawingRecords: [BoardHandDrawingItemRecord],
-        in assetsDirectoryURL: URL
+        boardDirectoryURL: URL,
+        assetsDirectoryURL: URL
     ) throws {
         for handDrawingRecord in handDrawingRecords {
-            try validateHandDrawingSourceAssetExists(
-                at: handDrawingRecord.assetLocator.sourceDrawingURL(in: assetsDirectoryURL),
-                filename: handDrawingRecord.sourceDrawingFilename
-            )
+            switch handDrawingRecord.storage {
+            case .legacyFlatAssetPair:
+                try validateHandDrawingSourceAssetExists(
+                    at: handDrawingRecord.legacyAssetLocator.sourceDrawingURL(
+                        in: assetsDirectoryURL
+                    ),
+                    filename: handDrawingRecord.sourceDrawingFilename
+                )
+            case .bundle:
+                try HandDrawingDocumentStore.validateBundleExists(
+                    documentID: handDrawingRecord.documentID,
+                    boardDirectoryURL: boardDirectoryURL
+                )
+            }
         }
     }
 
@@ -570,6 +651,29 @@ enum BoardStore {
     }
 
     private static func persistHandDrawingAssetsIfNeeded(
+        for item: CanvasHandDrawingItem,
+        record: BoardHandDrawingItemRecord,
+        snapshot: BoardSaveSnapshot,
+        boardDirectoryURL: URL,
+        in assetsDirectoryURL: URL
+    ) throws {
+        switch record.storage {
+        case .legacyFlatAssetPair:
+            try persistLegacyHandDrawingAssetsIfNeeded(
+                for: item,
+                snapshot: snapshot,
+                in: assetsDirectoryURL
+            )
+        case .bundle:
+            try persistBundleHandDrawingDocumentIfNeeded(
+                for: item,
+                snapshot: snapshot,
+                boardDirectoryURL: boardDirectoryURL
+            )
+        }
+    }
+
+    private static func persistLegacyHandDrawingAssetsIfNeeded(
         for item: CanvasHandDrawingItem,
         snapshot: BoardSaveSnapshot,
         in assetsDirectoryURL: URL
@@ -602,6 +706,62 @@ enum BoardStore {
             at: sourceDrawingURL,
             filename: assetLocator.sourceDrawingFilename
         )
+    }
+
+    private static func persistBundleHandDrawingDocumentIfNeeded(
+        for item: CanvasHandDrawingItem,
+        snapshot: BoardSaveSnapshot,
+        boardDirectoryURL: URL
+    ) throws {
+        if let payload = snapshot.transientHandDrawingAssetPayload(for: item.id) {
+            try HandDrawingDocumentStore.persistDocument(
+                documentID: item.documentID,
+                paper: item.paper,
+                contentRevision: item.contentRevision,
+                isEmpty: item.isEmpty,
+                drawingData: payload.drawingData,
+                previewImageData: payload.previewImageData,
+                previewCGImage: payload.previewCGImage,
+                boardDirectoryURL: boardDirectoryURL
+            )
+            return
+        }
+
+        try HandDrawingDocumentStore.validateBundleExists(
+            documentID: item.documentID,
+            boardDirectoryURL: boardDirectoryURL
+        )
+    }
+
+    private static func normalizePersistedHandDrawingStorage(
+        in document: inout BoardDocument,
+        existingDocument: BoardDocument?
+    ) {
+        let existingStorageByItemID = Dictionary(
+            uniqueKeysWithValues: existingDocument?.handDrawingItemRecords.map {
+                ($0.id, $0.storage)
+            } ?? []
+        )
+        document.items = document.items.map { itemRecord in
+            guard case let .handDrawing(record) = itemRecord else {
+                return itemRecord
+            }
+
+            let resolvedStorage = existingStorageByItemID[record.id] ?? .bundle
+            let normalizedRecord = BoardHandDrawingItemRecord(
+                id: record.id,
+                documentID: record.documentID,
+                center: record.center,
+                size: record.size,
+                zIndex: record.zIndex,
+                paper: record.paper,
+                isEmpty: record.isEmpty,
+                contentRevision: record.contentRevision,
+                rotationRadians: record.rotationRadians,
+                storage: resolvedStorage
+            )
+            return .handDrawing(normalizedRecord)
+        }
     }
 
     private static func removeOrphanedAssets(

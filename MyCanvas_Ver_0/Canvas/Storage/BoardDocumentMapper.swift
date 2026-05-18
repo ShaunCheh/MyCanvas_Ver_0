@@ -25,7 +25,8 @@ enum BoardDocumentMapper {
 
     static func makeRuntimeState(
         from document: BoardDocument,
-        imageLoader: (BoardImageItemRecord) throws -> CGImage
+        imageLoader: (BoardImageItemRecord) throws -> CGImage,
+        handDrawingPreviewLoader: ((BoardHandDrawingItemRecord) throws -> CGImage)? = nil
     ) throws -> BoardRuntimeState {
         let items = try document.items.map { itemRecord in
             switch itemRecord {
@@ -53,8 +54,9 @@ enum BoardDocumentMapper {
                 return CanvasBoardItem.handDrawing(
                     makeHandDrawingItem(
                         from: handDrawingRecord,
-                        previewImage: try imageLoader(
-                            handDrawingRecord.previewImageRecord
+                        previewImage: try (
+                            handDrawingPreviewLoader?(handDrawingRecord)
+                            ?? imageLoader(handDrawingRecord.previewImageRecord)
                         )
                     )
                 )
@@ -187,7 +189,7 @@ enum BoardDocumentMapper {
             isEmpty: item.isEmpty,
             contentRevision: item.contentRevision,
             rotationRadians: Double(item.rotationRadians),
-            storage: .legacyFlatAssetPair
+            storage: .bundle
         )
     }
 
