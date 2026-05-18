@@ -8,6 +8,15 @@ private struct BoardThumbnailTraceContext {
     let documentOrderByID: [UUID: Int]
 }
 
+private struct PosterBackedThumbnailLayout {
+    let mappedCenter: CGPoint
+    let visibleRect: CGRect
+    let fullImageRect: CGRect
+    let rotationRadians: CGFloat
+    let previewVisibleRect: CGRect
+    let previewFullImageRect: CGRect
+}
+
 enum BoardThumbnailRendererError: LocalizedError {
     case invalidBitmapContext
     case invalidRuntimePreviewAsset(itemID: UUID)
@@ -348,7 +357,7 @@ final class BoardThumbnailRenderer {
                     itemRecords
                 )
                 try cancellationCheck()
-                drawLoadedImage(
+                drawImageItem(
                     image,
                     for: imageItemRecord,
                     geometry: geometry,
@@ -378,9 +387,9 @@ final class BoardThumbnailRenderer {
                     itemRecords
                 )
                 try cancellationCheck()
-                drawLoadedImage(
+                drawHandDrawingItem(
                     image,
-                    for: previewImageRecord,
+                    for: handDrawingItemRecord,
                     geometry: geometry,
                     in: context,
                     traceContext: traceContext,
@@ -532,7 +541,7 @@ final class BoardThumbnailRenderer {
         return resolvedMaxPixelSizesByFilename
     }
 
-    private func drawLoadedImage(
+    private func drawImageItem(
         _ image: CGImage,
         for itemRecord: BoardImageItemRecord,
         geometry: CanvasMiniMapViewGeometry,
@@ -541,15 +550,141 @@ final class BoardThumbnailRenderer {
         documentOrder: Int?,
         renderOrder: Int
     ) {
-        let visibleSize = itemRecord.size.cgSize
-        guard visibleSize.width > 0, visibleSize.height > 0 else {
+        let cropRect = itemRecord.cropRectNormalized?.canvasImageCropRect ?? .fullImage
+        let cropCGRect = cropRect.cgRect
+        guard
+            let layout = makePosterBackedLayout(
+                center: itemRecord.center,
+                size: itemRecord.size,
+                rotationRadians: itemRecord.rotationRadians,
+                cropCGRect: cropCGRect,
+                geometry: geometry
+            )
+        else {
             return
         }
 
-        let cropRect = itemRecord.cropRectNormalized?.canvasImageCropRect ?? .fullImage
-        let cropCGRect = cropRect.cgRect
-        guard cropCGRect.width > 0, cropCGRect.height > 0 else {
+        logPosterBackedDraw(
+            traceContext: traceContext,
+            kind: .image,
+            itemID: itemRecord.id,
+            documentOrder: documentOrder,
+            renderOrder: renderOrder,
+            worldCenter: itemRecord.center.cgPoint,
+            mappedCenter: layout.mappedCenter,
+            visibleSize: itemRecord.size.cgSize,
+            cropRect: cropCGRect,
+            previewVisibleRect: layout.previewVisibleRect,
+            previewFullImageRect: layout.previewFullImageRect,
+            image: image,
+            rotationRadians: layout.rotationRadians,
+            context: context
+        )
+
+        drawPosterBackedImage(
+            image,
+            layout: layout,
+            in: context,
+            clipPath: nil
+        )
+        if let renderedImage = context.makeImage() {
+            logPosterBackedRenderedRegion(
+                traceContext: traceContext,
+                kind: .image,
+                itemID: itemRecord.id,
+                documentOrder: documentOrder,
+                renderOrder: renderOrder,
+                previewVisibleRect: layout.previewVisibleRect,
+                renderedImage: renderedImage
+            )
+        }
+    }
+
+    private func drawHandDrawingItem(
+        _ image: CGImage,
+        for itemRecord: BoardHandDrawingItemRecord,
+        geometry: CanvasMiniMapViewGeometry,
+        in context: CGContext,
+        traceContext: BoardThumbnailTraceContext,
+        documentOrder: Int?,
+        renderOrder: Int
+    ) {
+        let cropCGRect = CanvasImageCropRect.fullImage.cgRect
+        guard
+            let layout = makePosterBackedLayout(
+                center: itemRecord.center,
+                size: itemRecord.size,
+                rotationRadians: itemRecord.rotationRadians,
+                cropCGRect: cropCGRect,
+                geometry: geometry
+            )
+        else {
             return
+        }
+
+        logPosterBackedDraw(
+            traceContext: traceContext,
+            kind: .handDrawing,
+            itemID: itemRecord.id,
+            documentOrder: documentOrder,
+            renderOrder: renderOrder,
+            worldCenter: itemRecord.center.cgPoint,
+            mappedCenter: layout.mappedCenter,
+            visibleSize: itemRecord.size.cgSize,
+            cropRect: cropCGRect,
+            previewVisibleRect: layout.previewVisibleRect,
+            previewFullImageRect: layout.previewFullImageRect,
+            image: image,
+            rotationRadians: layout.rotationRadians,
+            context: context
+        )
+
+        let paperPath = handDrawingPaperPath(for: layout.visibleRect)
+        drawHandDrawingPaperFill(
+            layout: layout,
+            paperPath: paperPath,
+            in: context
+        )
+        drawPosterBackedImage(
+            image,
+            layout: layout,
+            in: context,
+            clipPath: paperPath
+        )
+        drawHandDrawingPaperBorder(
+            layout: layout,
+            paperPath: paperPath,
+            isEmpty: itemRecord.isEmpty,
+            in: context
+        )
+        if let renderedImage = context.makeImage() {
+            logPosterBackedRenderedRegion(
+                traceContext: traceContext,
+                kind: .handDrawing,
+                itemID: itemRecord.id,
+                documentOrder: documentOrder,
+                renderOrder: renderOrder,
+                previewVisibleRect: layout.previewVisibleRect,
+                renderedImage: renderedImage
+            )
+        }
+    }
+
+    private func makePosterBackedLayout(
+        center: BoardPointRecord,
+        size: BoardSizeRecord,
+        rotationRadians: Double?,
+        cropCGRect: CGRect,
+        geometry: CanvasMiniMapViewGeometry
+    ) -> PosterBackedThumbnailLayout? {
+        let visibleSize = size.cgSize
+        guard
+            visibleSize.width > 0,
+            visibleSize.height > 0,
+            cropCGRect.width > 0,
+            cropCGRect.height > 0
+        else {
+            return nil
         }
 
         let mappedVisibleSize = CGSize(
@@ -557,14 +692,14 @@ final class BoardThumbnailRenderer {
             height: visibleSize.height * geometry.scale
         )
         guard mappedVisibleSize.width > 0, mappedVisibleSize.height > 0 else {
-            return
+            return nil
         }
 
         let fullImagePreviewSize = CGSize(
             width: mappedVisibleSize.width / cropCGRect.width,
             height: mappedVisibleSize.height / cropCGRect.height
         )
-        let mappedCenter = geometry.worldToMiniMap(itemRecord.center.cgPoint)
+        let mappedCenter = geometry.worldToMiniMap(center.cgPoint)
         let visibleRect = CGRect(
             x: -mappedVisibleSize.width / 2,
             y: -mappedVisibleSize.height / 2,
@@ -577,59 +712,97 @@ final class BoardThumbnailRenderer {
             width: fullImagePreviewSize.width,
             height: fullImagePreviewSize.height
         ).standardized
-        let rotationRadians = normalizedCanvasAngle(
-            CGFloat(itemRecord.rotationRadians ?? 0)
-        )
-        let previewVisibleRect = visibleRect.offsetBy(
-            dx: mappedCenter.x,
-            dy: mappedCenter.y
-        )
-        let previewFullImageRect = fullImageRect.offsetBy(
-            dx: mappedCenter.x,
-            dy: mappedCenter.y
+        let resolvedRotationRadians = normalizedCanvasAngle(
+            CGFloat(rotationRadians ?? 0)
         )
 
-        logImageDraw(
-            traceContext: traceContext,
-            itemID: itemRecord.id,
-            documentOrder: documentOrder,
-            renderOrder: renderOrder,
-            worldCenter: itemRecord.center.cgPoint,
+        return PosterBackedThumbnailLayout(
             mappedCenter: mappedCenter,
-            visibleSize: visibleSize,
-            cropRect: cropCGRect,
-            previewVisibleRect: previewVisibleRect,
-            previewFullImageRect: previewFullImageRect,
-            image: image,
-            rotationRadians: rotationRadians,
-            context: context
+            visibleRect: visibleRect,
+            fullImageRect: fullImageRect,
+            rotationRadians: resolvedRotationRadians,
+            previewVisibleRect: visibleRect.offsetBy(
+                dx: mappedCenter.x,
+                dy: mappedCenter.y
+            ),
+            previewFullImageRect: fullImageRect.offsetBy(
+                dx: mappedCenter.x,
+                dy: mappedCenter.y
+            )
         )
+    }
 
+    private func drawPosterBackedImage(
+        _ image: CGImage,
+        layout: PosterBackedThumbnailLayout,
+        in context: CGContext,
+        clipPath: CGPath?
+    ) {
         context.saveGState()
-        context.translateBy(x: mappedCenter.x, y: mappedCenter.y)
-        context.rotate(by: rotationRadians)
-        context.clip(to: visibleRect)
+        context.translateBy(x: layout.mappedCenter.x, y: layout.mappedCenter.y)
+        context.rotate(by: layout.rotationRadians)
+        if let clipPath {
+            context.addPath(clipPath)
+            context.clip()
+        } else {
+            context.clip(to: layout.visibleRect)
+        }
         context.saveGState()
         // `CGImage` drawing still uses Quartz's native y-up sampling, so compensate
         // locally after the thumbnail surface has already been flipped into y-down.
-        context.translateBy(x: fullImageRect.minX, y: fullImageRect.maxY)
+        context.translateBy(x: layout.fullImageRect.minX, y: layout.fullImageRect.maxY)
         context.scaleBy(x: 1, y: -1)
         context.draw(
             image,
-            in: CGRect(origin: .zero, size: fullImageRect.size)
+            in: CGRect(origin: .zero, size: layout.fullImageRect.size)
         )
         context.restoreGState()
         context.restoreGState()
-        if let renderedImage = context.makeImage() {
-            logImageRenderedRegion(
-                traceContext: traceContext,
-                itemID: itemRecord.id,
-                documentOrder: documentOrder,
-                renderOrder: renderOrder,
-                previewVisibleRect: previewVisibleRect,
-                renderedImage: renderedImage
-            )
-        }
+    }
+
+    private func drawHandDrawingPaperFill(
+        layout: PosterBackedThumbnailLayout,
+        paperPath: CGPath,
+        in context: CGContext
+    ) {
+        context.saveGState()
+        context.translateBy(x: layout.mappedCenter.x, y: layout.mappedCenter.y)
+        context.rotate(by: layout.rotationRadians)
+        context.setFillColor(CanvasHandDrawingPreviewAppearance.paperFillColor)
+        context.addPath(paperPath)
+        context.fillPath()
+        context.restoreGState()
+    }
+
+    private func drawHandDrawingPaperBorder(
+        layout: PosterBackedThumbnailLayout,
+        paperPath: CGPath,
+        isEmpty: Bool,
+        in context: CGContext
+    ) {
+        context.saveGState()
+        context.translateBy(x: layout.mappedCenter.x, y: layout.mappedCenter.y)
+        context.rotate(by: layout.rotationRadians)
+        context.setStrokeColor(
+            CanvasHandDrawingPreviewAppearance.resolvedBorderColor(isEmpty: isEmpty)
+        )
+        context.setLineWidth(CanvasHandDrawingPreviewAppearance.borderLineWidth)
+        context.addPath(paperPath)
+        context.strokePath()
+        context.restoreGState()
+    }
+
+    private func handDrawingPaperPath(for visibleRect: CGRect) -> CGPath {
+        let resolvedCornerRadius = min(
+            CanvasHandDrawingPreviewAppearance.cornerRadius,
+            min(visibleRect.width, visibleRect.height) / 2
+        )
+        return CGPath(
+            roundedRect: visibleRect,
+            cornerWidth: resolvedCornerRadius,
+            cornerHeight: resolvedCornerRadius,
+            transform: nil
+        )
     }
 
     private func drawTextItem(
@@ -1037,8 +1210,9 @@ private func logPersistedReplayDraw(
     )
 }
 
-private func logImageDraw(
+private func logPosterBackedDraw(
     traceContext: BoardThumbnailTraceContext,
+    kind: CanvasMiniMapNodeKind,
     itemID: UUID,
     documentOrder: Int?,
     renderOrder: Int,
@@ -1053,9 +1227,10 @@ private func logImageDraw(
     context: CGContext
 ) {
     print(
-        "[BoardList][ThumbnailTrace][ImageDraw] " +
+        "[BoardList][ThumbnailTrace][PosterDraw] " +
             "mode=\(traceContext.mode) " +
             "boardID=\(traceContext.boardID?.uuidString ?? "nil") " +
+            "kind=\(describeBoardThumbnailNodeKind(kind)) " +
             "itemID=\(itemID.uuidString) " +
             "documentOrder=\(documentOrder.map(String.init) ?? "nil") " +
             "renderOrder=\(renderOrder) " +
@@ -1073,8 +1248,9 @@ private func logImageDraw(
     )
 }
 
-private func logImageRenderedRegion(
+private func logPosterBackedRenderedRegion(
     traceContext: BoardThumbnailTraceContext,
+    kind: CanvasMiniMapNodeKind,
     itemID: UUID,
     documentOrder: Int?,
     renderOrder: Int,
@@ -1086,9 +1262,10 @@ private func logImageRenderedRegion(
         image: renderedImage
     )
     print(
-        "[BoardList][ThumbnailTrace][ImageDrawResult] " +
+        "[BoardList][ThumbnailTrace][PosterDrawResult] " +
             "mode=\(traceContext.mode) " +
             "boardID=\(traceContext.boardID?.uuidString ?? "nil") " +
+            "kind=\(describeBoardThumbnailNodeKind(kind)) " +
             "itemID=\(itemID.uuidString) " +
             "documentOrder=\(documentOrder.map(String.init) ?? "nil") " +
             "renderOrder=\(renderOrder) " +
@@ -1104,7 +1281,7 @@ private func logNodeRegionSamples(
     geometry: CanvasMiniMapViewGeometry,
     image: CGImage
 ) {
-    for node in nodes where node.kind == .image {
+    for node in nodes where node.kind == .image || node.kind == .handDrawing {
         let previewRect = geometry.worldToMiniMap(node.worldQuad)
             .boundingRect
             .standardized
@@ -1266,6 +1443,21 @@ private func describeBoardThumbnailTransform(_ transform: CGAffineTransform) -> 
         "d=\(formatBoardThumbnailValue(transform.d)), " +
         "tx=\(formatBoardThumbnailValue(transform.tx)), " +
         "ty=\(formatBoardThumbnailValue(transform.ty))]"
+}
+
+private func describeBoardThumbnailNodeKind(_ kind: CanvasMiniMapNodeKind) -> String {
+    switch kind {
+    case .image:
+        return "image"
+    case .handDrawing:
+        return "handDrawing"
+    case .text:
+        return "text"
+    case .sticker:
+        return "sticker"
+    case .shape:
+        return "shape"
+    }
 }
 
 private func describeBoardThumbnailRect(_ rect: CGRect) -> String {

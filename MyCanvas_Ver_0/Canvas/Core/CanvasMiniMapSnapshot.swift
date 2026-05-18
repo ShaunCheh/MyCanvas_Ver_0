@@ -5,6 +5,7 @@ import Foundation
 // reuse the same snapshot and platform views without depending on image layers.
 enum CanvasMiniMapNodeKind {
     case image
+    case handDrawing
     case text
     case sticker
     case shape

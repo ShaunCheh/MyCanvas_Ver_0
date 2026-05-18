@@ -90,7 +90,7 @@ struct BoardGeometryPreviewBuilder {
                 boardID: boardID,
                 documentOrder: documentOrder,
                 id: handDrawingRecord.id,
-                kind: .image,
+                kind: .handDrawing,
                 center: handDrawingRecord.center,
                 size: handDrawingRecord.size,
                 zIndex: handDrawingRecord.zIndex,
@@ -302,6 +302,8 @@ private func describeBoardPreviewNodeKind(_ kind: CanvasMiniMapNodeKind) -> Stri
     switch kind {
     case .image:
         return "image"
+    case .handDrawing:
+        return "handDrawing"
     case .text:
         return "text"
     case .sticker:

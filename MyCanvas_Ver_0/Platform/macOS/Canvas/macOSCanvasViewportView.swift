@@ -36,21 +36,6 @@ final class macOSCanvasViewportView: NSView {
     private static let cropOutlineLineWidth: CGFloat = 2
     private static let cropHandleLineWidth: CGFloat = 2
     private static let cropHandleSize: CGFloat = 10
-    private static let handDrawingPaperFillColor = CGColor(gray: 1, alpha: 1)
-    private static let handDrawingBorderColor = CGColor(
-        red: 0.82,
-        green: 0.84,
-        blue: 0.88,
-        alpha: 1
-    )
-    private static let emptyHandDrawingBorderColor = CGColor(
-        red: 0.68,
-        green: 0.72,
-        blue: 0.78,
-        alpha: 1
-    )
-    private static let handDrawingBorderLineWidth: CGFloat = 1
-    private static let handDrawingCornerRadius: CGFloat = 10
     private static let alignmentGuideLineWidth: CGFloat = 2
     private static let rotateGuideLineWidth: CGFloat = 2
     private static let rotateHandleLineWidth: CGFloat = 2
@@ -475,12 +460,14 @@ final class macOSCanvasViewportView: NSView {
         isEmpty: Bool,
         contentsScale: CGFloat
     ) {
-        handDrawingLayer.backgroundColor = Self.handDrawingPaperFillColor
-        handDrawingLayer.borderColor = isEmpty
-            ? Self.emptyHandDrawingBorderColor
-            : Self.handDrawingBorderColor
-        handDrawingLayer.borderWidth = Self.handDrawingBorderLineWidth / max(contentsScale, 1)
-        handDrawingLayer.cornerRadius = Self.handDrawingCornerRadius
+        handDrawingLayer.backgroundColor =
+            CanvasHandDrawingPreviewAppearance.paperFillColor
+        handDrawingLayer.borderColor =
+            CanvasHandDrawingPreviewAppearance.resolvedBorderColor(isEmpty: isEmpty)
+        handDrawingLayer.borderWidth =
+            CanvasHandDrawingPreviewAppearance.borderLineWidth / max(contentsScale, 1)
+        handDrawingLayer.cornerRadius =
+            CanvasHandDrawingPreviewAppearance.cornerRadius
     }
 
     private func configureWorkspaceGridLayers() {

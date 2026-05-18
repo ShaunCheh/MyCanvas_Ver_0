@@ -237,6 +237,64 @@ final class BoardHandDrawingStorageTests: XCTestCase {
         }
     }
 
+    func testBoardStorePersistsVisibleThumbnailForEmptyHandDrawing() throws {
+        try withTemporaryHandDrawingBoardWorkspace { _, userDefaults in
+            let boardID = UUID()
+            let itemID = UUID()
+            let transparentPreviewImage = try makeHandDrawingTestImage(
+                red: 0,
+                green: 0,
+                blue: 0,
+                alpha: 0
+            )
+            let drawingData = Data("hand-drawing-empty".utf8)
+            var item = makeHandDrawingItem(
+                id: itemID,
+                previewImage: transparentPreviewImage,
+                contentRevision: UUID(),
+                isEmpty: true
+            )
+            item.rotationRadians = 0
+            let runtimeState = makeHandDrawingRuntimeState(
+                boardID: boardID,
+                now: Date(timeIntervalSince1970: 1_720_000_400),
+                item: item
+            )
+
+            try BoardStore.saveBoard(
+                BoardSaveSnapshot(
+                    runtimeState: runtimeState,
+                    transientImageAssetPayloads: [:],
+                    transientHandDrawingAssetPayloads: [
+                        itemID: BoardTransientHandDrawingAssetPayload(
+                            itemID: itemID,
+                            drawingData: drawingData,
+                            previewImageData: try makeHandDrawingPNGData(
+                                for: transparentPreviewImage
+                            )
+                        )
+                    ]
+                ),
+                userDefaults: userDefaults
+            )
+
+            let entry = try XCTUnwrap(
+                BoardStore.listBoardDocumentEntries(userDefaults: userDefaults).first
+            )
+            let thumbnailImage = try decodeHandDrawingImage(
+                at: BoardPersistedThumbnailStore.thumbnailURL(
+                    forBoardDirectoryURL: entry.boardDirectoryURL
+                )
+            )
+            let averagePixel = try sampleHandDrawingPixelColor(in: thumbnailImage)
+
+            XCTAssertGreaterThan(averagePixel.alpha, 200)
+            XCTAssertGreaterThan(averagePixel.red, 200)
+            XCTAssertGreaterThan(averagePixel.green, 200)
+            XCTAssertGreaterThan(averagePixel.blue, 200)
+        }
+    }
+
     func testBoardStorePersistsDuplicatedHandDrawingWithIndependentAssetPaths() throws {
         try withTemporaryHandDrawingBoardWorkspace { _, userDefaults in
             let boardID = UUID()
@@ -348,6 +406,13 @@ private enum BoardHandDrawingStorageTestError: Error {
     case invalidBitmapContext
 }
 
+private struct HandDrawingPixelColor {
+    let red: UInt8
+    let green: UInt8
+    let blue: UInt8
+    let alpha: UInt8
+}
+
 private func withTemporaryHandDrawingBoardWorkspace(
     _ body: (URL, UserDefaults) throws -> Void
 ) throws {
@@ -457,6 +522,38 @@ private func makeHandDrawingPNGData(for image: CGImage) throws -> Data {
         throw BoardHandDrawingStorageTestError.invalidImageEncoding
     }
     return mutableData as Data
+}
+
+private func sampleHandDrawingPixelColor(
+    in image: CGImage
+) throws -> HandDrawingPixelColor {
+    var pixelBytes = [UInt8](repeating: 0, count: 4)
+    let bitmapInfo =
+        CGImageAlphaInfo.premultipliedLast.rawValue
+        | CGBitmapInfo.byteOrder32Big.rawValue
+    guard
+        let context = CGContext(
+            data: &pixelBytes,
+            width: 1,
+            height: 1,
+            bitsPerComponent: 8,
+            bytesPerRow: 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: bitmapInfo
+        )
+    else {
+        throw BoardHandDrawingStorageTestError.invalidBitmapContext
+    }
+
+    context.interpolationQuality = .high
+    context.draw(image, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+
+    return HandDrawingPixelColor(
+        red: pixelBytes[0],
+        green: pixelBytes[1],
+        blue: pixelBytes[2],
+        alpha: pixelBytes[3]
+    )
 }
 
 private func makeHandDrawingTestImage(

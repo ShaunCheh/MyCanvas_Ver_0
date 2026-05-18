@@ -46,6 +46,20 @@ protocol CanvasMiniMapNodeProviding {
     ) -> [CanvasMiniMapNode]
 }
 
+private func effectiveMiniMapBoardItem(
+    from item: CanvasBoardItem,
+    rotationPreviewState: CanvasRotationPreviewState?
+) -> CanvasBoardItem {
+    guard
+        let rotationPreviewState,
+        let previewGeometry = rotationPreviewState.geometry(for: item.id)
+    else {
+        return item
+    }
+
+    return item.applyingGeometry(previewGeometry) ?? item
+}
+
 // Renderer stays provider-driven so future text/sticker/shape support can add
 // new node providers without rewriting snapshot/layout/platform minimap views.
 struct CanvasMiniMapImageNodeProvider: CanvasMiniMapNodeProviding {
@@ -66,6 +80,33 @@ struct CanvasMiniMapImageNodeProvider: CanvasMiniMapNodeProviding {
                 worldQuad: presentation.visibleWorldQuad,
                 zIndex: presentation.zIndex,
                 isPreviewActive: presentation.isCropPreviewActive || presentation.isRotationPreviewActive
+            )
+        }
+    }
+}
+
+struct CanvasMiniMapHandDrawingNodeProvider: CanvasMiniMapNodeProviding {
+    func makeNodes(
+        context: CanvasMiniMapNodeProviderContext
+    ) -> [CanvasMiniMapNode] {
+        context.scene.orderedBoardItems().compactMap { boardItem in
+            guard let item = boardItem.handDrawingItem else {
+                return nil
+            }
+
+            let effectiveItem = effectiveMiniMapBoardItem(
+                from: .handDrawing(item),
+                rotationPreviewState: context.rotationPreviewState
+            ).handDrawingItem ?? item
+
+            return CanvasMiniMapNode(
+                id: effectiveItem.id,
+                kind: .handDrawing,
+                worldQuad: effectiveItem.worldQuad,
+                zIndex: effectiveItem.zIndex,
+                isPreviewActive: context.rotationPreviewState?.geometry(
+                    for: effectiveItem.id
+                ) != nil
             )
         }
     }

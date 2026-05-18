@@ -7,6 +7,7 @@ struct CanvasMiniMapRenderer {
     init(nodeProviders: [any CanvasMiniMapNodeProviding]? = nil) {
         self.nodeProviders = nodeProviders ?? [
             CanvasMiniMapImageNodeProvider(),
+            CanvasMiniMapHandDrawingNodeProvider(),
             CanvasMiniMapTextNodeProvider()
         ]
     }
