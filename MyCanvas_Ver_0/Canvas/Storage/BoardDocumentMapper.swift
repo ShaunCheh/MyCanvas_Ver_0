@@ -47,6 +47,15 @@ enum BoardDocumentMapper {
                 )
             case let .text(textRecord):
                 return CanvasBoardItem.text(makeTextItem(from: textRecord))
+            case let .handDrawing(handDrawingRecord):
+                return CanvasBoardItem.handDrawing(
+                    makeHandDrawingItem(
+                        from: handDrawingRecord,
+                        previewImage: try imageLoader(
+                            handDrawingRecord.previewImageRecord
+                        )
+                    )
+                )
             }
         }
 
@@ -93,6 +102,8 @@ enum BoardDocumentMapper {
             return .image(makeImageRecord(from: imageItem))
         case let .text(textItem):
             return .text(makeTextRecord(from: textItem))
+        case let .handDrawing(handDrawingItem):
+            return .handDrawing(makeHandDrawingRecord(from: handDrawingItem))
         }
     }
 
@@ -109,6 +120,26 @@ enum BoardDocumentMapper {
             ),
             zIndex: CGFloat(textRecord.zIndex),
             rotationRadians: CGFloat(textRecord.rotationRadians ?? 0)
+        )
+    }
+
+    private static func makeHandDrawingItem(
+        from handDrawingRecord: BoardHandDrawingItemRecord,
+        previewImage: CGImage
+    ) -> CanvasHandDrawingItem {
+        CanvasHandDrawingItem(
+            id: handDrawingRecord.id,
+            paper: handDrawingRecord.paper.canvasPaperSpec,
+            previewAsset: CanvasHandDrawingItem.persistedPreviewAsset(
+                for: handDrawingRecord.id,
+                cgImage: previewImage
+            ),
+            isEmpty: handDrawingRecord.isEmpty,
+            contentRevision: handDrawingRecord.contentRevision,
+            center: handDrawingRecord.center.cgPoint,
+            size: handDrawingRecord.size.cgSize,
+            zIndex: CGFloat(handDrawingRecord.zIndex),
+            rotationRadians: CGFloat(handDrawingRecord.rotationRadians ?? 0)
         )
     }
 
@@ -136,6 +167,21 @@ enum BoardDocumentMapper {
             zIndex: Double(item.zIndex),
             text: item.text,
             style: BoardTextStyleRecord(item.style),
+            rotationRadians: Double(item.rotationRadians)
+        )
+    }
+
+    private static func makeHandDrawingRecord(
+        from item: CanvasHandDrawingItem
+    ) -> BoardHandDrawingItemRecord {
+        BoardHandDrawingItemRecord(
+            id: item.id,
+            center: BoardPointRecord(item.center),
+            size: BoardSizeRecord(item.size),
+            zIndex: Double(item.zIndex),
+            paper: BoardHandDrawingPaperRecord(item.paper),
+            isEmpty: item.isEmpty,
+            contentRevision: item.contentRevision,
             rotationRadians: Double(item.rotationRadians)
         )
     }

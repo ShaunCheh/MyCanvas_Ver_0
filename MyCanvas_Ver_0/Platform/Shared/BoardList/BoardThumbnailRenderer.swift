@@ -359,6 +359,25 @@ final class BoardThumbnailRenderer {
                     ],
                     renderOrder: renderOrder
                 )
+            case let .handDrawing(handDrawingItemRecord):
+                let previewImageRecord = handDrawingItemRecord.previewImageRecord
+                let image = try imageProvider(
+                    previewImageRecord,
+                    geometry,
+                    itemRecords
+                )
+                try cancellationCheck()
+                drawLoadedImage(
+                    image,
+                    for: previewImageRecord,
+                    geometry: geometry,
+                    in: context,
+                    traceContext: traceContext,
+                    documentOrder: traceContext.documentOrderByID[
+                        handDrawingItemRecord.id
+                    ],
+                    renderOrder: renderOrder
+                )
             }
         }
 
@@ -474,7 +493,13 @@ final class BoardThumbnailRenderer {
         var resolvedMaxPixelSizesByFilename: [String: Int] = [:]
 
         for itemRecord in itemRecords {
-            guard case let .image(imageItemRecord) = itemRecord else {
+            let imageItemRecord: BoardImageItemRecord
+            switch itemRecord {
+            case let .image(record):
+                imageItemRecord = record
+            case let .handDrawing(record):
+                imageItemRecord = record.previewImageRecord
+            case .text:
                 continue
             }
 

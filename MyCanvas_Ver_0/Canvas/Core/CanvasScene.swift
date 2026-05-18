@@ -24,6 +24,10 @@ final class CanvasScene {
         append(.text(item))
     }
 
+    func append(_ item: CanvasHandDrawingItem) {
+        append(.handDrawing(item))
+    }
+
     func upsert(_ item: CanvasBoardItem) {
         if let index = items.firstIndex(where: { $0.id == item.id }) {
             items[index] = item
@@ -38,6 +42,10 @@ final class CanvasScene {
 
     func upsert(_ item: CanvasTextItem) {
         upsert(.text(item))
+    }
+
+    func upsert(_ item: CanvasHandDrawingItem) {
+        upsert(.handDrawing(item))
     }
 
     @discardableResult
@@ -74,6 +82,10 @@ final class CanvasScene {
 
     func textItem(withID id: CanvasItemID) -> CanvasTextItem? {
         boardItem(withID: id)?.textItem
+    }
+
+    func handDrawingItem(withID id: CanvasItemID) -> CanvasHandDrawingItem? {
+        boardItem(withID: id)?.handDrawingItem
     }
 
     func itemWorldQuad(withID id: CanvasImageItemID) -> CanvasQuad? {
@@ -740,6 +752,8 @@ final class CanvasScene {
                     rotationRadians: item.rotationRadians
                 )
             )
+        case let .handDrawing(item):
+            return .handDrawing(item.duplicated(offsetInWorld: offsetInWorld))
         }
     }
 

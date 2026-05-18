@@ -4,6 +4,7 @@ import Foundation
 enum CanvasBoardItemKind: Equatable {
     case image
     case text
+    case handDrawing
 }
 
 struct CanvasTextColor: Equatable {
@@ -158,6 +159,7 @@ struct CanvasTextItem {
 enum CanvasBoardItem {
     case image(CanvasImageItem)
     case text(CanvasTextItem)
+    case handDrawing(CanvasHandDrawingItem)
 
     var kind: CanvasBoardItemKind {
         switch self {
@@ -165,6 +167,8 @@ enum CanvasBoardItem {
             return .image
         case .text:
             return .text
+        case .handDrawing:
+            return .handDrawing
         }
     }
 
@@ -173,6 +177,8 @@ enum CanvasBoardItem {
         case let .image(item):
             return item.id
         case let .text(item):
+            return item.id
+        case let .handDrawing(item):
             return item.id
         }
     }
@@ -184,6 +190,8 @@ enum CanvasBoardItem {
                 return item.center
             case let .text(item):
                 return item.center
+            case let .handDrawing(item):
+                return item.center
             }
         }
         set {
@@ -194,6 +202,9 @@ enum CanvasBoardItem {
             case var .text(item):
                 item.center = newValue
                 self = .text(item)
+            case var .handDrawing(item):
+                item.center = newValue
+                self = .handDrawing(item)
             }
         }
     }
@@ -205,6 +216,8 @@ enum CanvasBoardItem {
                 return item.size
             case let .text(item):
                 return item.size
+            case let .handDrawing(item):
+                return item.size
             }
         }
         set {
@@ -215,6 +228,9 @@ enum CanvasBoardItem {
             case var .text(item):
                 item.size = newValue
                 self = .text(item)
+            case var .handDrawing(item):
+                item.size = newValue
+                self = .handDrawing(item)
             }
         }
     }
@@ -226,6 +242,8 @@ enum CanvasBoardItem {
                 return item.zIndex
             case let .text(item):
                 return item.zIndex
+            case let .handDrawing(item):
+                return item.zIndex
             }
         }
         set {
@@ -236,6 +254,9 @@ enum CanvasBoardItem {
             case var .text(item):
                 item.zIndex = newValue
                 self = .text(item)
+            case var .handDrawing(item):
+                item.zIndex = newValue
+                self = .handDrawing(item)
             }
         }
     }
@@ -247,6 +268,8 @@ enum CanvasBoardItem {
                 return item.rotationRadians
             case let .text(item):
                 return item.rotationRadians
+            case let .handDrawing(item):
+                return item.rotationRadians
             }
         }
         set {
@@ -257,6 +280,9 @@ enum CanvasBoardItem {
             case var .text(item):
                 item.rotationRadians = newValue
                 self = .text(item)
+            case var .handDrawing(item):
+                item.rotationRadians = newValue
+                self = .handDrawing(item)
             }
         }
     }
@@ -267,6 +293,8 @@ enum CanvasBoardItem {
             return item.localFrame
         case let .text(item):
             return item.localFrame
+        case let .handDrawing(item):
+            return item.localFrame
         }
     }
 
@@ -275,6 +303,8 @@ enum CanvasBoardItem {
         case let .image(item):
             return item.worldQuad
         case let .text(item):
+            return item.worldQuad
+        case let .handDrawing(item):
             return item.worldQuad
         }
     }
@@ -285,6 +315,8 @@ enum CanvasBoardItem {
             return item.worldFrame
         case let .text(item):
             return item.worldFrame
+        case let .handDrawing(item):
+            return item.worldFrame
         }
     }
 
@@ -293,6 +325,8 @@ enum CanvasBoardItem {
         case let .image(item):
             return item.worldBounds
         case let .text(item):
+            return item.worldBounds
+        case let .handDrawing(item):
             return item.worldBounds
         }
     }
@@ -313,11 +347,21 @@ enum CanvasBoardItem {
         return item
     }
 
+    var handDrawingItem: CanvasHandDrawingItem? {
+        guard case let .handDrawing(item) = self else {
+            return nil
+        }
+
+        return item
+    }
+
     func contains(worldPoint: CGPoint) -> Bool {
         switch self {
         case let .image(item):
             return item.contains(worldPoint: worldPoint)
         case let .text(item):
+            return item.contains(worldPoint: worldPoint)
+        case let .handDrawing(item):
             return item.contains(worldPoint: worldPoint)
         }
     }
@@ -327,6 +371,8 @@ enum CanvasBoardItem {
         case let .image(item):
             return item.worldPoint(fromLocal: localPoint)
         case let .text(item):
+            return item.worldPoint(fromLocal: localPoint)
+        case let .handDrawing(item):
             return item.worldPoint(fromLocal: localPoint)
         }
     }

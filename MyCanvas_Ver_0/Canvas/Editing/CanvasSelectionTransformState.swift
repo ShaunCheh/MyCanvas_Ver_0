@@ -338,6 +338,8 @@ struct CanvasSelectionTransformSnapshot: Equatable {
                     scale: resizeDraft.scale
                 )
             )
+        case .handDrawing:
+            return item.applyingGeometry(scaledItemGeometry) ?? item
         }
     }
 

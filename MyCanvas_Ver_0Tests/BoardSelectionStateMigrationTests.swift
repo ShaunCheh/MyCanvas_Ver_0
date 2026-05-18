@@ -143,6 +143,79 @@ final class BoardSelectionStateMigrationTests: XCTestCase {
         XCTAssertNotEqual(textItem.size, legacyTextRecord.size.cgSize)
         XCTAssertTrue(boardState.worldRect.contains(textItem.worldBounds))
     }
+
+    func testBoardDocumentMapperRoundTripsHandDrawingItem() throws {
+        let itemID = UUID()
+        let contentRevision = UUID()
+        let previewImage = try makeSolidColorPreviewImage(
+            red: 0.1,
+            green: 0.2,
+            blue: 0.9
+        )
+        let item = CanvasHandDrawingItem(
+            id: itemID,
+            paper: .square,
+            previewAsset: CanvasHandDrawingItem.persistedPreviewAsset(
+                for: itemID,
+                cgImage: previewImage
+            ),
+            isEmpty: false,
+            contentRevision: contentRevision,
+            center: CGPoint(x: 160, y: 90),
+            size: CGSize(width: 320, height: 320),
+            zIndex: 3,
+            rotationRadians: .pi / 8
+        )
+        let runtimeState = BoardRuntimeState(
+            boardID: UUID(),
+            title: "Hand Drawing Mapper",
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+            contentUpdatedAt: Date(timeIntervalSince1970: 1_700_000_100),
+            viewStateUpdatedAt: Date(timeIntervalSince1970: 1_700_000_100),
+            items: [.handDrawing(item)],
+            boardState: nil,
+            camera: CanvasCamera(),
+            interactionState: CanvasInteractionState(
+                selectedItemIDs: [itemID],
+                primarySelectedItemID: itemID
+            ),
+            workspaceMode: .editing
+        )
+
+        let document = BoardDocumentMapper.makeDocument(from: runtimeState)
+        let handDrawingRecord = try XCTUnwrap(document.handDrawingItemRecords.first)
+        XCTAssertEqual(handDrawingRecord.id, itemID)
+        XCTAssertEqual(handDrawingRecord.paper.canvasPaperSpec, .square)
+        XCTAssertEqual(handDrawingRecord.contentRevision, contentRevision)
+        XCTAssertEqual(
+            handDrawingRecord.previewImageFilename,
+            CanvasHandDrawingItem.defaultPreviewImageFilename(for: itemID)
+        )
+
+        let roundTrippedState = try BoardDocumentMapper.makeRuntimeState(
+            from: document
+        ) { imageRecord in
+            XCTAssertEqual(
+                imageRecord.assetFilename,
+                handDrawingRecord.previewImageFilename
+            )
+            return previewImage
+        }
+        let roundTrippedItem = try XCTUnwrap(roundTrippedState.handDrawingItems.first)
+
+        XCTAssertEqual(roundTrippedItem.id, item.id)
+        XCTAssertEqual(roundTrippedItem.paper, item.paper)
+        XCTAssertEqual(roundTrippedItem.isEmpty, item.isEmpty)
+        XCTAssertEqual(roundTrippedItem.contentRevision, item.contentRevision)
+        XCTAssertEqual(roundTrippedItem.center, item.center)
+        XCTAssertEqual(roundTrippedItem.size, item.size)
+        XCTAssertEqual(roundTrippedItem.zIndex, item.zIndex)
+        XCTAssertEqual(roundTrippedItem.rotationRadians, item.rotationRadians)
+        XCTAssertEqual(
+            roundTrippedItem.previewAsset.reference.stableAssetFilename,
+            item.previewImageFilename
+        )
+    }
 }
 
 private enum BoardSelectionStateMigrationTestError: Error {
@@ -172,4 +245,32 @@ private func makeBoardDocument(
         workspaceMode: .editing,
         items: items
     )
+}
+
+private func makeSolidColorPreviewImage(
+    red: CGFloat,
+    green: CGFloat,
+    blue: CGFloat
+) throws -> CGImage {
+    let colorSpace = CGColorSpaceCreateDeviceRGB()
+    guard let context = CGContext(
+        data: nil,
+        width: 4,
+        height: 4,
+        bitsPerComponent: 8,
+        bytesPerRow: 0,
+        space: colorSpace,
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+    ) else {
+        throw BoardSelectionStateMigrationTestError.unexpectedImageDecode
+    }
+
+    context.setFillColor(
+        red: red,
+        green: green,
+        blue: blue,
+        alpha: 1
+    )
+    context.fill(CGRect(x: 0, y: 0, width: 4, height: 4))
+    return try XCTUnwrap(context.makeImage())
 }

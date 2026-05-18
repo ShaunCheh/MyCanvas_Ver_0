@@ -687,6 +687,12 @@ struct CanvasRenderer {
                 inlineEditState: inlineEditState,
                 rotationPreviewState: rotationPreviewState
             )
+        case let .handDrawing(handDrawingItem):
+            return makeHandDrawingRenderItem(
+                for: handDrawingItem,
+                camera: camera,
+                rotationPreviewState: rotationPreviewState
+            )
         }
     }
 
@@ -737,6 +743,48 @@ struct CanvasRenderer {
         )
     }
 
+    private func makeHandDrawingRenderItem(
+        for item: CanvasHandDrawingItem,
+        camera: CanvasCamera,
+        rotationPreviewState: CanvasRotationPreviewState?
+    ) -> CanvasRenderItem {
+        let effectiveHandDrawingItem: CanvasHandDrawingItem
+        switch effectiveBoardItem(
+            from: .handDrawing(item),
+            rotationPreviewState: rotationPreviewState
+        ) {
+        case let .handDrawing(resolvedHandDrawingItem):
+            effectiveHandDrawingItem = resolvedHandDrawingItem
+        case .image, .text:
+            assertionFailure("Expected hand drawing item after applying geometry.")
+            effectiveHandDrawingItem = item
+        }
+
+        let screenQuad = camera.worldToViewport(effectiveHandDrawingItem.worldQuad)
+        return CanvasRenderItem(
+            id: effectiveHandDrawingItem.id,
+            screenFrame: screenQuad.boundingRect.standardized,
+            screenQuad: screenQuad,
+            screenCenter: camera.worldToViewport(effectiveHandDrawingItem.center),
+            screenBoundsSize: CGSize(
+                width: effectiveHandDrawingItem.size.width * camera.zoomScale,
+                height: effectiveHandDrawingItem.size.height * camera.zoomScale
+            ),
+            rotationRadians: effectiveHandDrawingItem.rotationRadians,
+            zIndex: effectiveHandDrawingItem.zIndex,
+            payload: .image(
+                CanvasImageRenderPayload(
+                    displayContract: CanvasImageDisplayContract(
+                        assetReference: effectiveHandDrawingItem.previewAsset.reference,
+                        posterCGImage: effectiveHandDrawingItem.previewAsset.posterCGImage,
+                        allowsAnimatedPlayback: false
+                    ),
+                    contentsRect: CanvasImageCropRect.fullImage.cgRect
+                )
+            )
+        )
+    }
+
     private func makeTextRenderItem(
         for item: CanvasTextItem,
         camera: CanvasCamera,
@@ -750,7 +798,7 @@ struct CanvasRenderer {
         ) {
         case let .text(resolvedTextItem):
             effectiveTextItem = resolvedTextItem
-        case .image:
+        case .image, .handDrawing:
             assertionFailure("Expected text item after applying text presentation.")
             effectiveTextItem = item
         }

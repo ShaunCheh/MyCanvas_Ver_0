@@ -67,12 +67,15 @@ struct BoardRuntimeState {
     var textItems: [CanvasTextItem] {
         items.compactMap(\.textItem)
     }
+
+    var handDrawingItems: [CanvasHandDrawingItem] {
+        items.compactMap(\.handDrawingItem)
+    }
 }
 
 struct BoardDocument: Codable {
-    static let currentFormatVersion =
-        CanvasImageAssetContract.current.targetDocumentFormatVersion
-    static let targetFormatVersionForImageAssets = currentFormatVersion
+    // Board schema now evolves independently from image asset internals.
+    static let currentFormatVersion = 6
     static let defaultTitle = "Untitled Board"
 
     let formatVersion: Int
@@ -211,13 +214,17 @@ struct BoardDocument: Codable {
     }
 
     var referencedAssetFilenames: Set<String> {
-        imageItemRecords.reduce(into: Set<String>()) { partialResult, record in
+        items.reduce(into: Set<String>()) { partialResult, record in
             partialResult.formUnion(record.referencedAssetFilenames)
         }
     }
 
     var textItemRecords: [BoardTextItemRecord] {
         items.compactMap(\.textItemRecord)
+    }
+
+    var handDrawingItemRecords: [BoardHandDrawingItemRecord] {
+        items.compactMap(\.handDrawingItemRecord)
     }
 
     var contentState: BoardDocumentContentState {
@@ -756,19 +763,91 @@ struct BoardTextItemRecord: Codable, Equatable {
     var rotationRadians: Double?
 }
 
+struct BoardHandDrawingPaperRecord: Codable, Equatable {
+    var id: String
+    var size: BoardSizeRecord
+
+    init(
+        id: String,
+        size: BoardSizeRecord
+    ) {
+        self.id = id
+        self.size = size
+    }
+
+    init(_ paper: CanvasHandDrawingPaperSpec) {
+        self.init(
+            id: paper.id,
+            size: BoardSizeRecord(paper.size)
+        )
+    }
+
+    var canvasPaperSpec: CanvasHandDrawingPaperSpec {
+        CanvasHandDrawingPaperSpec(
+            id: id,
+            size: size.cgSize
+        )
+    }
+}
+
+struct BoardHandDrawingItemRecord: Codable, Equatable {
+    let id: UUID
+    var center: BoardPointRecord
+    var size: BoardSizeRecord
+    var zIndex: Double
+    var paper: BoardHandDrawingPaperRecord
+    var isEmpty: Bool
+    var contentRevision: UUID
+    var rotationRadians: Double?
+
+    var previewImageFilename: String {
+        CanvasHandDrawingItem.defaultPreviewImageFilename(for: id)
+    }
+
+    var sourceDrawingFilename: String {
+        CanvasHandDrawingItem.defaultSourceDrawingFilename(for: id)
+    }
+
+    var referencedAssetFilenames: Set<String> {
+        [
+            previewImageFilename,
+            sourceDrawingFilename
+        ]
+    }
+
+    var previewImageRecord: BoardImageItemRecord {
+        BoardImageItemRecord(
+            id: id,
+            center: center,
+            size: size,
+            zIndex: zIndex,
+            assetFilename: previewImageFilename,
+            assetKind: .staticImage,
+            posterImageFilename: previewImageFilename,
+            sourceVideoFilename: nil,
+            posterTimeSeconds: nil,
+            cropRectNormalized: nil,
+            rotationRadians: rotationRadians
+        )
+    }
+}
+
 enum BoardItemRecord: Codable, Equatable {
     case image(BoardImageItemRecord)
     case text(BoardTextItemRecord)
+    case handDrawing(BoardHandDrawingItemRecord)
 
     private enum CodingKeys: String, CodingKey {
         case type
         case image
         case text
+        case handDrawing
     }
 
     private enum ItemType: String, Codable {
         case image
         case text
+        case handDrawing
     }
 
     init(from decoder: Decoder) throws {
@@ -789,6 +868,13 @@ enum BoardItemRecord: Codable, Equatable {
                         forKey: .text
                     )
                 )
+            case .handDrawing:
+                self = .handDrawing(
+                    try container.decode(
+                        BoardHandDrawingItemRecord.self,
+                        forKey: .handDrawing
+                    )
+                )
             }
             return
         }
@@ -806,6 +892,9 @@ enum BoardItemRecord: Codable, Equatable {
         case let .text(record):
             try container.encode(ItemType.text, forKey: .type)
             try container.encode(record, forKey: .text)
+        case let .handDrawing(record):
+            try container.encode(ItemType.handDrawing, forKey: .type)
+            try container.encode(record, forKey: .handDrawing)
         }
     }
 
@@ -814,6 +903,8 @@ enum BoardItemRecord: Codable, Equatable {
         case let .image(record):
             return record.id
         case let .text(record):
+            return record.id
+        case let .handDrawing(record):
             return record.id
         }
     }
@@ -824,6 +915,19 @@ enum BoardItemRecord: Codable, Equatable {
             return record.zIndex
         case let .text(record):
             return record.zIndex
+        case let .handDrawing(record):
+            return record.zIndex
+        }
+    }
+
+    var referencedAssetFilenames: Set<String> {
+        switch self {
+        case let .image(record):
+            return record.referencedAssetFilenames
+        case let .text(record):
+            return []
+        case let .handDrawing(record):
+            return record.referencedAssetFilenames
         }
     }
 
@@ -837,6 +941,14 @@ enum BoardItemRecord: Codable, Equatable {
 
     var textItemRecord: BoardTextItemRecord? {
         guard case let .text(record) = self else {
+            return nil
+        }
+
+        return record
+    }
+
+    var handDrawingItemRecord: BoardHandDrawingItemRecord? {
+        guard case let .handDrawing(record) = self else {
             return nil
         }
 
