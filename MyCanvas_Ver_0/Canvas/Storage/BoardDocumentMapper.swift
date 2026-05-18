@@ -17,7 +17,9 @@ enum BoardDocumentMapper {
             selectedItemIDs: runtimeState.interactionState.selectedItemIDs,
             primarySelectedItemID: runtimeState.interactionState.primarySelectedItemID,
             workspaceMode: runtimeState.workspaceMode,
-            items: runtimeState.items.map(makeItemRecord)
+            items: runtimeState.items.map { item in
+                makeItemRecord(from: item)
+            }
         )
     }
 

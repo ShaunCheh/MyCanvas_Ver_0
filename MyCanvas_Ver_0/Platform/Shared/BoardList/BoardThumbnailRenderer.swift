@@ -10,15 +10,15 @@ private struct BoardThumbnailTraceContext {
 
 enum BoardThumbnailRendererError: LocalizedError {
     case invalidBitmapContext
-    case invalidRuntimeImageAsset(itemID: UUID)
+    case invalidRuntimePreviewAsset(itemID: UUID)
     case cancelled
 
     var errorDescription: String? {
         switch self {
         case .invalidBitmapContext:
             return "The thumbnail bitmap context could not be created."
-        case let .invalidRuntimeImageAsset(itemID):
-            return "The runtime image asset for board item \(itemID.uuidString) is missing."
+        case let .invalidRuntimePreviewAsset(itemID):
+            return "The runtime preview asset for board item \(itemID.uuidString) is missing."
         case .cancelled:
             return "The thumbnail request was cancelled."
         }
@@ -153,9 +153,20 @@ final class BoardThumbnailRenderer {
             return nil
         }
 
-        let runtimeItemsByID = Dictionary(
-            uniqueKeysWithValues: runtimeState.imageItems.map { ($0.id, $0) }
-        )
+        let runtimePreviewImagesByID = runtimeState.items.reduce(
+            into: [UUID: CGImage]()
+        ) { partialResult, item in
+            switch item {
+            case let .image(runtimeImageItem):
+                partialResult[runtimeImageItem.id] = runtimeImageItem.posterCGImage
+            case let .handDrawing(runtimeHandDrawingItem):
+                partialResult[runtimeHandDrawingItem.id] = runtimeHandDrawingItem
+                    .previewAsset
+                    .posterCGImage
+            case .text:
+                break
+            }
+        }
         let traceContext = makeTraceContext(
             mode: "persist-write",
             boardID: runtimeState.boardID,
@@ -169,18 +180,18 @@ final class BoardThumbnailRenderer {
             cancellationCheck: cancellationCheck,
             traceContext: traceContext
         ) { itemRecord, _, _ in
-            guard let runtimeItem = runtimeItemsByID[itemRecord.id] else {
-                throw BoardThumbnailRendererError.invalidRuntimeImageAsset(
+            guard let previewImage = runtimePreviewImagesByID[itemRecord.id] else {
+                throw BoardThumbnailRendererError.invalidRuntimePreviewAsset(
                     itemID: itemRecord.id
                 )
             }
 
             // Persisted board thumbnails stay static even for GIF boards; the
-            // runtime poster is the single frame we rasterize into thumbnail.png.
+            // runtime preview image is the single frame we rasterize into thumbnail.png.
             guard animatedImagePreviewMode == .posterFrameOnly else {
-                return runtimeItem.posterCGImage
+                return previewImage
             }
-            return runtimeItem.posterCGImage
+            return previewImage
         }
     }
 

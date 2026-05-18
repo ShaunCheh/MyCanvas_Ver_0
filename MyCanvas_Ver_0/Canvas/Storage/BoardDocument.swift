@@ -801,18 +801,15 @@ struct BoardHandDrawingItemRecord: Codable, Equatable {
     var rotationRadians: Double?
 
     var previewImageFilename: String {
-        CanvasHandDrawingItem.defaultPreviewImageFilename(for: id)
+        assetLocator.previewImageFilename
     }
 
     var sourceDrawingFilename: String {
-        CanvasHandDrawingItem.defaultSourceDrawingFilename(for: id)
+        assetLocator.sourceDrawingFilename
     }
 
     var referencedAssetFilenames: Set<String> {
-        [
-            previewImageFilename,
-            sourceDrawingFilename
-        ]
+        assetLocator.referencedAssetFilenames
     }
 
     var previewImageRecord: BoardImageItemRecord {
@@ -829,6 +826,10 @@ struct BoardHandDrawingItemRecord: Codable, Equatable {
             cropRectNormalized: nil,
             rotationRadians: rotationRadians
         )
+    }
+
+    var assetLocator: BoardHandDrawingAssetLocator {
+        BoardHandDrawingAssetLocator(itemID: id)
     }
 }
 
@@ -924,7 +925,7 @@ enum BoardItemRecord: Codable, Equatable {
         switch self {
         case let .image(record):
             return record.referencedAssetFilenames
-        case let .text(record):
+        case .text:
             return []
         case let .handDrawing(record):
             return record.referencedAssetFilenames

@@ -18,8 +18,10 @@ enum BoardStoreError: LocalizedError {
     case invalidBoardDirectory
     case invalidBoardImageAsset(filename: String)
     case missingBoardVideoAsset(filename: String)
+    case missingBoardHandDrawingSourceAsset(filename: String)
     case failedToEncodeImageAsset(itemID: UUID)
     case missingAnimatedImageSource(itemID: UUID)
+    case missingHandDrawingAssetPayload(itemID: UUID)
 
     var errorDescription: String? {
         switch self {
@@ -29,10 +31,14 @@ enum BoardStoreError: LocalizedError {
             return "The board image asset could not be decoded: \(filename)"
         case let .missingBoardVideoAsset(filename):
             return "The board video asset is missing: \(filename)"
+        case let .missingBoardHandDrawingSourceAsset(filename):
+            return "The board hand drawing source asset is missing: \(filename)"
         case let .failedToEncodeImageAsset(itemID):
             return "The image asset could not be encoded for board item \(itemID.uuidString)."
         case let .missingAnimatedImageSource(itemID):
             return "The original animated image data is unavailable for board item \(itemID.uuidString)."
+        case let .missingHandDrawingAssetPayload(itemID):
+            return "The transient hand drawing asset payload is unavailable for board item \(itemID.uuidString)."
         }
     }
 }
@@ -66,6 +72,10 @@ enum BoardStore {
 
             try validateReferencedVideoAssets(
                 for: document.imageItemRecords,
+                in: assetsDirectoryURL
+            )
+            try validateReferencedHandDrawingAssets(
+                for: document.handDrawingItemRecords,
                 in: assetsDirectoryURL
             )
             let runtimeState = try BoardDocumentMapper.makeRuntimeState(from: document) { imageRecord in
@@ -109,6 +119,26 @@ enum BoardStore {
             )
             let assetURL = assetsDirectoryURL.appendingPathComponent(filename)
             return try CoordinatedFileIO.readData(at: assetURL)
+        }
+    }
+
+    static func loadHandDrawingSourceData(
+        boardID: UUID,
+        itemID: CanvasItemID,
+        userDefaults: UserDefaults = .standard
+    ) throws -> Data {
+        try SelectedFolderAccess.withBoardsDirectoryURL(userDefaults: userDefaults) { boardsDirectoryURL in
+            let boardDirectoryURL = self.boardDirectoryURL(
+                for: boardID,
+                boardsDirectoryURL: boardsDirectoryURL
+            )
+            let assetsDirectoryURL = boardDirectoryURL.appendingPathComponent(
+                assetsDirectoryName,
+                isDirectory: true
+            )
+            let sourceURL = BoardHandDrawingAssetLocator(itemID: itemID)
+                .sourceDrawingURL(in: assetsDirectoryURL)
+            return try CoordinatedFileIO.readData(at: sourceURL)
         }
     }
 
@@ -190,6 +220,7 @@ enum BoardStore {
             let persistedSnapshot = BoardSaveSnapshot(
                 runtimeState: persistedState,
                 transientImageAssetPayloads: snapshot.transientImageAssetPayloads,
+                transientHandDrawingAssetPayloads: snapshot.transientHandDrawingAssetPayloads,
                 updateKind: snapshot.updateKind
             )
 
@@ -220,6 +251,14 @@ enum BoardStore {
                             filename: sourceVideoFilename
                         )
                     }
+                }
+
+                for item in persistedState.handDrawingItems {
+                    try persistHandDrawingAssetsIfNeeded(
+                        for: item,
+                        snapshot: persistedSnapshot,
+                        in: assetsDirectoryURL
+                    )
                 }
 
                 try removeOrphanedAssets(
@@ -498,6 +537,18 @@ enum BoardStore {
         }
     }
 
+    private static func validateReferencedHandDrawingAssets(
+        for handDrawingRecords: [BoardHandDrawingItemRecord],
+        in assetsDirectoryURL: URL
+    ) throws {
+        for handDrawingRecord in handDrawingRecords {
+            try validateHandDrawingSourceAssetExists(
+                at: handDrawingRecord.assetLocator.sourceDrawingURL(in: assetsDirectoryURL),
+                filename: handDrawingRecord.sourceDrawingFilename
+            )
+        }
+    }
+
     private static func validateVideoAssetExists(
         at assetURL: URL,
         filename: String
@@ -505,6 +556,44 @@ enum BoardStore {
         guard try CoordinatedFileIO.modificationDate(at: assetURL) != nil else {
             throw BoardStoreError.missingBoardVideoAsset(filename: filename)
         }
+    }
+
+    private static func validateHandDrawingSourceAssetExists(
+        at assetURL: URL,
+        filename: String
+    ) throws {
+        guard try CoordinatedFileIO.modificationDate(at: assetURL) != nil else {
+            throw BoardStoreError.missingBoardHandDrawingSourceAsset(
+                filename: filename
+            )
+        }
+    }
+
+    private static func persistHandDrawingAssetsIfNeeded(
+        for item: CanvasHandDrawingItem,
+        snapshot: BoardSaveSnapshot,
+        in assetsDirectoryURL: URL
+    ) throws {
+        let assetLocator = BoardHandDrawingAssetLocator(itemID: item.id)
+        let previewImageURL = assetLocator.previewImageURL(in: assetsDirectoryURL)
+        let sourceDrawingURL = assetLocator.sourceDrawingURL(in: assetsDirectoryURL)
+
+        if let payload = snapshot.transientHandDrawingAssetPayload(for: item.id) {
+            try CoordinatedFileIO.writeData(payload.drawingData, to: sourceDrawingURL)
+            try CoordinatedFileIO.writeData(
+                payload.previewImageData,
+                to: previewImageURL
+            )
+            return
+        }
+
+        guard try CoordinatedFileIO.modificationDate(at: previewImageURL) != nil else {
+            throw BoardStoreError.missingHandDrawingAssetPayload(itemID: item.id)
+        }
+        try validateHandDrawingSourceAssetExists(
+            at: sourceDrawingURL,
+            filename: assetLocator.sourceDrawingFilename
+        )
     }
 
     private static func removeOrphanedAssets(

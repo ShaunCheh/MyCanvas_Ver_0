@@ -27,15 +27,30 @@ enum BoardPersistenceUpdateKind {
 struct BoardSaveSnapshot {
     let runtimeState: BoardRuntimeState
     let transientImageAssetPayloads: [CanvasImageAssetReference: CanvasTransientImageAssetPayload]
+    let transientHandDrawingAssetPayloads: [CanvasItemID: BoardTransientHandDrawingAssetPayload]
     let updateKind: BoardPersistenceUpdateKind
 
     init(
         runtimeState: BoardRuntimeState,
-        transientImageAssetPayloads: [CanvasImageAssetReference: CanvasTransientImageAssetPayload] = [:],
+        updateKind: BoardPersistenceUpdateKind = .contentAndViewState
+    ) {
+        self.init(
+            runtimeState: runtimeState,
+            transientImageAssetPayloads: Dictionary(),
+            transientHandDrawingAssetPayloads: Dictionary(),
+            updateKind: updateKind
+        )
+    }
+
+    init(
+        runtimeState: BoardRuntimeState,
+        transientImageAssetPayloads: [CanvasImageAssetReference: CanvasTransientImageAssetPayload],
+        transientHandDrawingAssetPayloads: [CanvasItemID: BoardTransientHandDrawingAssetPayload],
         updateKind: BoardPersistenceUpdateKind = .contentAndViewState
     ) {
         self.runtimeState = runtimeState
         self.transientImageAssetPayloads = transientImageAssetPayloads
+        self.transientHandDrawingAssetPayloads = transientHandDrawingAssetPayloads
         self.updateKind = updateKind
     }
 
@@ -43,6 +58,12 @@ struct BoardSaveSnapshot {
         for assetReference: CanvasImageAssetReference
     ) -> CanvasTransientImageAssetPayload? {
         transientImageAssetPayloads[assetReference]
+    }
+
+    func transientHandDrawingAssetPayload(
+        for itemID: CanvasItemID
+    ) -> BoardTransientHandDrawingAssetPayload? {
+        transientHandDrawingAssetPayloads[itemID]
     }
 }
 

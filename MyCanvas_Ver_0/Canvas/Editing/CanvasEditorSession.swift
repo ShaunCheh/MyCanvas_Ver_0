@@ -1595,6 +1595,7 @@ final class CanvasEditorSession {
         return BoardSaveSnapshot(
             runtimeState: runtimeState,
             transientImageAssetPayloads: payloads,
+            transientHandDrawingAssetPayloads: [:],
             updateKind: updateKind
         )
     }
