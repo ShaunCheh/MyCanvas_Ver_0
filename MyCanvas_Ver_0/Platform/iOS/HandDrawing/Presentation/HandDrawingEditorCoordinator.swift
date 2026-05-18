@@ -24,6 +24,7 @@ struct HandDrawingToolPaletteState {
     var availableLineWidths: [CGFloat]
     var canUndo: Bool
     var canRedo: Bool
+    var isBrushEnabled: Bool
     var isPixelEraserEnabled: Bool
     var isLassoEnabled: Bool
     var canDeselectSelection: Bool
@@ -58,6 +59,7 @@ final class HandDrawingEditorCoordinator {
 
     var onSurfaceStateChange: ((HandDrawingCanvasSurfaceState) -> Void)?
     var onPaletteStateChange: ((HandDrawingToolPaletteState) -> Void)?
+    var onLayerPanelStateChange: ((HandDrawingLayerPanelState) -> Void)?
     var onErrorMessage: ((String) -> Void)?
 
     init(editorContext: CanvasHandDrawingEditorContext) throws {
@@ -81,6 +83,7 @@ final class HandDrawingEditorCoordinator {
     func activate() {
         publishSurfaceState()
         publishPaletteState()
+        publishLayerPanelState()
     }
 
     func selectTool(_ tool: HandDrawingEditorTool) {
@@ -135,9 +138,66 @@ final class HandDrawingEditorCoordinator {
         guard engine.apply(layerCommand: command) else {
             publishSurfaceState()
             publishPaletteState()
+            publishLayerPanelState()
             return
         }
         refreshCommittedImageAndPublishState(forceFullRender: true)
+    }
+
+    func addLayer() {
+        applyLayerCommand(.addLayer(name: nil))
+    }
+
+    func deleteLayer(withID layerID: UUID) {
+        applyLayerCommand(.deleteLayer(id: layerID))
+    }
+
+    func renameLayer(withID layerID: UUID, to proposedName: String) {
+        applyLayerCommand(.renameLayer(id: layerID, name: proposedName))
+    }
+
+    func selectLayer(withID layerID: UUID) {
+        applyLayerCommand(.setActive(id: layerID))
+    }
+
+    func toggleLayerVisibility(withID layerID: UUID) {
+        guard let layer = engine.state.document.layer(withID: layerID) else {
+            return
+        }
+        applyLayerCommand(
+            .setVisibility(id: layerID, isVisible: layer.isVisible == false)
+        )
+    }
+
+    func toggleLayerLock(withID layerID: UUID) {
+        guard let layer = engine.state.document.layer(withID: layerID) else {
+            return
+        }
+        applyLayerCommand(
+            .setLocked(id: layerID, isLocked: layer.isLocked == false)
+        )
+    }
+
+    func moveLayerUp(withID layerID: UUID) {
+        guard
+            let layerIndex = engine.state.document.layers.firstIndex(
+                where: { $0.id == layerID }
+            )
+        else {
+            return
+        }
+        applyLayerCommand(.moveLayer(id: layerID, toIndex: layerIndex + 1))
+    }
+
+    func moveLayerDown(withID layerID: UUID) {
+        guard
+            let layerIndex = engine.state.document.layers.firstIndex(
+                where: { $0.id == layerID }
+            )
+        else {
+            return
+        }
+        applyLayerCommand(.moveLayer(id: layerID, toIndex: layerIndex - 1))
     }
 
     func handlePencilStrokeBegan(_ sample: HandDrawingInputSample) {
@@ -370,11 +430,20 @@ final class HandDrawingEditorCoordinator {
                 availableLineWidths: Self.defaultLineWidths,
                 canUndo: engine.canUndo,
                 canRedo: engine.canRedo,
-                isPixelEraserEnabled: true,
-                isLassoEnabled: true,
+                isBrushEnabled: engine.canInteractWithActiveLayer,
+                isPixelEraserEnabled: engine.canInteractWithActiveLayer,
+                isLassoEnabled: engine.canInteractWithActiveLayer,
                 canDeselectSelection: engine.state.selectedStrokeIDs.isEmpty == false
             )
         )
+    }
+
+    private func publishLayerPanelState() {
+        onLayerPanelStateChange?(makeLayerPanelState())
+    }
+
+    private func makeLayerPanelState() -> HandDrawingLayerPanelState {
+        HandDrawingLayerPanelStateBuilder.makeState(from: engine.state.document)
     }
 
     private func refreshCommittedImageAndPublishState(
@@ -393,6 +462,7 @@ final class HandDrawingEditorCoordinator {
             )
             publishSurfaceState()
             publishPaletteState()
+            publishLayerPanelState()
         } catch {
             onErrorMessage?(error.localizedDescription)
         }
@@ -409,7 +479,10 @@ final class HandDrawingEditorCoordinator {
     }
 
     private var selectedStrokeBounds: CGRect? {
-        HandDrawingStrokeGeometry.unionBounds(
+        guard engine.state.document.activeLayer?.isVisible != false else {
+            return nil
+        }
+        return HandDrawingStrokeGeometry.unionBounds(
             forStrokeIDs: engine.state.selectedStrokeIDs,
             in: engine.state.document.activeLayerStrokes
         )

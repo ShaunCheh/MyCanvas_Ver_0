@@ -50,8 +50,36 @@ final class iOSHandDrawingEditorViewController: UIViewController {
         button.translatesAutoresizingMaskIntoConstraints = false
         return button
     }()
+    private let layersButton: UIButton = {
+        let button = UIButton(type: .system)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        var configuration = UIButton.Configuration.tinted()
+        configuration.title = "Layers"
+        configuration.image = UIImage(systemName: "square.3.layers.3d")
+        configuration.imagePadding = 6
+        configuration.cornerStyle = .medium
+        button.configuration = configuration
+        return button
+    }()
     private let paletteView = HandDrawingToolPaletteView()
+    private let layerPanelBackdropView: UIControl = {
+        let control = UIControl()
+        control.translatesAutoresizingMaskIntoConstraints = false
+        control.backgroundColor = .clear
+        control.isHidden = true
+        return control
+    }()
+    private let layerPanelView = HandDrawingLayerPanelView()
     private let surfaceView = HandDrawingCanvasSurfaceView()
+    private var latestLayerPanelState: HandDrawingLayerPanelState?
+    private var isLayerPanelVisible = false {
+        didSet {
+            guard oldValue != isLayerPanelVisible else {
+                return
+            }
+            updateLayerPanelVisibility()
+        }
+    }
 
     private var isFinishing = false {
         didSet {
@@ -87,6 +115,7 @@ final class iOSHandDrawingEditorViewController: UIViewController {
         configureButtons()
         configureCoordinator()
         configurePaletteView()
+        configureLayerPanelView()
         configureSurfaceView()
         setupViewHierarchy()
         setupConstraints()
@@ -105,6 +134,16 @@ final class iOSHandDrawingEditorViewController: UIViewController {
             action: #selector(handleDoneButtonTap),
             for: .touchUpInside
         )
+        layersButton.addTarget(
+            self,
+            action: #selector(handleLayersButtonTap),
+            for: .touchUpInside
+        )
+        layerPanelBackdropView.addTarget(
+            self,
+            action: #selector(handleLayerPanelBackdropTap),
+            for: .touchUpInside
+        )
     }
 
     private func configureCoordinator() {
@@ -113,6 +152,9 @@ final class iOSHandDrawingEditorViewController: UIViewController {
         }
         coordinator.onPaletteStateChange = { [weak self] state in
             self?.paletteView.apply(state: state)
+        }
+        coordinator.onLayerPanelStateChange = { [weak self] state in
+            self?.applyLayerPanelState(state)
         }
         coordinator.onErrorMessage = { [weak self] message in
             self?.presentCommitError(message: message)
@@ -140,6 +182,35 @@ final class iOSHandDrawingEditorViewController: UIViewController {
         }
     }
 
+    private func configureLayerPanelView() {
+        layerPanelView.isHidden = true
+        layerPanelView.alpha = 0
+        layerPanelView.onAddLayer = { [weak self] in
+            self?.coordinator.addLayer()
+        }
+        layerPanelView.onSelectLayer = { [weak self] layerID in
+            self?.coordinator.selectLayer(withID: layerID)
+        }
+        layerPanelView.onRequestRenameLayer = { [weak self] rowState in
+            self?.presentRenameLayerPrompt(for: rowState)
+        }
+        layerPanelView.onMoveLayerUp = { [weak self] layerID in
+            self?.coordinator.moveLayerUp(withID: layerID)
+        }
+        layerPanelView.onMoveLayerDown = { [weak self] layerID in
+            self?.coordinator.moveLayerDown(withID: layerID)
+        }
+        layerPanelView.onToggleVisibility = { [weak self] layerID in
+            self?.coordinator.toggleLayerVisibility(withID: layerID)
+        }
+        layerPanelView.onToggleLock = { [weak self] layerID in
+            self?.coordinator.toggleLayerLock(withID: layerID)
+        }
+        layerPanelView.onDeleteLayer = { [weak self] layerID in
+            self?.coordinator.deleteLayer(withID: layerID)
+        }
+    }
+
     private func configureSurfaceView() {
         surfaceView.onPencilStrokeBegan = { [weak self] sample in
             self?.coordinator.handlePencilStrokeBegan(sample)
@@ -160,12 +231,19 @@ final class iOSHandDrawingEditorViewController: UIViewController {
         view.addSubview(hintLabel)
         view.addSubview(closeButton)
         view.addSubview(doneButton)
+        view.addSubview(layersButton)
         view.addSubview(paletteView)
         view.addSubview(surfaceView)
+        view.addSubview(layerPanelBackdropView)
+        view.addSubview(layerPanelView)
     }
 
     private func setupConstraints() {
         let safeAreaLayoutGuide = view.safeAreaLayoutGuide
+        let preferredLayerPanelWidth = layerPanelView.widthAnchor.constraint(
+            equalToConstant: 380
+        )
+        preferredLayerPanelWidth.priority = .defaultHigh
         NSLayoutConstraint.activate([
             closeButton.leadingAnchor.constraint(
                 equalTo: safeAreaLayoutGuide.leadingAnchor,
@@ -180,6 +258,11 @@ final class iOSHandDrawingEditorViewController: UIViewController {
                 constant: -Layout.horizontalInset
             ),
             doneButton.centerYAnchor.constraint(equalTo: closeButton.centerYAnchor),
+            layersButton.trailingAnchor.constraint(
+                equalTo: doneButton.leadingAnchor,
+                constant: -12
+            ),
+            layersButton.centerYAnchor.constraint(equalTo: doneButton.centerYAnchor),
             titleLabel.leadingAnchor.constraint(
                 equalTo: safeAreaLayoutGuide.leadingAnchor,
                 constant: Layout.horizontalInset
@@ -219,16 +302,40 @@ final class iOSHandDrawingEditorViewController: UIViewController {
             surfaceView.bottomAnchor.constraint(
                 equalTo: safeAreaLayoutGuide.bottomAnchor,
                 constant: -Layout.horizontalInset
-            )
+            ),
+            layerPanelBackdropView.topAnchor.constraint(
+                equalTo: closeButton.bottomAnchor,
+                constant: 8
+            ),
+            layerPanelBackdropView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            layerPanelBackdropView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            layerPanelBackdropView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            layerPanelView.topAnchor.constraint(
+                equalTo: closeButton.bottomAnchor,
+                constant: 12
+            ),
+            layerPanelView.trailingAnchor.constraint(
+                equalTo: safeAreaLayoutGuide.trailingAnchor,
+                constant: -Layout.horizontalInset
+            ),
+            layerPanelView.leadingAnchor.constraint(
+                greaterThanOrEqualTo: safeAreaLayoutGuide.leadingAnchor,
+                constant: Layout.horizontalInset
+            ),
+            preferredLayerPanelWidth
         ])
     }
 
     private func updateChromeConfiguration() {
         closeButton.isEnabled = isFinishing == false
         doneButton.isEnabled = isFinishing == false
+        layersButton.isEnabled = isFinishing == false
         var configuration = doneButton.configuration ?? UIButton.Configuration.filled()
         configuration.title = isFinishing ? "Saving..." : "Done"
         doneButton.configuration = configuration
+        if isFinishing {
+            isLayerPanelVisible = false
+        }
     }
 
     @objc
@@ -239,6 +346,19 @@ final class iOSHandDrawingEditorViewController: UIViewController {
     @objc
     private func handleDoneButtonTap() {
         finishEditingAndDismiss()
+    }
+
+    @objc
+    private func handleLayersButtonTap() {
+        guard latestLayerPanelState != nil else {
+            return
+        }
+        isLayerPanelVisible.toggle()
+    }
+
+    @objc
+    private func handleLayerPanelBackdropTap() {
+        isLayerPanelVisible = false
     }
 
     private func finishEditingAndDismiss() {
@@ -265,6 +385,65 @@ final class iOSHandDrawingEditorViewController: UIViewController {
             preferredStyle: .alert
         )
         alertController.addAction(UIAlertAction(title: "OK", style: .default))
+        present(alertController, animated: true)
+    }
+
+    private func applyLayerPanelState(_ state: HandDrawingLayerPanelState) {
+        latestLayerPanelState = state
+        layerPanelView.apply(state: state)
+        updateLayerButtonConfiguration()
+    }
+
+    private func updateLayerButtonConfiguration() {
+        var configuration = layersButton.configuration ?? UIButton.Configuration.tinted()
+        configuration.title = latestLayerPanelState?.buttonTitle ?? "Layers"
+        configuration.subtitle = latestLayerPanelState?.buttonSubtitle
+        configuration.image = UIImage(
+            systemName: isLayerPanelVisible
+                ? "square.3.layers.3d.down.right.fill"
+                : "square.3.layers.3d"
+        )
+        configuration.imagePadding = 6
+        configuration.cornerStyle = .medium
+        layersButton.configuration = configuration
+    }
+
+    private func updateLayerPanelVisibility() {
+        let shouldShowPanel = isLayerPanelVisible && latestLayerPanelState != nil
+        layerPanelBackdropView.isHidden = shouldShowPanel == false
+        layerPanelView.isHidden = shouldShowPanel == false
+        layerPanelBackdropView.alpha = shouldShowPanel ? 1 : 0
+        layerPanelView.alpha = shouldShowPanel ? 1 : 0
+        updateLayerButtonConfiguration()
+    }
+
+    private func presentRenameLayerPrompt(
+        for rowState: HandDrawingLayerPanelRowState
+    ) {
+        let alertController = UIAlertController(
+            title: "Rename Layer",
+            message: nil,
+            preferredStyle: .alert
+        )
+        alertController.addTextField { textField in
+            textField.placeholder = "Layer name"
+            textField.text = rowState.name
+            textField.clearButtonMode = .whileEditing
+        }
+        alertController.addAction(UIAlertAction(title: "Cancel", style: .cancel))
+        alertController.addAction(
+            UIAlertAction(title: "Save", style: .default) { [weak self, weak alertController] _ in
+                guard
+                    let proposedName = alertController?.textFields?.first?.text
+                else {
+                    return
+                }
+                self?.coordinator.renameLayer(
+                    withID: rowState.id,
+                    to: proposedName
+                )
+            }
+        )
         present(alertController, animated: true)
     }
 }

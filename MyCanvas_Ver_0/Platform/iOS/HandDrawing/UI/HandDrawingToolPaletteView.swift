@@ -63,7 +63,7 @@ final class HandDrawingToolPaletteView: UIView {
         updateToolButtonSelection(
             brushButton,
             isSelected: state.selectedTool == .brush,
-            isEnabled: true
+            isEnabled: state.isBrushEnabled
         )
         updateToolButtonSelection(
             eraserButton,
