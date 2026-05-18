@@ -4,7 +4,6 @@ import Foundation
 enum CanvasHandDrawingEditingError: LocalizedError {
     case invalidHandDrawingItem(itemID: CanvasItemID)
     case missingBoardIdentity
-    case missingSourceDrawing(itemID: CanvasItemID)
     case failedToCreateBlankPreview(paperID: String)
 
     var errorDescription: String? {
@@ -13,8 +12,6 @@ enum CanvasHandDrawingEditingError: LocalizedError {
             return "The selected item is not a valid hand drawing item: \(itemID.uuidString)"
         case .missingBoardIdentity:
             return "Unable to resolve the active board for hand drawing editing."
-        case let .missingSourceDrawing(itemID):
-            return "The hand drawing source asset is missing for item \(itemID.uuidString)."
         case let .failedToCreateBlankPreview(paperID):
             return "Unable to create a blank preview image for paper \(paperID)."
         }

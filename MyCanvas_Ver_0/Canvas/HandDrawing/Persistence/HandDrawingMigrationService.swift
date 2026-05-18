@@ -29,7 +29,7 @@ enum HandDrawingMigrationServiceError: LocalizedError {
 
 struct HandDrawingPreparedEditingDocument {
     let record: BoardHandDrawingItemRecord
-    let drawingData: Data
+    let documentData: Data
     let didMigrateLegacyDocument: Bool
 }
 
@@ -73,7 +73,7 @@ enum HandDrawingMigrationService {
         do {
             return HandDrawingPreparedEditingDocument(
                 record: record,
-                drawingData: try HandDrawingDocumentStore.loadDocumentData(
+                documentData: try HandDrawingDocumentStore.loadDocumentData(
                     documentID: record.documentID,
                     boardDirectoryURL: boardDirectoryURL
                 ),
@@ -89,7 +89,7 @@ enum HandDrawingMigrationService {
 
             return HandDrawingPreparedEditingDocument(
                 record: record,
-                drawingData: restoredDrawingData,
+                documentData: restoredDrawingData,
                 didMigrateLegacyDocument: false
             )
         }
@@ -159,7 +159,7 @@ enum HandDrawingMigrationService {
 
         return HandDrawingPreparedEditingDocument(
             record: record.replacingStorage(with: .bundle),
-            drawingData: legacyDrawingData,
+            documentData: legacyDrawingData,
             didMigrateLegacyDocument: true
         )
     }
@@ -191,7 +191,7 @@ enum HandDrawingMigrationService {
             )
             return HandDrawingPreparedEditingDocument(
                 record: record.replacingStorage(with: .bundle),
-                drawingData: drawingData,
+                documentData: drawingData,
                 didMigrateLegacyDocument: true
             )
         } catch {

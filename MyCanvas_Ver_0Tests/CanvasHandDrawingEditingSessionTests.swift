@@ -35,7 +35,10 @@ final class CanvasHandDrawingEditingSessionTests: XCTestCase {
         let updatedItem = try XCTUnwrap(session.scene.handDrawingItem(withID: item.id))
         XCTAssertFalse(updatedItem.isEmpty)
         XCTAssertEqual(updatedItem.contentRevision, updatedRevision)
-        XCTAssertNotNil(session.transientHandDrawingAssetPayload(for: item.id))
+        let transientPayload = try XCTUnwrap(
+            session.transientHandDrawingAssetPayload(for: item.id)
+        )
+        XCTAssertEqual(transientPayload.documentData, documentData)
 
         let undoSnapshot = try XCTUnwrap(session.undoHistorySnapshot())
         session.applyBoardHistorySnapshot(undoSnapshot)
@@ -48,6 +51,34 @@ final class CanvasHandDrawingEditingSessionTests: XCTestCase {
         let redoneItem = try XCTUnwrap(session.scene.handDrawingItem(withID: item.id))
         XCTAssertFalse(redoneItem.isEmpty)
         XCTAssertEqual(redoneItem.contentRevision, updatedRevision)
+    }
+
+    func testHandDrawingEditorContextReopensFromTransientDocumentData() throws {
+        let session = makeHandDrawingEditingTestSession()
+        let item = try XCTUnwrap(session.addHandDrawingItem(paper: .square))
+        let previewImage = try makeHandDrawingEditingTestImage(
+            red: 0.75,
+            green: 0.2,
+            blue: 0.45
+        )
+        let documentData = try HandDrawingDocumentCodec.makeDocumentData(
+            for: makeHandDrawingTestDocument(includeEraseMask: true)
+        )
+
+        _ = try session.commitHandDrawingEdit(
+            withID: item.id,
+            submission: CanvasHandDrawingEditSubmission(
+                documentData: documentData,
+                previewCGImage: previewImage,
+                isEmpty: false,
+                contentRevision: UUID()
+            )
+        )
+
+        let editorContext = try session.handDrawingEditorContext(for: item.id)
+        XCTAssertEqual(editorContext.documentData, documentData)
+        XCTAssertEqual(editorContext.storage, .bundle)
+        XCTAssertFalse(editorContext.didMigrateLegacyDocument)
     }
 }
 

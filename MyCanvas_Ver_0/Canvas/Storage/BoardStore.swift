@@ -134,7 +134,7 @@ enum BoardStore {
         }
     }
 
-    static func loadHandDrawingSourceData(
+    static func loadHandDrawingDocumentData(
         boardID: UUID,
         documentID: HandDrawingDocumentID,
         userDefaults: UserDefaults = .standard
@@ -725,7 +725,7 @@ enum BoardStore {
         let sourceDrawingURL = assetLocator.sourceDrawingURL(in: assetsDirectoryURL)
 
         if let payload = snapshot.transientHandDrawingAssetPayload(for: item.id) {
-            try CoordinatedFileIO.writeData(payload.drawingData, to: sourceDrawingURL)
+            try CoordinatedFileIO.writeData(payload.documentData, to: sourceDrawingURL)
             let previewImageData: Data
             if let encodedPreviewImageData = payload.previewImageData {
                 previewImageData = encodedPreviewImageData
@@ -761,7 +761,7 @@ enum BoardStore {
                 paper: item.paper,
                 contentRevision: item.contentRevision,
                 isEmpty: item.isEmpty,
-                drawingData: payload.drawingData,
+                drawingData: payload.documentData,
                 previewImageData: payload.previewImageData,
                 previewCGImage: payload.previewCGImage,
                 boardDirectoryURL: boardDirectoryURL

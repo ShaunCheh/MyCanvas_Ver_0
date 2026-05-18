@@ -34,7 +34,7 @@ final class BoardHandDrawingStorageTests: XCTestCase {
                 transientHandDrawingAssetPayloads: [
                     itemID: BoardTransientHandDrawingAssetPayload(
                         itemID: itemID,
-                        drawingData: drawingData,
+                    documentData: drawingData,
                         previewImageData: try makeHandDrawingPNGData(for: previewImage)
                     )
                 ]
@@ -117,7 +117,7 @@ final class BoardHandDrawingStorageTests: XCTestCase {
                 .bundle
             )
             XCTAssertEqual(
-                try BoardStore.loadHandDrawingSourceData(
+                try BoardStore.loadHandDrawingDocumentData(
                     boardID: boardID,
                     documentID: documentID,
                     userDefaults: userDefaults
@@ -166,7 +166,7 @@ final class BoardHandDrawingStorageTests: XCTestCase {
                     transientHandDrawingAssetPayloads: [
                         itemID: BoardTransientHandDrawingAssetPayload(
                             itemID: itemID,
-                            drawingData: firstDrawingData,
+                        documentData: firstDrawingData,
                             previewImageData: try makeHandDrawingPNGData(
                                 for: firstPreviewImage
                             )
@@ -204,7 +204,7 @@ final class BoardHandDrawingStorageTests: XCTestCase {
                     transientHandDrawingAssetPayloads: [
                         itemID: BoardTransientHandDrawingAssetPayload(
                             itemID: itemID,
-                            drawingData: secondDrawingData,
+                        documentData: secondDrawingData,
                             previewImageData: try makeHandDrawingPNGData(
                                 for: secondPreviewImage
                             )
@@ -234,7 +234,7 @@ final class BoardHandDrawingStorageTests: XCTestCase {
                 firstEntry.document.contentUpdatedAt
             )
             XCTAssertEqual(
-                try BoardStore.loadHandDrawingSourceData(
+                try BoardStore.loadHandDrawingDocumentData(
                     boardID: boardID,
                     documentID: runtimeState.handDrawingItems[0].documentID,
                     userDefaults: userDefaults
@@ -302,7 +302,7 @@ final class BoardHandDrawingStorageTests: XCTestCase {
                     transientHandDrawingAssetPayloads: [
                         itemID: BoardTransientHandDrawingAssetPayload(
                             itemID: itemID,
-                            drawingData: drawingData,
+                        documentData: drawingData,
                             previewImageData: try makeHandDrawingPNGData(
                                 for: transparentPreviewImage
                             )
@@ -360,7 +360,7 @@ final class BoardHandDrawingStorageTests: XCTestCase {
                     transientHandDrawingAssetPayloads: [
                         sourceItemID: BoardTransientHandDrawingAssetPayload(
                             itemID: sourceItemID,
-                            drawingData: sourceDrawingData,
+                            documentData: sourceDrawingData,
                             previewImageData: try makeHandDrawingPNGData(
                                 for: sourcePreviewImage
                             )
@@ -383,7 +383,7 @@ final class BoardHandDrawingStorageTests: XCTestCase {
                 transientHandDrawingAssetPayloads: [
                     duplicatedHandDrawingItem.id: BoardTransientHandDrawingAssetPayload(
                         itemID: duplicatedHandDrawingItem.id,
-                        drawingData: sourceDrawingData,
+                        documentData: sourceDrawingData,
                         previewCGImage: duplicatedHandDrawingItem.previewAsset.posterCGImage
                     )
                 ]
@@ -410,12 +410,12 @@ final class BoardHandDrawingStorageTests: XCTestCase {
                 documentID: duplicatedHandDrawingItem.documentID
             )
 
-            let sourceReloadedData = try BoardStore.loadHandDrawingSourceData(
+            let sourceReloadedData = try BoardStore.loadHandDrawingDocumentData(
                 boardID: boardID,
                 documentID: sourceItem.documentID,
                 userDefaults: userDefaults
             )
-            let duplicatedReloadedData = try BoardStore.loadHandDrawingSourceData(
+            let duplicatedReloadedData = try BoardStore.loadHandDrawingDocumentData(
                 boardID: boardID,
                 documentID: duplicatedHandDrawingItem.documentID,
                 userDefaults: userDefaults
@@ -537,7 +537,7 @@ final class BoardHandDrawingStorageTests: XCTestCase {
             )
 
             XCTAssertEqual(
-                try BoardStore.loadHandDrawingSourceData(
+                try BoardStore.loadHandDrawingDocumentData(
                     boardID: boardID,
                     documentID: documentID,
                     userDefaults: userDefaults

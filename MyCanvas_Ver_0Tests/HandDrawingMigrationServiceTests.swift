@@ -20,7 +20,7 @@ final class HandDrawingMigrationServiceTests: XCTestCase {
 
             XCTAssertEqual(preparedDocument.record.storage, .bundle)
             XCTAssertTrue(preparedDocument.didMigrateLegacyDocument)
-            XCTAssertEqual(preparedDocument.drawingData, fixture.drawingData)
+            XCTAssertEqual(preparedDocument.documentData, fixture.drawingData)
 
             let manifest = try HandDrawingDocumentStore.loadManifest(
                 documentID: fixture.documentID,
@@ -155,7 +155,7 @@ final class HandDrawingMigrationServiceTests: XCTestCase {
 
             XCTAssertFalse(preparedDocument.didMigrateLegacyDocument)
             XCTAssertEqual(preparedDocument.record.storage, .bundle)
-            XCTAssertEqual(preparedDocument.drawingData, legacyBackupData)
+            XCTAssertEqual(preparedDocument.documentData, legacyBackupData)
             XCTAssertEqual(
                 try HandDrawingDocumentStore.loadDocumentData(
                     documentID: documentID,
@@ -201,6 +201,90 @@ final class HandDrawingMigrationServiceTests: XCTestCase {
             XCTAssertEqual(
                 entry.document.handDrawingItemRecords.first?.storage,
                 .bundle
+            )
+        }
+    }
+
+    func testCanvasEditorSessionCommitHandDrawingEditPersistsMigratedDocumentAsBundle() throws {
+        try withTemporaryHandDrawingMigrationWorkspace { selectedFolderURL, userDefaults in
+            let fixture = try makeLegacyHandDrawingFixture(
+                selectedFolderURL: selectedFolderURL,
+                drawingData: PKDrawing().dataRepresentation()
+            )
+            let session = CanvasEditorSession(
+                saveQueueLabel: "HandDrawingMigrationServiceTests.Commit",
+                logPrefix: "[HandDrawingMigrationServiceTests]",
+                userDefaults: userDefaults
+            )
+            HandDrawingMigrationServiceTestRetainer.sessions.append(session)
+
+            try session.loadBoard(id: fixture.boardID)
+            let editorContext = try session.handDrawingEditorContext(for: fixture.itemID)
+            let updatedDocumentData = try HandDrawingDocumentCodec.makeDocumentData(
+                for: makeHandDrawingTestDocument(includeEraseMask: true)
+            )
+            let updatedPreviewImage = try makeHandDrawingMigrationTestImage(alpha: 1)
+            let updatedRevision = UUID()
+
+            XCTAssertTrue(editorContext.didMigrateLegacyDocument)
+
+            let commitResult = try XCTUnwrap(
+                session.commitHandDrawingEdit(
+                    withID: fixture.itemID,
+                    submission: CanvasHandDrawingEditSubmission(
+                        documentData: updatedDocumentData,
+                        previewCGImage: updatedPreviewImage,
+                        isEmpty: false,
+                        contentRevision: updatedRevision
+                    )
+                )
+            )
+            let saveSnapshot = try XCTUnwrap(session.currentBoardSaveSnapshot())
+            try BoardStore.saveBoard(saveSnapshot, userDefaults: userDefaults)
+
+            let entry = try XCTUnwrap(
+                BoardStore.loadBoardDocumentEntry(
+                    id: fixture.boardID,
+                    userDefaults: userDefaults
+                )
+            )
+            let bundleLocator = HandDrawingBundleLocator(documentID: fixture.documentID)
+            let legacyAssetLocator = BoardHandDrawingAssetLocator(
+                documentID: fixture.documentID
+            )
+
+            XCTAssertEqual(commitResult.refreshReason, "commit hand drawing edit")
+            XCTAssertEqual(commitResult.item.contentRevision, updatedRevision)
+            XCTAssertEqual(entry.document.handDrawingItemRecords.first?.storage, .bundle)
+            XCTAssertEqual(
+                try HandDrawingDocumentStore.loadDocumentData(
+                    documentID: fixture.documentID,
+                    boardDirectoryURL: fixture.boardDirectoryURL
+                ),
+                updatedDocumentData
+            )
+            XCTAssertEqual(
+                try BoardStore.loadHandDrawingDocumentData(
+                    boardID: fixture.boardID,
+                    documentID: fixture.documentID,
+                    userDefaults: userDefaults
+                ),
+                updatedDocumentData
+            )
+            XCTAssertNotNil(
+                try CoordinatedFileIO.modificationDate(
+                    at: bundleLocator.bundleDirectoryURL(in: fixture.boardDirectoryURL)
+                )
+            )
+            XCTAssertNil(
+                try CoordinatedFileIO.modificationDate(
+                    at: legacyAssetLocator.sourceDrawingURL(in: fixture.assetsDirectoryURL)
+                )
+            )
+            XCTAssertNil(
+                try CoordinatedFileIO.modificationDate(
+                    at: legacyAssetLocator.previewImageURL(in: fixture.assetsDirectoryURL)
+                )
             )
         }
     }

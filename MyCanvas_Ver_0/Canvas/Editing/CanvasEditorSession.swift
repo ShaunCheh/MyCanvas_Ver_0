@@ -726,7 +726,7 @@ final class CanvasEditorSession {
                 itemID: itemID,
                 documentID: item.documentID,
                 paper: item.paper,
-                documentData: payload.drawingData,
+                documentData: payload.documentData,
                 isEmpty: item.isEmpty,
                 storage: .bundle,
                 didMigrateLegacyDocument: false
@@ -746,7 +746,7 @@ final class CanvasEditorSession {
             itemID: itemID,
             documentID: item.documentID,
             paper: item.paper,
-            documentData: preparedDocument.drawingData,
+            documentData: preparedDocument.documentData,
             isEmpty: item.isEmpty,
             storage: preparedDocument.record.storage,
             didMigrateLegacyDocument: preparedDocument.didMigrateLegacyDocument
@@ -766,7 +766,7 @@ final class CanvasEditorSession {
 
         if item.contentRevision == submission.contentRevision,
            item.isEmpty == submission.isEmpty,
-           resolvedHandDrawingSourceData(for: item) == submission.documentData
+           resolvedHandDrawingDocumentData(for: item) == submission.documentData
         {
             return nil
         }
@@ -783,7 +783,7 @@ final class CanvasEditorSession {
         transientHandDrawingAssetPayloads[itemID] =
             BoardTransientHandDrawingAssetPayload(
                 itemID: itemID,
-                drawingData: submission.documentData,
+                documentData: submission.documentData,
                 previewCGImage: submission.previewCGImage
             )
         syncInlineEditStateWithSelection()
@@ -1363,7 +1363,7 @@ final class CanvasEditorSession {
 
         let sourceItems = scene.orderedBoardItems().filter { $0.id == itemID }
         guard
-            let sourceDrawingDataByItemID = preparedHandDrawingDuplicationSourceData(
+            let sourceDocumentDataByItemID = preparedHandDrawingDuplicationDocumentData(
                 for: sourceItems
             )
         else {
@@ -1379,7 +1379,7 @@ final class CanvasEditorSession {
         registerDuplicatedHandDrawingPayloads(
             sourceItems: sourceItems,
             duplicatedItems: [duplicatedItem],
-            sourceDrawingDataByItemID: sourceDrawingDataByItemID
+            sourceDocumentDataByItemID: sourceDocumentDataByItemID
         )
 
         expandBoardIfNeeded(toInclude: duplicatedItem.worldBounds)
@@ -1415,7 +1415,7 @@ final class CanvasEditorSession {
         let sourceItemIDSet = Set(sourceItemIDs)
         let sourceItems = scene.orderedBoardItems().filter { sourceItemIDSet.contains($0.id) }
         guard
-            let sourceDrawingDataByItemID = preparedHandDrawingDuplicationSourceData(
+            let sourceDocumentDataByItemID = preparedHandDrawingDuplicationDocumentData(
                 for: sourceItems
             )
         else {
@@ -1432,7 +1432,7 @@ final class CanvasEditorSession {
         registerDuplicatedHandDrawingPayloads(
             sourceItems: sourceItems,
             duplicatedItems: duplicatedItems,
-            sourceDrawingDataByItemID: sourceDrawingDataByItemID
+            sourceDocumentDataByItemID: sourceDocumentDataByItemID
         )
 
         for duplicatedItem in duplicatedItems {
@@ -1754,34 +1754,34 @@ final class CanvasEditorSession {
         )
     }
 
-    private func preparedHandDrawingDuplicationSourceData(
+    private func preparedHandDrawingDuplicationDocumentData(
         for sourceItems: [CanvasBoardItem]
     ) -> [CanvasItemID: Data]? {
-        var sourceDrawingDataByItemID: [CanvasItemID: Data] = [:]
+        var sourceDocumentDataByItemID: [CanvasItemID: Data] = [:]
         for sourceItem in sourceItems {
             guard let handDrawingItem = sourceItem.handDrawingItem else {
                 continue
             }
-            guard let drawingData = resolvedHandDrawingSourceData(
+            guard let documentData = resolvedHandDrawingDocumentData(
                 for: handDrawingItem
             ) else {
                 return nil
             }
-            sourceDrawingDataByItemID[handDrawingItem.id] = drawingData
+            sourceDocumentDataByItemID[handDrawingItem.id] = documentData
         }
-        return sourceDrawingDataByItemID
+        return sourceDocumentDataByItemID
     }
 
-    private func resolvedHandDrawingSourceData(
+    private func resolvedHandDrawingDocumentData(
         for item: CanvasHandDrawingItem
     ) -> Data? {
         if let payload = transientHandDrawingAssetPayload(for: item.id) {
-            return payload.drawingData
+            return payload.documentData
         }
         guard let activeBoardID else {
             return nil
         }
-        return try? BoardStore.loadHandDrawingSourceData(
+        return try? BoardStore.loadHandDrawingDocumentData(
             boardID: activeBoardID,
             documentID: item.documentID,
             userDefaults: userDefaults
@@ -1791,7 +1791,7 @@ final class CanvasEditorSession {
     private func registerDuplicatedHandDrawingPayloads(
         sourceItems: [CanvasBoardItem],
         duplicatedItems: [CanvasBoardItem],
-        sourceDrawingDataByItemID: [CanvasItemID: Data]
+        sourceDocumentDataByItemID: [CanvasItemID: Data]
     ) {
         guard sourceItems.count == duplicatedItems.count else {
             return
@@ -1800,14 +1800,14 @@ final class CanvasEditorSession {
             guard
                 let sourceHandDrawingItem = sourceItem.handDrawingItem,
                 let duplicatedHandDrawingItem = duplicatedItem.handDrawingItem,
-                let drawingData = sourceDrawingDataByItemID[sourceHandDrawingItem.id]
+                let documentData = sourceDocumentDataByItemID[sourceHandDrawingItem.id]
             else {
                 continue
             }
             transientHandDrawingAssetPayloads[duplicatedHandDrawingItem.id] =
                 BoardTransientHandDrawingAssetPayload(
                     itemID: duplicatedHandDrawingItem.id,
-                    drawingData: drawingData,
+                    documentData: documentData,
                     previewCGImage: duplicatedHandDrawingItem.previewAsset.posterCGImage
                 )
         }
@@ -2133,7 +2133,7 @@ final class CanvasEditorSession {
         transientHandDrawingAssetPayloads[item.id] =
             BoardTransientHandDrawingAssetPayload(
                 itemID: item.id,
-                drawingData: Data(),
+                documentData: Data(),
                 previewCGImage: previewImage
             )
         _ = replaceSelection(

@@ -30,28 +30,28 @@ struct BoardHandDrawingAssetLocator {
 
 struct BoardTransientHandDrawingAssetPayload {
     let itemID: CanvasItemID
-    let drawingData: Data
+    let documentData: Data
     let previewImageData: Data?
     let previewCGImage: CGImage?
 
     init(
         itemID: CanvasItemID,
-        drawingData: Data,
+        documentData: Data,
         previewImageData: Data
     ) {
         self.itemID = itemID
-        self.drawingData = drawingData
+        self.documentData = documentData
         self.previewImageData = previewImageData
         previewCGImage = nil
     }
 
     init(
         itemID: CanvasItemID,
-        drawingData: Data,
+        documentData: Data,
         previewCGImage: CGImage
     ) {
         self.itemID = itemID
-        self.drawingData = drawingData
+        self.documentData = documentData
         previewImageData = nil
         self.previewCGImage = previewCGImage
     }
