@@ -37,7 +37,7 @@ final class HandDrawingDocumentLoaderTests: XCTestCase {
             for: loadedDocument,
             scale: 1
         )
-        let sampledPixel = sampleRGBA(from: previewImage, x: 54, y: 54)
+        let sampledPixel = sampleDisplayedRGBA(from: previewImage, x: 54, y: 54)
         XCTAssertGreaterThan(sampledPixel.alpha, 0)
     }
 

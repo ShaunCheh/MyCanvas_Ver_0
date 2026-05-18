@@ -29,6 +29,10 @@ struct HandDrawingPreviewRenderer {
             width: pixelWidth,
             height: pixelHeight
         )
+        configureDisplayCoordinateSpace(
+            for: compositeContext,
+            height: CGFloat(pixelHeight)
+        )
         let pixelRect = CGRect(x: 0, y: 0, width: pixelWidth, height: pixelHeight)
         if let backgroundColor {
             compositeContext.setFillColor(backgroundColor.cgColor)
@@ -97,5 +101,13 @@ struct HandDrawingPreviewRenderer {
         context.setAllowsAntialiasing(true)
         context.setShouldAntialias(true)
         return context
+    }
+
+    private func configureDisplayCoordinateSpace(
+        for context: CGContext,
+        height: CGFloat
+    ) {
+        context.translateBy(x: 0, y: height)
+        context.scaleBy(x: 1, y: -1)
     }
 }

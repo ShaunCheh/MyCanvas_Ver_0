@@ -8,7 +8,7 @@ final class HandDrawingPreviewRendererTests: XCTestCase {
         let document = makeHandDrawingTestDocument()
 
         let image = try renderer.renderPreviewImage(for: document, scale: 1)
-        let centerPixel = sampleRGBA(from: image, x: 60, y: 60)
+        let centerPixel = sampleDisplayedRGBA(from: image, x: 60, y: 60)
 
         XCTAssertGreaterThan(centerPixel.alpha, 0)
         XCTAssertGreaterThan(centerPixel.blue, centerPixel.red)
@@ -19,8 +19,8 @@ final class HandDrawingPreviewRendererTests: XCTestCase {
         let document = makeHandDrawingTestDocument(includeEraseMask: true)
 
         let image = try renderer.renderPreviewImage(for: document, scale: 1)
-        let erasedPixel = sampleRGBA(from: image, x: 60, y: 60)
-        let preservedPixel = sampleRGBA(from: image, x: 35, y: 60)
+        let erasedPixel = sampleDisplayedRGBA(from: image, x: 60, y: 60)
+        let preservedPixel = sampleDisplayedRGBA(from: image, x: 35, y: 60)
 
         XCTAssertLessThan(erasedPixel.alpha, preservedPixel.alpha)
         XCTAssertGreaterThan(preservedPixel.alpha, 0)
@@ -44,10 +44,10 @@ final class HandDrawingPreviewRendererTests: XCTestCase {
         )
 
         let image = try renderer.renderPreviewImage(for: document, scale: 1)
-        let thinCenterPixel = sampleRGBA(from: image, x: 60, y: 34)
-        let thickCenterPixel = sampleRGBA(from: image, x: 60, y: 86)
-        let thinEdgePixel = sampleRGBA(from: image, x: 60, y: 42)
-        let thickEdgePixel = sampleRGBA(from: image, x: 60, y: 94)
+        let thinCenterPixel = sampleDisplayedRGBA(from: image, x: 60, y: 34)
+        let thickCenterPixel = sampleDisplayedRGBA(from: image, x: 60, y: 86)
+        let thinEdgePixel = sampleDisplayedRGBA(from: image, x: 60, y: 42)
+        let thickEdgePixel = sampleDisplayedRGBA(from: image, x: 60, y: 94)
 
         XCTAssertGreaterThan(thinCenterPixel.red, thinCenterPixel.green)
         XCTAssertGreaterThan(thickCenterPixel.green, thickCenterPixel.red)

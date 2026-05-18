@@ -189,16 +189,16 @@ final class HandDrawingEditorCoordinator {
                 return
             }
             appendStrokeSamples(samples)
-            defer {
-                clearActiveStroke()
-            }
             guard activeStrokeSamples.isEmpty == false else {
+                clearActiveStroke()
                 publishSurfaceState()
                 return
             }
+            let committedStrokeSamples = activeStrokeSamples
+            clearActiveStroke()
             _ = engine.appendStroke(
                 brush: activeStrokeBrush,
-                samples: activeStrokeSamples
+                samples: committedStrokeSamples
             )
             refreshCommittedImageAndPublishState()
         case .pixelEraser:

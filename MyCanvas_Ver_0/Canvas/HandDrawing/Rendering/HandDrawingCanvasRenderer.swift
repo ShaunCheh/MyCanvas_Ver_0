@@ -156,7 +156,19 @@ final class HandDrawingCanvasRenderer {
         context.interpolationQuality = .high
         context.setAllowsAntialiasing(true)
         context.setShouldAntialias(true)
+        configureDisplayCoordinateSpace(
+            for: context,
+            height: CGFloat(height)
+        )
         return (buffer, context)
+    }
+
+    private static func configureDisplayCoordinateSpace(
+        for context: CGContext,
+        height: CGFloat
+    ) {
+        context.translateBy(x: 0, y: height)
+        context.scaleBy(x: 1, y: -1)
     }
 
     private static func makeOwnedImage(

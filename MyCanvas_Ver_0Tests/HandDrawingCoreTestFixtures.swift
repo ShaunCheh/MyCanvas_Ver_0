@@ -1,5 +1,8 @@
 import CoreGraphics
 import Foundation
+#if canImport(AppKit)
+import AppKit
+#endif
 @testable import MyCanvas_Ver_0
 
 func makeHandDrawingTestDocument(
@@ -118,3 +121,52 @@ func sampleRGBA(
         alpha: bytes[offset + 3]
     )
 }
+
+#if canImport(AppKit)
+func sampleDisplayedRGBA(
+    from image: CGImage,
+    x: Int,
+    y: Int
+) -> (red: UInt8, green: UInt8, blue: UInt8, alpha: UInt8) {
+    sampleRGBA(
+        from: renderDisplayedImage(from: image),
+        x: x,
+        y: y
+    )
+}
+
+private func renderDisplayedImage(from image: CGImage) -> CGImage {
+    let width = image.width
+    let height = image.height
+    let bitmapInfo =
+        CGImageAlphaInfo.premultipliedLast.rawValue
+        | CGBitmapInfo.byteOrder32Big.rawValue
+    guard
+        let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: bitmapInfo
+        )
+    else {
+        fatalError("Expected RGBA bitmap context.")
+    }
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = NSGraphicsContext(
+        cgContext: context,
+        flipped: true
+    )
+    _ = NSImage(
+        cgImage: image,
+        size: NSSize(width: width, height: height)
+    ).draw(in: NSRect(x: 0, y: 0, width: width, height: height))
+    NSGraphicsContext.restoreGraphicsState()
+    guard let displayedImage = context.makeImage() else {
+        fatalError("Expected displayed CGImage.")
+    }
+    return displayedImage
+}
+#endif

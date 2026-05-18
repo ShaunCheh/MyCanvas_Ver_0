@@ -42,17 +42,66 @@ final class HandDrawingCanvasRendererTests: XCTestCase {
         )
 
         assertPixelsEqual(
-            sampleRGBA(from: canvasImage, x: 60, y: 60),
-            sampleRGBA(from: previewImage, x: 60, y: 60)
+            sampleDisplayedRGBA(from: canvasImage, x: 60, y: 60),
+            sampleDisplayedRGBA(from: previewImage, x: 60, y: 60)
         )
         assertPixelsEqual(
-            sampleRGBA(from: canvasImage, x: 35, y: 60),
-            sampleRGBA(from: previewImage, x: 35, y: 60)
+            sampleDisplayedRGBA(from: canvasImage, x: 35, y: 60),
+            sampleDisplayedRGBA(from: previewImage, x: 35, y: 60)
         )
         assertPixelsEqual(
-            sampleRGBA(from: canvasImage, x: 95, y: 60),
-            sampleRGBA(from: previewImage, x: 95, y: 60)
+            sampleDisplayedRGBA(from: canvasImage, x: 95, y: 60),
+            sampleDisplayedRGBA(from: previewImage, x: 95, y: 60)
         )
+    }
+
+    func testHandDrawingCanvasRendererProducesDisplayReadyImageWithTopOriginCoordinates() throws {
+        let document = HandDrawingDocument(
+            paper: HandDrawingPaper(
+                id: "canvas-display-paper",
+                size: CGSize(width: 120, height: 120)
+            ),
+            strokes: [
+                HandDrawingStroke(
+                    brush: HandDrawingBrushStyle(
+                        kind: .pen,
+                        color: HandDrawingColor(red: 0.82, green: 0.16, blue: 0.18, alpha: 1),
+                        baseSize: 12,
+                        opacity: 1
+                    ),
+                    samplePoints: [
+                        HandDrawingSamplePoint(
+                            point: CGPoint(x: 24, y: 20),
+                            force: 1,
+                            timestamp: 0
+                        ),
+                        HandDrawingSamplePoint(
+                            point: CGPoint(x: 60, y: 20),
+                            force: 1,
+                            timestamp: 0.1
+                        ),
+                        HandDrawingSamplePoint(
+                            point: CGPoint(x: 96, y: 20),
+                            force: 1,
+                            timestamp: 0.2
+                        )
+                    ]
+                )
+            ]
+        )
+        let renderer = try HandDrawingCanvasRenderer(
+            paperSize: document.paper.size
+        )
+
+        let image = try renderer.render(
+            document: document,
+            dirtyRegion: document.paperBounds
+        )
+        let topPixel = sampleDisplayedRGBA(from: image, x: 60, y: 20)
+        let bottomPixel = sampleDisplayedRGBA(from: image, x: 60, y: 100)
+
+        XCTAssertGreaterThan(topPixel.alpha, 0)
+        XCTAssertLessThan(bottomPixel.alpha, 16)
     }
 
     private func assertPixelsEqual(
