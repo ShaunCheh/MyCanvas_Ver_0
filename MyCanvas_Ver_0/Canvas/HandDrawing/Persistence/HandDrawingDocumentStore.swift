@@ -74,6 +74,18 @@ enum HandDrawingDocumentStore {
         return try CoordinatedFileIO.readData(at: documentURL)
     }
 
+    static func loadDocument(
+        documentID: HandDrawingDocumentID,
+        boardDirectoryURL: URL
+    ) throws -> HandDrawingDocument {
+        try HandDrawingDocumentCodec.decodeDocument(
+            from: loadDocumentData(
+                documentID: documentID,
+                boardDirectoryURL: boardDirectoryURL
+            )
+        )
+    }
+
     static func loadPreviewImage(
         documentID: HandDrawingDocumentID,
         boardDirectoryURL: URL
@@ -200,6 +212,30 @@ enum HandDrawingDocumentStore {
                 to: locator.legacyBackupURL(in: boardDirectoryURL)
             )
         }
+    }
+
+    static func persistDocument(
+        _ document: HandDrawingDocument,
+        documentID: HandDrawingDocumentID,
+        contentRevision: UUID,
+        previewImageData: Data?,
+        previewCGImage: CGImage?,
+        boardDirectoryURL: URL,
+        migrationOrigin: HandDrawingManifestMigrationOrigin? = nil,
+        legacyBackupDrawingData: Data? = nil
+    ) throws {
+        try persistDocument(
+            documentID: documentID,
+            paper: document.paper.canvasPaperSpec,
+            contentRevision: contentRevision,
+            isEmpty: document.isEmpty,
+            drawingData: try HandDrawingDocumentCodec.makeDocumentData(for: document),
+            previewImageData: previewImageData,
+            previewCGImage: previewCGImage,
+            boardDirectoryURL: boardDirectoryURL,
+            migrationOrigin: migrationOrigin,
+            legacyBackupDrawingData: legacyBackupDrawingData
+        )
     }
 
     static func removeDocumentBundle(

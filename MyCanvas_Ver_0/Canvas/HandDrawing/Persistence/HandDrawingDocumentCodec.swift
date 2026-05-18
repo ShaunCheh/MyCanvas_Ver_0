@@ -4,11 +4,17 @@ import ImageIO
 import UniformTypeIdentifiers
 
 enum HandDrawingDocumentCodecError: LocalizedError {
+    case invalidDocumentData
+    case unsupportedDocumentFormatVersion(Int)
     case failedToEncodePreviewImage(documentID: HandDrawingDocumentID)
     case invalidPreviewImage(documentID: HandDrawingDocumentID)
 
     var errorDescription: String? {
         switch self {
+        case .invalidDocumentData:
+            return "Failed to decode the hand drawing document data."
+        case let .unsupportedDocumentFormatVersion(formatVersion):
+            return "Unsupported hand drawing document format version: \(formatVersion)."
         case let .failedToEncodePreviewImage(documentID):
             return "Failed to encode preview image for hand drawing document \(documentID.uuidString)."
         case let .invalidPreviewImage(documentID):
@@ -18,6 +24,10 @@ enum HandDrawingDocumentCodecError: LocalizedError {
 }
 
 enum HandDrawingDocumentCodec {
+    private struct FormatVersionProbe: Decodable {
+        let formatVersion: Int
+    }
+
     static func makeManifestData(for manifest: HandDrawingManifest) throws -> Data {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -27,6 +37,32 @@ enum HandDrawingDocumentCodec {
     static func decodeManifest(from data: Data) throws -> HandDrawingManifest {
         let decoder = JSONDecoder()
         return try decoder.decode(HandDrawingManifest.self, from: data)
+    }
+
+    static func makeDocumentData(for document: HandDrawingDocument) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        return try encoder.encode(document)
+    }
+
+    static func decodeDocument(from data: Data) throws -> HandDrawingDocument {
+        let decoder = JSONDecoder()
+        let formatProbe: FormatVersionProbe
+        do {
+            formatProbe = try decoder.decode(FormatVersionProbe.self, from: data)
+        } catch {
+            throw HandDrawingDocumentCodecError.invalidDocumentData
+        }
+        guard formatProbe.formatVersion == HandDrawingDocument.currentFormatVersion else {
+            throw HandDrawingDocumentCodecError.unsupportedDocumentFormatVersion(
+                formatProbe.formatVersion
+            )
+        }
+        do {
+            return try decoder.decode(HandDrawingDocument.self, from: data)
+        } catch {
+            throw HandDrawingDocumentCodecError.invalidDocumentData
+        }
     }
 
     static func makePNGData(

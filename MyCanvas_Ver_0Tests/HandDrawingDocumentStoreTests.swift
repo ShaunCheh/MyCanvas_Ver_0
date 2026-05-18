@@ -3,6 +3,7 @@ import Foundation
 import XCTest
 @testable import MyCanvas_Ver_0
 
+@MainActor
 final class HandDrawingDocumentStoreTests: XCTestCase {
     func testHandDrawingDocumentStorePersistsBundleRoundTrip() throws {
         try withTemporaryHandDrawingBoardDirectory { boardDirectoryURL in
@@ -64,6 +65,33 @@ final class HandDrawingDocumentStoreTests: XCTestCase {
                     at: bundleLocator.previewImageURL(in: boardDirectoryURL)
                 )
             )
+        }
+    }
+
+    func testHandDrawingDocumentStorePersistsTypedDocumentRoundTrip() throws {
+        try withTemporaryHandDrawingBoardDirectory { boardDirectoryURL in
+            let documentID = UUID()
+            let contentRevision = UUID()
+            let document = makeHandDrawingTestDocument(includeEraseMask: true)
+            let previewImage = try HandDrawingPreviewRenderer().renderPreviewImage(
+                for: document,
+                scale: 1
+            )
+
+            try HandDrawingDocumentStore.persistDocument(
+                document,
+                documentID: documentID,
+                contentRevision: contentRevision,
+                previewImageData: nil,
+                previewCGImage: previewImage,
+                boardDirectoryURL: boardDirectoryURL
+            )
+
+            let loadedDocument = try HandDrawingDocumentStore.loadDocument(
+                documentID: documentID,
+                boardDirectoryURL: boardDirectoryURL
+            )
+            XCTAssertEqual(loadedDocument, document)
         }
     }
 
