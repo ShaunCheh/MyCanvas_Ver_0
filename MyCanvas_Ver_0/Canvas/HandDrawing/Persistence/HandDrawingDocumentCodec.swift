@@ -28,6 +28,19 @@ enum HandDrawingDocumentCodec {
         let formatVersion: Int
     }
 
+    private struct LegacyFlatDocumentPayload: Decodable {
+        let formatVersion: Int
+        let paper: HandDrawingPaper
+        let strokes: [HandDrawingStroke]
+    }
+
+    private struct LayeredDocumentPayload: Decodable {
+        let formatVersion: Int
+        let paper: HandDrawingPaper
+        let layers: [HandDrawingLayer]
+        let activeLayerID: UUID
+    }
+
     static func makeManifestData(for manifest: HandDrawingManifest) throws -> Data {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -53,15 +66,29 @@ enum HandDrawingDocumentCodec {
         } catch {
             throw HandDrawingDocumentCodecError.invalidDocumentData
         }
-        guard formatProbe.formatVersion == HandDrawingDocument.currentFormatVersion else {
+        guard
+            supportedDocumentFormatVersions.contains(formatProbe.formatVersion)
+        else {
             throw HandDrawingDocumentCodecError.unsupportedDocumentFormatVersion(
                 formatProbe.formatVersion
             )
         }
-        do {
-            return try decoder.decode(HandDrawingDocument.self, from: data)
-        } catch {
-            throw HandDrawingDocumentCodecError.invalidDocumentData
+
+        switch formatProbe.formatVersion {
+        case 1:
+            return try decodeLegacyFlatDocument(
+                from: data,
+                using: decoder
+            )
+        case HandDrawingDocument.currentFormatVersion:
+            return try decodeLayeredDocument(
+                from: data,
+                using: decoder
+            )
+        default:
+            throw HandDrawingDocumentCodecError.unsupportedDocumentFormatVersion(
+                formatProbe.formatVersion
+            )
         }
     }
 
@@ -107,5 +134,47 @@ enum HandDrawingDocumentCodec {
         }
 
         return previewImage
+    }
+
+    private static var supportedDocumentFormatVersions: Set<Int> {
+        [1, HandDrawingDocument.currentFormatVersion]
+    }
+
+    private static func decodeLegacyFlatDocument(
+        from data: Data,
+        using decoder: JSONDecoder
+    ) throws -> HandDrawingDocument {
+        do {
+            let legacyPayload = try decoder.decode(
+                LegacyFlatDocumentPayload.self,
+                from: data
+            )
+            return HandDrawingDocument(
+                paper: legacyPayload.paper,
+                strokes: legacyPayload.strokes
+            )
+        } catch {
+            throw HandDrawingDocumentCodecError.invalidDocumentData
+        }
+    }
+
+    private static func decodeLayeredDocument(
+        from data: Data,
+        using decoder: JSONDecoder
+    ) throws -> HandDrawingDocument {
+        do {
+            let payload = try decoder.decode(
+                LayeredDocumentPayload.self,
+                from: data
+            )
+            return HandDrawingDocument(
+                paper: payload.paper,
+                layers: payload.layers,
+                activeLayerID: payload.activeLayerID,
+                formatVersion: payload.formatVersion
+            )
+        } catch {
+            throw HandDrawingDocumentCodecError.invalidDocumentData
+        }
     }
 }

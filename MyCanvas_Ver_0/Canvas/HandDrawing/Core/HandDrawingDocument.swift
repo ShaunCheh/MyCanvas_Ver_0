@@ -284,25 +284,25 @@ struct HandDrawingStroke: Codable, Equatable {
     }
 }
 
-struct HandDrawingDocument: Codable, Equatable {
-    static let currentFormatVersion = 1
-
-    let formatVersion: Int
-    var paper: HandDrawingPaper
+struct HandDrawingLayer: Codable, Equatable {
+    let id: UUID
+    var name: String
+    var isVisible: Bool
+    var isLocked: Bool
     var strokes: [HandDrawingStroke]
 
     init(
-        paper: HandDrawingPaper = .square,
-        strokes: [HandDrawingStroke] = [],
-        formatVersion: Int = Self.currentFormatVersion
+        id: UUID = UUID(),
+        name: String = "",
+        isVisible: Bool = true,
+        isLocked: Bool = false,
+        strokes: [HandDrawingStroke] = []
     ) {
-        self.formatVersion = formatVersion
-        self.paper = paper
+        self.id = id
+        self.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.isVisible = isVisible
+        self.isLocked = isLocked
         self.strokes = strokes
-    }
-
-    var paperBounds: CGRect {
-        CGRect(origin: .zero, size: paper.size)
     }
 
     var isEmpty: Bool {
@@ -315,11 +315,174 @@ struct HandDrawingDocument: Codable, Equatable {
         }
     }
 
+    func stroke(withID id: UUID) -> HandDrawingStroke? {
+        strokes.first { $0.id == id }
+    }
+}
+
+struct HandDrawingDocument: Codable, Equatable {
+    static let currentFormatVersion = 2
+    private static let defaultLayerBaseName = "Layer"
+
+    let formatVersion: Int
+    var paper: HandDrawingPaper
+    private(set) var layers: [HandDrawingLayer]
+    private(set) var activeLayerID: UUID
+
+    init(
+        paper: HandDrawingPaper = .square,
+        strokes: [HandDrawingStroke] = [],
+        formatVersion: Int = Self.currentFormatVersion
+    ) {
+        let defaultLayer = HandDrawingLayer(
+            name: Self.defaultLayerName(at: 1),
+            strokes: strokes
+        )
+        self.init(
+            paper: paper,
+            layers: [defaultLayer],
+            activeLayerID: defaultLayer.id,
+            formatVersion: formatVersion
+        )
+    }
+
+    init(
+        paper: HandDrawingPaper = .square,
+        layers: [HandDrawingLayer],
+        activeLayerID: UUID? = nil,
+        formatVersion: Int = Self.currentFormatVersion
+    ) {
+        self.formatVersion = Self.normalizedFormatVersion(formatVersion)
+        self.paper = paper
+        let normalizedLayers = Self.normalizedLayers(layers)
+        self.layers = normalizedLayers
+        self.activeLayerID = Self.resolvedActiveLayerID(
+            activeLayerID,
+            layers: normalizedLayers
+        )
+    }
+
+    var strokes: [HandDrawingStroke] {
+        get {
+            activeLayer?.strokes ?? []
+        }
+        set {
+            replaceStrokesInActiveLayer(with: newValue)
+        }
+    }
+
+    var allStrokes: [HandDrawingStroke] {
+        layers.flatMap(\.strokes)
+    }
+
+    var activeLayer: HandDrawingLayer? {
+        guard let index = activeLayerIndex else {
+            return nil
+        }
+        return layers[index]
+    }
+
+    var activeLayerIndex: Int? {
+        layers.firstIndex { $0.id == activeLayerID }
+    }
+
+    var paperBounds: CGRect {
+        CGRect(origin: .zero, size: paper.size)
+    }
+
+    var isEmpty: Bool {
+        layers.allSatisfy(\.isEmpty)
+    }
+
+    var renderedBounds: CGRect? {
+        layers.compactMap(\.renderedBounds).reduce(nil) { partialResult, bounds in
+            partialResult?.union(bounds) ?? bounds
+        }
+    }
+
     mutating func appendStroke(_ stroke: HandDrawingStroke) {
-        strokes.append(stroke)
+        ensureActiveLayerExists()
+        layers[activeLayerIndex ?? 0].strokes.append(stroke)
     }
 
     func stroke(withID id: UUID) -> HandDrawingStroke? {
-        strokes.first { $0.id == id }
+        layers.lazy.compactMap { $0.stroke(withID: id) }.first
+    }
+
+    func layer(withID id: UUID) -> HandDrawingLayer? {
+        layers.first { $0.id == id }
+    }
+
+    @discardableResult
+    mutating func setActiveLayer(withID layerID: UUID) -> Bool {
+        guard layers.contains(where: { $0.id == layerID }) else {
+            return false
+        }
+        activeLayerID = layerID
+        return true
+    }
+
+    @discardableResult
+    mutating func ensureActiveLayerExists() -> UUID {
+        if let activeLayerIndex {
+            return layers[activeLayerIndex].id
+        }
+        if layers.isEmpty {
+            let defaultLayer = Self.makeDefaultLayer(at: 1)
+            layers = [defaultLayer]
+            activeLayerID = defaultLayer.id
+            return defaultLayer.id
+        }
+        activeLayerID = layers[0].id
+        return activeLayerID
+    }
+
+    mutating func replaceStrokesInActiveLayer(with strokes: [HandDrawingStroke]) {
+        ensureActiveLayerExists()
+        layers[activeLayerIndex ?? 0].strokes = strokes
+    }
+
+    private static func normalizedFormatVersion(_ formatVersion: Int) -> Int {
+        formatVersion == currentFormatVersion
+            ? formatVersion
+            : currentFormatVersion
+    }
+
+    private static func normalizedLayers(
+        _ layers: [HandDrawingLayer]
+    ) -> [HandDrawingLayer] {
+        guard layers.isEmpty == false else {
+            return [makeDefaultLayer(at: 1)]
+        }
+        return layers.enumerated().map { index, layer in
+            var normalizedLayer = layer
+            let trimmedName = layer.name.trimmingCharacters(
+                in: .whitespacesAndNewlines
+            )
+            normalizedLayer.name = trimmedName.isEmpty
+                ? defaultLayerName(at: index + 1)
+                : trimmedName
+            return normalizedLayer
+        }
+    }
+
+    private static func resolvedActiveLayerID(
+        _ proposedActiveLayerID: UUID?,
+        layers: [HandDrawingLayer]
+    ) -> UUID {
+        if let proposedActiveLayerID,
+           layers.contains(where: { $0.id == proposedActiveLayerID })
+        {
+            return proposedActiveLayerID
+        }
+        return layers[0].id
+    }
+
+    private static func makeDefaultLayer(at index: Int) -> HandDrawingLayer {
+        HandDrawingLayer(name: defaultLayerName(at: index))
+    }
+
+    private static func defaultLayerName(at index: Int) -> String {
+        "\(defaultLayerBaseName) \(max(index, 1))"
     }
 }

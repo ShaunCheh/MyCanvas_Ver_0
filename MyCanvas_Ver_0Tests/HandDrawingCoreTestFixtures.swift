@@ -20,6 +20,37 @@ func makeHandDrawingTestDocument(
     )
 }
 
+func makeHandDrawingLayeredTestDocument(
+    paper: HandDrawingPaper = HandDrawingPaper(
+        id: "stage4-paper",
+        size: CGSize(width: 120, height: 120)
+    ),
+    layers: [HandDrawingLayer],
+    activeLayerID: UUID? = nil
+) -> HandDrawingDocument {
+    HandDrawingDocument(
+        paper: paper,
+        layers: layers,
+        activeLayerID: activeLayerID
+    )
+}
+
+func makeHandDrawingTestLayer(
+    id: UUID = UUID(),
+    name: String = "Layer 1",
+    isVisible: Bool = true,
+    isLocked: Bool = false,
+    strokes: [HandDrawingStroke]
+) -> HandDrawingLayer {
+    HandDrawingLayer(
+        id: id,
+        name: name,
+        isVisible: isVisible,
+        isLocked: isLocked,
+        strokes: strokes
+    )
+}
+
 func makeHandDrawingTestStroke(
     id: UUID = UUID(),
     color: HandDrawingColor = HandDrawingColor(

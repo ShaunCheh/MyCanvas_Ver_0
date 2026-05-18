@@ -6,12 +6,53 @@ import XCTest
 @MainActor
 final class HandDrawingDocumentCodecTests: XCTestCase {
     func testHandDrawingDocumentCodecRoundTripsCustomDocument() throws {
-        let document = makeHandDrawingTestDocument(includeEraseMask: true)
+        let baseStroke = makeHandDrawingTestStroke(
+            id: UUID(),
+            color: HandDrawingColor(red: 0.18, green: 0.34, blue: 0.82, alpha: 1)
+        )
+        let erasedStroke = makeHandDrawingTestStroke(
+            id: UUID(),
+            color: HandDrawingColor(red: 0.84, green: 0.22, blue: 0.18, alpha: 1),
+            includeEraseMask: true,
+            transform: HandDrawingStrokeTransform(translationY: 18)
+        )
+        let baseLayer = makeHandDrawingTestLayer(
+            name: "Sketch",
+            strokes: [baseStroke]
+        )
+        let detailLayer = makeHandDrawingTestLayer(
+            name: "Details",
+            strokes: [erasedStroke]
+        )
+        let document = makeHandDrawingLayeredTestDocument(
+            layers: [baseLayer, detailLayer],
+            activeLayerID: detailLayer.id
+        )
 
         let data = try HandDrawingDocumentCodec.makeDocumentData(for: document)
         let decodedDocument = try HandDrawingDocumentCodec.decodeDocument(from: data)
 
         XCTAssertEqual(decodedDocument, document)
+    }
+
+    func testHandDrawingDocumentCodecDecodesLegacyFlatDocumentAsDefaultLayeredDocument() throws {
+        let legacyDocument = makeHandDrawingTestDocument(includeEraseMask: true)
+        let legacyData = try makeLegacyFlatDocumentData(
+            paper: legacyDocument.paper,
+            strokes: legacyDocument.strokes
+        )
+
+        let decodedDocument = try HandDrawingDocumentCodec.decodeDocument(
+            from: legacyData
+        )
+        let decodedLayer = try XCTUnwrap(decodedDocument.layers.first)
+
+        XCTAssertEqual(decodedDocument.formatVersion, HandDrawingDocument.currentFormatVersion)
+        XCTAssertEqual(decodedDocument.layers.count, 1)
+        XCTAssertEqual(decodedDocument.activeLayerID, decodedLayer.id)
+        XCTAssertEqual(decodedLayer.name, "Layer 1")
+        XCTAssertEqual(decodedLayer.strokes, legacyDocument.strokes)
+        XCTAssertEqual(decodedDocument.strokes, legacyDocument.strokes)
     }
 
     func testHandDrawingDocumentCodecRoundTripsManifest() throws {
@@ -134,4 +175,23 @@ private func makeHandDrawingDocumentCodecTestImage(
 
 private enum HandDrawingDocumentCodecTestError: Error {
     case invalidBitmapContext
+}
+
+private func makeLegacyFlatDocumentData(
+    paper: HandDrawingPaper,
+    strokes: [HandDrawingStroke]
+) throws -> Data {
+    try JSONEncoder().encode(
+        LegacyFlatHandDrawingDocumentPayload(
+            formatVersion: 1,
+            paper: paper,
+            strokes: strokes
+        )
+    )
+}
+
+private struct LegacyFlatHandDrawingDocumentPayload: Encodable {
+    let formatVersion: Int
+    let paper: HandDrawingPaper
+    let strokes: [HandDrawingStroke]
 }
