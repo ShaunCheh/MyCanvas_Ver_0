@@ -54,6 +54,53 @@ final class HandDrawingPreviewRendererTests: XCTestCase {
         XCTAssertLessThan(thinEdgePixel.alpha, 16)
         XCTAssertGreaterThan(thickEdgePixel.alpha, 64)
     }
+
+    func testHandDrawingPreviewRendererRespectsVisibleLayerOrder() throws {
+        let renderer = HandDrawingPreviewRenderer()
+        let baseLayer = makeHandDrawingTestLayer(
+            name: "Base",
+            strokes: [
+                makePreviewRendererTestStroke(
+                    y: 60,
+                    baseSize: 18,
+                    color: HandDrawingColor(red: 0.92, green: 0.12, blue: 0.1, alpha: 1)
+                )
+            ]
+        )
+        let visibleOverlayLayer = makeHandDrawingTestLayer(
+            name: "Overlay",
+            isVisible: true,
+            strokes: [
+                makePreviewRendererTestStroke(
+                    y: 60,
+                    baseSize: 18,
+                    color: HandDrawingColor(red: 0.12, green: 0.86, blue: 0.18, alpha: 1)
+                )
+            ]
+        )
+        let hiddenOverlayLayer = makeHandDrawingTestLayer(
+            id: visibleOverlayLayer.id,
+            name: visibleOverlayLayer.name,
+            isVisible: false,
+            strokes: visibleOverlayLayer.strokes
+        )
+        let visibleDocument = makeHandDrawingLayeredTestDocument(
+            layers: [baseLayer, visibleOverlayLayer],
+            activeLayerID: visibleOverlayLayer.id
+        )
+        let hiddenDocument = makeHandDrawingLayeredTestDocument(
+            layers: [baseLayer, hiddenOverlayLayer],
+            activeLayerID: hiddenOverlayLayer.id
+        )
+
+        let visibleImage = try renderer.renderPreviewImage(for: visibleDocument, scale: 1)
+        let hiddenImage = try renderer.renderPreviewImage(for: hiddenDocument, scale: 1)
+        let visiblePixel = sampleDisplayedRGBA(from: visibleImage, x: 60, y: 60)
+        let hiddenPixel = sampleDisplayedRGBA(from: hiddenImage, x: 60, y: 60)
+
+        XCTAssertGreaterThan(visiblePixel.green, visiblePixel.red)
+        XCTAssertGreaterThan(hiddenPixel.red, hiddenPixel.green)
+    }
 }
 
 private func makePreviewRendererTestStroke(

@@ -39,7 +39,7 @@ struct HandDrawingPreviewRenderer {
             compositeContext.fill(pixelRect)
         }
 
-        for stroke in document.strokes where stroke.isEmpty == false {
+        for stroke in document.renderedStrokesInOrder where stroke.isEmpty == false {
             try drawStroke(
                 stroke,
                 into: compositeContext,

@@ -375,6 +375,14 @@ struct HandDrawingDocument: Codable, Equatable {
         layers.flatMap(\.strokes)
     }
 
+    var visibleLayersInRenderOrder: [HandDrawingLayer] {
+        layers.filter(\.isVisible)
+    }
+
+    var renderedStrokesInOrder: [HandDrawingStroke] {
+        visibleLayersInRenderOrder.flatMap(\.strokes)
+    }
+
     var activeLayer: HandDrawingLayer? {
         guard let index = activeLayerIndex else {
             return nil

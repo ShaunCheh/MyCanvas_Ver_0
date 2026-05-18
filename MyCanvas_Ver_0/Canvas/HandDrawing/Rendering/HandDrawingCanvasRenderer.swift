@@ -74,7 +74,7 @@ final class HandDrawingCanvasRenderer {
         bitmapContext.addRect(renderRegion)
         bitmapContext.clip()
 
-        for stroke in document.strokes where stroke.isEmpty == false {
+        for stroke in document.renderedStrokesInOrder where stroke.isEmpty == false {
             guard
                 let strokeBounds = stroke.bounds,
                 strokeBounds.intersects(renderRegion)
