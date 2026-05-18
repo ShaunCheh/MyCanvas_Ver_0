@@ -78,6 +78,20 @@ enum HandDrawingDocumentStore {
         documentID: HandDrawingDocumentID,
         boardDirectoryURL: URL
     ) throws -> CGImage {
+        let previewImageData = try loadPreviewImageData(
+            documentID: documentID,
+            boardDirectoryURL: boardDirectoryURL
+        )
+        return try HandDrawingDocumentCodec.decodePreviewImage(
+            from: previewImageData,
+            documentID: documentID
+        )
+    }
+
+    static func loadPreviewImageData(
+        documentID: HandDrawingDocumentID,
+        boardDirectoryURL: URL
+    ) throws -> Data {
         let locator = HandDrawingBundleLocator(documentID: documentID)
         let previewImageURL = locator.previewImageURL(in: boardDirectoryURL)
         guard try CoordinatedFileIO.modificationDate(at: previewImageURL) != nil else {
@@ -87,11 +101,23 @@ enum HandDrawingDocumentStore {
             )
         }
 
-        let previewImageData = try CoordinatedFileIO.readData(at: previewImageURL)
-        return try HandDrawingDocumentCodec.decodePreviewImage(
-            from: previewImageData,
-            documentID: documentID
-        )
+        return try CoordinatedFileIO.readData(at: previewImageURL)
+    }
+
+    static func loadLegacyBackupDrawingData(
+        documentID: HandDrawingDocumentID,
+        boardDirectoryURL: URL
+    ) throws -> Data {
+        let locator = HandDrawingBundleLocator(documentID: documentID)
+        let legacyBackupURL = locator.legacyBackupURL(in: boardDirectoryURL)
+        guard try CoordinatedFileIO.modificationDate(at: legacyBackupURL) != nil else {
+            throw HandDrawingDocumentStoreError.missingBundleComponent(
+                documentID: documentID,
+                component: HandDrawingBundleLocator.legacyBackupFilename
+            )
+        }
+
+        return try CoordinatedFileIO.readData(at: legacyBackupURL)
     }
 
     static func validateBundleExists(
@@ -129,7 +155,8 @@ enum HandDrawingDocumentStore {
         previewImageData: Data?,
         previewCGImage: CGImage?,
         boardDirectoryURL: URL,
-        migrationOrigin: HandDrawingManifestMigrationOrigin? = nil
+        migrationOrigin: HandDrawingManifestMigrationOrigin? = nil,
+        legacyBackupDrawingData: Data? = nil
     ) throws {
         _ = try ensureHandDrawingsDirectoryURL(in: boardDirectoryURL)
 
@@ -167,6 +194,21 @@ enum HandDrawingDocumentStore {
             resolvedPreviewImageData,
             to: locator.previewImageURL(in: boardDirectoryURL)
         )
+        if let legacyBackupDrawingData {
+            try CoordinatedFileIO.writeData(
+                legacyBackupDrawingData,
+                to: locator.legacyBackupURL(in: boardDirectoryURL)
+            )
+        }
+    }
+
+    static func removeDocumentBundle(
+        documentID: HandDrawingDocumentID,
+        boardDirectoryURL: URL
+    ) throws {
+        let bundleURL = HandDrawingBundleLocator(documentID: documentID)
+            .bundleDirectoryURL(in: boardDirectoryURL)
+        try CoordinatedFileIO.removeItemIfExists(at: bundleURL)
     }
 
     static func removeOrphanedBundles(

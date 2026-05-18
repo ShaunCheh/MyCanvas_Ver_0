@@ -19,6 +19,7 @@ enum BoardStoreError: LocalizedError {
     case invalidBoardImageAsset(filename: String)
     case missingBoardVideoAsset(filename: String)
     case missingBoardHandDrawingSourceAsset(filename: String)
+    case missingBoardHandDrawingItem(itemID: CanvasItemID)
     case failedToEncodeImageAsset(itemID: UUID)
     case missingAnimatedImageSource(itemID: UUID)
     case missingHandDrawingAssetPayload(itemID: UUID)
@@ -33,6 +34,8 @@ enum BoardStoreError: LocalizedError {
             return "The board video asset is missing: \(filename)"
         case let .missingBoardHandDrawingSourceAsset(filename):
             return "The board hand drawing source asset is missing: \(filename)"
+        case let .missingBoardHandDrawingItem(itemID):
+            return "The board hand drawing item is missing: \(itemID.uuidString)"
         case let .failedToEncodeImageAsset(itemID):
             return "The image asset could not be encoded for board item \(itemID.uuidString)."
         case let .missingAnimatedImageSource(itemID):
@@ -440,6 +443,45 @@ enum BoardStore {
         }
     }
 
+    static func updateHandDrawingStorage(
+        boardID: UUID,
+        itemID: CanvasItemID,
+        storage: BoardHandDrawingStorageRecord,
+        userDefaults: UserDefaults = .standard
+    ) throws {
+        try SelectedFolderAccess.withBoardsDirectoryURL(userDefaults: userDefaults) { boardsDirectoryURL in
+            let boardDirectoryURL = self.boardDirectoryURL(
+                for: boardID,
+                boardsDirectoryURL: boardsDirectoryURL
+            )
+            let boardDocumentURL = boardDirectoryURL.appendingPathComponent(
+                boardDocumentFilename
+            )
+            var document = try readBoardDocument(at: boardDocumentURL)
+            var didUpdateRecord = false
+            document.items = document.items.map { itemRecord in
+                guard case let .handDrawing(record) = itemRecord else {
+                    return itemRecord
+                }
+                guard record.id == itemID else {
+                    return itemRecord
+                }
+
+                didUpdateRecord = true
+                guard record.storage != storage else {
+                    return itemRecord
+                }
+                return .handDrawing(record.replacingStorage(with: storage))
+            }
+            guard didUpdateRecord else {
+                throw BoardStoreError.missingBoardHandDrawingItem(itemID: itemID)
+            }
+
+            let encodedDocument = try makeDocumentData(for: document)
+            try CoordinatedFileIO.writeData(encodedDocument, to: boardDocumentURL)
+        }
+    }
+
     private static func boardDirectoryURL(
         for id: UUID,
         boardsDirectoryURL: URL
@@ -748,19 +790,7 @@ enum BoardStore {
             }
 
             let resolvedStorage = existingStorageByItemID[record.id] ?? .bundle
-            let normalizedRecord = BoardHandDrawingItemRecord(
-                id: record.id,
-                documentID: record.documentID,
-                center: record.center,
-                size: record.size,
-                zIndex: record.zIndex,
-                paper: record.paper,
-                isEmpty: record.isEmpty,
-                contentRevision: record.contentRevision,
-                rotationRadians: record.rotationRadians,
-                storage: resolvedStorage
-            )
-            return .handDrawing(normalizedRecord)
+            return .handDrawing(record.replacingStorage(with: resolvedStorage))
         }
     }
 

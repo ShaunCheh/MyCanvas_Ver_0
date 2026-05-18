@@ -23,9 +23,12 @@ enum CanvasHandDrawingEditingError: LocalizedError {
 
 struct CanvasHandDrawingEditorContext {
     let itemID: CanvasItemID
+    let documentID: HandDrawingDocumentID
     let paper: CanvasHandDrawingPaperSpec
     let drawingData: Data
     let isEmpty: Bool
+    let storage: BoardHandDrawingStorageRecord
+    let didMigrateLegacyDocument: Bool
 }
 
 struct CanvasHandDrawingEditSubmission {

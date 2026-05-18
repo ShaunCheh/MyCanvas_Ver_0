@@ -724,9 +724,12 @@ final class CanvasEditorSession {
         if let payload = transientHandDrawingAssetPayload(for: itemID) {
             return CanvasHandDrawingEditorContext(
                 itemID: itemID,
+                documentID: item.documentID,
                 paper: item.paper,
                 drawingData: payload.drawingData,
-                isEmpty: item.isEmpty
+                isEmpty: item.isEmpty,
+                storage: .bundle,
+                didMigrateLegacyDocument: false
             )
         }
 
@@ -734,22 +737,20 @@ final class CanvasEditorSession {
             throw CanvasHandDrawingEditingError.missingBoardIdentity
         }
 
-        do {
-            return CanvasHandDrawingEditorContext(
-                itemID: itemID,
-                paper: item.paper,
-                drawingData: try BoardStore.loadHandDrawingSourceData(
-                    boardID: activeBoardID,
-                    documentID: item.documentID,
-                    userDefaults: userDefaults
-                ),
-                isEmpty: item.isEmpty
-            )
-        } catch {
-            throw CanvasHandDrawingEditingError.missingSourceDrawing(
-                itemID: itemID
-            )
-        }
+        let preparedDocument = try HandDrawingMigrationService.prepareDocumentForEditing(
+            boardID: activeBoardID,
+            itemID: itemID,
+            userDefaults: userDefaults
+        )
+        return CanvasHandDrawingEditorContext(
+            itemID: itemID,
+            documentID: item.documentID,
+            paper: item.paper,
+            drawingData: preparedDocument.drawingData,
+            isEmpty: item.isEmpty,
+            storage: preparedDocument.record.storage,
+            didMigrateLegacyDocument: preparedDocument.didMigrateLegacyDocument
+        )
     }
 
     @discardableResult

@@ -6,6 +6,7 @@ struct HandDrawingBundleLocator {
     static let manifestFilename = "manifest.json"
     static let documentFilename = "document.hdraw"
     static let previewFilename = "preview.png"
+    static let legacyBackupFilename = "legacy_backup.pkdrawing"
 
     let documentID: HandDrawingDocumentID
 
@@ -34,6 +35,14 @@ struct HandDrawingBundleLocator {
             Self.handDrawingsDirectoryName,
             bundleDirectoryName,
             Self.manifestFilename
+        ].joined(separator: "/")
+    }
+
+    var legacyBackupRelativePath: String {
+        [
+            Self.handDrawingsDirectoryName,
+            bundleDirectoryName,
+            Self.legacyBackupFilename
         ].joined(separator: "/")
     }
 
@@ -70,6 +79,12 @@ struct HandDrawingBundleLocator {
     func previewImageURL(in boardDirectoryURL: URL) -> URL {
         bundleDirectoryURL(in: boardDirectoryURL).appendingPathComponent(
             Self.previewFilename
+        )
+    }
+
+    func legacyBackupURL(in boardDirectoryURL: URL) -> URL {
+        bundleDirectoryURL(in: boardDirectoryURL).appendingPathComponent(
+            Self.legacyBackupFilename
         )
     }
 }

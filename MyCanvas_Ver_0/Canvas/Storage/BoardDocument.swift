@@ -896,6 +896,23 @@ struct BoardHandDrawingItemRecord: Codable, Equatable {
         try container.encode(storage, forKey: .storage)
     }
 
+    func replacingStorage(
+        with storage: BoardHandDrawingStorageRecord
+    ) -> BoardHandDrawingItemRecord {
+        BoardHandDrawingItemRecord(
+            id: id,
+            documentID: documentID,
+            center: center,
+            size: size,
+            zIndex: zIndex,
+            paper: paper,
+            isEmpty: isEmpty,
+            contentRevision: contentRevision,
+            rotationRadians: rotationRadians,
+            storage: storage
+        )
+    }
+
     var previewImageFilename: String {
         switch storage {
         case .legacyFlatAssetPair:
