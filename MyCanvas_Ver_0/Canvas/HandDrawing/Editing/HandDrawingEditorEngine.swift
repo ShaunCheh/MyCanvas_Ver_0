@@ -104,16 +104,47 @@ struct HandDrawingEditorEngine {
         return appendStroke(stroke)
     }
 
-    mutating func selectStrokes(withIDs strokeIDs: Set<UUID>) {
+    @discardableResult
+    mutating func selectStrokes(
+        withIDs strokeIDs: Set<UUID>,
+        recordUndo: Bool = true
+    ) -> Bool {
         let existingStrokeIDs = Set(state.document.strokes.map(\.id))
-        state.selectedStrokeIDs = strokeIDs.intersection(existingStrokeIDs)
+        let resolvedSelection = strokeIDs.intersection(existingStrokeIDs)
+        guard resolvedSelection != state.selectedStrokeIDs else {
+            return false
+        }
+        if recordUndo {
+            recordSnapshotForUndo()
+        }
+        state.selectedStrokeIDs = resolvedSelection
+        return true
     }
 
-    mutating func apply(command: HandDrawingEditorCommand) {
+    @discardableResult
+    mutating func apply(
+        command: HandDrawingEditorCommand,
+        recordUndo: Bool = true
+    ) -> Bool {
         switch command {
         case .deselectAll:
-            state.selectedStrokeIDs.removeAll()
+            return selectStrokes(
+                withIDs: [],
+                recordUndo: recordUndo
+            )
         }
+    }
+
+    @discardableResult
+    mutating func translateSelectedStrokes(
+        by delta: CGPoint,
+        recordUndo: Bool = true
+    ) -> Set<UUID> {
+        translateStrokes(
+            withIDs: state.selectedStrokeIDs,
+            by: delta,
+            recordUndo: recordUndo
+        )
     }
 
     @discardableResult
@@ -199,6 +230,45 @@ struct HandDrawingEditorEngine {
 
     private mutating func recordSnapshotForUndo() {
         historyController.record(snapshot: makeSnapshot())
+    }
+
+    @discardableResult
+    private mutating func translateStrokes(
+        withIDs strokeIDs: Set<UUID>,
+        by delta: CGPoint,
+        recordUndo: Bool
+    ) -> Set<UUID> {
+        guard
+            strokeIDs.isEmpty == false,
+            delta != .zero
+        else {
+            return []
+        }
+
+        let targetStrokeIndexes = state.document.strokes.indices.filter { index in
+            strokeIDs.contains(state.document.strokes[index].id)
+        }
+        guard targetStrokeIndexes.isEmpty == false else {
+            return []
+        }
+
+        if recordUndo {
+            recordSnapshotForUndo()
+        }
+
+        var translatedStrokeIDs: Set<UUID> = []
+        for index in targetStrokeIndexes {
+            let oldBounds = state.document.strokes[index].bounds
+            state.document.strokes[index].transform.translationX += Double(delta.x)
+            state.document.strokes[index].transform.translationY += Double(delta.y)
+            let newBounds = state.document.strokes[index].bounds
+            dirtyRegionTracker.markDirty(
+                resolvedDirtyRegion(oldBounds: oldBounds, newBounds: newBounds)
+            )
+            translatedStrokeIDs.insert(state.document.strokes[index].id)
+        }
+
+        return translatedStrokeIDs
     }
 
     private func makeSnapshot() -> HandDrawingHistorySnapshot {

@@ -216,6 +216,8 @@ private final class HandDrawingCanvasPageView: UIView {
             committedImageView.image = nil
         }
         draftOverlayView.draftStroke = state.draftStroke
+        draftOverlayView.lassoPathPoints = state.lassoPathPoints
+        draftOverlayView.selectedStrokeBounds = state.selectedStrokeBounds
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -301,6 +303,16 @@ private final class HandDrawingCanvasDraftOverlayView: UIView {
             setNeedsDisplay()
         }
     }
+    var lassoPathPoints: [CGPoint] = [] {
+        didSet {
+            setNeedsDisplay()
+        }
+    }
+    var selectedStrokeBounds: CGRect? {
+        didSet {
+            setNeedsDisplay()
+        }
+    }
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -318,14 +330,64 @@ private final class HandDrawingCanvasDraftOverlayView: UIView {
 
     override func draw(_ rect: CGRect) {
         super.draw(rect)
-        guard
-            let draftStroke,
-            let context = UIGraphicsGetCurrentContext()
-        else {
+        guard let context = UIGraphicsGetCurrentContext() else {
             return
         }
         context.saveGState()
-        HandDrawingStrokeRasterizer.draw(draftStroke, in: context)
+        if let draftStroke {
+            HandDrawingStrokeRasterizer.draw(draftStroke, in: context)
+        }
+        drawSelectedStrokeBoundsIfNeeded(in: context)
+        drawLassoPathIfNeeded(in: context)
+        context.restoreGState()
+    }
+
+    private func drawSelectedStrokeBoundsIfNeeded(
+        in context: CGContext
+    ) {
+        guard
+            let selectedStrokeBounds,
+            selectedStrokeBounds.isNull == false,
+            selectedStrokeBounds.isEmpty == false
+        else {
+            return
+        }
+
+        let path = UIBezierPath(
+            roundedRect: selectedStrokeBounds.insetBy(dx: -6, dy: -6),
+            cornerRadius: 12
+        )
+        context.saveGState()
+        context.setStrokeColor(UIColor.systemBlue.cgColor)
+        context.setFillColor(UIColor.systemBlue.withAlphaComponent(0.08).cgColor)
+        context.setLineWidth(2)
+        context.setLineDash(phase: 0, lengths: [8, 6])
+        context.addPath(path.cgPath)
+        context.drawPath(using: .fillStroke)
+        context.restoreGState()
+    }
+
+    private func drawLassoPathIfNeeded(
+        in context: CGContext
+    ) {
+        guard lassoPathPoints.count >= 2 else {
+            return
+        }
+
+        let path = UIBezierPath()
+        path.move(to: lassoPathPoints[0])
+        for point in lassoPathPoints.dropFirst() {
+            path.addLine(to: point)
+        }
+
+        context.saveGState()
+        context.setStrokeColor(UIColor.systemBlue.cgColor)
+        context.setLineWidth(2)
+        context.setLineCap(.round)
+        context.setLineJoin(.round)
+        context.setLineDash(phase: 0, lengths: [8, 6])
+        context.addPath(path.cgPath)
+        context.strokePath()
         context.restoreGState()
     }
 }

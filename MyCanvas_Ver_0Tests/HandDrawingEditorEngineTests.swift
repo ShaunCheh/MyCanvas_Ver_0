@@ -59,18 +59,27 @@ final class HandDrawingEditorEngineTests: XCTestCase {
 
         engine.appendStroke(firstStroke)
         engine.appendStroke(secondStroke)
-        engine.selectStrokes(withIDs: [firstStroke.id, secondStroke.id])
-        engine.apply(command: .deselectAll)
+        XCTAssertTrue(
+            engine.selectStrokes(withIDs: [firstStroke.id, secondStroke.id])
+        )
+        XCTAssertTrue(
+            engine.apply(command: .deselectAll)
+        )
 
         XCTAssertTrue(engine.state.selectedStrokeIDs.isEmpty)
         XCTAssertTrue(engine.canUndo)
         XCTAssertFalse(engine.canRedo)
 
         XCTAssertTrue(engine.undo())
-        XCTAssertEqual(engine.state.document.strokes.count, 1)
+        XCTAssertEqual(
+            engine.state.selectedStrokeIDs,
+            [firstStroke.id, secondStroke.id]
+        )
+        XCTAssertEqual(engine.state.document.strokes.count, 2)
         XCTAssertTrue(engine.canRedo)
 
         XCTAssertTrue(engine.redo())
+        XCTAssertTrue(engine.state.selectedStrokeIDs.isEmpty)
         XCTAssertEqual(engine.state.document.strokes.count, 2)
     }
 }

@@ -136,86 +136,11 @@ struct HandDrawingPixelEraserToolController {
         _ stroke: HandDrawingStroke,
         eraseSample: HandDrawingEraseSamplePoint
     ) -> Bool {
-        guard let strokeBounds = stroke.bounds else {
-            return false
-        }
-
-        let expandedSampleBounds = CGRect(
-            x: eraseSample.cgPoint.x - eraseSample.resolvedRadius,
-            y: eraseSample.cgPoint.y - eraseSample.resolvedRadius,
-            width: eraseSample.resolvedRadius * 2,
-            height: eraseSample.resolvedRadius * 2
+        HandDrawingStrokeGeometry.intersectsCircle(
+            stroke,
+            center: eraseSample.cgPoint,
+            radius: eraseSample.resolvedRadius
         )
-        guard strokeBounds.intersects(expandedSampleBounds) else {
-            return false
-        }
-
-        let transformedPoints = stroke.transformedSamplePoints
-        if transformedPoints.isEmpty {
-            return false
-        }
-
-        let eraseCenter = eraseSample.cgPoint
-        let eraseRadius = eraseSample.resolvedRadius
-
-        for (index, point) in transformedPoints.enumerated() {
-            let strokeRadius = stroke.radiusForSample(at: index)
-            if distanceBetween(point, eraseCenter) <= strokeRadius + eraseRadius {
-                return true
-            }
-        }
-
-        if transformedPoints.count == 1 {
-            return false
-        }
-
-        for index in 1..<transformedPoints.count {
-            let startPoint = transformedPoints[index - 1]
-            let endPoint = transformedPoints[index]
-            let strokeRadius = max(
-                stroke.radiusForSample(at: index - 1),
-                stroke.radiusForSample(at: index)
-            )
-            let distanceToSegment = distanceFromPoint(
-                eraseCenter,
-                toSegmentFrom: startPoint,
-                to: endPoint
-            )
-            if distanceToSegment <= strokeRadius + eraseRadius {
-                return true
-            }
-        }
-
-        return false
-    }
-
-    private func distanceBetween(
-        _ lhs: CGPoint,
-        _ rhs: CGPoint
-    ) -> CGFloat {
-        hypot(lhs.x - rhs.x, lhs.y - rhs.y)
-    }
-
-    private func distanceFromPoint(
-        _ point: CGPoint,
-        toSegmentFrom start: CGPoint,
-        to end: CGPoint
-    ) -> CGFloat {
-        let deltaX = end.x - start.x
-        let deltaY = end.y - start.y
-        let lengthSquared = deltaX * deltaX + deltaY * deltaY
-        guard lengthSquared > 0 else {
-            return distanceBetween(point, start)
-        }
-        let projection = (
-            ((point.x - start.x) * deltaX) + ((point.y - start.y) * deltaY)
-        ) / lengthSquared
-        let clampedProjection = min(max(projection, 0), 1)
-        let projectedPoint = CGPoint(
-            x: start.x + (deltaX * clampedProjection),
-            y: start.y + (deltaY * clampedProjection)
-        )
-        return distanceBetween(point, projectedPoint)
     }
 
     private mutating func resetSessionState() {

@@ -12,6 +12,8 @@ struct HandDrawingCanvasSurfaceState {
     var paperSize: CGSize
     var committedImage: CGImage?
     var draftStroke: HandDrawingStroke?
+    var lassoPathPoints: [CGPoint]
+    var selectedStrokeBounds: CGRect?
 }
 
 struct HandDrawingToolPaletteState {
@@ -24,6 +26,7 @@ struct HandDrawingToolPaletteState {
     var canRedo: Bool
     var isPixelEraserEnabled: Bool
     var isLassoEnabled: Bool
+    var canDeselectSelection: Bool
 }
 
 @MainActor
@@ -50,6 +53,8 @@ final class HandDrawingEditorCoordinator {
     private var activeStrokeBrush: HandDrawingBrushStyle?
     private var activeStrokeSamples: [HandDrawingInputSample] = []
     private var pixelEraserToolController = HandDrawingPixelEraserToolController()
+    private var lassoToolController = HandDrawingLassoToolController()
+    private var moveSelectionController = HandDrawingMoveSelectionController()
 
     var onSurfaceStateChange: ((HandDrawingCanvasSurfaceState) -> Void)?
     var onPaletteStateChange: ((HandDrawingToolPaletteState) -> Void)?
@@ -79,16 +84,24 @@ final class HandDrawingEditorCoordinator {
     }
 
     func selectTool(_ tool: HandDrawingEditorTool) {
+        endTransientInteractionState()
         switch tool {
         case .brush, .pixelEraser:
             selectedTool = tool
             clearActiveStroke()
-            pixelEraserToolController.endErasing()
         case .lasso:
-            return
+            selectedTool = .lasso
         }
         publishSurfaceState()
         publishPaletteState()
+    }
+
+    func deselectSelection() {
+        endTransientInteractionState()
+        if engine.apply(command: .deselectAll) {
+            publishSurfaceState()
+            publishPaletteState()
+        }
     }
 
     func selectColor(_ color: HandDrawingColor) {
@@ -102,8 +115,7 @@ final class HandDrawingEditorCoordinator {
     }
 
     func undo() {
-        clearActiveStroke()
-        pixelEraserToolController.endErasing()
+        endTransientInteractionState()
         guard engine.undo() else {
             return
         }
@@ -111,8 +123,7 @@ final class HandDrawingEditorCoordinator {
     }
 
     func redo() {
-        clearActiveStroke()
-        pixelEraserToolController.endErasing()
+        endTransientInteractionState()
         guard engine.redo() else {
             return
         }
@@ -133,7 +144,12 @@ final class HandDrawingEditorCoordinator {
             )
             refreshCommittedImageAndPublishState()
         case .lasso:
-            return
+            if moveSelectionController.beginMoving(with: sample, engine: engine) {
+                publishSurfaceState()
+                return
+            }
+            lassoToolController.beginLasso(with: sample)
+            publishSurfaceState()
         }
     }
 
@@ -153,7 +169,16 @@ final class HandDrawingEditorCoordinator {
             )
             refreshCommittedImageAndPublishState()
         case .lasso:
-            return
+            if moveSelectionController.isActive {
+                moveSelectionController.appendSamples(
+                    samples,
+                    engine: &engine
+                )
+                refreshCommittedImageAndPublishState()
+                return
+            }
+            lassoToolController.appendSamples(samples)
+            publishSurfaceState()
         }
     }
 
@@ -185,7 +210,19 @@ final class HandDrawingEditorCoordinator {
             pixelEraserToolController.endErasing()
             refreshCommittedImageAndPublishState()
         case .lasso:
-            return
+            if moveSelectionController.isActive {
+                moveSelectionController.appendSamples(
+                    samples,
+                    engine: &engine
+                )
+                moveSelectionController.endMoving()
+                refreshCommittedImageAndPublishState()
+                return
+            }
+            lassoToolController.appendSamples(samples)
+            _ = lassoToolController.endLasso(engine: &engine)
+            publishSurfaceState()
+            publishPaletteState()
         }
     }
 
@@ -196,6 +233,18 @@ final class HandDrawingEditorCoordinator {
             refreshCommittedImageAndPublishState(forceFullRender: true)
             return
         }
+        if selectedTool == .lasso {
+            if moveSelectionController.isActive {
+                moveSelectionController.cancelMoving(engine: &engine)
+                refreshCommittedImageAndPublishState(forceFullRender: true)
+                return
+            }
+            if lassoToolController.isActive {
+                lassoToolController.cancelLasso()
+                publishSurfaceState()
+                return
+            }
+        }
         publishSurfaceState()
     }
 
@@ -205,6 +254,12 @@ final class HandDrawingEditorCoordinator {
         }
         if pixelEraserToolController.isActive {
             pixelEraserToolController.endErasing()
+        }
+        if lassoToolController.isActive {
+            lassoToolController.cancelLasso()
+        }
+        if moveSelectionController.isActive {
+            moveSelectionController.endMoving()
         }
 
         let currentDocument = engine.state.document
@@ -273,7 +328,9 @@ final class HandDrawingEditorCoordinator {
             HandDrawingCanvasSurfaceState(
                 paperSize: editorContext.paper.size,
                 committedImage: committedImage,
-                draftStroke: draftStroke
+                draftStroke: draftStroke,
+                lassoPathPoints: lassoToolController.points,
+                selectedStrokeBounds: selectedStrokeBounds
             )
         )
     }
@@ -289,7 +346,8 @@ final class HandDrawingEditorCoordinator {
                 canUndo: engine.canUndo,
                 canRedo: engine.canRedo,
                 isPixelEraserEnabled: true,
-                isLassoEnabled: false
+                isLassoEnabled: true,
+                canDeselectSelection: engine.state.selectedStrokeIDs.isEmpty == false
             )
         )
     }
@@ -323,6 +381,20 @@ final class HandDrawingEditorCoordinator {
                 .makeTransparentPreview(for: editorContext.paper)
         }
         return try previewRenderer.renderPreviewImage(for: document, scale: 1)
+    }
+
+    private var selectedStrokeBounds: CGRect? {
+        HandDrawingStrokeGeometry.unionBounds(
+            forStrokeIDs: engine.state.selectedStrokeIDs,
+            in: engine.state.document
+        )
+    }
+
+    private func endTransientInteractionState() {
+        clearActiveStroke()
+        pixelEraserToolController.endErasing()
+        lassoToolController.cancelLasso()
+        moveSelectionController.endMoving()
     }
 }
 #endif

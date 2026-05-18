@@ -14,6 +14,7 @@ final class HandDrawingToolPaletteView: UIView {
     var onSelectLineWidth: ((CGFloat) -> Void)?
     var onUndo: (() -> Void)?
     var onRedo: (() -> Void)?
+    var onDeselectSelection: (() -> Void)?
 
     private let rootStackView: UIStackView = {
         let stackView = UIStackView()
@@ -29,6 +30,7 @@ final class HandDrawingToolPaletteView: UIView {
     private let brushButton = HandDrawingToolPaletteView.makeActionButton(title: "Brush")
     private let eraserButton = HandDrawingToolPaletteView.makeActionButton(title: "Eraser")
     private let lassoButton = HandDrawingToolPaletteView.makeActionButton(title: "Lasso")
+    private let deselectButton = HandDrawingToolPaletteView.makeActionButton(title: "Deselect")
     private let undoButton = HandDrawingToolPaletteView.makeActionButton(title: "Undo")
     private let redoButton = HandDrawingToolPaletteView.makeActionButton(title: "Redo")
 
@@ -73,6 +75,11 @@ final class HandDrawingToolPaletteView: UIView {
             isSelected: state.selectedTool == .lasso,
             isEnabled: state.isLassoEnabled
         )
+        updateToolButtonSelection(
+            deselectButton,
+            isSelected: false,
+            isEnabled: state.canDeselectSelection
+        )
         undoButton.isEnabled = state.canUndo
         redoButton.isEnabled = state.canRedo
 
@@ -95,7 +102,7 @@ final class HandDrawingToolPaletteView: UIView {
     private func setupViewHierarchy() {
         addSubview(rootStackView)
         [brushButton, eraserButton, lassoButton].forEach(toolStackView.addArrangedSubview)
-        [undoButton, redoButton].forEach(historyStackView.addArrangedSubview)
+        [deselectButton, undoButton, redoButton].forEach(historyStackView.addArrangedSubview)
         [toolStackView, colorStackView, lineWidthStackView, historyStackView]
             .forEach(rootStackView.addArrangedSubview)
     }
@@ -123,6 +130,11 @@ final class HandDrawingToolPaletteView: UIView {
         lassoButton.addTarget(
             self,
             action: #selector(handleLassoButtonTap),
+            for: .touchUpInside
+        )
+        deselectButton.addTarget(
+            self,
+            action: #selector(handleDeselectButtonTap),
             for: .touchUpInside
         )
         undoButton.addTarget(
@@ -220,6 +232,11 @@ final class HandDrawingToolPaletteView: UIView {
     @objc
     private func handleLassoButtonTap() {
         onSelectTool?(.lasso)
+    }
+
+    @objc
+    private func handleDeselectButtonTap() {
+        onDeselectSelection?()
     }
 
     @objc

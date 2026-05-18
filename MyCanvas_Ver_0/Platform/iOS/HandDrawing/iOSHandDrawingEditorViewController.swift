@@ -34,7 +34,7 @@ final class iOSHandDrawingEditorViewController: UIViewController {
         label.font = .systemFont(ofSize: 14, weight: .medium)
         label.textColor = .secondaryLabel
         label.numberOfLines = 0
-        label.text = "Draw with Apple Pencil. Use fingers to pan and zoom."
+        label.text = "Draw or lasso with Apple Pencil. Use fingers to pan and zoom."
         return label
     }()
     private let closeButton: UIButton = {
@@ -134,6 +134,9 @@ final class iOSHandDrawingEditorViewController: UIViewController {
         }
         paletteView.onRedo = { [weak self] in
             self?.coordinator.redo()
+        }
+        paletteView.onDeselectSelection = { [weak self] in
+            self?.coordinator.deselectSelection()
         }
     }
 
