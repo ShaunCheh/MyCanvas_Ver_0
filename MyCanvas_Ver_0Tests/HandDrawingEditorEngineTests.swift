@@ -310,6 +310,66 @@ final class HandDrawingEditorEngineTests: XCTestCase {
         XCTAssertNil(engine.consumeDirtyRegion())
     }
 
+    func testHandDrawingEditorEngineAppendStrokeRequiresInteractiveActiveLayer() {
+        func makeEngine(
+            isVisible: Bool,
+            isLocked: Bool
+        ) -> HandDrawingEditorEngine {
+            let activeLayer = makeHandDrawingTestLayer(
+                name: "Active",
+                isVisible: isVisible,
+                isLocked: isLocked,
+                strokes: []
+            )
+            return HandDrawingEditorEngine(
+                document: makeHandDrawingLayeredTestDocument(
+                    layers: [activeLayer],
+                    activeLayerID: activeLayer.id
+                )
+            )
+        }
+
+        var hiddenEngine = makeEngine(isVisible: false, isLocked: false)
+        XCTAssertNil(
+            hiddenEngine.appendStroke(
+                brush: .defaultPen,
+                samples: [
+                    HandDrawingInputSample(
+                        location: CGPoint(x: 20, y: 20),
+                        timestamp: 0
+                    ),
+                    HandDrawingInputSample(
+                        location: CGPoint(x: 80, y: 80),
+                        timestamp: 0.2
+                    )
+                ]
+            )
+        )
+        XCTAssertTrue(hiddenEngine.state.document.activeLayerStrokes.isEmpty)
+        XCTAssertFalse(hiddenEngine.canUndo)
+        XCTAssertNil(hiddenEngine.consumeDirtyRegion())
+
+        var lockedEngine = makeEngine(isVisible: true, isLocked: true)
+        XCTAssertNil(
+            lockedEngine.appendStroke(
+                brush: .defaultPen,
+                samples: [
+                    HandDrawingInputSample(
+                        location: CGPoint(x: 20, y: 20),
+                        timestamp: 0
+                    ),
+                    HandDrawingInputSample(
+                        location: CGPoint(x: 80, y: 80),
+                        timestamp: 0.2
+                    )
+                ]
+            )
+        )
+        XCTAssertTrue(lockedEngine.state.document.activeLayerStrokes.isEmpty)
+        XCTAssertFalse(lockedEngine.canUndo)
+        XCTAssertNil(lockedEngine.consumeDirtyRegion())
+    }
+
     private func assertLayer(
         _ layer: HandDrawingLayer,
         name: String,

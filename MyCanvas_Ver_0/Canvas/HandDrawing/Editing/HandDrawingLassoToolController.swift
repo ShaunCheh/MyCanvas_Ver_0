@@ -13,20 +13,26 @@ struct HandDrawingLassoToolController {
         points.isEmpty == false
     }
 
+    @discardableResult
     mutating func beginLasso(
-        with sample: HandDrawingInputSample
-    ) {
+        with sample: HandDrawingInputSample,
+        engine: HandDrawingEditorEngine
+    ) -> Bool {
+        guard engine.canInteractWithActiveLayer else {
+            return false
+        }
         points = [sample.location]
+        return true
     }
 
     mutating func appendSamples(
         _ samples: [HandDrawingInputSample]
     ) {
-        guard samples.isEmpty == false else {
+        guard
+            samples.isEmpty == false,
+            points.isEmpty == false
+        else {
             return
-        }
-        if points.isEmpty, let firstPoint = samples.first?.location {
-            points = [firstPoint]
         }
         for sample in samples {
             if let lastPoint = points.last,
@@ -45,11 +51,14 @@ struct HandDrawingLassoToolController {
         defer {
             points.removeAll()
         }
-        guard isMeaningfulLasso else {
+        guard
+            isMeaningfulLasso,
+            engine.canInteractWithActiveLayer
+        else {
             return false
         }
         let selectedStrokeIDs: Set<UUID> = Set(
-            engine.state.document.strokes.compactMap { stroke in
+            engine.state.document.activeLayerStrokes.compactMap { stroke in
                 guard HandDrawingStrokeGeometry.isStroke(stroke, enclosedBy: points) else {
                     return nil
                 }

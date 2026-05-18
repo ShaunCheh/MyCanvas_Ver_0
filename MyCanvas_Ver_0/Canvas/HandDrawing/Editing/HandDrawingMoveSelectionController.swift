@@ -17,12 +17,15 @@ struct HandDrawingMoveSelectionController {
         with sample: HandDrawingInputSample,
         engine: HandDrawingEditorEngine
     ) -> Bool {
+        guard engine.canInteractWithActiveLayer else {
+            return false
+        }
         let selectedStrokeIDs = engine.state.selectedStrokeIDs
         guard selectedStrokeIDs.isEmpty == false else {
             return false
         }
 
-        let selectedStrokes = engine.state.document.strokes.filter {
+        let selectedStrokes = engine.state.document.activeLayerStrokes.filter {
             selectedStrokeIDs.contains($0.id)
         }
         let didHitSelectedStroke = selectedStrokes.contains { stroke in

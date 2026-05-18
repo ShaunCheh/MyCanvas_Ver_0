@@ -309,6 +309,10 @@ struct HandDrawingLayer: Codable, Equatable {
         strokes.allSatisfy(\.isEmpty)
     }
 
+    var isInteractive: Bool {
+        isVisible && isLocked == false
+    }
+
     var renderedBounds: CGRect? {
         strokes.compactMap(\.bounds).reduce(nil) { partialResult, bounds in
             partialResult?.union(bounds) ?? bounds
@@ -388,6 +392,18 @@ struct HandDrawingDocument: Codable, Equatable {
             return nil
         }
         return layers[index]
+    }
+
+    var activeLayerStrokes: [HandDrawingStroke] {
+        activeLayer?.strokes ?? []
+    }
+
+    var activeLayerStrokeIDs: Set<UUID> {
+        Set(activeLayerStrokes.map(\.id))
+    }
+
+    var isActiveLayerInteractive: Bool {
+        activeLayer?.isInteractive ?? false
     }
 
     var activeLayerIndex: Int? {

@@ -131,4 +131,87 @@ final class HandDrawingPixelEraserToolControllerTests: XCTestCase {
         XCTAssertFalse(controller.isActive)
         XCTAssertTrue(engine.state.document.strokes[0].eraseMask.isEmpty)
     }
+
+    func testHandDrawingPixelEraserToolControllerOnlyMutatesActiveLayerStroke() throws {
+        let inactiveStroke = makeHandDrawingTestStroke(id: UUID())
+        let activeStroke = makeHandDrawingTestStroke(id: UUID())
+        let inactiveLayer = makeHandDrawingTestLayer(
+            name: "Inactive",
+            strokes: [inactiveStroke]
+        )
+        let activeLayer = makeHandDrawingTestLayer(
+            name: "Active",
+            strokes: [activeStroke]
+        )
+        var engine = HandDrawingEditorEngine(
+            document: makeHandDrawingLayeredTestDocument(
+                layers: [inactiveLayer, activeLayer],
+                activeLayerID: activeLayer.id
+            )
+        )
+        var controller = HandDrawingPixelEraserToolController()
+
+        controller.beginErasing(
+            with: HandDrawingInputSample(
+                location: CGPoint(x: 60, y: 60),
+                force: 1,
+                timestamp: 0
+            ),
+            baseSize: 20,
+            engine: &engine
+        )
+        controller.endErasing()
+
+        let mutatedActiveStroke = try XCTUnwrap(
+            engine.state.document.layer(withID: activeLayer.id)?.strokes.first
+        )
+        let untouchedInactiveStroke = try XCTUnwrap(
+            engine.state.document.layer(withID: inactiveLayer.id)?.strokes.first
+        )
+        XCTAssertEqual(mutatedActiveStroke.eraseMask.count, 1)
+        XCTAssertTrue(untouchedInactiveStroke.eraseMask.isEmpty)
+    }
+
+    func testHandDrawingPixelEraserToolControllerDoesNotStartOnHiddenOrLockedActiveLayer() {
+        func makeEngine(
+            isVisible: Bool,
+            isLocked: Bool
+        ) -> HandDrawingEditorEngine {
+            let activeLayer = makeHandDrawingTestLayer(
+                name: "Active",
+                isVisible: isVisible,
+                isLocked: isLocked,
+                strokes: [makeHandDrawingTestStroke(id: UUID())]
+            )
+            return HandDrawingEditorEngine(
+                document: makeHandDrawingLayeredTestDocument(
+                    layers: [activeLayer],
+                    activeLayerID: activeLayer.id
+                )
+            )
+        }
+
+        for configuration in [(false, false), (true, true)] {
+            var engine = makeEngine(
+                isVisible: configuration.0,
+                isLocked: configuration.1
+            )
+            var controller = HandDrawingPixelEraserToolController()
+
+            controller.beginErasing(
+                with: HandDrawingInputSample(
+                    location: CGPoint(x: 60, y: 60),
+                    force: 1,
+                    timestamp: 0
+                ),
+                baseSize: 18,
+                engine: &engine
+            )
+
+            XCTAssertFalse(controller.isActive)
+            XCTAssertTrue(engine.state.document.activeLayerStrokes[0].eraseMask.isEmpty)
+            XCTAssertFalse(engine.canUndo)
+            XCTAssertNil(engine.consumeDirtyRegion())
+        }
+    }
 }

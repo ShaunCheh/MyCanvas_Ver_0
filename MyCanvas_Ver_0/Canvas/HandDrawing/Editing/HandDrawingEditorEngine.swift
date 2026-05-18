@@ -48,7 +48,7 @@ struct HandDrawingEditorState: Equatable {
     ) {
         self.document = document
         self.selectedStrokeIDs = selectedStrokeIDs.intersection(
-            Set(document.strokes.map(\.id))
+            document.activeLayerStrokeIDs
         )
     }
 
@@ -88,8 +88,15 @@ struct HandDrawingEditorEngine {
         historyController.canRedo
     }
 
+    var canInteractWithActiveLayer: Bool {
+        state.document.isActiveLayerInteractive
+    }
+
     @discardableResult
-    mutating func appendStroke(_ stroke: HandDrawingStroke) -> HandDrawingStroke {
+    mutating func appendStroke(_ stroke: HandDrawingStroke) -> HandDrawingStroke? {
+        guard canInteractWithActiveLayer else {
+            return nil
+        }
         recordSnapshotForUndo()
         state.document.appendStroke(stroke)
         dirtyRegionTracker.markDirty(stroke.bounds ?? state.document.paperBounds)
@@ -126,7 +133,7 @@ struct HandDrawingEditorEngine {
         withIDs strokeIDs: Set<UUID>,
         recordUndo: Bool = true
     ) -> Bool {
-        let existingStrokeIDs = Set(state.document.strokes.map(\.id))
+        let existingStrokeIDs = state.document.activeLayerStrokeIDs
         let resolvedSelection = strokeIDs.intersection(existingStrokeIDs)
         guard resolvedSelection != state.selectedStrokeIDs else {
             return false
@@ -199,8 +206,12 @@ struct HandDrawingEditorEngine {
         _ pathsByStrokeID: [UUID: [HandDrawingErasePath]],
         recordUndo: Bool = true
     ) -> Set<UUID> {
-        let targetStrokeIndexes = state.document.strokes.indices.filter { index in
-            let strokeID = state.document.strokes[index].id
+        guard canInteractWithActiveLayer else {
+            return []
+        }
+        var activeLayerStrokes = state.document.activeLayerStrokes
+        let targetStrokeIndexes = activeLayerStrokes.indices.filter { index in
+            let strokeID = activeLayerStrokes[index].id
             guard let paths = pathsByStrokeID[strokeID] else {
                 return false
             }
@@ -216,25 +227,26 @@ struct HandDrawingEditorEngine {
 
         var mutatedStrokeIDs: Set<UUID> = []
         for index in targetStrokeIndexes {
-            let strokeID = state.document.strokes[index].id
+            let strokeID = activeLayerStrokes[index].id
             guard let paths = pathsByStrokeID[strokeID] else {
                 continue
             }
 
-            let oldBounds = state.document.strokes[index].bounds
+            let oldBounds = activeLayerStrokes[index].bounds
             for path in paths {
                 upsertErasePath(
                     path,
-                    into: &state.document.strokes[index]
+                    into: &activeLayerStrokes[index]
                 )
             }
-            let newBounds = state.document.strokes[index].bounds
+            let newBounds = activeLayerStrokes[index].bounds
             dirtyRegionTracker.markDirty(
                 resolvedDirtyRegion(oldBounds: oldBounds, newBounds: newBounds)
             )
             mutatedStrokeIDs.insert(strokeID)
         }
 
+        state.document.replaceStrokesInActiveLayer(with: activeLayerStrokes)
         return mutatedStrokeIDs
     }
 
@@ -314,14 +326,16 @@ struct HandDrawingEditorEngine {
         recordUndo: Bool
     ) -> Set<UUID> {
         guard
+            canInteractWithActiveLayer,
             strokeIDs.isEmpty == false,
             delta != .zero
         else {
             return []
         }
 
-        let targetStrokeIndexes = state.document.strokes.indices.filter { index in
-            strokeIDs.contains(state.document.strokes[index].id)
+        var activeLayerStrokes = state.document.activeLayerStrokes
+        let targetStrokeIndexes = activeLayerStrokes.indices.filter { index in
+            strokeIDs.contains(activeLayerStrokes[index].id)
         }
         guard targetStrokeIndexes.isEmpty == false else {
             return []
@@ -333,16 +347,17 @@ struct HandDrawingEditorEngine {
 
         var translatedStrokeIDs: Set<UUID> = []
         for index in targetStrokeIndexes {
-            let oldBounds = state.document.strokes[index].bounds
-            state.document.strokes[index].transform.translationX += Double(delta.x)
-            state.document.strokes[index].transform.translationY += Double(delta.y)
-            let newBounds = state.document.strokes[index].bounds
+            let oldBounds = activeLayerStrokes[index].bounds
+            activeLayerStrokes[index].transform.translationX += Double(delta.x)
+            activeLayerStrokes[index].transform.translationY += Double(delta.y)
+            let newBounds = activeLayerStrokes[index].bounds
             dirtyRegionTracker.markDirty(
                 resolvedDirtyRegion(oldBounds: oldBounds, newBounds: newBounds)
             )
-            translatedStrokeIDs.insert(state.document.strokes[index].id)
+            translatedStrokeIDs.insert(activeLayerStrokes[index].id)
         }
 
+        state.document.replaceStrokesInActiveLayer(with: activeLayerStrokes)
         return translatedStrokeIDs
     }
 
@@ -392,6 +407,6 @@ struct HandDrawingEditorEngine {
         _ selection: Set<UUID>,
         in document: HandDrawingDocument
     ) -> Set<UUID> {
-        selection.intersection(Set(document.strokes.map(\.id)))
+        selection.intersection(document.activeLayerStrokeIDs)
     }
 }

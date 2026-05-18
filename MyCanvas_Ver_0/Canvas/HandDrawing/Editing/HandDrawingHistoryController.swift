@@ -10,7 +10,7 @@ struct HandDrawingHistorySnapshot: Equatable {
     ) {
         self.document = document
         self.selectedStrokeIDs = selectedStrokeIDs.intersection(
-            Set(document.strokes.map(\.id))
+            document.activeLayerStrokeIDs
         )
     }
 

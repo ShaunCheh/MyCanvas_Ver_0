@@ -45,12 +45,15 @@ struct HandDrawingPixelEraserToolController {
         baseSize: CGFloat,
         engine: inout HandDrawingEditorEngine
     ) {
-        guard samples.isEmpty == false else {
+        guard
+            samples.isEmpty == false,
+            engine.canInteractWithActiveLayer
+        else {
             return
         }
 
         var updatedPathsByStrokeID: [UUID: [HandDrawingErasePath]] = [:]
-        let document = engine.state.document
+        let activeLayerStrokes = engine.state.document.activeLayerStrokes
 
         for sample in samples {
             let eraseSample = makeEraseSample(
@@ -58,7 +61,7 @@ struct HandDrawingPixelEraserToolController {
                 baseSize: baseSize
             )
             let hitStrokeIDs: Set<UUID> = Set(
-                document.strokes.compactMap { stroke in
+                activeLayerStrokes.compactMap { stroke in
                     guard strokeIntersectsEraseSample(stroke, eraseSample: eraseSample) else {
                         return nil
                     }

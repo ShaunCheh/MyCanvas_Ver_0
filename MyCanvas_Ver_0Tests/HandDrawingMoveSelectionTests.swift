@@ -93,4 +93,108 @@ final class HandDrawingMoveSelectionTests: XCTestCase {
         XCTAssertEqual(engine.state.selectedStrokeIDs, [stroke.id])
         XCTAssertFalse(controller.isActive)
     }
+
+    func testHandDrawingMoveSelectionControllerOnlyMovesActiveLayerSelection() throws {
+        let inactiveStroke = makeHandDrawingTestStroke(id: UUID())
+        let activeStroke = makeHandDrawingTestStroke(id: UUID())
+        let inactiveLayer = makeHandDrawingTestLayer(
+            name: "Inactive",
+            strokes: [inactiveStroke]
+        )
+        let activeLayer = makeHandDrawingTestLayer(
+            name: "Active",
+            strokes: [activeStroke]
+        )
+        var engine = HandDrawingEditorEngine(
+            document: makeHandDrawingLayeredTestDocument(
+                paper: HandDrawingPaper(
+                    id: "move-active-layer-paper",
+                    size: CGSize(width: 140, height: 140)
+                ),
+                layers: [inactiveLayer, activeLayer],
+                activeLayerID: activeLayer.id
+            )
+        )
+        XCTAssertTrue(engine.selectStrokes(withIDs: [inactiveStroke.id, activeStroke.id]))
+        XCTAssertEqual(engine.state.selectedStrokeIDs, [activeStroke.id])
+
+        var controller = HandDrawingMoveSelectionController()
+        XCTAssertTrue(
+            controller.beginMoving(
+                with: HandDrawingInputSample(
+                    location: CGPoint(x: 60, y: 60),
+                    timestamp: 0
+                ),
+                engine: engine
+            )
+        )
+
+        controller.appendSamples(
+            [
+                HandDrawingInputSample(
+                    location: CGPoint(x: 70, y: 68),
+                    timestamp: 0.1
+                )
+            ],
+            engine: &engine
+        )
+        controller.endMoving()
+
+        let movedActiveStroke = try XCTUnwrap(
+            engine.state.document.layer(withID: activeLayer.id)?.strokes.first
+        )
+        let untouchedInactiveStroke = try XCTUnwrap(
+            engine.state.document.layer(withID: inactiveLayer.id)?.strokes.first
+        )
+        XCTAssertEqual(movedActiveStroke.transform.translationX, 10, accuracy: 0.001)
+        XCTAssertEqual(movedActiveStroke.transform.translationY, 8, accuracy: 0.001)
+        XCTAssertEqual(untouchedInactiveStroke.transform.translationX, 0, accuracy: 0.001)
+        XCTAssertEqual(untouchedInactiveStroke.transform.translationY, 0, accuracy: 0.001)
+    }
+
+    func testHandDrawingMoveSelectionControllerCannotBeginOnHiddenOrLockedActiveLayer() {
+        func makeEngine(
+            isVisible: Bool,
+            isLocked: Bool
+        ) -> HandDrawingEditorEngine {
+            let stroke = makeHandDrawingTestStroke(id: UUID())
+            let activeLayer = makeHandDrawingTestLayer(
+                name: "Active",
+                isVisible: isVisible,
+                isLocked: isLocked,
+                strokes: [stroke]
+            )
+            var engine = HandDrawingEditorEngine(
+                document: makeHandDrawingLayeredTestDocument(
+                    paper: HandDrawingPaper(
+                        id: "move-guard-paper",
+                        size: CGSize(width: 140, height: 140)
+                    ),
+                    layers: [activeLayer],
+                    activeLayerID: activeLayer.id
+                )
+            )
+            XCTAssertTrue(engine.selectStrokes(withIDs: [stroke.id]))
+            return engine
+        }
+
+        for configuration in [(false, false), (true, true)] {
+            let engine = makeEngine(
+                isVisible: configuration.0,
+                isLocked: configuration.1
+            )
+            var controller = HandDrawingMoveSelectionController()
+
+            XCTAssertFalse(
+                controller.beginMoving(
+                    with: HandDrawingInputSample(
+                        location: CGPoint(x: 60, y: 60),
+                        timestamp: 0
+                    ),
+                    engine: engine
+                )
+            )
+            XCTAssertFalse(controller.isActive)
+        }
+    }
 }

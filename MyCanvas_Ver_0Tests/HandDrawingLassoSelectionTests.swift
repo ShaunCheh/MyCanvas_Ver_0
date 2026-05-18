@@ -21,10 +21,13 @@ final class HandDrawingLassoSelectionTests: XCTestCase {
         )
         var controller = HandDrawingLassoToolController()
 
-        controller.beginLasso(
-            with: HandDrawingInputSample(
-                location: CGPoint(x: 18, y: 44),
-                timestamp: 0
+        XCTAssertTrue(
+            controller.beginLasso(
+                with: HandDrawingInputSample(
+                    location: CGPoint(x: 18, y: 44),
+                    timestamp: 0
+                ),
+                engine: engine
             )
         )
         controller.appendSamples(
@@ -74,10 +77,13 @@ final class HandDrawingLassoSelectionTests: XCTestCase {
         )
         var controller = HandDrawingLassoToolController()
 
-        controller.beginLasso(
-            with: HandDrawingInputSample(
-                location: CGPoint(x: 18, y: 44),
-                timestamp: 0
+        XCTAssertTrue(
+            controller.beginLasso(
+                with: HandDrawingInputSample(
+                    location: CGPoint(x: 18, y: 44),
+                    timestamp: 0
+                ),
+                engine: engine
             )
         )
         controller.appendSamples(
@@ -102,5 +108,98 @@ final class HandDrawingLassoSelectionTests: XCTestCase {
         XCTAssertFalse(
             engine.state.selectedStrokeIDs.contains(partiallyOverlappingStroke.id)
         )
+    }
+
+    func testHandDrawingLassoToolControllerOnlySelectsActiveLayerStroke() {
+        let inactiveStroke = makeHandDrawingTestStroke(id: UUID())
+        let activeStroke = makeHandDrawingTestStroke(id: UUID())
+        let inactiveLayer = makeHandDrawingTestLayer(
+            name: "Inactive",
+            strokes: [inactiveStroke]
+        )
+        let activeLayer = makeHandDrawingTestLayer(
+            name: "Active",
+            strokes: [activeStroke]
+        )
+        var engine = HandDrawingEditorEngine(
+            document: makeHandDrawingLayeredTestDocument(
+                paper: HandDrawingPaper(
+                    id: "lasso-active-layer-paper",
+                    size: CGSize(width: 140, height: 140)
+                ),
+                layers: [inactiveLayer, activeLayer],
+                activeLayerID: activeLayer.id
+            )
+        )
+        var controller = HandDrawingLassoToolController()
+
+        XCTAssertTrue(
+            controller.beginLasso(
+                with: HandDrawingInputSample(
+                    location: CGPoint(x: 18, y: 44),
+                    timestamp: 0
+                ),
+                engine: engine
+            )
+        )
+        controller.appendSamples(
+            [
+                HandDrawingInputSample(
+                    location: CGPoint(x: 102, y: 44),
+                    timestamp: 0.1
+                ),
+                HandDrawingInputSample(
+                    location: CGPoint(x: 102, y: 78),
+                    timestamp: 0.2
+                ),
+                HandDrawingInputSample(
+                    location: CGPoint(x: 18, y: 78),
+                    timestamp: 0.3
+                )
+            ]
+        )
+
+        XCTAssertTrue(controller.endLasso(engine: &engine))
+        XCTAssertEqual(engine.state.selectedStrokeIDs, [activeStroke.id])
+        XCTAssertFalse(engine.state.selectedStrokeIDs.contains(inactiveStroke.id))
+    }
+
+    func testHandDrawingLassoToolControllerDoesNotBeginOnHiddenOrLockedActiveLayer() {
+        func makeEngine(
+            isVisible: Bool,
+            isLocked: Bool
+        ) -> HandDrawingEditorEngine {
+            let activeLayer = makeHandDrawingTestLayer(
+                name: "Active",
+                isVisible: isVisible,
+                isLocked: isLocked,
+                strokes: [makeHandDrawingTestStroke(id: UUID())]
+            )
+            return HandDrawingEditorEngine(
+                document: makeHandDrawingLayeredTestDocument(
+                    layers: [activeLayer],
+                    activeLayerID: activeLayer.id
+                )
+            )
+        }
+
+        for configuration in [(false, false), (true, true)] {
+            let engine = makeEngine(
+                isVisible: configuration.0,
+                isLocked: configuration.1
+            )
+            var controller = HandDrawingLassoToolController()
+
+            XCTAssertFalse(
+                controller.beginLasso(
+                    with: HandDrawingInputSample(
+                        location: CGPoint(x: 18, y: 44),
+                        timestamp: 0
+                    ),
+                    engine: engine
+                )
+            )
+            XCTAssertTrue(controller.points.isEmpty)
+        }
     }
 }

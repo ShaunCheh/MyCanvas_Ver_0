@@ -142,10 +142,10 @@ enum HandDrawingStrokeGeometry {
 
     static func unionBounds(
         forStrokeIDs strokeIDs: Set<UUID>,
-        in document: HandDrawingDocument
+        in strokes: [HandDrawingStroke]
     ) -> CGRect? {
         unionBounds(
-            for: document.strokes.filter { strokeIDs.contains($0.id) }
+            for: strokes.filter { strokeIDs.contains($0.id) }
         )
     }
 

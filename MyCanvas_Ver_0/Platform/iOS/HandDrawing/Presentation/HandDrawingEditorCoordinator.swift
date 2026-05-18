@@ -143,10 +143,16 @@ final class HandDrawingEditorCoordinator {
     func handlePencilStrokeBegan(_ sample: HandDrawingInputSample) {
         switch selectedTool {
         case .brush:
+            guard engine.canInteractWithActiveLayer else {
+                return
+            }
             activeStrokeBrush = currentBrushStyle
             activeStrokeSamples = [sample]
             publishSurfaceState()
         case .pixelEraser:
+            guard engine.canInteractWithActiveLayer else {
+                return
+            }
             pixelEraserToolController.beginErasing(
                 with: sample,
                 baseSize: selectedLineWidth,
@@ -154,11 +160,16 @@ final class HandDrawingEditorCoordinator {
             )
             refreshCommittedImageAndPublishState()
         case .lasso:
+            guard engine.canInteractWithActiveLayer else {
+                return
+            }
             if moveSelectionController.beginMoving(with: sample, engine: engine) {
                 publishSurfaceState()
                 return
             }
-            lassoToolController.beginLasso(with: sample)
+            guard lassoToolController.beginLasso(with: sample, engine: engine) else {
+                return
+            }
             publishSurfaceState()
         }
     }
@@ -206,10 +217,14 @@ final class HandDrawingEditorCoordinator {
             }
             let committedStrokeSamples = activeStrokeSamples
             clearActiveStroke()
-            _ = engine.appendStroke(
+            guard engine.appendStroke(
                 brush: activeStrokeBrush,
                 samples: committedStrokeSamples
-            )
+            ) != nil else {
+                publishSurfaceState()
+                publishPaletteState()
+                return
+            }
             refreshCommittedImageAndPublishState()
         case .pixelEraser:
             pixelEraserToolController.appendSamples(
@@ -396,7 +411,7 @@ final class HandDrawingEditorCoordinator {
     private var selectedStrokeBounds: CGRect? {
         HandDrawingStrokeGeometry.unionBounds(
             forStrokeIDs: engine.state.selectedStrokeIDs,
-            in: engine.state.document
+            in: engine.state.document.activeLayerStrokes
         )
     }
 
