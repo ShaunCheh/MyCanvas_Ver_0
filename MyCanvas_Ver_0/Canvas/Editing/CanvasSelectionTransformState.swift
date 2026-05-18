@@ -338,8 +338,14 @@ struct CanvasSelectionTransformSnapshot: Equatable {
                     scale: resizeDraft.scale
                 )
             )
-        case .handDrawing:
-            return item.applyingGeometry(scaledItemGeometry) ?? item
+        case let .handDrawing(handDrawingItem):
+            return .handDrawing(
+                resizedHandDrawingItem(
+                    handDrawingItem,
+                    scaledCenter: scaledItemGeometry.center,
+                    scale: resizeDraft.scale
+                )
+            )
         }
     }
 
@@ -367,6 +373,17 @@ struct CanvasSelectionTransformSnapshot: Equatable {
             ),
             zIndex: item.zIndex,
             rotationRadians: item.rotationRadians
+        )
+    }
+
+    private func resizedHandDrawingItem(
+        _ item: CanvasHandDrawingItem,
+        scaledCenter: CGPoint,
+        scale: CGFloat
+    ) -> CanvasHandDrawingItem {
+        item.resized(
+            center: scaledCenter,
+            proposedSize: item.scaledCanvasSize(by: scale)
         )
     }
 
@@ -537,11 +554,22 @@ extension CanvasBoardItem {
             return nil
         }
 
-        var updatedItem = self
-        updatedItem.center = geometry.center
-        updatedItem.size = geometry.size
-        updatedItem.rotationRadians = geometry.rotationRadians
-        return updatedItem
+        switch self {
+        case .image, .text:
+            var updatedItem = self
+            updatedItem.center = geometry.center
+            updatedItem.size = geometry.size
+            updatedItem.rotationRadians = geometry.rotationRadians
+            return updatedItem
+        case let .handDrawing(item):
+            return .handDrawing(
+                item.resized(
+                    center: geometry.center,
+                    proposedSize: geometry.size,
+                    rotationRadians: geometry.rotationRadians
+                )
+            )
+        }
     }
 }
 

@@ -36,6 +36,21 @@ final class iOSCanvasViewportView: UIView {
     private static let cropOutlineLineWidth: CGFloat = 2
     private static let cropHandleLineWidth: CGFloat = 2
     private static let cropHandleSize: CGFloat = 12
+    private static let handDrawingPaperFillColor = CGColor(gray: 1, alpha: 1)
+    private static let handDrawingBorderColor = CGColor(
+        red: 0.82,
+        green: 0.84,
+        blue: 0.88,
+        alpha: 1
+    )
+    private static let emptyHandDrawingBorderColor = CGColor(
+        red: 0.68,
+        green: 0.72,
+        blue: 0.78,
+        alpha: 1
+    )
+    private static let handDrawingBorderLineWidth: CGFloat = 1
+    private static let handDrawingCornerRadius: CGFloat = 10
     private static let alignmentGuideLineWidth: CGFloat = 2
     private static let rotateGuideLineWidth: CGFloat = 2
     private static let rotateHandleLineWidth: CGFloat = 2
@@ -100,6 +115,7 @@ final class iOSCanvasViewportView: UIView {
     private let rotateGuideLayer = CAShapeLayer()
     private let rotateHandleLayer = CAShapeLayer()
     private var imageLayers: [CanvasItemID: CanvasImageLayer] = [:]
+    private var handDrawingLayers: [CanvasItemID: CanvasImageLayer] = [:]
     private var textLayers: [CanvasItemID: CanvasTextLayer] = [:]
     private var lastReportedViewportSize: CGSize?
     private var snapshot: CanvasRenderSnapshot = .empty
@@ -425,6 +441,15 @@ final class iOSCanvasViewportView: UIView {
                 return nil
             }
         )
+        let incomingHandDrawingIDs = Set(
+            snapshot.items.compactMap { item in
+                if case .handDrawing = item.payload {
+                    return item.id
+                }
+
+                return nil
+            }
+        )
         let incomingTextIDs = Set(
             snapshot.items.compactMap { item in
                 if case .text = item.payload {
@@ -435,11 +460,17 @@ final class iOSCanvasViewportView: UIView {
             }
         )
         let existingImageIDs = Set(imageLayers.keys)
+        let existingHandDrawingIDs = Set(handDrawingLayers.keys)
         let existingTextIDs = Set(textLayers.keys)
 
         for removedID in existingImageIDs.subtracting(incomingImageIDs) {
             imageLayers[removedID]?.removeFromSuperlayer()
             imageLayers[removedID] = nil
+        }
+
+        for removedID in existingHandDrawingIDs.subtracting(incomingHandDrawingIDs) {
+            handDrawingLayers[removedID]?.removeFromSuperlayer()
+            handDrawingLayers[removedID] = nil
         }
 
         for removedID in existingTextIDs.subtracting(incomingTextIDs) {
@@ -468,6 +499,14 @@ final class iOSCanvasViewportView: UIView {
                         )
                     )
                 }
+            case let .handDrawing(handDrawingPayload):
+                let handDrawingLayer = handDrawingLayer(for: item.id)
+                refreshHandDrawingLayer(
+                    handDrawingLayer,
+                    with: item,
+                    handDrawingPayload: handDrawingPayload,
+                    contentsScale: contentsScale
+                )
             case let .text(textPayload):
                 let textLayer = textLayer(for: item.id)
                 textLayer.update(
@@ -532,6 +571,44 @@ final class iOSCanvasViewportView: UIView {
             imagePayload: imagePayload,
             contentsScale: contentsScale
         )
+    }
+
+    private func refreshHandDrawingLayer(
+        _ handDrawingLayer: CanvasImageLayer,
+        with item: CanvasRenderItem,
+        handDrawingPayload: CanvasHandDrawingRenderPayload,
+        contentsScale: CGFloat
+    ) {
+        handDrawingLayer.updateStaticPresentation(
+            with: item,
+            imagePayload: CanvasImageRenderPayload(
+                displayContract: CanvasImageDisplayContract(
+                    assetReference: handDrawingPayload.previewAssetReference,
+                    posterCGImage: handDrawingPayload.previewCGImage,
+                    allowsAnimatedPlayback: false
+                ),
+                contentsRect: CanvasImageCropRect.fullImage.cgRect
+            ),
+            contentsScale: contentsScale
+        )
+        applyHandDrawingAppearance(
+            to: handDrawingLayer,
+            isEmpty: handDrawingPayload.isEmpty,
+            contentsScale: contentsScale
+        )
+    }
+
+    private func applyHandDrawingAppearance(
+        to handDrawingLayer: CanvasImageLayer,
+        isEmpty: Bool,
+        contentsScale: CGFloat
+    ) {
+        handDrawingLayer.backgroundColor = Self.handDrawingPaperFillColor
+        handDrawingLayer.borderColor = isEmpty
+            ? Self.emptyHandDrawingBorderColor
+            : Self.handDrawingBorderColor
+        handDrawingLayer.borderWidth = Self.handDrawingBorderLineWidth / max(contentsScale, 1)
+        handDrawingLayer.cornerRadius = Self.handDrawingCornerRadius
     }
 
     private func configureWorkspaceGridLayers() {
@@ -1250,6 +1327,17 @@ final class iOSCanvasViewportView: UIView {
         itemsLayer.addSublayer(imageLayer)
         imageLayers[itemID] = imageLayer
         return imageLayer
+    }
+
+    private func handDrawingLayer(for itemID: CanvasItemID) -> CanvasImageLayer {
+        if let handDrawingLayer = handDrawingLayers[itemID] {
+            return handDrawingLayer
+        }
+
+        let handDrawingLayer = CanvasImageLayer(itemID: itemID)
+        itemsLayer.addSublayer(handDrawingLayer)
+        handDrawingLayers[itemID] = handDrawingLayer
+        return handDrawingLayer
     }
 
     private func textLayer(for itemID: CanvasItemID) -> CanvasTextLayer {

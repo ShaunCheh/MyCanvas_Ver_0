@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 struct BoardHandDrawingAssetLocator {
@@ -30,7 +31,8 @@ struct BoardHandDrawingAssetLocator {
 struct BoardTransientHandDrawingAssetPayload {
     let itemID: CanvasItemID
     let drawingData: Data
-    let previewImageData: Data
+    let previewImageData: Data?
+    let previewCGImage: CGImage?
 
     init(
         itemID: CanvasItemID,
@@ -40,5 +42,17 @@ struct BoardTransientHandDrawingAssetPayload {
         self.itemID = itemID
         self.drawingData = drawingData
         self.previewImageData = previewImageData
+        previewCGImage = nil
+    }
+
+    init(
+        itemID: CanvasItemID,
+        drawingData: Data,
+        previewCGImage: CGImage
+    ) {
+        self.itemID = itemID
+        self.drawingData = drawingData
+        previewImageData = nil
+        self.previewCGImage = previewCGImage
     }
 }

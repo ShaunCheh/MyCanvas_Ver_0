@@ -177,6 +177,47 @@ final class CanvasSelectionTransformStateTests: XCTestCase {
         XCTAssertEqual(resizedImageItem.center, CGPoint(x: 112.5, y: 112.5))
         XCTAssertEqual(resizedImageItem.size, CGSize(width: 60, height: 30))
     }
+
+    func testResizedMemberItemsNormalizeHandDrawingBackToPaperAspectRatio() throws {
+        let handDrawingID = CanvasItemID()
+        let handDrawingItem = CanvasHandDrawingItem(
+            id: handDrawingID,
+            paper: .square,
+            previewAsset: CanvasHandDrawingItem.persistedPreviewAsset(
+                for: handDrawingID,
+                cgImage: try makeSelectionTransformTestCGImage()
+            ),
+            isEmpty: true,
+            center: CGPoint(x: 30, y: 20),
+            size: CGSize(width: 60, height: 40),
+            zIndex: 0,
+            rotationRadians: 0
+        )
+        let snapshot = CanvasSelectionTransformSnapshot(
+            primaryItemID: handDrawingID,
+            memberItems: [.handDrawing(handDrawingItem)],
+            selectionBounds: CGRect(x: 0, y: 0, width: 60, height: 40)
+        )
+
+        let resizedItems = try XCTUnwrap(
+            snapshot.resizedMemberItems(
+                handleRole: .bottomTrailing,
+                draggedWorldCorner: CGPoint(x: 120, y: 80),
+                minimumScale: 0.1
+            )
+        )
+        let resizedHandDrawingItem = try XCTUnwrap(
+            resizedItems.first?.handDrawingItem
+        )
+
+        XCTAssertEqual(resizedHandDrawingItem.center, CGPoint(x: 60, y: 40))
+        XCTAssertEqual(resizedHandDrawingItem.size, CGSize(width: 120, height: 120))
+        XCTAssertEqual(
+            resizedHandDrawingItem.size.width / resizedHandDrawingItem.size.height,
+            1,
+            accuracy: 0.0001
+        )
+    }
 }
 
 private func makeSelectionTransformTestImageItem(

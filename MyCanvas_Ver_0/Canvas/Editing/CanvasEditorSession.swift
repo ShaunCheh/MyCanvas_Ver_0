@@ -50,6 +50,7 @@ final class CanvasEditorSession {
     private let historyController = BoardHistoryController()
     private let boardStoreLogPrefix: String
     private var transientImageAssetPayloads: [CanvasImageAssetReference: CanvasTransientImageAssetPayload] = [:]
+    private var transientHandDrawingAssetPayloads: [CanvasItemID: BoardTransientHandDrawingAssetPayload] = [:]
 
     var imageAssetContract: CanvasImageAssetContract {
         .current
@@ -63,6 +64,12 @@ final class CanvasEditorSession {
         for assetReference: CanvasImageAssetReference
     ) -> CanvasTransientImageAssetPayload? {
         transientImageAssetPayloads[assetReference]
+    }
+
+    func transientHandDrawingAssetPayload(
+        for itemID: CanvasItemID
+    ) -> BoardTransientHandDrawingAssetPayload? {
+        transientHandDrawingAssetPayloads[itemID]
     }
 
     func animatedImagePlaybackSource(
@@ -446,6 +453,7 @@ final class CanvasEditorSession {
         alignmentInteractionState = nil
         if preserveTransientImageAssetPayloads == false {
             transientImageAssetPayloads.removeAll()
+            transientHandDrawingAssetPayloads.removeAll()
         }
         lastRenderSnapshot = .empty
     }
@@ -1242,6 +1250,14 @@ final class CanvasEditorSession {
             return nil
         }
 
+        let sourceItems = scene.orderedBoardItems().filter { $0.id == itemID }
+        guard
+            let sourceDrawingDataByItemID = preparedHandDrawingDuplicationSourceData(
+                for: sourceItems
+            )
+        else {
+            return nil
+        }
         let beforeSnapshot = recordHistory ? currentBoardHistorySnapshot() : nil
         guard let duplicatedItem = scene.duplicateBoardItem(
             withID: itemID,
@@ -1249,6 +1265,11 @@ final class CanvasEditorSession {
         ) else {
             return nil
         }
+        registerDuplicatedHandDrawingPayloads(
+            sourceItems: sourceItems,
+            duplicatedItems: [duplicatedItem],
+            sourceDrawingDataByItemID: sourceDrawingDataByItemID
+        )
 
         expandBoardIfNeeded(toInclude: duplicatedItem.worldBounds)
         if selectDuplicatedItem {
@@ -1280,6 +1301,15 @@ final class CanvasEditorSession {
             return nil
         }
 
+        let sourceItemIDSet = Set(sourceItemIDs)
+        let sourceItems = scene.orderedBoardItems().filter { sourceItemIDSet.contains($0.id) }
+        guard
+            let sourceDrawingDataByItemID = preparedHandDrawingDuplicationSourceData(
+                for: sourceItems
+            )
+        else {
+            return nil
+        }
         let beforeSnapshot = recordHistory ? currentBoardHistorySnapshot() : nil
         let duplicatedItems = scene.duplicateBoardItems(
             withIDs: sourceItemIDs,
@@ -1288,6 +1318,11 @@ final class CanvasEditorSession {
         guard duplicatedItems.isEmpty == false else {
             return nil
         }
+        registerDuplicatedHandDrawingPayloads(
+            sourceItems: sourceItems,
+            duplicatedItems: duplicatedItems,
+            sourceDrawingDataByItemID: sourceDrawingDataByItemID
+        )
 
         for duplicatedItem in duplicatedItems {
             expandBoardIfNeeded(toInclude: duplicatedItem.worldBounds)
@@ -1592,12 +1627,79 @@ final class CanvasEditorSession {
                 referencedAssetReferences.contains($0.key)
             }
         )
+        let referencedHandDrawingItemIDs = Set(
+            runtimeState.handDrawingItems.map(\.id)
+        )
+        let handDrawingPayloads = Dictionary(
+            uniqueKeysWithValues: transientHandDrawingAssetPayloads.filter {
+                referencedHandDrawingItemIDs.contains($0.key)
+            }
+        )
         return BoardSaveSnapshot(
             runtimeState: runtimeState,
             transientImageAssetPayloads: payloads,
-            transientHandDrawingAssetPayloads: [:],
+            transientHandDrawingAssetPayloads: handDrawingPayloads,
             updateKind: updateKind
         )
+    }
+
+    private func preparedHandDrawingDuplicationSourceData(
+        for sourceItems: [CanvasBoardItem]
+    ) -> [CanvasItemID: Data]? {
+        var sourceDrawingDataByItemID: [CanvasItemID: Data] = [:]
+        for sourceItem in sourceItems {
+            guard let handDrawingItem = sourceItem.handDrawingItem else {
+                continue
+            }
+            guard let drawingData = resolvedHandDrawingSourceData(
+                for: handDrawingItem
+            ) else {
+                return nil
+            }
+            sourceDrawingDataByItemID[handDrawingItem.id] = drawingData
+        }
+        return sourceDrawingDataByItemID
+    }
+
+    private func resolvedHandDrawingSourceData(
+        for item: CanvasHandDrawingItem
+    ) -> Data? {
+        if let payload = transientHandDrawingAssetPayload(for: item.id) {
+            return payload.drawingData
+        }
+        guard let activeBoardID else {
+            return nil
+        }
+        return try? BoardStore.loadHandDrawingSourceData(
+            boardID: activeBoardID,
+            itemID: item.id,
+            userDefaults: userDefaults
+        )
+    }
+
+    private func registerDuplicatedHandDrawingPayloads(
+        sourceItems: [CanvasBoardItem],
+        duplicatedItems: [CanvasBoardItem],
+        sourceDrawingDataByItemID: [CanvasItemID: Data]
+    ) {
+        guard sourceItems.count == duplicatedItems.count else {
+            return
+        }
+        for (sourceItem, duplicatedItem) in zip(sourceItems, duplicatedItems) {
+            guard
+                let sourceHandDrawingItem = sourceItem.handDrawingItem,
+                let duplicatedHandDrawingItem = duplicatedItem.handDrawingItem,
+                let drawingData = sourceDrawingDataByItemID[sourceHandDrawingItem.id]
+            else {
+                continue
+            }
+            transientHandDrawingAssetPayloads[duplicatedHandDrawingItem.id] =
+                BoardTransientHandDrawingAssetPayload(
+                    itemID: duplicatedHandDrawingItem.id,
+                    drawingData: drawingData,
+                    previewCGImage: duplicatedHandDrawingItem.previewAsset.posterCGImage
+                )
+        }
     }
 
     @discardableResult

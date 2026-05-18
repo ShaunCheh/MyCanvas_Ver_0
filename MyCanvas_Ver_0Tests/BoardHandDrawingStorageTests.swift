@@ -236,6 +236,110 @@ final class BoardHandDrawingStorageTests: XCTestCase {
             )
         }
     }
+
+    func testBoardStorePersistsDuplicatedHandDrawingWithIndependentAssetPaths() throws {
+        try withTemporaryHandDrawingBoardWorkspace { _, userDefaults in
+            let boardID = UUID()
+            let sourceItemID = UUID()
+            let sourcePreviewImage = try makeHandDrawingTestImage(
+                red: 0.2,
+                green: 0.55,
+                blue: 0.95
+            )
+            let sourceDrawingData = Data("hand-drawing-duplicate-source".utf8)
+            let sourceItem = makeHandDrawingItem(
+                id: sourceItemID,
+                previewImage: sourcePreviewImage,
+                contentRevision: UUID()
+            )
+            var runtimeState = makeHandDrawingRuntimeState(
+                boardID: boardID,
+                now: Date(timeIntervalSince1970: 1_720_000_500),
+                item: sourceItem
+            )
+            try BoardStore.saveBoard(
+                BoardSaveSnapshot(
+                    runtimeState: runtimeState,
+                    transientImageAssetPayloads: [:],
+                    transientHandDrawingAssetPayloads: [
+                        sourceItemID: BoardTransientHandDrawingAssetPayload(
+                            itemID: sourceItemID,
+                            drawingData: sourceDrawingData,
+                            previewImageData: try makeHandDrawingPNGData(
+                                for: sourcePreviewImage
+                            )
+                        )
+                    ]
+                ),
+                userDefaults: userDefaults
+            )
+
+            let duplicatedHandDrawingItem = sourceItem.duplicated(
+                offsetInWorld: CGPoint(x: 42, y: 24)
+            )
+            runtimeState.items = [
+                .handDrawing(sourceItem),
+                .handDrawing(duplicatedHandDrawingItem)
+            ]
+            let duplicatedSnapshot = BoardSaveSnapshot(
+                runtimeState: runtimeState,
+                transientImageAssetPayloads: [:],
+                transientHandDrawingAssetPayloads: [
+                    duplicatedHandDrawingItem.id: BoardTransientHandDrawingAssetPayload(
+                        itemID: duplicatedHandDrawingItem.id,
+                        drawingData: sourceDrawingData,
+                        previewCGImage: duplicatedHandDrawingItem.previewAsset.posterCGImage
+                    )
+                ]
+            )
+
+            XCTAssertNotEqual(duplicatedHandDrawingItem.id, sourceItemID)
+            XCTAssertNotEqual(
+                duplicatedHandDrawingItem.previewImageFilename,
+                sourceItem.previewImageFilename
+            )
+            XCTAssertNotEqual(
+                duplicatedHandDrawingItem.sourceDrawingFilename,
+                sourceItem.sourceDrawingFilename
+            )
+
+            try BoardStore.saveBoard(duplicatedSnapshot, userDefaults: userDefaults)
+
+            let sourceReloadedData = try BoardStore.loadHandDrawingSourceData(
+                boardID: boardID,
+                itemID: sourceItemID,
+                userDefaults: userDefaults
+            )
+            let duplicatedReloadedData = try BoardStore.loadHandDrawingSourceData(
+                boardID: boardID,
+                itemID: duplicatedHandDrawingItem.id,
+                userDefaults: userDefaults
+            )
+            let loadedState = try BoardStore.loadBoard(
+                id: boardID,
+                userDefaults: userDefaults
+            )
+            let loadedSourceItem = try XCTUnwrap(
+                loadedState.handDrawingItems.first { $0.id == sourceItemID }
+            )
+            let loadedDuplicatedItem = try XCTUnwrap(
+                loadedState.handDrawingItems.first {
+                    $0.id == duplicatedHandDrawingItem.id
+                }
+            )
+
+            XCTAssertEqual(sourceReloadedData, sourceDrawingData)
+            XCTAssertEqual(duplicatedReloadedData, sourceDrawingData)
+            XCTAssertEqual(
+                loadedSourceItem.previewAsset.reference.stableAssetFilename,
+                sourceItem.previewImageFilename
+            )
+            XCTAssertEqual(
+                loadedDuplicatedItem.previewAsset.reference.stableAssetFilename,
+                duplicatedHandDrawingItem.previewImageFilename
+            )
+        }
+    }
 }
 
 private enum BoardHandDrawingStorageTestError: Error {

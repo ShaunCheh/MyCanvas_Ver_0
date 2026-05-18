@@ -37,6 +37,7 @@ struct CanvasHandDrawingPaperSpec: Equatable {
 struct CanvasHandDrawingItem {
     static let previewImageFileExtension = "png"
     static let sourceDrawingFileExtension = "pkdrawing"
+    private static let minimumCanvasDimension: CGFloat = 1
 
     let id: CanvasItemID
     var paper: CanvasHandDrawingPaperSpec
@@ -111,6 +112,19 @@ struct CanvasHandDrawingItem {
         worldQuad.boundingRect
     }
 
+    var currentPaperScale: CGFloat {
+        let resolvedPaperSize = paper.size
+        let widthScale = size.width / max(
+            resolvedPaperSize.width,
+            Self.minimumCanvasDimension
+        )
+        let heightScale = size.height / max(
+            resolvedPaperSize.height,
+            Self.minimumCanvasDimension
+        )
+        return max(widthScale, heightScale)
+    }
+
     static func defaultPreviewImageFilename(
         for itemID: CanvasItemID
     ) -> String {
@@ -132,6 +146,61 @@ struct CanvasHandDrawingItem {
             filename: defaultPreviewImageFilename(for: itemID),
             cgImage: cgImage,
             logicalPixelSize: logicalPixelSize
+        )
+    }
+
+    func normalizedCanvasSize(for proposedSize: CGSize) -> CGSize {
+        let resolvedPaperSize = paper.size
+        let sanitizedSize = CGSize(
+            width: max(proposedSize.width, Self.minimumCanvasDimension),
+            height: max(proposedSize.height, Self.minimumCanvasDimension)
+        )
+        let widthScale = sanitizedSize.width / max(
+            resolvedPaperSize.width,
+            Self.minimumCanvasDimension
+        )
+        let heightScale = sanitizedSize.height / max(
+            resolvedPaperSize.height,
+            Self.minimumCanvasDimension
+        )
+        let resolvedScale = max(widthScale, heightScale)
+        return CGSize(
+            width: max(
+                resolvedPaperSize.width * resolvedScale,
+                Self.minimumCanvasDimension
+            ),
+            height: max(
+                resolvedPaperSize.height * resolvedScale,
+                Self.minimumCanvasDimension
+            )
+        )
+    }
+
+    func scaledCanvasSize(by scale: CGFloat) -> CGSize {
+        let resolvedScale = max(scale, 0)
+        return normalizedCanvasSize(
+            for: CGSize(
+                width: paper.size.width * currentPaperScale * resolvedScale,
+                height: paper.size.height * currentPaperScale * resolvedScale
+            )
+        )
+    }
+
+    func resized(
+        center: CGPoint,
+        proposedSize: CGSize,
+        rotationRadians: CGFloat? = nil
+    ) -> CanvasHandDrawingItem {
+        CanvasHandDrawingItem(
+            id: id,
+            paper: paper,
+            previewAsset: previewAsset,
+            isEmpty: isEmpty,
+            contentRevision: contentRevision,
+            center: center,
+            size: normalizedCanvasSize(for: proposedSize),
+            zIndex: zIndex,
+            rotationRadians: rotationRadians ?? self.rotationRadians
         )
     }
 
@@ -171,7 +240,7 @@ struct CanvasHandDrawingItem {
                 x: center.x + offsetInWorld.x,
                 y: center.y + offsetInWorld.y
             ),
-            size: size,
+            size: normalizedCanvasSize(for: size),
             zIndex: zIndex,
             rotationRadians: rotationRadians
         )

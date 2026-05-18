@@ -14,11 +14,19 @@ struct CanvasImageDisplayContract {
     }
 }
 
-// Render items now carry either image or text payloads while keeping geometry
-// shared, so viewport reconciliation stays type-aware without re-solving layout.
+// Render items now carry image, hand-drawing, or text payloads while keeping
+// geometry shared, so viewport reconciliation stays type-aware without
+// re-solving layout.
 struct CanvasImageRenderPayload {
     let displayContract: CanvasImageDisplayContract
     let contentsRect: CGRect
+}
+
+struct CanvasHandDrawingRenderPayload {
+    let previewAssetReference: CanvasImageAssetReference
+    let previewCGImage: CGImage
+    let paper: CanvasHandDrawingPaperSpec
+    let isEmpty: Bool
 }
 
 struct CanvasTextRenderPayload {
@@ -29,6 +37,7 @@ struct CanvasTextRenderPayload {
 
 enum CanvasRenderPayload {
     case image(CanvasImageRenderPayload)
+    case handDrawing(CanvasHandDrawingRenderPayload)
     case text(CanvasTextRenderPayload)
 }
 

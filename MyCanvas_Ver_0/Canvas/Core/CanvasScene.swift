@@ -221,8 +221,11 @@ final class CanvasScene {
         }
 
         return updateBoardItem(withID: id) { item in
-            item.center = center
-            item.size = size
+            item = resizedBoardItem(
+                item,
+                toCenter: center,
+                size: size
+            )
             return item
         }
     }
@@ -256,13 +259,16 @@ final class CanvasScene {
         }
 
         return updateBoardItem(withID: id) { item in
-            item.center = item.worldPoint(
-                fromLocal: CGPoint(
-                    x: standardizedLocalFrame.midX,
-                    y: standardizedLocalFrame.midY
-                )
+            item = resizedBoardItem(
+                item,
+                toCenter: item.worldPoint(
+                    fromLocal: CGPoint(
+                        x: standardizedLocalFrame.midX,
+                        y: standardizedLocalFrame.midY
+                    )
+                ),
+                size: standardizedLocalFrame.size
             )
-            item.size = standardizedLocalFrame.size
             return item
         }
     }
@@ -754,6 +760,27 @@ final class CanvasScene {
             )
         case let .handDrawing(item):
             return .handDrawing(item.duplicated(offsetInWorld: offsetInWorld))
+        }
+    }
+
+    private func resizedBoardItem(
+        _ item: CanvasBoardItem,
+        toCenter center: CGPoint,
+        size: CGSize
+    ) -> CanvasBoardItem {
+        switch item {
+        case .image, .text:
+            var resizedItem = item
+            resizedItem.center = center
+            resizedItem.size = size
+            return resizedItem
+        case let .handDrawing(handDrawingItem):
+            return .handDrawing(
+                handDrawingItem.resized(
+                    center: center,
+                    proposedSize: size
+                )
+            )
         }
     }
 

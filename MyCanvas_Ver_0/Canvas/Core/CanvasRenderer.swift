@@ -772,14 +772,12 @@ struct CanvasRenderer {
             ),
             rotationRadians: effectiveHandDrawingItem.rotationRadians,
             zIndex: effectiveHandDrawingItem.zIndex,
-            payload: .image(
-                CanvasImageRenderPayload(
-                    displayContract: CanvasImageDisplayContract(
-                        assetReference: effectiveHandDrawingItem.previewAsset.reference,
-                        posterCGImage: effectiveHandDrawingItem.previewAsset.posterCGImage,
-                        allowsAnimatedPlayback: false
-                    ),
-                    contentsRect: CanvasImageCropRect.fullImage.cgRect
+            payload: .handDrawing(
+                CanvasHandDrawingRenderPayload(
+                    previewAssetReference: effectiveHandDrawingItem.previewAsset.reference,
+                    previewCGImage: effectiveHandDrawingItem.previewAsset.posterCGImage,
+                    paper: effectiveHandDrawingItem.paper,
+                    isEmpty: effectiveHandDrawingItem.isEmpty
                 )
             )
         )

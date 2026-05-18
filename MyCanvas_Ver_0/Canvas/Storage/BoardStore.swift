@@ -580,10 +580,18 @@ enum BoardStore {
 
         if let payload = snapshot.transientHandDrawingAssetPayload(for: item.id) {
             try CoordinatedFileIO.writeData(payload.drawingData, to: sourceDrawingURL)
-            try CoordinatedFileIO.writeData(
-                payload.previewImageData,
-                to: previewImageURL
-            )
+            let previewImageData: Data
+            if let encodedPreviewImageData = payload.previewImageData {
+                previewImageData = encodedPreviewImageData
+            } else if let previewCGImage = payload.previewCGImage {
+                previewImageData = try makePNGData(
+                    for: previewCGImage,
+                    itemID: item.id
+                )
+            } else {
+                throw BoardStoreError.missingHandDrawingAssetPayload(itemID: item.id)
+            }
+            try CoordinatedFileIO.writeData(previewImageData, to: previewImageURL)
             return
         }
 
