@@ -117,6 +117,50 @@ struct HandDrawingEditorEngine {
     }
 
     @discardableResult
+    mutating func upsertErasePaths(
+        _ pathsByStrokeID: [UUID: [HandDrawingErasePath]],
+        recordUndo: Bool = true
+    ) -> Set<UUID> {
+        let targetStrokeIndexes = state.document.strokes.indices.filter { index in
+            let strokeID = state.document.strokes[index].id
+            guard let paths = pathsByStrokeID[strokeID] else {
+                return false
+            }
+            return paths.isEmpty == false
+        }
+        guard targetStrokeIndexes.isEmpty == false else {
+            return []
+        }
+
+        if recordUndo {
+            recordSnapshotForUndo()
+        }
+
+        var mutatedStrokeIDs: Set<UUID> = []
+        for index in targetStrokeIndexes {
+            let strokeID = state.document.strokes[index].id
+            guard let paths = pathsByStrokeID[strokeID] else {
+                continue
+            }
+
+            let oldBounds = state.document.strokes[index].bounds
+            for path in paths {
+                upsertErasePath(
+                    path,
+                    into: &state.document.strokes[index]
+                )
+            }
+            let newBounds = state.document.strokes[index].bounds
+            dirtyRegionTracker.markDirty(
+                resolvedDirtyRegion(oldBounds: oldBounds, newBounds: newBounds)
+            )
+            mutatedStrokeIDs.insert(strokeID)
+        }
+
+        return mutatedStrokeIDs
+    }
+
+    @discardableResult
     mutating func undo() -> Bool {
         guard let snapshot = historyController.undo(current: makeSnapshot()) else {
             return false
@@ -170,5 +214,32 @@ struct HandDrawingEditorEngine {
             selectedStrokeIDs: snapshot.selectedStrokeIDs
         )
         dirtyRegionTracker.markDirty(state.document.paperBounds)
+    }
+
+    private func resolvedDirtyRegion(
+        oldBounds: CGRect?,
+        newBounds: CGRect?
+    ) -> CGRect? {
+        switch (oldBounds, newBounds) {
+        case let (oldBounds?, newBounds?):
+            return oldBounds.union(newBounds)
+        case let (oldBounds?, nil):
+            return oldBounds
+        case let (nil, newBounds?):
+            return newBounds
+        case (nil, nil):
+            return nil
+        }
+    }
+
+    private func upsertErasePath(
+        _ path: HandDrawingErasePath,
+        into stroke: inout HandDrawingStroke
+    ) {
+        if let existingIndex = stroke.eraseMask.firstIndex(where: { $0.id == path.id }) {
+            stroke.eraseMask[existingIndex] = path
+        } else {
+            stroke.eraseMask.append(path)
+        }
     }
 }

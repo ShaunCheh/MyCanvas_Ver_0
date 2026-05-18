@@ -83,4 +83,26 @@ enum CanvasHandDrawingPreviewAssetFactory {
         }
         return image
     }
+
+    static func isPreviewVisuallyEmpty(
+        _ image: CGImage
+    ) -> Bool {
+        guard
+            let dataProvider = image.dataProvider,
+            let data = dataProvider.data,
+            let bytes = CFDataGetBytePtr(data)
+        else {
+            return false
+        }
+
+        let bytesPerPixel = 4
+        let pixelCount = image.width * image.height
+        for pixelIndex in 0..<pixelCount {
+            let alphaOffset = (pixelIndex * bytesPerPixel) + 3
+            if bytes[alphaOffset] > 0 {
+                return false
+            }
+        }
+        return true
+    }
 }

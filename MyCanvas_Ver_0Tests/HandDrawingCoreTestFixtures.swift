@@ -82,19 +82,39 @@ func sampleRGBA(
     let height = image.height
     precondition(x >= 0 && x < width)
     precondition(y >= 0 && y < height)
+    let bitmapInfo =
+        CGImageAlphaInfo.premultipliedLast.rawValue
+        | CGBitmapInfo.byteOrder32Big.rawValue
     guard
-        let dataProvider = image.dataProvider,
-        let data = dataProvider.data
+        let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: bitmapInfo
+        )
     else {
-        fatalError("Expected RGBA data provider.")
+        fatalError("Expected RGBA bitmap context.")
     }
-    let bytes = CFDataGetBytePtr(data)
+    context.draw(
+        image,
+        in: CGRect(x: 0, y: 0, width: width, height: height)
+    )
+    guard let contextData = context.data else {
+        fatalError("Expected RGBA bitmap bytes.")
+    }
+    let bytes = Data(
+        bytes: contextData,
+        count: width * height * 4
+    )
     let bytesPerPixel = 4
     let offset = ((height - 1 - y) * width + x) * bytesPerPixel
     return (
-        red: bytes![offset],
-        green: bytes![offset + 1],
-        blue: bytes![offset + 2],
-        alpha: bytes![offset + 3]
+        red: bytes[offset],
+        green: bytes[offset + 1],
+        blue: bytes[offset + 2],
+        alpha: bytes[offset + 3]
     )
 }

@@ -39,6 +39,7 @@ final class HandDrawingEditorCoordinator {
     static let defaultLineWidths: [CGFloat] = [4, 8, 12, 18]
 
     private let editorContext: CanvasHandDrawingEditorContext
+    private let canvasRenderer: HandDrawingCanvasRenderer
     private let previewRenderer = HandDrawingPreviewRenderer()
     private let initialDocument: HandDrawingDocument
     private var engine: HandDrawingEditorEngine
@@ -48,6 +49,7 @@ final class HandDrawingEditorCoordinator {
     private var selectedLineWidth: CGFloat
     private var activeStrokeBrush: HandDrawingBrushStyle?
     private var activeStrokeSamples: [HandDrawingInputSample] = []
+    private var pixelEraserToolController = HandDrawingPixelEraserToolController()
 
     var onSurfaceStateChange: ((HandDrawingCanvasSurfaceState) -> Void)?
     var onPaletteStateChange: ((HandDrawingToolPaletteState) -> Void)?
@@ -59,14 +61,15 @@ final class HandDrawingEditorCoordinator {
             from: editorContext.documentData,
             paper: editorContext.paper
         )
+        canvasRenderer = try HandDrawingCanvasRenderer(paperSize: document.paper.size)
         initialDocument = document
         engine = HandDrawingEditorEngine(document: document)
         let initialBrush = document.strokes.last?.brush ?? .defaultPen
         selectedColor = initialBrush.color
         selectedLineWidth = CGFloat(initialBrush.baseSize)
-        committedImage = try Self.renderCommittedImage(
-            for: document,
-            previewRenderer: previewRenderer
+        committedImage = try canvasRenderer.render(
+            document: document,
+            dirtyRegion: document.paperBounds
         )
     }
 
@@ -77,11 +80,14 @@ final class HandDrawingEditorCoordinator {
 
     func selectTool(_ tool: HandDrawingEditorTool) {
         switch tool {
-        case .brush:
+        case .brush, .pixelEraser:
             selectedTool = tool
-        case .pixelEraser, .lasso:
+            clearActiveStroke()
+            pixelEraserToolController.endErasing()
+        case .lasso:
             return
         }
+        publishSurfaceState()
         publishPaletteState()
     }
 
@@ -97,58 +103,99 @@ final class HandDrawingEditorCoordinator {
 
     func undo() {
         clearActiveStroke()
+        pixelEraserToolController.endErasing()
         guard engine.undo() else {
             return
         }
-        refreshCommittedImageAndPublishState()
+        refreshCommittedImageAndPublishState(forceFullRender: true)
     }
 
     func redo() {
         clearActiveStroke()
+        pixelEraserToolController.endErasing()
         guard engine.redo() else {
             return
         }
-        refreshCommittedImageAndPublishState()
+        refreshCommittedImageAndPublishState(forceFullRender: true)
     }
 
     func handlePencilStrokeBegan(_ sample: HandDrawingInputSample) {
-        guard selectedTool == .brush else {
+        switch selectedTool {
+        case .brush:
+            activeStrokeBrush = currentBrushStyle
+            activeStrokeSamples = [sample]
+            publishSurfaceState()
+        case .pixelEraser:
+            pixelEraserToolController.beginErasing(
+                with: sample,
+                baseSize: selectedLineWidth,
+                engine: &engine
+            )
+            refreshCommittedImageAndPublishState()
+        case .lasso:
             return
         }
-        activeStrokeBrush = currentBrushStyle
-        activeStrokeSamples = [sample]
-        publishSurfaceState()
     }
 
     func handlePencilStrokeMoved(_ samples: [HandDrawingInputSample]) {
-        guard activeStrokeBrush != nil else {
+        switch selectedTool {
+        case .brush:
+            guard activeStrokeBrush != nil else {
+                return
+            }
+            appendStrokeSamples(samples)
+            publishSurfaceState()
+        case .pixelEraser:
+            pixelEraserToolController.appendSamples(
+                samples,
+                baseSize: selectedLineWidth,
+                engine: &engine
+            )
+            refreshCommittedImageAndPublishState()
+        case .lasso:
             return
         }
-        appendStrokeSamples(samples)
-        publishSurfaceState()
     }
 
     func handlePencilStrokeEnded(_ samples: [HandDrawingInputSample]) {
-        guard let activeStrokeBrush else {
+        switch selectedTool {
+        case .brush:
+            guard let activeStrokeBrush else {
+                return
+            }
+            appendStrokeSamples(samples)
+            defer {
+                clearActiveStroke()
+            }
+            guard activeStrokeSamples.isEmpty == false else {
+                publishSurfaceState()
+                return
+            }
+            _ = engine.appendStroke(
+                brush: activeStrokeBrush,
+                samples: activeStrokeSamples
+            )
+            refreshCommittedImageAndPublishState()
+        case .pixelEraser:
+            pixelEraserToolController.appendSamples(
+                samples,
+                baseSize: selectedLineWidth,
+                engine: &engine
+            )
+            pixelEraserToolController.endErasing()
+            refreshCommittedImageAndPublishState()
+        case .lasso:
             return
         }
-        appendStrokeSamples(samples)
-        defer {
-            clearActiveStroke()
-        }
-        guard activeStrokeSamples.isEmpty == false else {
-            publishSurfaceState()
-            return
-        }
-        _ = engine.appendStroke(
-            brush: activeStrokeBrush,
-            samples: activeStrokeSamples
-        )
-        refreshCommittedImageAndPublishState()
     }
 
     func handlePencilStrokeCancelled() {
         clearActiveStroke()
+        if selectedTool == .pixelEraser {
+            pixelEraserToolController.cancelErasing(engine: &engine)
+            refreshCommittedImageAndPublishState(forceFullRender: true)
+            return
+        }
         publishSurfaceState()
     }
 
@@ -156,27 +203,23 @@ final class HandDrawingEditorCoordinator {
         if activeStrokeBrush != nil {
             handlePencilStrokeEnded([])
         }
+        if pixelEraserToolController.isActive {
+            pixelEraserToolController.endErasing()
+        }
 
         let currentDocument = engine.state.document
         guard currentDocument != initialDocument else {
             return nil
         }
 
-        let previewCGImage: CGImage
-        if currentDocument.isEmpty {
-            previewCGImage = try CanvasHandDrawingPreviewAssetFactory
-                .makeTransparentPreview(for: editorContext.paper)
-        } else {
-            previewCGImage = try previewRenderer.renderPreviewImage(
-                for: currentDocument,
-                scale: 1
-            )
-        }
+        let previewCGImage = try makeCommitPreviewImage(for: currentDocument)
+        let isEmpty = CanvasHandDrawingPreviewAssetFactory
+            .isPreviewVisuallyEmpty(previewCGImage)
 
         return CanvasHandDrawingEditSubmission(
             documentData: try engine.encodedDocumentData(),
             previewCGImage: previewCGImage,
-            isEmpty: currentDocument.isEmpty,
+            isEmpty: isEmpty,
             contentRevision: UUID()
         )
     }
@@ -245,17 +288,25 @@ final class HandDrawingEditorCoordinator {
                 availableLineWidths: Self.defaultLineWidths,
                 canUndo: engine.canUndo,
                 canRedo: engine.canRedo,
-                isPixelEraserEnabled: false,
+                isPixelEraserEnabled: true,
                 isLassoEnabled: false
             )
         )
     }
 
-    private func refreshCommittedImageAndPublishState() {
+    private func refreshCommittedImageAndPublishState(
+        forceFullRender: Bool = false
+    ) {
         do {
-            committedImage = try Self.renderCommittedImage(
-                for: engine.state.document,
-                previewRenderer: previewRenderer
+            let dirtyRegion = forceFullRender
+                ? engine.state.document.paperBounds
+                : engine.consumeDirtyRegion()
+            guard forceFullRender || dirtyRegion != nil else {
+                return
+            }
+            committedImage = try canvasRenderer.render(
+                document: engine.state.document,
+                dirtyRegion: dirtyRegion
             )
             publishSurfaceState()
             publishPaletteState()
@@ -264,12 +315,12 @@ final class HandDrawingEditorCoordinator {
         }
     }
 
-    private static func renderCommittedImage(
+    private func makeCommitPreviewImage(
         for document: HandDrawingDocument,
-        previewRenderer: HandDrawingPreviewRenderer
-    ) throws -> CGImage? {
+    ) throws -> CGImage {
         guard document.isEmpty == false else {
-            return nil
+            return try CanvasHandDrawingPreviewAssetFactory
+                .makeTransparentPreview(for: editorContext.paper)
         }
         return try previewRenderer.renderPreviewImage(for: document, scale: 1)
     }
