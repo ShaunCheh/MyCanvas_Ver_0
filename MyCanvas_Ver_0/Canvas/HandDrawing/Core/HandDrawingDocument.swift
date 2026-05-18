@@ -445,9 +445,123 @@ struct HandDrawingDocument: Codable, Equatable {
         return activeLayerID
     }
 
+    @discardableResult
+    mutating func insertLayer(
+        named proposedName: String? = nil,
+        afterLayerID anchorLayerID: UUID? = nil
+    ) -> HandDrawingLayer {
+        ensureActiveLayerExists()
+        let resolvedAnchorLayerID = anchorLayerID ?? activeLayerID
+        let insertionIndex: Int
+        if let anchorIndex = layers.firstIndex(where: { $0.id == resolvedAnchorLayerID }) {
+            insertionIndex = min(anchorIndex + 1, layers.count)
+        } else {
+            insertionIndex = layers.count
+        }
+        let layer = HandDrawingLayer(
+            name: Self.resolvedLayerName(
+                proposedName,
+                fallbackIndex: insertionIndex + 1,
+                existingLayers: layers
+            )
+        )
+        layers.insert(layer, at: insertionIndex)
+        activeLayerID = layer.id
+        return layer
+    }
+
+    @discardableResult
+    mutating func removeLayer(withID layerID: UUID) -> HandDrawingLayer? {
+        guard
+            layers.count > 1,
+            let removedIndex = layers.firstIndex(where: { $0.id == layerID })
+        else {
+            return nil
+        }
+        let removedLayer = layers.remove(at: removedIndex)
+        if activeLayerID == layerID {
+            let fallbackIndex = min(removedIndex, layers.count - 1)
+            activeLayerID = layers[fallbackIndex].id
+        } else {
+            _ = ensureActiveLayerExists()
+        }
+        return removedLayer
+    }
+
+    @discardableResult
+    mutating func renameLayer(
+        withID layerID: UUID,
+        to proposedName: String
+    ) -> Bool {
+        guard let layerIndex = layers.firstIndex(where: { $0.id == layerID }) else {
+            return false
+        }
+        let resolvedName = Self.resolvedLayerName(
+            proposedName,
+            fallbackIndex: layerIndex + 1,
+            existingLayers: layers,
+            excludingLayerID: layerID
+        )
+        guard layers[layerIndex].name != resolvedName else {
+            return false
+        }
+        layers[layerIndex].name = resolvedName
+        return true
+    }
+
+    @discardableResult
+    mutating func moveLayer(
+        withID layerID: UUID,
+        toIndex proposedIndex: Int
+    ) -> Bool {
+        guard let currentIndex = layers.firstIndex(where: { $0.id == layerID }) else {
+            return false
+        }
+        let destinationIndex = min(max(proposedIndex, 0), layers.count - 1)
+        guard currentIndex != destinationIndex else {
+            return false
+        }
+        let layer = layers.remove(at: currentIndex)
+        layers.insert(layer, at: destinationIndex)
+        return true
+    }
+
+    @discardableResult
+    mutating func setLayerVisibility(
+        withID layerID: UUID,
+        isVisible: Bool
+    ) -> Bool {
+        updateLayer(withID: layerID) { layer in
+            layer.isVisible = isVisible
+        }
+    }
+
+    @discardableResult
+    mutating func setLayerLock(
+        withID layerID: UUID,
+        isLocked: Bool
+    ) -> Bool {
+        updateLayer(withID: layerID) { layer in
+            layer.isLocked = isLocked
+        }
+    }
+
     mutating func replaceStrokesInActiveLayer(with strokes: [HandDrawingStroke]) {
         ensureActiveLayerExists()
         layers[activeLayerIndex ?? 0].strokes = strokes
+    }
+
+    @discardableResult
+    private mutating func updateLayer(
+        withID layerID: UUID,
+        mutation: (inout HandDrawingLayer) -> Void
+    ) -> Bool {
+        guard let layerIndex = layers.firstIndex(where: { $0.id == layerID }) else {
+            return false
+        }
+        let originalLayer = layers[layerIndex]
+        mutation(&layers[layerIndex])
+        return layers[layerIndex] != originalLayer
     }
 
     private static func normalizedFormatVersion(_ formatVersion: Int) -> Int {
@@ -492,5 +606,34 @@ struct HandDrawingDocument: Codable, Equatable {
 
     private static func defaultLayerName(at index: Int) -> String {
         "\(defaultLayerBaseName) \(max(index, 1))"
+    }
+
+    private static func resolvedLayerName(
+        _ proposedName: String?,
+        fallbackIndex: Int,
+        existingLayers: [HandDrawingLayer],
+        excludingLayerID: UUID? = nil
+    ) -> String {
+        let trimmedName = (proposedName ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmedName.isEmpty else {
+            return trimmedName
+        }
+        let existingDefaultNames = Set(
+            existingLayers
+                .filter { $0.id != excludingLayerID }
+                .map {
+                    $0.name
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                        .lowercased()
+                }
+        )
+        var candidateIndex = max(fallbackIndex, 1)
+        var candidateName = defaultLayerName(at: candidateIndex)
+        while existingDefaultNames.contains(candidateName.lowercased()) {
+            candidateIndex += 1
+            candidateName = defaultLayerName(at: candidateIndex)
+        }
+        return candidateName
     }
 }

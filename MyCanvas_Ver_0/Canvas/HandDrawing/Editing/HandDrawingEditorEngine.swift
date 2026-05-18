@@ -23,8 +23,19 @@ struct HandDrawingInputSample: Equatable {
     }
 }
 
+enum HandDrawingLayerCommand: Equatable {
+    case addLayer(name: String?)
+    case deleteLayer(id: UUID)
+    case renameLayer(id: UUID, name: String)
+    case moveLayer(id: UUID, toIndex: Int)
+    case setVisibility(id: UUID, isVisible: Bool)
+    case setLocked(id: UUID, isLocked: Bool)
+    case setActive(id: UUID)
+}
+
 enum HandDrawingEditorCommand: Equatable {
     case deselectAll
+    case layer(HandDrawingLayerCommand)
 }
 
 struct HandDrawingEditorState: Equatable {
@@ -36,7 +47,13 @@ struct HandDrawingEditorState: Equatable {
         selectedStrokeIDs: Set<UUID> = []
     ) {
         self.document = document
-        self.selectedStrokeIDs = selectedStrokeIDs
+        self.selectedStrokeIDs = selectedStrokeIDs.intersection(
+            Set(document.strokes.map(\.id))
+        )
+    }
+
+    var activeLayerID: UUID {
+        document.activeLayerID
     }
 }
 
@@ -132,6 +149,36 @@ struct HandDrawingEditorEngine {
                 withIDs: [],
                 recordUndo: recordUndo
             )
+        case let .layer(layerCommand):
+            return apply(
+                layerCommand: layerCommand,
+                recordUndo: recordUndo
+            )
+        }
+    }
+
+    @discardableResult
+    mutating func apply(
+        layerCommand: HandDrawingLayerCommand,
+        recordUndo: Bool = true
+    ) -> Bool {
+        applyDocumentMutation(recordUndo: recordUndo) { document in
+            switch layerCommand {
+            case let .addLayer(name):
+                _ = document.insertLayer(named: name)
+            case let .deleteLayer(id):
+                _ = document.removeLayer(withID: id)
+            case let .renameLayer(id, name):
+                _ = document.renameLayer(withID: id, to: name)
+            case let .moveLayer(id, toIndex):
+                _ = document.moveLayer(withID: id, toIndex: toIndex)
+            case let .setVisibility(id, isVisible):
+                _ = document.setLayerVisibility(withID: id, isVisible: isVisible)
+            case let .setLocked(id, isLocked):
+                _ = document.setLayerLock(withID: id, isLocked: isLocked)
+            case let .setActive(id):
+                _ = document.setActiveLayer(withID: id)
+            }
         }
     }
 
@@ -233,6 +280,34 @@ struct HandDrawingEditorEngine {
     }
 
     @discardableResult
+    private mutating func applyDocumentMutation(
+        recordUndo: Bool,
+        mutation: (inout HandDrawingDocument) -> Void
+    ) -> Bool {
+        let originalDocument = state.document
+        let originalSelection = state.selectedStrokeIDs
+        var updatedDocument = originalDocument
+        mutation(&updatedDocument)
+        guard updatedDocument != originalDocument else {
+            return false
+        }
+        if recordUndo {
+            recordSnapshotForUndo()
+        }
+        state.document = updatedDocument
+        if updatedDocument.activeLayerID != originalDocument.activeLayerID {
+            state.selectedStrokeIDs = []
+        } else {
+            state.selectedStrokeIDs = sanitizedSelection(
+                originalSelection,
+                in: updatedDocument
+            )
+        }
+        dirtyRegionTracker.markDirty(updatedDocument.paperBounds)
+        return true
+    }
+
+    @discardableResult
     private mutating func translateStrokes(
         withIDs strokeIDs: Set<UUID>,
         by delta: CGPoint,
@@ -311,5 +386,12 @@ struct HandDrawingEditorEngine {
         } else {
             stroke.eraseMask.append(path)
         }
+    }
+
+    private func sanitizedSelection(
+        _ selection: Set<UUID>,
+        in document: HandDrawingDocument
+    ) -> Set<UUID> {
+        selection.intersection(Set(document.strokes.map(\.id)))
     }
 }

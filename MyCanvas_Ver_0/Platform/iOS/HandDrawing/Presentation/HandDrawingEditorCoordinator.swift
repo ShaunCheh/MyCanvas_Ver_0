@@ -130,6 +130,16 @@ final class HandDrawingEditorCoordinator {
         refreshCommittedImageAndPublishState(forceFullRender: true)
     }
 
+    func applyLayerCommand(_ command: HandDrawingLayerCommand) {
+        endTransientInteractionState()
+        guard engine.apply(layerCommand: command) else {
+            publishSurfaceState()
+            publishPaletteState()
+            return
+        }
+        refreshCommittedImageAndPublishState(forceFullRender: true)
+    }
+
     func handlePencilStrokeBegan(_ sample: HandDrawingInputSample) {
         switch selectedTool {
         case .brush:

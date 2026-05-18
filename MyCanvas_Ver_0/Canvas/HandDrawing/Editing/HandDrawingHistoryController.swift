@@ -3,6 +3,20 @@ import Foundation
 struct HandDrawingHistorySnapshot: Equatable {
     var document: HandDrawingDocument
     var selectedStrokeIDs: Set<UUID>
+
+    init(
+        document: HandDrawingDocument,
+        selectedStrokeIDs: Set<UUID> = []
+    ) {
+        self.document = document
+        self.selectedStrokeIDs = selectedStrokeIDs.intersection(
+            Set(document.strokes.map(\.id))
+        )
+    }
+
+    var activeLayerID: UUID {
+        document.activeLayerID
+    }
 }
 
 struct HandDrawingHistoryController {
