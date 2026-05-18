@@ -16,11 +16,14 @@ final class CanvasHandDrawingEditingSessionTests: XCTestCase {
             blue: 0.9
         )
         let updatedRevision = UUID()
+        let documentData = try HandDrawingDocumentCodec.makeDocumentData(
+            for: makeHandDrawingTestDocument()
+        )
         let result = try XCTUnwrap(
             session.commitHandDrawingEdit(
                 withID: item.id,
                 submission: CanvasHandDrawingEditSubmission(
-                    drawingData: Data("ink".utf8),
+                    documentData: documentData,
                     previewCGImage: previewImage,
                     isEmpty: false,
                     contentRevision: updatedRevision

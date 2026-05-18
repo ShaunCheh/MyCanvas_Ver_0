@@ -25,14 +25,14 @@ struct CanvasHandDrawingEditorContext {
     let itemID: CanvasItemID
     let documentID: HandDrawingDocumentID
     let paper: CanvasHandDrawingPaperSpec
-    let drawingData: Data
+    let documentData: Data
     let isEmpty: Bool
     let storage: BoardHandDrawingStorageRecord
     let didMigrateLegacyDocument: Bool
 }
 
 struct CanvasHandDrawingEditSubmission {
-    let drawingData: Data
+    let documentData: Data
     let previewCGImage: CGImage
     let isEmpty: Bool
     let contentRevision: UUID

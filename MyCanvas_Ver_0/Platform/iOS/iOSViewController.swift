@@ -336,7 +336,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     }
 
     private var supportsHandDrawingEditing: Bool {
-        true
+        traitCollection.userInterfaceIdiom == .pad
     }
 
     private var camera: CanvasCamera {

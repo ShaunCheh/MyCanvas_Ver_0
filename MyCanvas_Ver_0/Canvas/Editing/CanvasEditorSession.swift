@@ -726,7 +726,7 @@ final class CanvasEditorSession {
                 itemID: itemID,
                 documentID: item.documentID,
                 paper: item.paper,
-                drawingData: payload.drawingData,
+                documentData: payload.drawingData,
                 isEmpty: item.isEmpty,
                 storage: .bundle,
                 didMigrateLegacyDocument: false
@@ -746,7 +746,7 @@ final class CanvasEditorSession {
             itemID: itemID,
             documentID: item.documentID,
             paper: item.paper,
-            drawingData: preparedDocument.drawingData,
+            documentData: preparedDocument.drawingData,
             isEmpty: item.isEmpty,
             storage: preparedDocument.record.storage,
             didMigrateLegacyDocument: preparedDocument.didMigrateLegacyDocument
@@ -766,7 +766,7 @@ final class CanvasEditorSession {
 
         if item.contentRevision == submission.contentRevision,
            item.isEmpty == submission.isEmpty,
-           resolvedHandDrawingSourceData(for: item) == submission.drawingData
+           resolvedHandDrawingSourceData(for: item) == submission.documentData
         {
             return nil
         }
@@ -783,7 +783,7 @@ final class CanvasEditorSession {
         transientHandDrawingAssetPayloads[itemID] =
             BoardTransientHandDrawingAssetPayload(
                 itemID: itemID,
-                drawingData: submission.drawingData,
+                drawingData: submission.documentData,
                 previewCGImage: submission.previewCGImage
             )
         syncInlineEditStateWithSelection()

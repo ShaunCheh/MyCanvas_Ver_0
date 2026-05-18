@@ -193,11 +193,11 @@ final class HandDrawingMigrationServiceTests: XCTestCase {
             XCTAssertEqual(firstContext.documentID, fixture.documentID)
             XCTAssertEqual(firstContext.storage, .bundle)
             XCTAssertTrue(firstContext.didMigrateLegacyDocument)
-            XCTAssertEqual(firstContext.drawingData, fixture.drawingData)
+            XCTAssertEqual(firstContext.documentData, fixture.drawingData)
 
             XCTAssertEqual(secondContext.storage, .bundle)
             XCTAssertFalse(secondContext.didMigrateLegacyDocument)
-            XCTAssertEqual(secondContext.drawingData, fixture.drawingData)
+            XCTAssertEqual(secondContext.documentData, fixture.drawingData)
             XCTAssertEqual(
                 entry.document.handDrawingItemRecords.first?.storage,
                 .bundle
