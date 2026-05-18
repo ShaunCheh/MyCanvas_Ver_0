@@ -124,7 +124,7 @@ enum BoardStore {
 
     static func loadHandDrawingSourceData(
         boardID: UUID,
-        itemID: CanvasItemID,
+        documentID: HandDrawingDocumentID,
         userDefaults: UserDefaults = .standard
     ) throws -> Data {
         try SelectedFolderAccess.withBoardsDirectoryURL(userDefaults: userDefaults) { boardsDirectoryURL in
@@ -136,7 +136,7 @@ enum BoardStore {
                 assetsDirectoryName,
                 isDirectory: true
             )
-            let sourceURL = BoardHandDrawingAssetLocator(itemID: itemID)
+            let sourceURL = BoardHandDrawingAssetLocator(documentID: documentID)
                 .sourceDrawingURL(in: assetsDirectoryURL)
             return try CoordinatedFileIO.readData(at: sourceURL)
         }
@@ -574,7 +574,7 @@ enum BoardStore {
         snapshot: BoardSaveSnapshot,
         in assetsDirectoryURL: URL
     ) throws {
-        let assetLocator = BoardHandDrawingAssetLocator(itemID: item.id)
+        let assetLocator = BoardHandDrawingAssetLocator(documentID: item.documentID)
         let previewImageURL = assetLocator.previewImageURL(in: assetsDirectoryURL)
         let sourceDrawingURL = assetLocator.sourceDrawingURL(in: assetsDirectoryURL)
 

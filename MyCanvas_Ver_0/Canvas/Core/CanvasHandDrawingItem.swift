@@ -1,6 +1,8 @@
 import CoreGraphics
 import Foundation
 
+typealias HandDrawingDocumentID = UUID
+
 struct CanvasHandDrawingPaperSpec: Equatable {
     private static let fallbackID = "custom"
     private static let minimumDimension: CGFloat = 1
@@ -40,6 +42,7 @@ struct CanvasHandDrawingItem {
     private static let minimumCanvasDimension: CGFloat = 1
 
     let id: CanvasItemID
+    let documentID: HandDrawingDocumentID
     var paper: CanvasHandDrawingPaperSpec
     var previewAsset: CanvasImageAsset
     var isEmpty: Bool
@@ -51,6 +54,7 @@ struct CanvasHandDrawingItem {
 
     init(
         id: CanvasItemID = UUID(),
+        documentID: HandDrawingDocumentID? = nil,
         paper: CanvasHandDrawingPaperSpec = .square,
         previewAsset: CanvasImageAsset,
         isEmpty: Bool,
@@ -61,6 +65,7 @@ struct CanvasHandDrawingItem {
         rotationRadians: CGFloat = 0
     ) {
         self.id = id
+        self.documentID = documentID ?? id
         self.paper = paper
         self.previewAsset = previewAsset
         self.isEmpty = isEmpty
@@ -75,11 +80,11 @@ struct CanvasHandDrawingItem {
     }
 
     var previewImageFilename: String {
-        Self.defaultPreviewImageFilename(for: id)
+        Self.defaultPreviewImageFilename(for: documentID)
     }
 
     var sourceDrawingFilename: String {
-        Self.defaultSourceDrawingFilename(for: id)
+        Self.defaultSourceDrawingFilename(for: documentID)
     }
 
     var localFrame: CGRect {
@@ -126,24 +131,24 @@ struct CanvasHandDrawingItem {
     }
 
     static func defaultPreviewImageFilename(
-        for itemID: CanvasItemID
+        for documentID: HandDrawingDocumentID
     ) -> String {
-        "\(itemID.uuidString).\(previewImageFileExtension)"
+        "\(documentID.uuidString).\(previewImageFileExtension)"
     }
 
     static func defaultSourceDrawingFilename(
-        for itemID: CanvasItemID
+        for documentID: HandDrawingDocumentID
     ) -> String {
-        "\(itemID.uuidString).\(sourceDrawingFileExtension)"
+        "\(documentID.uuidString).\(sourceDrawingFileExtension)"
     }
 
     static func persistedPreviewAsset(
-        for itemID: CanvasItemID,
+        for documentID: HandDrawingDocumentID,
         cgImage: CGImage,
         logicalPixelSize: CGSize? = nil
     ) -> CanvasImageAsset {
         CanvasImageAsset.persistedStaticImage(
-            filename: defaultPreviewImageFilename(for: itemID),
+            filename: defaultPreviewImageFilename(for: documentID),
             cgImage: cgImage,
             logicalPixelSize: logicalPixelSize
         )
@@ -193,6 +198,7 @@ struct CanvasHandDrawingItem {
     ) -> CanvasHandDrawingItem {
         CanvasHandDrawingItem(
             id: id,
+            documentID: documentID,
             paper: paper,
             previewAsset: previewAsset,
             isEmpty: isEmpty,
@@ -226,11 +232,13 @@ struct CanvasHandDrawingItem {
 
     func duplicated(offsetInWorld: CGPoint) -> CanvasHandDrawingItem {
         let duplicatedID = UUID()
+        let duplicatedDocumentID = HandDrawingDocumentID()
         return CanvasHandDrawingItem(
             id: duplicatedID,
+            documentID: duplicatedDocumentID,
             paper: paper,
             previewAsset: Self.persistedPreviewAsset(
-                for: duplicatedID,
+                for: duplicatedDocumentID,
                 cgImage: previewAsset.posterCGImage,
                 logicalPixelSize: previewAsset.logicalPixelSize
             ),
@@ -248,6 +256,7 @@ struct CanvasHandDrawingItem {
 
     func matchesDocumentState(_ other: CanvasHandDrawingItem) -> Bool {
         id == other.id &&
+            documentID == other.documentID &&
             paper == other.paper &&
             isEmpty == other.isEmpty &&
             contentRevision == other.contentRevision &&

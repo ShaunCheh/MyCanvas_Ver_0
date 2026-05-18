@@ -146,6 +146,7 @@ final class BoardSelectionStateMigrationTests: XCTestCase {
 
     func testBoardDocumentMapperRoundTripsHandDrawingItem() throws {
         let itemID = UUID()
+        let documentID = UUID()
         let contentRevision = UUID()
         let previewImage = try makeSolidColorPreviewImage(
             red: 0.1,
@@ -154,9 +155,10 @@ final class BoardSelectionStateMigrationTests: XCTestCase {
         )
         let item = CanvasHandDrawingItem(
             id: itemID,
+            documentID: documentID,
             paper: .square,
             previewAsset: CanvasHandDrawingItem.persistedPreviewAsset(
-                for: itemID,
+                for: documentID,
                 cgImage: previewImage
             ),
             isEmpty: false,
@@ -185,11 +187,13 @@ final class BoardSelectionStateMigrationTests: XCTestCase {
         let document = BoardDocumentMapper.makeDocument(from: runtimeState)
         let handDrawingRecord = try XCTUnwrap(document.handDrawingItemRecords.first)
         XCTAssertEqual(handDrawingRecord.id, itemID)
+        XCTAssertEqual(handDrawingRecord.documentID, documentID)
         XCTAssertEqual(handDrawingRecord.paper.canvasPaperSpec, .square)
         XCTAssertEqual(handDrawingRecord.contentRevision, contentRevision)
+        XCTAssertEqual(handDrawingRecord.storage, .legacyFlatAssetPair)
         XCTAssertEqual(
             handDrawingRecord.previewImageFilename,
-            CanvasHandDrawingItem.defaultPreviewImageFilename(for: itemID)
+            CanvasHandDrawingItem.defaultPreviewImageFilename(for: documentID)
         )
 
         let roundTrippedState = try BoardDocumentMapper.makeRuntimeState(
@@ -204,6 +208,7 @@ final class BoardSelectionStateMigrationTests: XCTestCase {
         let roundTrippedItem = try XCTUnwrap(roundTrippedState.handDrawingItems.first)
 
         XCTAssertEqual(roundTrippedItem.id, item.id)
+        XCTAssertEqual(roundTrippedItem.documentID, item.documentID)
         XCTAssertEqual(roundTrippedItem.paper, item.paper)
         XCTAssertEqual(roundTrippedItem.isEmpty, item.isEmpty)
         XCTAssertEqual(roundTrippedItem.contentRevision, item.contentRevision)
@@ -214,6 +219,41 @@ final class BoardSelectionStateMigrationTests: XCTestCase {
         XCTAssertEqual(
             roundTrippedItem.previewAsset.reference.stableAssetFilename,
             item.previewImageFilename
+        )
+    }
+
+    func testBoardHandDrawingItemRecordDecodesLegacyAssetIdentityFromItemID() throws {
+        let itemID = UUID()
+        let contentRevision = UUID()
+        let legacyPayload: [String: Any] = [
+            "id": itemID.uuidString,
+            "center": ["x": 48, "y": 72],
+            "size": ["width": 240, "height": 180],
+            "zIndex": 2,
+            "paper": [
+                "id": "square",
+                "size": ["width": 1_024, "height": 1_024]
+            ],
+            "isEmpty": true,
+            "contentRevision": contentRevision.uuidString,
+            "rotationRadians": Double.pi / 6
+        ]
+        let decoder = JSONDecoder()
+        let record = try decoder.decode(
+            BoardHandDrawingItemRecord.self,
+            from: try JSONSerialization.data(withJSONObject: legacyPayload)
+        )
+
+        XCTAssertEqual(record.id, itemID)
+        XCTAssertEqual(record.documentID, itemID)
+        XCTAssertEqual(record.storage, .legacyFlatAssetPair)
+        XCTAssertEqual(
+            record.previewImageFilename,
+            CanvasHandDrawingItem.defaultPreviewImageFilename(for: itemID)
+        )
+        XCTAssertEqual(
+            record.sourceDrawingFilename,
+            CanvasHandDrawingItem.defaultSourceDrawingFilename(for: itemID)
         )
     }
 }

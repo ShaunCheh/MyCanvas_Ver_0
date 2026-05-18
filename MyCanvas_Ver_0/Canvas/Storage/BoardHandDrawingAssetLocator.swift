@@ -2,14 +2,14 @@ import CoreGraphics
 import Foundation
 
 struct BoardHandDrawingAssetLocator {
-    let itemID: CanvasItemID
+    let documentID: HandDrawingDocumentID
 
     var previewImageFilename: String {
-        CanvasHandDrawingItem.defaultPreviewImageFilename(for: itemID)
+        CanvasHandDrawingItem.defaultPreviewImageFilename(for: documentID)
     }
 
     var sourceDrawingFilename: String {
-        CanvasHandDrawingItem.defaultSourceDrawingFilename(for: itemID)
+        CanvasHandDrawingItem.defaultSourceDrawingFilename(for: documentID)
     }
 
     var referencedAssetFilenames: Set<String> {

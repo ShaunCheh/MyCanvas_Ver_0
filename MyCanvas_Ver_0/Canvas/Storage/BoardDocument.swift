@@ -75,7 +75,7 @@ struct BoardRuntimeState {
 
 struct BoardDocument: Codable {
     // Board schema now evolves independently from image asset internals.
-    static let currentFormatVersion = 6
+    static let currentFormatVersion = 7
     static let defaultTitle = "Untitled Board"
 
     let formatVersion: Int
@@ -790,8 +790,13 @@ struct BoardHandDrawingPaperRecord: Codable, Equatable {
     }
 }
 
+enum BoardHandDrawingStorageRecord: String, Codable, Equatable {
+    case legacyFlatAssetPair
+}
+
 struct BoardHandDrawingItemRecord: Codable, Equatable {
     let id: UUID
+    let documentID: HandDrawingDocumentID
     var center: BoardPointRecord
     var size: BoardSizeRecord
     var zIndex: Double
@@ -799,6 +804,90 @@ struct BoardHandDrawingItemRecord: Codable, Equatable {
     var isEmpty: Bool
     var contentRevision: UUID
     var rotationRadians: Double?
+    var storage: BoardHandDrawingStorageRecord
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case documentID
+        case center
+        case size
+        case zIndex
+        case paper
+        case isEmpty
+        case contentRevision
+        case rotationRadians
+        case storage
+    }
+
+    init(
+        id: UUID,
+        documentID: HandDrawingDocumentID? = nil,
+        center: BoardPointRecord,
+        size: BoardSizeRecord,
+        zIndex: Double,
+        paper: BoardHandDrawingPaperRecord,
+        isEmpty: Bool,
+        contentRevision: UUID,
+        rotationRadians: Double?,
+        storage: BoardHandDrawingStorageRecord = .legacyFlatAssetPair
+    ) {
+        self.id = id
+        self.documentID = documentID ?? id
+        self.center = center
+        self.size = size
+        self.zIndex = zIndex
+        self.paper = paper
+        self.isEmpty = isEmpty
+        self.contentRevision = contentRevision
+        self.rotationRadians = rotationRadians
+        self.storage = storage
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let id = try container.decode(UUID.self, forKey: .id)
+        self.init(
+            id: id,
+            documentID: try container.decodeIfPresent(
+                HandDrawingDocumentID.self,
+                forKey: .documentID
+            ) ?? id,
+            center: try container.decode(BoardPointRecord.self, forKey: .center),
+            size: try container.decode(BoardSizeRecord.self, forKey: .size),
+            zIndex: try container.decode(Double.self, forKey: .zIndex),
+            paper: try container.decode(
+                BoardHandDrawingPaperRecord.self,
+                forKey: .paper
+            ),
+            isEmpty: try container.decode(Bool.self, forKey: .isEmpty),
+            contentRevision: try container.decode(
+                UUID.self,
+                forKey: .contentRevision
+            ),
+            rotationRadians: try container.decodeIfPresent(
+                Double.self,
+                forKey: .rotationRadians
+            ),
+            storage: try container.decodeIfPresent(
+                BoardHandDrawingStorageRecord.self,
+                forKey: .storage
+            ) ?? .legacyFlatAssetPair
+        )
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(documentID, forKey: .documentID)
+        try container.encode(center, forKey: .center)
+        try container.encode(size, forKey: .size)
+        try container.encode(zIndex, forKey: .zIndex)
+        try container.encode(paper, forKey: .paper)
+        try container.encode(isEmpty, forKey: .isEmpty)
+        try container.encode(contentRevision, forKey: .contentRevision)
+        try container.encodeIfPresent(rotationRadians, forKey: .rotationRadians)
+        try container.encode(storage, forKey: .storage)
+    }
 
     var previewImageFilename: String {
         assetLocator.previewImageFilename
@@ -829,7 +918,7 @@ struct BoardHandDrawingItemRecord: Codable, Equatable {
     }
 
     var assetLocator: BoardHandDrawingAssetLocator {
-        BoardHandDrawingAssetLocator(itemID: id)
+        BoardHandDrawingAssetLocator(documentID: documentID)
     }
 }
 

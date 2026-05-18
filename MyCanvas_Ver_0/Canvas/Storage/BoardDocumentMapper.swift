@@ -131,9 +131,10 @@ enum BoardDocumentMapper {
     ) -> CanvasHandDrawingItem {
         CanvasHandDrawingItem(
             id: handDrawingRecord.id,
+            documentID: handDrawingRecord.documentID,
             paper: handDrawingRecord.paper.canvasPaperSpec,
             previewAsset: CanvasHandDrawingItem.persistedPreviewAsset(
-                for: handDrawingRecord.id,
+                for: handDrawingRecord.documentID,
                 cgImage: previewImage
             ),
             isEmpty: handDrawingRecord.isEmpty,
@@ -178,13 +179,15 @@ enum BoardDocumentMapper {
     ) -> BoardHandDrawingItemRecord {
         BoardHandDrawingItemRecord(
             id: item.id,
+            documentID: item.documentID,
             center: BoardPointRecord(item.center),
             size: BoardSizeRecord(item.size),
             zIndex: Double(item.zIndex),
             paper: BoardHandDrawingPaperRecord(item.paper),
             isEmpty: item.isEmpty,
             contentRevision: item.contentRevision,
-            rotationRadians: Double(item.rotationRadians)
+            rotationRadians: Double(item.rotationRadians),
+            storage: .legacyFlatAssetPair
         )
     }
 

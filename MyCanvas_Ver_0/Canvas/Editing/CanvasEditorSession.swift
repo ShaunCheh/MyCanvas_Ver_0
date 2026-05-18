@@ -740,7 +740,7 @@ final class CanvasEditorSession {
                 paper: item.paper,
                 drawingData: try BoardStore.loadHandDrawingSourceData(
                     boardID: activeBoardID,
-                    itemID: itemID,
+                    documentID: item.documentID,
                     userDefaults: userDefaults
                 ),
                 isEmpty: item.isEmpty
@@ -772,7 +772,7 @@ final class CanvasEditorSession {
 
         let beforeSnapshot = currentBoardHistorySnapshot()
         item.previewAsset = CanvasHandDrawingItem.persistedPreviewAsset(
-            for: item.id,
+            for: item.documentID,
             cgImage: submission.previewCGImage,
             logicalPixelSize: item.paper.size
         )
@@ -1782,7 +1782,7 @@ final class CanvasEditorSession {
         }
         return try? BoardStore.loadHandDrawingSourceData(
             boardID: activeBoardID,
-            itemID: item.id,
+            documentID: item.documentID,
             userDefaults: userDefaults
         )
     }
@@ -2113,11 +2113,13 @@ final class CanvasEditorSession {
         }
 
         let itemID = CanvasItemID()
+        let documentID = HandDrawingDocumentID()
         let item = CanvasHandDrawingItem(
             id: itemID,
+            documentID: documentID,
             paper: paper,
             previewAsset: CanvasHandDrawingItem.persistedPreviewAsset(
-                for: itemID,
+                for: documentID,
                 cgImage: previewImage,
                 logicalPixelSize: paper.size
             ),
