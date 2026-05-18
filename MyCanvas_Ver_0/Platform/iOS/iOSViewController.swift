@@ -266,6 +266,11 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         button.translatesAutoresizingMaskIntoConstraints = false
         return button
     }()
+    private let handDrawingButton: UIButton = {
+        let button = UIButton(type: .system)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }()
     private let undoButton: UIButton = {
         let button = UIButton(type: .system)
         button.translatesAutoresizingMaskIntoConstraints = false
@@ -284,6 +289,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             .multiSelect: multiSelectButton,
             .save: saveButton,
             .text: textButton,
+            .handDrawing: handDrawingButton,
             .importMedia: importButton
         ]
     }
@@ -327,6 +333,10 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
 
     private var scene: CanvasScene {
         editorSession.scene
+    }
+
+    private var supportsHandDrawingEditing: Bool {
+        true
     }
 
     private var camera: CanvasCamera {
@@ -440,6 +450,19 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         if let refreshReason = executionResult.refreshReason {
             requestCanvasRefresh(reason: refreshReason)
         }
+        if let followUp = executionResult.followUp {
+            handleCommandFollowUp(followUp)
+        }
+    }
+
+    private func handleCommandFollowUp(_ followUp: CanvasCommandFollowUp) {
+        switch followUp {
+        case let .presentHandDrawingEditor(itemID):
+            guard supportsHandDrawingEditing else {
+                return
+            }
+            presentHandDrawingEditor(for: itemID)
+        }
     }
 
     private func applyTransitionInteractionFreeze() {
@@ -465,7 +488,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         let actionStates = contextMenuActionResolver.actionStates(
             for: resolvedContext,
             session: editorSession,
-            environment: makeInteractionEnvironment()
+            environment: makeInteractionEnvironment(),
+            supportsHandDrawingEditing: supportsHandDrawingEditing
         )
         guard actionStates.isEmpty == false else {
             dismissContextMenu()
@@ -582,6 +606,12 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         context: CanvasContextMenuContext
     ) {
         switch actionID {
+        case .editHandDrawing:
+            guard let itemID = targetHandDrawingItemID(for: context) else {
+                return
+            }
+
+            presentHandDrawingEditor(for: itemID)
         case .editVideoDisplayFrame:
             guard let itemID = targetVideoItemID(for: context) else {
                 return
@@ -609,6 +639,22 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         }
 
         return itemID
+    }
+
+    private func targetHandDrawingItemID(
+        for context: CanvasContextMenuContext
+    ) -> CanvasItemID? {
+        guard supportsHandDrawingEditing else {
+            return nil
+        }
+
+        guard let itemID = context.singleEffectiveItemID else {
+            return nil
+        }
+
+        return editorSession.canEditHandDrawing(withID: itemID)
+            ? itemID
+            : nil
     }
 
     private func targetGIFItemID(
@@ -659,6 +705,35 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             present(editorViewController, animated: true)
         } catch {
             presentVideoEditorError(message: error.localizedDescription)
+        }
+    }
+
+    private func presentHandDrawingEditor(for itemID: CanvasItemID) {
+        guard presentedViewController == nil else {
+            return
+        }
+
+        cancelRotationInteractionIfNeeded(resetPointerDragState: true)
+
+        do {
+            let editorContext = try editorSession.handDrawingEditorContext(
+                for: itemID
+            )
+            let editorViewController = try iOSHandDrawingEditorViewController(
+                editorContext: editorContext
+            ) { [weak self] submission in
+                guard let self else { return }
+
+                if let updateResult = try self.editorSession.commitHandDrawingEdit(
+                    withID: itemID,
+                    submission: submission
+                ) {
+                    self.requestCanvasRefresh(reason: updateResult.refreshReason)
+                }
+            }
+            present(editorViewController, animated: true)
+        } catch {
+            presentHandDrawingEditorError(message: error.localizedDescription)
         }
     }
 
@@ -754,6 +829,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         setupCropButton()
         setupMultiSelectButton()
         setupTextButton()
+        setupHandDrawingButton()
         setupUndoButton()
         setupRedoButton()
         setupBackButton()
@@ -1129,6 +1205,15 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
 
     private func setupTextButton() {
         textButton.addTarget(self, action: #selector(handleTextButtonTap), for: .touchUpInside)
+        updateInlineEditButtonsAppearance()
+    }
+
+    private func setupHandDrawingButton() {
+        handDrawingButton.addTarget(
+            self,
+            action: #selector(handleHandDrawingButtonTap),
+            for: .touchUpInside
+        )
         updateInlineEditButtonsAppearance()
     }
 
@@ -1921,6 +2006,18 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         } else {
             performCommand(.addTextItem)
         }
+    }
+
+    @objc
+    private func handleHandDrawingButtonTap() {
+        if let itemID = editorSession.singleSelectedItemID,
+           editorSession.canEditHandDrawing(withID: itemID)
+        {
+            presentHandDrawingEditor(for: itemID)
+            return
+        }
+
+        performCommand(.addHandDrawingItem(paper: .square))
     }
 
     @objc
@@ -4685,6 +4782,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             session: editorSession,
             saveState: saveButtonState,
             placement: toolbarPreferredPlacement(),
+            supportsHandDrawingEditing: supportsHandDrawingEditing,
             isMultiSelectModeActive: isMultiSelectModeActive,
             includesHistoryItems: true
         )
@@ -4731,6 +4829,16 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     private func presentVideoEditorError(message: String) {
         let alertController = UIAlertController(
             title: "Unable to Open Video Editor",
+            message: message,
+            preferredStyle: .alert
+        )
+        alertController.addAction(UIAlertAction(title: "OK", style: .default))
+        present(alertController, animated: true)
+    }
+
+    private func presentHandDrawingEditorError(message: String) {
+        let alertController = UIAlertController(
+            title: "Unable to Open Hand Drawing Editor",
             message: message,
             preferredStyle: .alert
         )

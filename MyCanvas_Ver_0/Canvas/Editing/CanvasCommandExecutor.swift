@@ -21,6 +21,8 @@ final class CanvasCommandExecutor {
             return request.isEmpty == false
         case .addTextItem:
             return session.canAddTextItem
+        case .addHandDrawingItem:
+            return session.canAddHandDrawingItem
         case let .beginTextEdit(itemID):
             return session.canBeginTextEdit(withID: itemID)
         case .commitTextEdit:
@@ -98,6 +100,17 @@ final class CanvasCommandExecutor {
 
             return CanvasCommandExecutionResult(
                 refreshReason: "add text item \(addedTextItem.id.uuidString)"
+            )
+        case let .addHandDrawingItem(paper):
+            guard let addedHandDrawingItem = session.addHandDrawingItem(paper: paper) else {
+                return nil
+            }
+
+            return CanvasCommandExecutionResult(
+                refreshReason: "add hand drawing item \(addedHandDrawingItem.id.uuidString)",
+                followUp: .presentHandDrawingEditor(
+                    itemID: addedHandDrawingItem.id
+                )
             )
         case let .beginTextEdit(itemID):
             guard session.beginTextEdit(withID: itemID) else {

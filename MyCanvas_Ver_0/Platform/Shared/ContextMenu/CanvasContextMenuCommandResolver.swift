@@ -7,7 +7,8 @@ struct CanvasContextMenuActionResolver {
     func actionStates(
         for context: CanvasContextMenuContext,
         session: CanvasEditorSession,
-        environment: CanvasInteractionEnvironment? = nil
+        environment: CanvasInteractionEnvironment? = nil,
+        supportsHandDrawingEditing: Bool = false
     ) -> [CanvasContextMenuActionState] {
         let resolvedEnvironment = environment ?? .workspaceModeOnly(
             workspaceMode: session.workspaceMode
@@ -15,7 +16,8 @@ struct CanvasContextMenuActionResolver {
         let intent = CanvasInteractionIntent.contextMenuRequest
         let candidateActionIDs = candidateActionIDs(
             for: context,
-            session: session
+            session: session,
+            supportsHandDrawingEditing: supportsHandDrawingEditing
         )
         let decision = interactionPolicy.decision(
             for: intent,
@@ -43,7 +45,8 @@ struct CanvasContextMenuActionResolver {
                 descriptor: descriptor(
                     for: actionID,
                     context: context,
-                    session: session
+                    session: session,
+                    supportsHandDrawingEditing: supportsHandDrawingEditing
                 )
             )
         }
@@ -76,6 +79,8 @@ struct CanvasContextMenuActionResolver {
             return nil
         case .addTextItem:
             return .addTextItem
+        case .addHandDrawingItem:
+            return .addHandDrawingItem(paper: .square)
         case .beginTextEdit:
             guard let itemID = context.singleEffectiveItemID else {
                 return nil
@@ -195,7 +200,8 @@ struct CanvasContextMenuActionResolver {
     private func descriptor(
         for actionID: CanvasContextMenuActionID,
         context: CanvasContextMenuContext,
-        session: CanvasEditorSession
+        session: CanvasEditorSession,
+        supportsHandDrawingEditing: Bool
     ) -> CanvasContextMenuActionDescriptor {
         switch actionID {
         case let .command(commandID):
@@ -210,7 +216,8 @@ struct CanvasContextMenuActionResolver {
             return uiActionDescriptor(
                 for: uiActionID,
                 context: context,
-                session: session
+                session: session,
+                supportsHandDrawingEditing: supportsHandDrawingEditing
             )
         }
     }
@@ -218,9 +225,20 @@ struct CanvasContextMenuActionResolver {
     private func uiActionDescriptor(
         for uiActionID: CanvasContextMenuUIActionID,
         context: CanvasContextMenuContext,
-        session: CanvasEditorSession
+        session: CanvasEditorSession,
+        supportsHandDrawingEditing: Bool
     ) -> CanvasContextMenuActionDescriptor {
         switch uiActionID {
+        case .editHandDrawing:
+            return CanvasContextMenuActionDescriptor(
+                title: "Edit Hand Drawing",
+                systemImageName: "scribble",
+                isEnabled: supportsHandDrawingEditing && targetHandDrawingItemID(
+                    in: context,
+                    session: session
+                ) != nil,
+                isActive: false
+            )
         case .editVideoDisplayFrame:
             return CanvasContextMenuActionDescriptor(
                 title: "Set Display Frame",
@@ -246,7 +264,8 @@ struct CanvasContextMenuActionResolver {
 
     private func candidateActionIDs(
         for context: CanvasContextMenuContext,
-        session: CanvasEditorSession
+        session: CanvasEditorSession,
+        supportsHandDrawingEditing: Bool
     ) -> [CanvasContextMenuActionID] {
         if context.isInlineCropModeActive {
             switch context.targetKind {
@@ -278,6 +297,9 @@ struct CanvasContextMenuActionResolver {
             targetVideoItemID(in: context, session: session) != nil
         let includeGIFFrameImportAction =
             targetGIFItemID(in: context, session: session) != nil
+        let includeHandDrawingEditAction =
+            supportsHandDrawingEditing
+            && targetHandDrawingItemID(in: context, session: session) != nil
 
         switch context.targetKind {
         case .blank:
@@ -290,6 +312,7 @@ struct CanvasContextMenuActionResolver {
             return selectedItemActionIDs(
                 includeCropCommand: includeCropCommand,
                 includeBeginTextEditCommand: targetTextItem != nil,
+                includeHandDrawingEditAction: includeHandDrawingEditAction,
                 includeVideoDisplayFrameAction: includeVideoDisplayFrameAction,
                 includeGIFFrameImportAction: includeGIFFrameImportAction
             )
@@ -297,6 +320,7 @@ struct CanvasContextMenuActionResolver {
             return selectedItemActionIDs(
                 includeCropCommand: false,
                 includeBeginTextEditCommand: false,
+                includeHandDrawingEditAction: false,
                 includeVideoDisplayFrameAction: false,
                 includeGIFFrameImportAction: false
             )
@@ -307,6 +331,7 @@ struct CanvasContextMenuActionResolver {
             return unselectedItemActionIDs(
                 includeCropCommand: includeCropCommand,
                 includeBeginTextEditCommand: targetTextItem != nil,
+                includeHandDrawingEditAction: includeHandDrawingEditAction,
                 includeVideoDisplayFrameAction: includeVideoDisplayFrameAction,
                 includeGIFFrameImportAction: includeGIFFrameImportAction
             )
@@ -318,6 +343,7 @@ struct CanvasContextMenuActionResolver {
     private func selectedItemActionIDs(
         includeCropCommand: Bool,
         includeBeginTextEditCommand: Bool,
+        includeHandDrawingEditAction: Bool,
         includeVideoDisplayFrameAction: Bool,
         includeGIFFrameImportAction: Bool
     ) -> [CanvasContextMenuActionID] {
@@ -327,6 +353,9 @@ struct CanvasContextMenuActionResolver {
         }
         if includeBeginTextEditCommand {
             actionIDs.append(.command(.beginTextEdit))
+        }
+        if includeHandDrawingEditAction {
+            actionIDs.append(.uiAction(.editHandDrawing))
         }
         if includeVideoDisplayFrameAction {
             actionIDs.append(.uiAction(.editVideoDisplayFrame))
@@ -351,6 +380,7 @@ struct CanvasContextMenuActionResolver {
     private func unselectedItemActionIDs(
         includeCropCommand: Bool,
         includeBeginTextEditCommand: Bool,
+        includeHandDrawingEditAction: Bool,
         includeVideoDisplayFrameAction: Bool,
         includeGIFFrameImportAction: Bool
     ) -> [CanvasContextMenuActionID] {
@@ -360,6 +390,9 @@ struct CanvasContextMenuActionResolver {
         }
         if includeBeginTextEditCommand {
             actionIDs.append(.command(.beginTextEdit))
+        }
+        if includeHandDrawingEditAction {
+            actionIDs.append(.uiAction(.editHandDrawing))
         }
         if includeVideoDisplayFrameAction {
             actionIDs.append(.uiAction(.editVideoDisplayFrame))
@@ -415,6 +448,19 @@ struct CanvasContextMenuActionResolver {
         }
 
         return itemID
+    }
+
+    private func targetHandDrawingItemID(
+        in context: CanvasContextMenuContext,
+        session: CanvasEditorSession
+    ) -> CanvasItemID? {
+        guard let itemID = context.singleEffectiveItemID else {
+            return nil
+        }
+
+        return session.canEditHandDrawing(withID: itemID)
+            ? itemID
+            : nil
     }
 }
 

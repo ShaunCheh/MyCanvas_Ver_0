@@ -134,6 +134,10 @@ final class CanvasEditorSession {
         inlineEditState == nil
     }
 
+    var canAddHandDrawingItem: Bool {
+        inlineEditState == nil
+    }
+
     var hasSelection: Bool {
         interactionState.hasSelection
     }
@@ -258,6 +262,10 @@ final class CanvasEditorSession {
         return scene.boardItem(withID: selectedItemID)
     }
 
+    var selectedHandDrawingItem: CanvasHandDrawingItem? {
+        selectedBoardItem?.handDrawingItem
+    }
+
     var selectedBoardItems: [CanvasBoardItem] {
         selectedItemIDs.compactMap { itemID in
             scene.boardItem(withID: itemID)
@@ -266,6 +274,14 @@ final class CanvasEditorSession {
 
     var selectedBoardItemKind: CanvasBoardItemKind? {
         selectedBoardItem?.kind
+    }
+
+    var canEditSelectedHandDrawing: Bool {
+        guard let selectedItemID = singleSelectedItemID else {
+            return false
+        }
+
+        return canEditHandDrawing(withID: selectedItemID)
     }
 
     var activeInlineTextItem: CanvasTextItem? {
@@ -567,6 +583,14 @@ final class CanvasEditorSession {
         return scene.item(withID: itemID) != nil
     }
 
+    func canEditHandDrawing(withID itemID: CanvasItemID) -> Bool {
+        guard inlineEditState == nil else {
+            return false
+        }
+
+        return scene.handDrawingItem(withID: itemID) != nil
+    }
+
     @discardableResult
     func beginTextEdit(withID itemID: CanvasItemID) -> Bool {
         guard
@@ -685,6 +709,92 @@ final class CanvasEditorSession {
             itemID: itemID,
             didDeleteItem: false,
             didChangeDocument: true
+        )
+    }
+
+    func handDrawingEditorContext(
+        for itemID: CanvasItemID
+    ) throws -> CanvasHandDrawingEditorContext {
+        guard let item = scene.handDrawingItem(withID: itemID) else {
+            throw CanvasHandDrawingEditingError.invalidHandDrawingItem(
+                itemID: itemID
+            )
+        }
+
+        if let payload = transientHandDrawingAssetPayload(for: itemID) {
+            return CanvasHandDrawingEditorContext(
+                itemID: itemID,
+                paper: item.paper,
+                drawingData: payload.drawingData,
+                isEmpty: item.isEmpty
+            )
+        }
+
+        guard let activeBoardID else {
+            throw CanvasHandDrawingEditingError.missingBoardIdentity
+        }
+
+        do {
+            return CanvasHandDrawingEditorContext(
+                itemID: itemID,
+                paper: item.paper,
+                drawingData: try BoardStore.loadHandDrawingSourceData(
+                    boardID: activeBoardID,
+                    itemID: itemID,
+                    userDefaults: userDefaults
+                ),
+                isEmpty: item.isEmpty
+            )
+        } catch {
+            throw CanvasHandDrawingEditingError.missingSourceDrawing(
+                itemID: itemID
+            )
+        }
+    }
+
+    @discardableResult
+    func commitHandDrawingEdit(
+        withID itemID: CanvasItemID,
+        submission: CanvasHandDrawingEditSubmission
+    ) throws -> CanvasHandDrawingEditCommitResult? {
+        guard var item = scene.handDrawingItem(withID: itemID) else {
+            throw CanvasHandDrawingEditingError.invalidHandDrawingItem(
+                itemID: itemID
+            )
+        }
+
+        if item.contentRevision == submission.contentRevision,
+           item.isEmpty == submission.isEmpty,
+           resolvedHandDrawingSourceData(for: item) == submission.drawingData
+        {
+            return nil
+        }
+
+        let beforeSnapshot = currentBoardHistorySnapshot()
+        item.previewAsset = CanvasHandDrawingItem.persistedPreviewAsset(
+            for: item.id,
+            cgImage: submission.previewCGImage,
+            logicalPixelSize: item.paper.size
+        )
+        item.isEmpty = submission.isEmpty
+        item.contentRevision = submission.contentRevision
+        scene.upsert(item)
+        transientHandDrawingAssetPayloads[itemID] =
+            BoardTransientHandDrawingAssetPayload(
+                itemID: itemID,
+                drawingData: submission.drawingData,
+                previewCGImage: submission.previewCGImage
+            )
+        syncInlineEditStateWithSelection()
+        let changeReason = "commit hand drawing edit"
+        _ = recordImmediateHistoryChange(
+            from: beforeSnapshot,
+            reason: changeReason,
+            autosaveReason: changeReason
+        )
+        return CanvasHandDrawingEditCommitResult(
+            item: item,
+            refreshReason: changeReason
         )
     }
 
@@ -1978,6 +2088,57 @@ final class CanvasEditorSession {
         inlineEditState = CanvasInlineEditState(item: item)
         expandBoardIfNeeded(toInclude: item.worldFrame)
         let changeReason = "add text item"
+        _ = recordImmediateHistoryChange(
+            from: beforeSnapshot,
+            reason: changeReason,
+            autosaveReason: changeReason
+        )
+        return item
+    }
+
+    @discardableResult
+    func addHandDrawingItem(
+        paper: CanvasHandDrawingPaperSpec = .square
+    ) -> CanvasHandDrawingItem? {
+        guard canAddHandDrawingItem else {
+            return nil
+        }
+
+        let beforeSnapshot = currentBoardHistorySnapshot()
+        guard
+            let previewImage = try? CanvasHandDrawingPreviewAssetFactory
+                .makeTransparentPreview(for: paper)
+        else {
+            return nil
+        }
+
+        let itemID = CanvasItemID()
+        let item = CanvasHandDrawingItem(
+            id: itemID,
+            paper: paper,
+            previewAsset: CanvasHandDrawingItem.persistedPreviewAsset(
+                for: itemID,
+                cgImage: previewImage,
+                logicalPixelSize: paper.size
+            ),
+            isEmpty: true,
+            center: camera.center,
+            size: normalizedDisplaySize(for: paper.size),
+            zIndex: nextBoardItemZIndex()
+        )
+        scene.append(item)
+        transientHandDrawingAssetPayloads[item.id] =
+            BoardTransientHandDrawingAssetPayload(
+                itemID: item.id,
+                drawingData: Data(),
+                previewCGImage: previewImage
+            )
+        _ = replaceSelection(
+            with: [item.id],
+            primarySelectedItemID: item.id
+        )
+        expandBoardIfNeeded(toInclude: item.worldFrame)
+        let changeReason = "add hand drawing item"
         _ = recordImmediateHistoryChange(
             from: beforeSnapshot,
             reason: changeReason,

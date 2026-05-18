@@ -26,6 +26,14 @@ struct CanvasCommandCatalog {
                 isEnabled: session.canAddTextItem,
                 isActive: false
             )
+        case .addHandDrawingItem:
+            descriptor = CanvasCommandDescriptor(
+                id: .addHandDrawingItem,
+                title: "Add Hand Drawing",
+                systemImageName: "scribble",
+                isEnabled: session.canAddHandDrawingItem,
+                isActive: false
+            )
         case .beginTextEdit:
             let resolvedTargetItemID = singleEffectiveItemID(
                 in: context,

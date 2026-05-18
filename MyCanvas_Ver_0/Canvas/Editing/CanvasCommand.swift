@@ -3,6 +3,7 @@ import Foundation
 enum CanvasCommandID: String {
     case importMedia
     case addTextItem
+    case addHandDrawingItem
     case beginTextEdit
     case commitTextEdit
     case decreaseTextFontSize
@@ -26,6 +27,7 @@ enum CanvasCommandID: String {
         switch self {
         case .importMedia,
              .addTextItem,
+             .addHandDrawingItem,
              .beginTextEdit,
              .commitTextEdit,
              .decreaseTextFontSize,
@@ -51,6 +53,7 @@ enum CanvasCommand {
     // intentionally consumes CanvasImportRequest instead of raw capture input.
     case importMedia(CanvasImportRequest)
     case addTextItem
+    case addHandDrawingItem(paper: CanvasHandDrawingPaperSpec)
     case beginTextEdit(itemID: CanvasItemID)
     case commitTextEdit
     case decreaseTextFontSize
@@ -85,6 +88,8 @@ enum CanvasCommand {
             return .importMedia
         case .addTextItem:
             return .addTextItem
+        case .addHandDrawingItem:
+            return .addHandDrawingItem
         case .beginTextEdit:
             return .beginTextEdit
         case .commitTextEdit:
@@ -146,6 +151,7 @@ enum CanvasCommand {
             return false
         case .importMedia,
              .addTextItem,
+             .addHandDrawingItem,
              .beginTextEdit,
              .crop,
              .beginCropMode,
@@ -176,6 +182,7 @@ enum CanvasCommand {
         switch self {
         case .importMedia,
              .addTextItem,
+             .addHandDrawingItem,
              .beginTextEdit,
              .commitTextEdit,
              .decreaseTextFontSize,
@@ -208,6 +215,10 @@ enum CanvasCommand {
     }
 }
 
+enum CanvasCommandFollowUp: Equatable {
+    case presentHandDrawingEditor(itemID: CanvasItemID)
+}
+
 struct CanvasCommandDescriptor {
     let id: CanvasCommandID
     let title: String
@@ -218,4 +229,13 @@ struct CanvasCommandDescriptor {
 
 struct CanvasCommandExecutionResult {
     let refreshReason: String?
+    let followUp: CanvasCommandFollowUp?
+
+    init(
+        refreshReason: String?,
+        followUp: CanvasCommandFollowUp? = nil
+    ) {
+        self.refreshReason = refreshReason
+        self.followUp = followUp
+    }
 }

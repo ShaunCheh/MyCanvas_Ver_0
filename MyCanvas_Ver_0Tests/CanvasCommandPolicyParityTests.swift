@@ -41,6 +41,67 @@ final class CanvasCommandPolicyParityTests: XCTestCase {
         XCTAssertFalse(executor.canExecute(.addTextItem))
     }
 
+    func testAddHandDrawingDescriptorAndExecutorMatchPolicyInEditingMode() {
+        let session = makeCommandPolicyParityTestSession(workspaceMode: .editing)
+        let executor = CanvasCommandExecutor(session: session)
+        CanvasCommandPolicyParityTestRetainer.executors.append(executor)
+
+        let descriptor = commandCatalog.descriptor(
+            for: .addHandDrawingItem,
+            session: session
+        )
+        let decision = policy.commandDecision(
+            for: .addHandDrawingItem,
+            workspaceMode: session.workspaceMode
+        )
+
+        XCTAssertEqual(decision, .allow)
+        XCTAssertTrue(descriptor.isEnabled)
+        XCTAssertFalse(descriptor.isActive)
+        XCTAssertTrue(executor.canExecute(.addHandDrawingItem(paper: .square)))
+    }
+
+    func testAddHandDrawingDescriptorAndExecutorMatchPolicyInReadingMode() {
+        let session = makeCommandPolicyParityTestSession(workspaceMode: .reading)
+        let executor = CanvasCommandExecutor(session: session)
+        CanvasCommandPolicyParityTestRetainer.executors.append(executor)
+
+        let descriptor = commandCatalog.descriptor(
+            for: .addHandDrawingItem,
+            session: session
+        )
+        let decision = policy.commandDecision(
+            for: .addHandDrawingItem,
+            workspaceMode: session.workspaceMode
+        )
+
+        XCTAssertEqual(decision, .block(reason: .readingMode, feedback: nil))
+        XCTAssertFalse(descriptor.isEnabled)
+        XCTAssertFalse(descriptor.isActive)
+        XCTAssertFalse(executor.canExecute(.addHandDrawingItem(paper: .square)))
+    }
+
+    func testAddHandDrawingCommandProducesFollowUpAndTransientPayload() throws {
+        let session = makeCommandPolicyParityTestSession(workspaceMode: .editing)
+        let executor = CanvasCommandExecutor(session: session)
+        CanvasCommandPolicyParityTestRetainer.executors.append(executor)
+
+        let result = try XCTUnwrap(
+            executor.execute(.addHandDrawingItem(paper: .square))
+        )
+        guard case let .presentHandDrawingEditor(itemID)? = result.followUp else {
+            XCTFail("Expected addHandDrawingItem to request editor follow-up.")
+            return
+        }
+
+        let addedItem = try XCTUnwrap(
+            session.scene.handDrawingItem(withID: itemID)
+        )
+        XCTAssertTrue(addedItem.isEmpty)
+        XCTAssertEqual(session.singleSelectedItemID, itemID)
+        XCTAssertNotNil(session.transientHandDrawingAssetPayload(for: itemID))
+    }
+
     func testCommitTextDescriptorResetsActiveStateWhenPolicyBlocksInReadingMode() {
         let session = makeCommandPolicyParityTestSession(workspaceMode: .editing)
         let executor = CanvasCommandExecutor(session: session)

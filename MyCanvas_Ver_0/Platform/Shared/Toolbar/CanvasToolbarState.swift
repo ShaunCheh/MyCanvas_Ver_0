@@ -10,6 +10,7 @@ enum CanvasToolbarItemID: String, CaseIterable, Sendable {
     case multiSelect
     case save
     case text
+    case handDrawing
     case importMedia
     case undo
     case redo

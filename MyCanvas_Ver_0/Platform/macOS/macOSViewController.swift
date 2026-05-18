@@ -259,6 +259,11 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         button.translatesAutoresizingMaskIntoConstraints = false
         return button
     }()
+    private let handDrawingButton: NSButton = {
+        let button = NSButton()
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }()
     private let undoButton: NSButton = {
         let button = NSButton()
         button.translatesAutoresizingMaskIntoConstraints = false
@@ -277,6 +282,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             .multiSelect: multiSelectButton,
             .save: saveButton,
             .text: textButton,
+            .handDrawing: handDrawingButton,
             .importMedia: importButton
         ]
     }
@@ -321,6 +327,10 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
 
     private var scene: CanvasScene {
         editorSession.scene
+    }
+
+    private var supportsHandDrawingEditing: Bool {
+        false
     }
 
     private var camera: CanvasCamera {
@@ -434,6 +444,16 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         if let refreshReason = executionResult.refreshReason {
             refreshCanvas(reason: refreshReason)
         }
+        if let followUp = executionResult.followUp {
+            handleCommandFollowUp(followUp)
+        }
+    }
+
+    private func handleCommandFollowUp(_ followUp: CanvasCommandFollowUp) {
+        switch followUp {
+        case .presentHandDrawingEditor:
+            return
+        }
     }
 
     private func applyTransitionInteractionFreeze() {
@@ -454,7 +474,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         let actionStates = contextMenuActionResolver.actionStates(
             for: resolvedContext,
             session: editorSession,
-            environment: makeInteractionEnvironment()
+            environment: makeInteractionEnvironment(),
+            supportsHandDrawingEditing: supportsHandDrawingEditing
         )
         guard actionStates.isEmpty == false else {
             dismissContextMenu()
@@ -571,6 +592,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         context: CanvasContextMenuContext
     ) {
         switch actionID {
+        case .editHandDrawing:
+            return
         case .editVideoDisplayFrame:
             guard let itemID = targetVideoItemID(for: context) else {
                 return
@@ -706,6 +729,10 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             break
         case .addTextItem:
             performCommand(.addTextItem)
+        case .addHandDrawingItem:
+            if supportsHandDrawingEditing {
+                performCommand(.addHandDrawingItem(paper: .square))
+            }
         case .beginTextEdit:
             if let selectedItemID = interactionState.selectedItemID {
                 performCommand(.beginTextEdit(itemID: selectedItemID))
@@ -880,6 +907,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         setupCropButton()
         setupMultiSelectButton()
         setupTextButton()
+        setupHandDrawingButton()
         setupUndoButton()
         setupRedoButton()
         setupBackButton()
@@ -1365,6 +1393,12 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     private func setupTextButton() {
         textButton.target = self
         textButton.action = #selector(handleTextButtonClick)
+        updateInlineEditButtonsAppearance()
+    }
+
+    private func setupHandDrawingButton() {
+        handDrawingButton.target = self
+        handDrawingButton.action = #selector(handleHandDrawingButtonClick)
         updateInlineEditButtonsAppearance()
     }
 
@@ -2180,6 +2214,21 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         } else {
             performCommand(.addTextItem)
         }
+    }
+
+    @objc
+    private func handleHandDrawingButtonClick() {
+        guard supportsHandDrawingEditing else {
+            return
+        }
+
+        if let itemID = editorSession.singleSelectedItemID,
+           editorSession.canEditHandDrawing(withID: itemID)
+        {
+            return
+        }
+
+        performCommand(.addHandDrawingItem(paper: .square))
     }
 
     @objc
@@ -4964,6 +5013,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             session: editorSession,
             saveState: saveButtonState,
             placement: toolbarPreferredPlacement(),
+            supportsHandDrawingEditing: supportsHandDrawingEditing,
             isMultiSelectModeActive: isMultiSelectModeActive,
             includesHistoryItems: true
         )

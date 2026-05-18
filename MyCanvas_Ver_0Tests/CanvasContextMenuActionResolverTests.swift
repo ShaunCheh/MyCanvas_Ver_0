@@ -122,6 +122,42 @@ final class CanvasContextMenuActionResolverTests: XCTestCase {
         XCTAssertFalse(actionStates.contains(where: isGIFFrameImportAction))
     }
 
+    func testSelectedHandDrawingIncludesEditActionWhenSupported() throws {
+        let session = makeContextMenuActionResolverTestSession()
+        let handDrawingItem = try makeContextMenuActionResolverTestHandDrawingItem()
+        session.scene.append(handDrawingItem)
+
+        let actionStates = CanvasContextMenuActionResolver().actionStates(
+            for: makeContextMenuContext(
+                targetKind: .selectedItemBody,
+                targetItemID: handDrawingItem.id,
+                selectedItemID: handDrawingItem.id
+            ),
+            session: session,
+            supportsHandDrawingEditing: true
+        )
+
+        XCTAssertTrue(actionStates.contains(where: isEditHandDrawingAction))
+        XCTAssertFalse(actionStates.contains(where: isVideoDisplayFrameAction))
+    }
+
+    func testSelectedHandDrawingHidesEditActionWhenUnsupported() throws {
+        let session = makeContextMenuActionResolverTestSession()
+        let handDrawingItem = try makeContextMenuActionResolverTestHandDrawingItem()
+        session.scene.append(handDrawingItem)
+
+        let actionStates = CanvasContextMenuActionResolver().actionStates(
+            for: makeContextMenuContext(
+                targetKind: .selectedItemBody,
+                targetItemID: handDrawingItem.id,
+                selectedItemID: handDrawingItem.id
+            ),
+            session: session
+        )
+
+        XCTAssertFalse(actionStates.contains(where: isEditHandDrawingAction))
+    }
+
     func testReadingModeReturnsNoActionsEvenWhenContextHasCandidates() throws {
         let session = makeContextMenuActionResolverTestSession()
         let imageItem = CanvasImageItem(
@@ -639,6 +675,36 @@ private func isVideoDisplayFrameAction(
     }
 
     return false
+}
+
+private func isEditHandDrawingAction(
+    _ actionState: CanvasContextMenuActionState
+) -> Bool {
+    if case .uiAction(.editHandDrawing) = actionState.actionID {
+        return true
+    }
+
+    return false
+}
+
+private func makeContextMenuActionResolverTestHandDrawingItem() throws -> CanvasHandDrawingItem {
+    let itemID = CanvasItemID()
+    let previewImage = try CanvasHandDrawingPreviewAssetFactory.makeTransparentPreview(
+        for: .square
+    )
+    return CanvasHandDrawingItem(
+        id: itemID,
+        paper: .square,
+        previewAsset: CanvasHandDrawingItem.persistedPreviewAsset(
+            for: itemID,
+            cgImage: previewImage,
+            logicalPixelSize: CanvasHandDrawingPaperSpec.square.size
+        ),
+        isEmpty: true,
+        center: CGPoint(x: 48, y: 52),
+        size: CGSize(width: 220, height: 220),
+        zIndex: 0
+    )
 }
 
 private func makeContextMenuActionResolverTestImage(

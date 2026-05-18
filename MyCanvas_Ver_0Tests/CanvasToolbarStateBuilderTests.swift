@@ -114,6 +114,48 @@ final class CanvasToolbarStateBuilderTests: XCTestCase {
 
         XCTAssertTrue(state.items.isEmpty)
     }
+
+    func testMainToolbarStateIncludesHandDrawingItemWhenSupported() {
+        let session = makeToolbarStateBuilderTestSession()
+        let builder = CanvasToolbarStateBuilder()
+
+        let state = builder.mainToolbarState(
+            session: session,
+            saveState: .idle,
+            placement: CanvasToolbarPlacement(preferredEdge: .trailing),
+            supportsHandDrawingEditing: true,
+            includesHistoryItems: true
+        )
+
+        XCTAssertEqual(
+            state.items.map(\.id),
+            [.undo, .redo, .crop, .multiSelect, .save, .text, .handDrawing, .importMedia]
+        )
+    }
+
+    func testSelectedHandDrawingShowsEditToolbarItemAndHidesCrop() throws {
+        let session = makeToolbarStateBuilderTestSession()
+        let builder = CanvasToolbarStateBuilder()
+        let handDrawingItem = try makeToolbarStateBuilderTestHandDrawingItem()
+        session.scene.append(handDrawingItem)
+        session.interactionState = CanvasInteractionState(
+            selectedItemID: handDrawingItem.id
+        )
+
+        let state = builder.mainToolbarState(
+            session: session,
+            saveState: .idle,
+            placement: CanvasToolbarPlacement(preferredEdge: .trailing),
+            supportsHandDrawingEditing: true
+        )
+
+        let handDrawingToolbarItem = try XCTUnwrap(
+            state.items.first(where: { $0.id == .handDrawing })
+        )
+        XCTAssertEqual(handDrawingToolbarItem.accessibilityLabel, "Edit hand drawing")
+        XCTAssertEqual(handDrawingToolbarItem.systemImageName, "pencil.and.scribble")
+        XCTAssertFalse(state.items.contains(where: { $0.id == .crop }))
+    }
 }
 
 private enum CanvasToolbarStateBuilderTestRetainer {
@@ -156,6 +198,26 @@ private func makeToolbarStateBuilderTestImage() throws -> CGImage {
         throw ToolbarStateBuilderTestError.invalidBitmapContext
     }
     return image
+}
+
+private func makeToolbarStateBuilderTestHandDrawingItem() throws -> CanvasHandDrawingItem {
+    let itemID = CanvasItemID()
+    let previewImage = try CanvasHandDrawingPreviewAssetFactory.makeTransparentPreview(
+        for: .square
+    )
+    return CanvasHandDrawingItem(
+        id: itemID,
+        paper: .square,
+        previewAsset: CanvasHandDrawingItem.persistedPreviewAsset(
+            for: itemID,
+            cgImage: previewImage,
+            logicalPixelSize: CanvasHandDrawingPaperSpec.square.size
+        ),
+        isEmpty: true,
+        center: CGPoint(x: 80, y: 60),
+        size: CGSize(width: 240, height: 240),
+        zIndex: 0
+    )
 }
 
 private enum ToolbarStateBuilderTestError: Error {

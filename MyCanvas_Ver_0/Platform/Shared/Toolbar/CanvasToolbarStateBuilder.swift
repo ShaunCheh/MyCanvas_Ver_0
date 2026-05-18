@@ -7,6 +7,7 @@ struct CanvasToolbarStateBuilder {
         session: CanvasEditorSession,
         saveState: CanvasSaveState,
         placement: CanvasToolbarPlacement,
+        supportsHandDrawingEditing: Bool = false,
         isMultiSelectModeActive: Bool = false,
         isImportEnabled: Bool = true,
         showsBackground: Bool = true,
@@ -35,6 +36,9 @@ struct CanvasToolbarStateBuilder {
         )
         itemStates.append(saveItemState(saveState: saveState))
         itemStates.append(textItemState(session: session))
+        if supportsHandDrawingEditing {
+            itemStates.append(handDrawingItemState(session: session))
+        }
         itemStates.append(importItemState(isEnabled: isImportEnabled))
 
         return CanvasToolbarState(
@@ -140,6 +144,32 @@ struct CanvasToolbarStateBuilder {
         )
     }
 
+    func handDrawingItemState(
+        session: CanvasEditorSession
+    ) -> CanvasToolbarItemState {
+        if session.canEditSelectedHandDrawing {
+            return CanvasToolbarItemState(
+                id: .handDrawing,
+                systemImageName: "pencil.and.scribble",
+                accessibilityLabel: "Edit hand drawing",
+                visualRole: .accent
+            )
+        }
+
+        let descriptor = commandCatalog.descriptor(
+            for: .addHandDrawingItem,
+            session: session
+        )
+        return CanvasToolbarItemState(
+            id: .handDrawing,
+            systemImageName: descriptor.systemImageName,
+            isEnabled: descriptor.isEnabled,
+            isActive: descriptor.isActive,
+            accessibilityLabel: "Add hand drawing",
+            visualRole: .accent
+        )
+    }
+
     func importItemState(isEnabled: Bool = true) -> CanvasToolbarItemState {
         CanvasToolbarItemState(
             id: .importMedia,
@@ -155,7 +185,11 @@ struct CanvasToolbarStateBuilder {
             return true
         }
 
-        return session.selectedBoardItemKind != .text
+        guard let selectedBoardItemKind = session.selectedBoardItemKind else {
+            return true
+        }
+
+        return selectedBoardItemKind == .image
     }
 
     private func canToggleMultiSelectMode(

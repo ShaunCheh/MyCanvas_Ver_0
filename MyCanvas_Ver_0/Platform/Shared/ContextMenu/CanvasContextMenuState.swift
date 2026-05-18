@@ -30,6 +30,7 @@ struct CanvasContextMenuActionDescriptor {
 }
 
 enum CanvasContextMenuUIActionID: String {
+    case editHandDrawing
     case editVideoDisplayFrame
     case importGIFFrames
 
