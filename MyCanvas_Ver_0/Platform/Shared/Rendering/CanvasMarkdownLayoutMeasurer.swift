@@ -10,15 +10,6 @@ private typealias CanvasMarkdownPlatformColor = UIColor
 private typealias CanvasMarkdownPlatformFont = UIFont
 #endif
 
-struct CanvasMarkdownLayoutResult {
-    let attributedText: NSAttributedString
-    let contentSize: CGSize
-
-    var contentHeight: CGFloat {
-        contentSize.height
-    }
-}
-
 enum CanvasMarkdownLayoutMeasurer {
     private struct InlineTraits {
         let isBold: Bool
@@ -53,6 +44,28 @@ enum CanvasMarkdownLayoutMeasurer {
         case codeBlock(text: String)
     }
 
+    private struct RenderedBlock {
+        let block: Block
+        let attributedText: NSAttributedString
+    }
+
+    private struct AttributedComposition {
+        let attributedText: NSAttributedString
+        let codeBlockRanges: [NSRange]
+    }
+
+    private struct CodeBlockDecorationMetrics {
+        let horizontalPadding: CGFloat
+        let verticalPadding: CGFloat
+        let cornerRadius: CGFloat
+    }
+
+    private struct TextLayoutContext {
+        let textStorage: NSTextStorage
+        let layoutManager: NSLayoutManager
+        let textContainer: NSTextContainer
+    }
+
     private static let headingFontMultipliers: [CGFloat] = [
         2.0,
         1.65,
@@ -66,6 +79,15 @@ enum CanvasMarkdownLayoutMeasurer {
     private static let listHeadIndentFactor: CGFloat = 1.8
     private static let quoteHeadIndentFactor: CGFloat = 1.2
     private static let codeBlockInsetFactor: CGFloat = 0.9
+    private static let codeBlockPanelHorizontalPaddingFactor: CGFloat = 0.35
+    private static let codeBlockPanelVerticalPaddingFactor: CGFloat = 0.18
+    private static let codeBlockPanelCornerRadiusFactor: CGFloat = 0.24
+    private static let minimumCodeBlockPanelHorizontalPadding: CGFloat = 4
+    private static let maximumCodeBlockPanelHorizontalPadding: CGFloat = 12
+    private static let minimumCodeBlockPanelVerticalPadding: CGFloat = 2
+    private static let maximumCodeBlockPanelVerticalPadding: CGFloat = 6
+    private static let minimumCodeBlockPanelCornerRadius: CGFloat = 4
+    private static let maximumCodeBlockPanelCornerRadius: CGFloat = 10
     private static let quotePrefix = "▌ "
     private static let unorderedListPrefix = "• "
 
@@ -73,14 +95,17 @@ enum CanvasMarkdownLayoutMeasurer {
         markdownSource: String,
         style: CanvasTextStyle,
         maxLayoutWidth: CGFloat,
-        scale: CGFloat = 1
+        scale: CGFloat = 1,
+        includeCompatibilityCodeBlockBackgrounds: Bool = true
     ) -> CanvasMarkdownLayoutResult {
         let resolvedLayoutWidth = max(maxLayoutWidth, 1)
-        let attributedText = makeAttributedText(
+        let composition = makeAttributedComposition(
             markdownSource: markdownSource,
             style: style,
-            scale: scale
+            scale: scale,
+            includeCompatibilityCodeBlockBackgrounds: includeCompatibilityCodeBlockBackgrounds
         )
+        let attributedText = composition.attributedText
         let measuredRect = attributedText.boundingRect(
             with: CGSize(
                 width: resolvedLayoutWidth,
@@ -92,14 +117,23 @@ enum CanvasMarkdownLayoutMeasurer {
             ],
             context: nil
         )
+        let contentSize = CGSize(
+            width: resolvedLayoutWidth,
+            height: ceil(max(measuredRect.height, minimumContentHeight(
+                style: style,
+                scale: scale
+            )))
+        )
         return CanvasMarkdownLayoutResult(
             attributedText: attributedText,
-            contentSize: CGSize(
-                width: resolvedLayoutWidth,
-                height: ceil(max(measuredRect.height, minimumContentHeight(
-                    style: style,
-                    scale: scale
-                )))
+            contentSize: contentSize,
+            decorations: makeCodeBlockDecorations(
+                codeBlockRanges: composition.codeBlockRanges,
+                attributedText: attributedText,
+                maxLayoutWidth: resolvedLayoutWidth,
+                style: style,
+                scale: scale,
+                contentSize: contentSize
             )
         )
     }
@@ -118,37 +152,51 @@ enum CanvasMarkdownLayoutMeasurer {
         ).contentHeight
     }
 
-    private static func makeAttributedText(
+    private static func makeAttributedComposition(
         markdownSource: String,
         style: CanvasTextStyle,
-        scale: CGFloat
-    ) -> NSAttributedString {
+        scale: CGFloat,
+        includeCompatibilityCodeBlockBackgrounds: Bool
+    ) -> AttributedComposition {
         let blocks = parseBlocks(from: markdownSource)
         let resolvedBlocks = blocks.isEmpty
             ? [.paragraph(text: markdownSource)]
             : blocks
         let renderedBlocks = resolvedBlocks.map { block in
-            makeAttributedBlock(
+            makeRenderedBlock(
                 for: block,
                 style: style,
-                scale: scale
+                scale: scale,
+                includeCompatibilityCodeBlockBackgrounds: includeCompatibilityCodeBlockBackgrounds
             )
         }
         let composed = NSMutableAttributedString(string: "")
+        var codeBlockRanges: [NSRange] = []
         for (index, block) in renderedBlocks.enumerated() {
             if index > 0 {
                 composed.append(NSAttributedString(string: "\n\n"))
             }
-            composed.append(block)
+            let blockRange = NSRange(
+                location: composed.length,
+                length: block.attributedText.length
+            )
+            composed.append(block.attributedText)
+            if case .codeBlock = block.block {
+                codeBlockRanges.append(blockRange)
+            }
         }
-        return composed
+        return AttributedComposition(
+            attributedText: composed,
+            codeBlockRanges: codeBlockRanges
+        )
     }
 
-    private static func makeAttributedBlock(
+    private static func makeRenderedBlock(
         for block: Block,
         style: CanvasTextStyle,
-        scale: CGFloat
-    ) -> NSAttributedString {
+        scale: CGFloat,
+        includeCompatibilityCodeBlockBackgrounds: Bool
+    ) -> RenderedBlock {
         let baseFontSize = CanvasTextLayoutMeasurer.renderFontSize(
             for: style,
             scale: scale
@@ -169,7 +217,10 @@ enum CanvasMarkdownLayoutMeasurer {
                 fontSize: fontSize,
                 paragraphSpacing: fontSize * blockSpacingFactor
             )
-            return attributed
+            return RenderedBlock(
+                block: block,
+                attributedText: attributed
+            )
 
         case let .paragraph(text):
             let attributed = makeInlineAttributedText(
@@ -184,24 +235,33 @@ enum CanvasMarkdownLayoutMeasurer {
                 fontSize: baseFontSize,
                 paragraphSpacing: baseFontSize * blockSpacingFactor
             )
-            return attributed
+            return RenderedBlock(
+                block: block,
+                attributedText: attributed
+            )
 
         case let .unorderedList(items):
-            return makeListBlock(
-                items: items.enumerated().map { _, item in
-                    (prefix: unorderedListPrefix, text: item)
-                },
-                style: style,
-                fontSize: baseFontSize
+            return RenderedBlock(
+                block: block,
+                attributedText: makeListBlock(
+                    items: items.enumerated().map { _, item in
+                        (prefix: unorderedListPrefix, text: item)
+                    },
+                    style: style,
+                    fontSize: baseFontSize
+                )
             )
 
         case let .orderedList(items):
-            return makeListBlock(
-                items: items.map { item in
-                    (prefix: "\(item.number). ", text: item.text)
-                },
-                style: style,
-                fontSize: baseFontSize
+            return RenderedBlock(
+                block: block,
+                attributedText: makeListBlock(
+                    items: items.map { item in
+                        (prefix: "\(item.number). ", text: item.text)
+                    },
+                    style: style,
+                    fontSize: baseFontSize
+                )
             )
 
         case let .quote(text):
@@ -225,7 +285,10 @@ enum CanvasMarkdownLayoutMeasurer {
                 headIndent: baseFontSize * quoteHeadIndentFactor,
                 paragraphSpacing: baseFontSize * blockSpacingFactor
             )
-            return attributed
+            return RenderedBlock(
+                block: block,
+                attributedText: attributed
+            )
 
         case let .codeBlock(text):
             let attributed = makeLeafAttributedText(
@@ -233,12 +296,10 @@ enum CanvasMarkdownLayoutMeasurer {
                 style: style,
                 fontSize: baseFontSize * 0.95,
                 traits: .plain.merging(isCode: true),
-                color: platformColor(for: style.color)
-            )
-            attributed.addAttribute(
-                .backgroundColor,
-                value: codeBackgroundColor(),
-                range: NSRange(location: 0, length: attributed.length)
+                color: platformColor(for: style.color),
+                // Stage 1 moves fenced code block semantics to decorations while
+                // keeping an attributed-text fallback for current renderers.
+                includesCodeBackground: includeCompatibilityCodeBlockBackgrounds
             )
             applyParagraphStyle(
                 to: attributed,
@@ -247,7 +308,10 @@ enum CanvasMarkdownLayoutMeasurer {
                 headIndent: baseFontSize * codeBlockInsetFactor,
                 paragraphSpacing: baseFontSize * blockSpacingFactor
             )
-            return attributed
+            return RenderedBlock(
+                block: block,
+                attributedText: attributed
+            )
         }
     }
 
@@ -458,7 +522,8 @@ enum CanvasMarkdownLayoutMeasurer {
         style: CanvasTextStyle,
         fontSize: CGFloat,
         traits: InlineTraits,
-        color: CanvasMarkdownPlatformColor
+        color: CanvasMarkdownPlatformColor,
+        includesCodeBackground: Bool = true
     ) -> NSMutableAttributedString {
         let resolvedText = text.isEmpty ? " " : text
         let attributed = NSMutableAttributedString(
@@ -472,7 +537,7 @@ enum CanvasMarkdownLayoutMeasurer {
                 .foregroundColor: color
             ]
         )
-        if traits.isCode {
+        if traits.isCode && includesCodeBackground {
             attributed.addAttribute(
                 .backgroundColor,
                 value: codeBackgroundColor(),
@@ -480,6 +545,118 @@ enum CanvasMarkdownLayoutMeasurer {
             )
         }
         return attributed
+    }
+
+    private static func makeCodeBlockDecorations(
+        codeBlockRanges: [NSRange],
+        attributedText: NSAttributedString,
+        maxLayoutWidth: CGFloat,
+        style: CanvasTextStyle,
+        scale: CGFloat,
+        contentSize: CGSize
+    ) -> [CanvasMarkdownDecoration] {
+        guard codeBlockRanges.isEmpty == false else {
+            return []
+        }
+
+        let layoutContext = makeTextLayoutContext(
+            attributedText: attributedText,
+            maxLayoutWidth: maxLayoutWidth
+        )
+        let metrics = codeBlockDecorationMetrics(
+            style: style,
+            scale: scale
+        )
+        let contentBounds = CGRect(origin: .zero, size: contentSize)
+        return codeBlockRanges.compactMap { characterRange in
+            guard let rect = codeBlockDecorationRect(
+                for: characterRange,
+                layoutContext: layoutContext,
+                contentBounds: contentBounds,
+                metrics: metrics
+            ) else {
+                return nil
+            }
+            return CanvasMarkdownDecoration(
+                kind: .codeBlockPanel,
+                rect: rect,
+                fillColor: codeDecorationFillColor(),
+                cornerRadius: metrics.cornerRadius
+            )
+        }
+    }
+
+    private static func makeTextLayoutContext(
+        attributedText: NSAttributedString,
+        maxLayoutWidth: CGFloat
+    ) -> TextLayoutContext {
+        let textStorage = NSTextStorage(attributedString: attributedText)
+        let layoutManager = NSLayoutManager()
+        let textContainer = NSTextContainer(
+            size: CGSize(
+                width: max(maxLayoutWidth, 1),
+                height: CGFloat.greatestFiniteMagnitude
+            )
+        )
+        textContainer.lineFragmentPadding = 0
+        textContainer.maximumNumberOfLines = 0
+        textContainer.lineBreakMode = .byWordWrapping
+        layoutManager.addTextContainer(textContainer)
+        textStorage.addLayoutManager(layoutManager)
+        _ = layoutManager.glyphRange(for: textContainer)
+        return TextLayoutContext(
+            textStorage: textStorage,
+            layoutManager: layoutManager,
+            textContainer: textContainer
+        )
+    }
+
+    private static func codeBlockDecorationRect(
+        for characterRange: NSRange,
+        layoutContext: TextLayoutContext,
+        contentBounds: CGRect,
+        metrics: CodeBlockDecorationMetrics
+    ) -> CGRect? {
+        let glyphRange = layoutContext.layoutManager.glyphRange(
+            forCharacterRange: characterRange,
+            actualCharacterRange: nil
+        )
+        guard glyphRange.length > 0 else {
+            return nil
+        }
+
+        var blockUsedRect: CGRect?
+        layoutContext.layoutManager.enumerateLineFragments(forGlyphRange: glyphRange) {
+            _,
+            usedRect,
+            _,
+            lineGlyphRange,
+            _
+        in
+            guard NSIntersectionRange(lineGlyphRange, glyphRange).length > 0 else {
+                return
+            }
+            blockUsedRect = blockUsedRect.map { $0.union(usedRect) } ?? usedRect
+        }
+
+        guard let blockUsedRect else {
+            return nil
+        }
+
+        let expandedRect = blockUsedRect.insetBy(
+            dx: -metrics.horizontalPadding,
+            dy: -metrics.verticalPadding
+        )
+        let clippedRect = expandedRect.intersection(contentBounds)
+        guard clippedRect.isNull == false, clippedRect.isEmpty == false else {
+            return nil
+        }
+        return CGRect(
+            x: floor(clippedRect.minX),
+            y: floor(clippedRect.minY),
+            width: ceil(clippedRect.width),
+            height: ceil(clippedRect.height)
+        ).standardized
     }
 
     private static func parseBlocks(from markdownSource: String) -> [Block] {
@@ -676,6 +853,41 @@ enum CanvasMarkdownLayoutMeasurer {
         ) * 1.35
     }
 
+    private static func codeBlockDecorationMetrics(
+        style: CanvasTextStyle,
+        scale: CGFloat
+    ) -> CodeBlockDecorationMetrics {
+        let baseFontSize = CanvasTextLayoutMeasurer.renderFontSize(
+            for: style,
+            scale: scale
+        )
+        return CodeBlockDecorationMetrics(
+            horizontalPadding: clamped(
+                baseFontSize * codeBlockPanelHorizontalPaddingFactor,
+                min: minimumCodeBlockPanelHorizontalPadding,
+                max: maximumCodeBlockPanelHorizontalPadding
+            ),
+            verticalPadding: clamped(
+                baseFontSize * codeBlockPanelVerticalPaddingFactor,
+                min: minimumCodeBlockPanelVerticalPadding,
+                max: maximumCodeBlockPanelVerticalPadding
+            ),
+            cornerRadius: clamped(
+                baseFontSize * codeBlockPanelCornerRadiusFactor,
+                min: minimumCodeBlockPanelCornerRadius,
+                max: maximumCodeBlockPanelCornerRadius
+            )
+        )
+    }
+
+    private static func clamped(
+        _ value: CGFloat,
+        min minimumValue: CGFloat,
+        max maximumValue: CGFloat
+    ) -> CGFloat {
+        Swift.min(Swift.max(value, minimumValue), maximumValue)
+    }
+
     private static func platformColor(
         for color: CanvasTextColor,
         alphaMultiplier: CGFloat = 1
@@ -688,18 +900,17 @@ enum CanvasMarkdownLayoutMeasurer {
         )
     }
 
+    private static func codeDecorationFillColor() -> CanvasTextColor {
+        CanvasTextColor(
+            red: 0,
+            green: 0,
+            blue: 0,
+            alpha: 0.08
+        )
+    }
+
     private static func codeBackgroundColor() -> CanvasMarkdownPlatformColor {
-        #if os(macOS)
-        return CanvasMarkdownPlatformColor(
-            calibratedWhite: 0,
-            alpha: 0.08
-        )
-        #else
-        return CanvasMarkdownPlatformColor(
-            white: 0,
-            alpha: 0.08
-        )
-        #endif
+        platformColor(for: codeDecorationFillColor())
     }
 
     private static func platformFont(
