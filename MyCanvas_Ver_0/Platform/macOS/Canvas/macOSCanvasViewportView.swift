@@ -74,6 +74,7 @@ final class macOSCanvasViewportView: NSView {
     private var imageLayers: [CanvasItemID: CanvasImageLayer] = [:]
     private var handDrawingLayers: [CanvasItemID: CanvasImageLayer] = [:]
     private var textLayers: [CanvasItemID: CanvasTextLayer] = [:]
+    private var markdownLayers: [CanvasItemID: CanvasMarkdownLayer] = [:]
     private var lastReportedViewportSize: CGSize?
     private var snapshot: CanvasRenderSnapshot = .empty
     private var lastPrimaryPointerLocation: CGPoint?
@@ -316,9 +317,19 @@ final class macOSCanvasViewportView: NSView {
                 return nil
             }
         )
+        let incomingMarkdownIDs = Set(
+            snapshot.items.compactMap { item in
+                if case .markdown = item.payload {
+                    return item.id
+                }
+
+                return nil
+            }
+        )
         let existingImageIDs = Set(imageLayers.keys)
         let existingHandDrawingIDs = Set(handDrawingLayers.keys)
         let existingTextIDs = Set(textLayers.keys)
+        let existingMarkdownIDs = Set(markdownLayers.keys)
 
         for removedID in existingImageIDs.subtracting(incomingImageIDs) {
             imageLayers[removedID]?.removeFromSuperlayer()
@@ -333,6 +344,11 @@ final class macOSCanvasViewportView: NSView {
         for removedID in existingTextIDs.subtracting(incomingTextIDs) {
             textLayers[removedID]?.removeFromSuperlayer()
             textLayers[removedID] = nil
+        }
+
+        for removedID in existingMarkdownIDs.subtracting(incomingMarkdownIDs) {
+            markdownLayers[removedID]?.removeFromSuperlayer()
+            markdownLayers[removedID] = nil
         }
 
         let contentsScale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2
@@ -369,6 +385,13 @@ final class macOSCanvasViewportView: NSView {
                 textLayer.update(
                     with: item,
                     textPayload: textPayload,
+                    contentsScale: contentsScale
+                )
+            case let .markdown(markdownPayload):
+                let markdownLayer = markdownLayer(for: item.id)
+                markdownLayer.update(
+                    with: item,
+                    markdownPayload: markdownPayload,
                     contentsScale: contentsScale
                 )
             }
@@ -1208,6 +1231,17 @@ final class macOSCanvasViewportView: NSView {
         itemsLayer.addSublayer(textLayer)
         textLayers[itemID] = textLayer
         return textLayer
+    }
+
+    private func markdownLayer(for itemID: CanvasItemID) -> CanvasMarkdownLayer {
+        if let markdownLayer = markdownLayers[itemID] {
+            return markdownLayer
+        }
+
+        let markdownLayer = CanvasMarkdownLayer(itemID: itemID)
+        itemsLayer.addSublayer(markdownLayer)
+        markdownLayers[itemID] = markdownLayer
+        return markdownLayer
     }
 
     override func mouseDown(with event: NSEvent) {

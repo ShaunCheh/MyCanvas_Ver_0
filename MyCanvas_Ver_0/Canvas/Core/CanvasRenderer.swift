@@ -865,9 +865,9 @@ struct CanvasRenderer {
             ),
             rotationRadians: effectiveMarkdownItem.rotationRadians,
             zIndex: effectiveMarkdownItem.zIndex,
-            payload: .text(
-                CanvasTextRenderPayload(
-                    text: effectiveMarkdownItem.markdownSource,
+            payload: .markdown(
+                CanvasMarkdownRenderPayload(
+                    markdownSource: effectiveMarkdownItem.markdownSource,
                     style: effectiveMarkdownItem.style,
                     zoomScale: camera.zoomScale
                 )

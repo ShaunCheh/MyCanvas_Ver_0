@@ -35,10 +35,17 @@ struct CanvasTextRenderPayload {
     let zoomScale: CGFloat
 }
 
+struct CanvasMarkdownRenderPayload {
+    let markdownSource: String
+    let style: CanvasTextStyle
+    let zoomScale: CGFloat
+}
+
 enum CanvasRenderPayload {
     case image(CanvasImageRenderPayload)
     case handDrawing(CanvasHandDrawingRenderPayload)
     case text(CanvasTextRenderPayload)
+    case markdown(CanvasMarkdownRenderPayload)
 }
 
 struct CanvasRenderItem {

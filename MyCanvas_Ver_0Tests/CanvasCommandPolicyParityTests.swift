@@ -81,6 +81,31 @@ final class CanvasCommandPolicyParityTests: XCTestCase {
         XCTAssertFalse(executor.canExecute(.addMarkdownItem))
     }
 
+    func testAddMarkdownItemUsesMeasuredHeightAtDefaultWidth() throws {
+        let session = makeCommandPolicyParityTestSession(workspaceMode: .editing)
+        let source = """
+        ## Markdown
+
+        A wrapped paragraph for measurement.
+        """
+        let style = CanvasTextStyle(fontSize: 20)
+
+        let item = try XCTUnwrap(
+            session.addMarkdownItem(
+                markdownSource: source,
+                style: style
+            )
+        )
+        let expectedHeight = CanvasMarkdownLayoutMeasurer.measuredContentHeight(
+            markdownSource: source,
+            style: style,
+            maxLayoutWidth: 320
+        )
+
+        XCTAssertEqual(item.size.width, 320, accuracy: 0.0001)
+        XCTAssertEqual(item.size.height, expectedHeight, accuracy: 0.0001)
+    }
+
     func testAddHandDrawingDescriptorAndExecutorMatchPolicyInEditingMode() {
         let session = makeCommandPolicyParityTestSession(workspaceMode: .editing)
         let executor = CanvasCommandExecutor(session: session)

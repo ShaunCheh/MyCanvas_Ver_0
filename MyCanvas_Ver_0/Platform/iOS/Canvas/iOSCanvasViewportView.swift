@@ -102,6 +102,7 @@ final class iOSCanvasViewportView: UIView {
     private var imageLayers: [CanvasItemID: CanvasImageLayer] = [:]
     private var handDrawingLayers: [CanvasItemID: CanvasImageLayer] = [:]
     private var textLayers: [CanvasItemID: CanvasTextLayer] = [:]
+    private var markdownLayers: [CanvasItemID: CanvasMarkdownLayer] = [:]
     private var lastReportedViewportSize: CGSize?
     private var snapshot: CanvasRenderSnapshot = .empty
     private var interactionState: TouchInteractionState = .idle
@@ -444,9 +445,19 @@ final class iOSCanvasViewportView: UIView {
                 return nil
             }
         )
+        let incomingMarkdownIDs = Set(
+            snapshot.items.compactMap { item in
+                if case .markdown = item.payload {
+                    return item.id
+                }
+
+                return nil
+            }
+        )
         let existingImageIDs = Set(imageLayers.keys)
         let existingHandDrawingIDs = Set(handDrawingLayers.keys)
         let existingTextIDs = Set(textLayers.keys)
+        let existingMarkdownIDs = Set(markdownLayers.keys)
 
         for removedID in existingImageIDs.subtracting(incomingImageIDs) {
             imageLayers[removedID]?.removeFromSuperlayer()
@@ -461,6 +472,11 @@ final class iOSCanvasViewportView: UIView {
         for removedID in existingTextIDs.subtracting(incomingTextIDs) {
             textLayers[removedID]?.removeFromSuperlayer()
             textLayers[removedID] = nil
+        }
+
+        for removedID in existingMarkdownIDs.subtracting(incomingMarkdownIDs) {
+            markdownLayers[removedID]?.removeFromSuperlayer()
+            markdownLayers[removedID] = nil
         }
 
         let contentsScale = window?.screen.scale ?? UIScreen.main.scale
@@ -497,6 +513,13 @@ final class iOSCanvasViewportView: UIView {
                 textLayer.update(
                     with: item,
                     textPayload: textPayload,
+                    contentsScale: contentsScale
+                )
+            case let .markdown(markdownPayload):
+                let markdownLayer = markdownLayer(for: item.id)
+                markdownLayer.update(
+                    with: item,
+                    markdownPayload: markdownPayload,
                     contentsScale: contentsScale
                 )
             }
@@ -1336,6 +1359,17 @@ final class iOSCanvasViewportView: UIView {
         itemsLayer.addSublayer(textLayer)
         textLayers[itemID] = textLayer
         return textLayer
+    }
+
+    private func markdownLayer(for itemID: CanvasItemID) -> CanvasMarkdownLayer {
+        if let markdownLayer = markdownLayers[itemID] {
+            return markdownLayer
+        }
+
+        let markdownLayer = CanvasMarkdownLayer(itemID: itemID)
+        itemsLayer.addSublayer(markdownLayer)
+        markdownLayers[itemID] = markdownLayer
+        return markdownLayer
     }
 
     private func registerActiveTouches(_ touches: Set<UITouch>) {

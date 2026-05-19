@@ -30,7 +30,7 @@ final class CanvasEditorSession {
 
 Write here.
 """
-    private static let defaultMarkdownItemSize = CGSize(width: 320, height: 180)
+    private static let defaultMarkdownMaxLayoutWidth: CGFloat = 320
 
     let scene = CanvasScene()
     var camera = CanvasCamera()
@@ -2169,11 +2169,19 @@ Write here.
         }
 
         let beforeSnapshot = currentBoardHistorySnapshot()
+        let defaultMarkdownHeight = CanvasMarkdownLayoutMeasurer.measuredContentHeight(
+            markdownSource: markdownSource,
+            style: style,
+            maxLayoutWidth: Self.defaultMarkdownMaxLayoutWidth
+        )
         let item = CanvasMarkdownItem(
             markdownSource: markdownSource,
             style: style,
             center: camera.center,
-            size: Self.defaultMarkdownItemSize,
+            size: CGSize(
+                width: Self.defaultMarkdownMaxLayoutWidth,
+                height: defaultMarkdownHeight
+            ),
             zIndex: nextBoardItemZIndex()
         )
         scene.append(item)
