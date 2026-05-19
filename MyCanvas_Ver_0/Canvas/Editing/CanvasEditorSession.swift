@@ -35,6 +35,7 @@ final class CanvasEditorSession {
 
 Write here.
 """
+    // New markdown items still bootstrap from a fixed world-space layout width.
     private static let defaultMarkdownMaxLayoutWidth: CGFloat = 320
 
     let scene = CanvasScene()
@@ -1988,6 +1989,8 @@ Write here.
         style: CanvasTextStyle,
         layoutWidth: CGFloat
     ) -> CGSize {
+        // Markdown reflow is width-driven: edits keep the current container
+        // width and only recompute the committed height from content.
         let resolvedLayoutWidth = max(layoutWidth, 1)
         return CGSize(
             width: resolvedLayoutWidth,

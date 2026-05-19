@@ -853,6 +853,9 @@ struct CanvasRenderer {
             effectiveMarkdownItem = item
         }
 
+        // Keep markdown screen geometry sourced from world geometry so future
+        // content-layer swaps do not break selection, rotation, or accessory
+        // anchoring contracts.
         let screenQuad = camera.worldToViewport(effectiveMarkdownItem.worldQuad)
         return CanvasRenderItem(
             id: effectiveMarkdownItem.id,

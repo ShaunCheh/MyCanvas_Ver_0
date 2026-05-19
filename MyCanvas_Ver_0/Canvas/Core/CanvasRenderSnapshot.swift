@@ -35,6 +35,8 @@ struct CanvasTextRenderPayload {
     let zoomScale: CGFloat
 }
 
+// Markdown payload stays strictly render-time. Future bitmap caches or
+// intermediate layout artifacts must remain outside the document model.
 struct CanvasMarkdownRenderPayload {
     let markdownSource: String
     let style: CanvasTextStyle
@@ -48,6 +50,8 @@ enum CanvasRenderPayload {
     case markdown(CanvasMarkdownRenderPayload)
 }
 
+// Screen geometry is the shared contract consumed by selection chrome,
+// accessory anchors, hit-testing, and viewport layers across item types.
 struct CanvasRenderItem {
     let id: CanvasItemID
     let screenFrame: CGRect

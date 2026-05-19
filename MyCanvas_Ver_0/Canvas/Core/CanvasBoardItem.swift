@@ -162,8 +162,10 @@ struct CanvasMarkdownItem {
     var markdownSource: String
     var style: CanvasTextStyle
     var center: CGPoint
-    // Markdown keeps an explicit canvas container size. Later phases may reflow
-    // content inside this box, but phase 1 only needs a persisted frame.
+    // Markdown keeps explicit canvas container geometry in the model. Width is
+    // the persisted layout width source; height is the committed container or
+    // clip height and may intentionally differ from the current intrinsic
+    // content height after manual resize.
     var size: CGSize
     var zIndex: CGFloat
     var rotationRadians: CGFloat
