@@ -262,6 +262,11 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         button.translatesAutoresizingMaskIntoConstraints = false
         return button
     }()
+    private let markdownButton: NSButton = {
+        let button = NSButton()
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }()
     private let handDrawingButton: NSButton = {
         let button = NSButton()
         button.translatesAutoresizingMaskIntoConstraints = false
@@ -285,6 +290,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             .multiSelect: multiSelectButton,
             .save: saveButton,
             .text: textButton,
+            .markdown: markdownButton,
             .handDrawing: handDrawingButton,
             .importMedia: importButton
         ]
@@ -989,6 +995,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         setupCropButton()
         setupMultiSelectButton()
         setupTextButton()
+        setupMarkdownButton()
         setupHandDrawingButton()
         setupUndoButton()
         setupRedoButton()
@@ -1484,6 +1491,12 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         textButton.target = self
         textButton.action = #selector(handleTextButtonClick)
         updateInlineEditButtonsAppearance()
+    }
+
+    private func setupMarkdownButton() {
+        markdownButton.target = self
+        markdownButton.action = #selector(handleMarkdownButtonClick)
+        renderToolbar()
     }
 
     private func setupHandDrawingButton() {
@@ -2314,6 +2327,11 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         } else {
             performCommand(.addTextItem)
         }
+    }
+
+    @objc
+    private func handleMarkdownButtonClick() {
+        performCommand(.addMarkdownItem)
     }
 
     @objc

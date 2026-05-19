@@ -269,6 +269,11 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         button.translatesAutoresizingMaskIntoConstraints = false
         return button
     }()
+    private let markdownButton: UIButton = {
+        let button = UIButton(type: .system)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }()
     private let handDrawingButton: UIButton = {
         let button = UIButton(type: .system)
         button.translatesAutoresizingMaskIntoConstraints = false
@@ -292,6 +297,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             .multiSelect: multiSelectButton,
             .save: saveButton,
             .text: textButton,
+            .markdown: markdownButton,
             .handDrawing: handDrawingButton,
             .importMedia: importButton
         ]
@@ -897,6 +903,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         setupCropButton()
         setupMultiSelectButton()
         setupTextButton()
+        setupMarkdownButton()
         setupHandDrawingButton()
         setupUndoButton()
         setupRedoButton()
@@ -1282,6 +1289,15 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     private func setupTextButton() {
         textButton.addTarget(self, action: #selector(handleTextButtonTap), for: .touchUpInside)
         updateInlineEditButtonsAppearance()
+    }
+
+    private func setupMarkdownButton() {
+        markdownButton.addTarget(
+            self,
+            action: #selector(handleMarkdownButtonTap),
+            for: .touchUpInside
+        )
+        renderToolbar()
     }
 
     private func setupHandDrawingButton() {
@@ -2092,6 +2108,11 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         } else {
             performCommand(.addTextItem)
         }
+    }
+
+    @objc
+    private func handleMarkdownButtonTap() {
+        performCommand(.addMarkdownItem)
     }
 
     @objc

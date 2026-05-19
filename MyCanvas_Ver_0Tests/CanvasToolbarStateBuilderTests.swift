@@ -18,7 +18,7 @@ final class CanvasToolbarStateBuilderTests: XCTestCase {
 
         XCTAssertEqual(
             state.items.map(\.id),
-            [.undo, .redo, .crop, .multiSelect, .save, .text, .importMedia]
+            [.undo, .redo, .crop, .multiSelect, .save, .text, .markdown, .importMedia]
         )
 
         let multiSelectItem = try XCTUnwrap(
@@ -29,6 +29,25 @@ final class CanvasToolbarStateBuilderTests: XCTestCase {
         XCTAssertEqual(multiSelectItem.accessibilityValue, "Off")
         XCTAssertEqual(multiSelectItem.visualRole, .neutral)
         XCTAssertFalse(multiSelectItem.isActive)
+    }
+
+    func testMainToolbarStateIncludesMarkdownItem() throws {
+        let session = makeToolbarStateBuilderTestSession()
+        let builder = CanvasToolbarStateBuilder()
+
+        let state = builder.mainToolbarState(
+            session: session,
+            saveState: .idle,
+            placement: CanvasToolbarPlacement(preferredEdge: .trailing)
+        )
+
+        let markdownItem = try XCTUnwrap(
+            state.items.first(where: { $0.id == .markdown })
+        )
+        XCTAssertEqual(markdownItem.systemImageName, "text.alignleft")
+        XCTAssertEqual(markdownItem.accessibilityLabel, "Add markdown")
+        XCTAssertTrue(markdownItem.isEnabled)
+        XCTAssertEqual(markdownItem.visualRole, .accent)
     }
 
     func testMainToolbarStateReflectsActiveMultiSelectMode() throws {
@@ -129,7 +148,7 @@ final class CanvasToolbarStateBuilderTests: XCTestCase {
 
         XCTAssertEqual(
             state.items.map(\.id),
-            [.undo, .redo, .crop, .multiSelect, .save, .text, .handDrawing, .importMedia]
+            [.undo, .redo, .crop, .multiSelect, .save, .text, .markdown, .handDrawing, .importMedia]
         )
     }
 

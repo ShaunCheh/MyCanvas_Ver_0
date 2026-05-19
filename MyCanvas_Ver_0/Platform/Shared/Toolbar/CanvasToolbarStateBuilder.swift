@@ -36,6 +36,7 @@ struct CanvasToolbarStateBuilder {
         )
         itemStates.append(saveItemState(saveState: saveState))
         itemStates.append(textItemState(session: session))
+        itemStates.append(markdownItemState(session: session))
         if supportsHandDrawingEditing {
             itemStates.append(handDrawingItemState(session: session))
         }
@@ -141,6 +142,21 @@ struct CanvasToolbarStateBuilder {
             isActive: descriptor.isActive,
             accessibilityLabel: descriptor.title == "Done" ? "Done editing text" : "Add text",
             visualRole: descriptor.isActive ? .success : .accent
+        )
+    }
+
+    func markdownItemState(session: CanvasEditorSession) -> CanvasToolbarItemState {
+        let descriptor = commandCatalog.descriptor(
+            for: .addMarkdownItem,
+            session: session
+        )
+        return CanvasToolbarItemState(
+            id: .markdown,
+            systemImageName: descriptor.systemImageName,
+            isEnabled: descriptor.isEnabled,
+            isActive: descriptor.isActive,
+            accessibilityLabel: "Add markdown",
+            visualRole: .accent
         )
     }
 
