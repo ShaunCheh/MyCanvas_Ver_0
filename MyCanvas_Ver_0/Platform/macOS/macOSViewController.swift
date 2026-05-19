@@ -141,6 +141,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         logPrefix: "[BoardStore][macOS]"
     )
     private let commandCatalog = CanvasCommandCatalog()
+    private let markdownSelectionAccessoryResolver =
+        CanvasMarkdownSelectionAccessoryResolver()
     private let toolbarStateBuilder = CanvasToolbarStateBuilder()
     private let contextMenuActionResolver = CanvasContextMenuActionResolver()
     private let clickSelectionResolver = CanvasClickSelectionResolver()
@@ -5082,38 +5084,18 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     }
 
     private func resolvedMarkdownSelectionAccessoryState() -> SelectionAccessoryState? {
-        guard
-            workspaceMode == .editing,
-            isTransitionInteractionFrozen == false,
-            contextMenuState == nil,
-            presentedViewControllers?.isEmpty ?? true,
-            presentationInlineEditState == nil,
-            let itemID = editorSession.singleSelectedItemID,
-            scene.markdownItem(withID: itemID) != nil,
-            let anchorRect = markdownSelectionAccessoryAnchorRect(for: itemID)
-        else {
-            return nil
-        }
-
-        let editDescriptor = CanvasCommandDescriptor(
-            id: .beginMarkdownEdit,
-            title: "Edit Markdown",
-            systemImageName: "pencil",
-            isEnabled: editorSession.canBeginMarkdownEdit(withID: itemID),
-            isActive: false
-        )
-        let decreaseDescriptor = commandDescriptor(
-            for: .decreaseMarkdownContentSize
-        )
-        let increaseDescriptor = commandDescriptor(
-            for: .increaseMarkdownContentSize
-        )
-        return SelectionAccessoryState.markdown(
-            itemID: itemID,
-            anchorRect: anchorRect,
-            editDescriptor: editDescriptor,
-            decreaseDescriptor: decreaseDescriptor,
-            increaseDescriptor: increaseDescriptor
+        markdownSelectionAccessoryResolver.resolveState(
+            session: editorSession,
+            environment: CanvasMarkdownSelectionAccessoryResolver.Environment(
+                workspaceMode: workspaceMode,
+                isTransitionInteractionFrozen: isTransitionInteractionFrozen,
+                hasContextMenu: contextMenuState != nil,
+                hasPresentedOverlayEditor: !(presentedViewControllers?.isEmpty ?? true),
+                hasInlineEditPresentation: presentationInlineEditState != nil
+            ),
+            anchorRect: editorSession.singleSelectedItemID.flatMap {
+                markdownSelectionAccessoryAnchorRect(for: $0)
+            }
         )
     }
 

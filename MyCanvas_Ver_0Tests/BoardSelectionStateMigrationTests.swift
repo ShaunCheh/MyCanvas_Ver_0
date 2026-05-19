@@ -280,6 +280,100 @@ final class BoardSelectionStateMigrationTests: XCTestCase {
         XCTAssertNil(roundTrippedState.boardState)
     }
 
+    func testBoardDocumentCodableRoundTripsMarkdownItemRecords() throws {
+        let markdownRecord = BoardMarkdownItemRecord(
+            id: UUID(),
+            center: BoardPointRecord(CGPoint(x: 160, y: 96)),
+            size: BoardSizeRecord(CGSize(width: 280, height: 180)),
+            zIndex: 3,
+            markdownSource: "## Title\n\nBody",
+            style: BoardTextStyleRecord(CanvasTextStyle(fontSize: 22)),
+            rotationRadians: Double.pi / 10
+        )
+        let document = makeBoardDocument(
+            selectedItemIDs: [markdownRecord.id],
+            primarySelectedItemID: markdownRecord.id,
+            items: [.markdown(markdownRecord)]
+        )
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let encodedDocument = try encoder.encode(document)
+        let payload = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: encodedDocument) as? [String: Any]
+        )
+        let itemPayload = try XCTUnwrap(
+            (payload["items"] as? [[String: Any]])?.first
+        )
+
+        XCTAssertEqual(itemPayload["type"] as? String, "markdown")
+        XCTAssertNotNil(itemPayload["markdown"])
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let decodedDocument = try decoder.decode(
+            BoardDocument.self,
+            from: encodedDocument
+        )
+        let decodedRecord = try XCTUnwrap(decodedDocument.markdownItemRecords.first)
+
+        XCTAssertEqual(decodedDocument.formatVersion, BoardDocument.currentFormatVersion)
+        XCTAssertEqual(decodedDocument.selectedItemIDs, [markdownRecord.id])
+        XCTAssertEqual(decodedDocument.primarySelectedItemID, markdownRecord.id)
+        XCTAssertEqual(decodedRecord, markdownRecord)
+    }
+
+    func testBoardDocumentMapperLoadsLegacyBoardWithoutMarkdownItems() throws {
+        let legacyTextRecord = BoardTextItemRecord(
+            id: UUID(),
+            center: BoardPointRecord(CGPoint(x: 72, y: 40)),
+            size: BoardSizeRecord(CGSize(width: 160, height: 48)),
+            zIndex: 1,
+            text: "Legacy board",
+            style: BoardTextStyleRecord(CanvasTextStyle(fontSize: 20)),
+            rotationRadians: 0
+        )
+        let legacyDocument = BoardDocument(
+            formatVersion: 8,
+            boardID: UUID(),
+            title: "Legacy Without Markdown",
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+            contentUpdatedAt: Date(timeIntervalSince1970: 1_700_000_100),
+            viewStateUpdatedAt: Date(timeIntervalSince1970: 1_700_000_100),
+            boardBaseSize: nil,
+            boardRect: nil,
+            cameraCenter: BoardPointRecord(CGPoint(x: 12, y: 18)),
+            cameraZoomScale: 1,
+            selectedItemIDs: [legacyTextRecord.id],
+            primarySelectedItemID: legacyTextRecord.id,
+            workspaceMode: .editing,
+            items: [.text(legacyTextRecord)]
+        )
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let encodedDocument = try encoder.encode(legacyDocument)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let decodedDocument = try decoder.decode(
+            BoardDocument.self,
+            from: encodedDocument
+        )
+        let runtimeState = try BoardDocumentMapper.makeRuntimeState(
+            from: decodedDocument,
+            imageLoader: { _ in
+                throw BoardSelectionStateMigrationTestError.unexpectedImageDecode
+            }
+        )
+
+        XCTAssertEqual(decodedDocument.formatVersion, 8)
+        XCTAssertTrue(decodedDocument.markdownItemRecords.isEmpty)
+        XCTAssertEqual(runtimeState.textItems.map(\.id), [legacyTextRecord.id])
+        XCTAssertTrue(runtimeState.markdownItems.isEmpty)
+        XCTAssertEqual(
+            runtimeState.interactionState.primarySelectedItemID,
+            legacyTextRecord.id
+        )
+    }
+
     func testBoardHandDrawingItemRecordDecodesLegacyAssetIdentityFromItemID() throws {
         let itemID = UUID()
         let contentRevision = UUID()

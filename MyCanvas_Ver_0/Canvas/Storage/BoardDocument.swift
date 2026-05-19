@@ -79,6 +79,9 @@ struct BoardRuntimeState {
 
 struct BoardDocument: Codable {
     // Board schema now evolves independently from image asset internals.
+    // Format version 9 adds `type: "markdown"` records. Older clients that do
+    // not understand markdown items cannot forward-decode documents once such
+    // records have been saved.
     static let currentFormatVersion = 9
     static let defaultTitle = "Untitled Board"
 
