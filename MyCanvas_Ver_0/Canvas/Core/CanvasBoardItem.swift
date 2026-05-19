@@ -4,6 +4,7 @@ import Foundation
 enum CanvasBoardItemKind: Equatable {
     case image
     case text
+    case markdown
     case handDrawing
 }
 
@@ -156,9 +157,116 @@ struct CanvasTextItem {
     }
 }
 
+struct CanvasMarkdownItem {
+    let id: CanvasItemID
+    var markdownSource: String
+    var style: CanvasTextStyle
+    var center: CGPoint
+    // Markdown keeps an explicit canvas container size. Later phases may reflow
+    // content inside this box, but phase 1 only needs a persisted frame.
+    var size: CGSize
+    var zIndex: CGFloat
+    var rotationRadians: CGFloat
+
+    init(
+        id: CanvasItemID = UUID(),
+        markdownSource: String,
+        style: CanvasTextStyle = .default,
+        center: CGPoint,
+        size: CGSize,
+        zIndex: CGFloat = 0,
+        rotationRadians: CGFloat = 0
+    ) {
+        self.id = id
+        self.markdownSource = markdownSource
+        self.style = style
+        self.center = center
+        self.size = size
+        self.zIndex = zIndex
+        self.rotationRadians = rotationRadians
+    }
+
+    var localFrame: CGRect {
+        CGRect(
+            x: -size.width / 2,
+            y: -size.height / 2,
+            width: size.width,
+            height: size.height
+        )
+    }
+
+    var localQuad: CanvasQuad {
+        CanvasQuad(rect: localFrame)
+    }
+
+    var worldQuad: CanvasQuad {
+        localQuad.map(worldPoint(fromLocal:))
+    }
+
+    var worldFrame: CGRect {
+        CGRect(
+            x: center.x - size.width / 2,
+            y: center.y - size.height / 2,
+            width: size.width,
+            height: size.height
+        )
+    }
+
+    var worldBounds: CGRect {
+        worldQuad.boundingRect
+    }
+
+    func contains(worldPoint: CGPoint) -> Bool {
+        localFrame.contains(localPoint(fromWorld: worldPoint))
+    }
+
+    func worldPoint(fromLocal localPoint: CGPoint) -> CGPoint {
+        let rotatedPoint = Self.rotated(localPoint, by: rotationRadians)
+        return CGPoint(
+            x: rotatedPoint.x + center.x,
+            y: rotatedPoint.y + center.y
+        )
+    }
+
+    func localPoint(fromWorld worldPoint: CGPoint) -> CGPoint {
+        let translatedPoint = CGPoint(
+            x: worldPoint.x - center.x,
+            y: worldPoint.y - center.y
+        )
+        return Self.rotated(translatedPoint, by: -rotationRadians)
+    }
+
+    func matchesDocumentState(_ other: CanvasMarkdownItem) -> Bool {
+        id == other.id &&
+            markdownSource == other.markdownSource &&
+            style == other.style &&
+            center == other.center &&
+            size == other.size &&
+            zIndex == other.zIndex &&
+            rotationRadians == other.rotationRadians
+    }
+
+    private static func rotated(
+        _ point: CGPoint,
+        by radians: CGFloat
+    ) -> CGPoint {
+        guard radians != 0 else {
+            return point
+        }
+
+        let cosine = cos(radians)
+        let sine = sin(radians)
+        return CGPoint(
+            x: point.x * cosine - point.y * sine,
+            y: point.x * sine + point.y * cosine
+        )
+    }
+}
+
 enum CanvasBoardItem {
     case image(CanvasImageItem)
     case text(CanvasTextItem)
+    case markdown(CanvasMarkdownItem)
     case handDrawing(CanvasHandDrawingItem)
 
     var kind: CanvasBoardItemKind {
@@ -167,6 +275,8 @@ enum CanvasBoardItem {
             return .image
         case .text:
             return .text
+        case .markdown:
+            return .markdown
         case .handDrawing:
             return .handDrawing
         }
@@ -177,6 +287,8 @@ enum CanvasBoardItem {
         case let .image(item):
             return item.id
         case let .text(item):
+            return item.id
+        case let .markdown(item):
             return item.id
         case let .handDrawing(item):
             return item.id
@@ -190,6 +302,8 @@ enum CanvasBoardItem {
                 return item.center
             case let .text(item):
                 return item.center
+            case let .markdown(item):
+                return item.center
             case let .handDrawing(item):
                 return item.center
             }
@@ -202,6 +316,9 @@ enum CanvasBoardItem {
             case var .text(item):
                 item.center = newValue
                 self = .text(item)
+            case var .markdown(item):
+                item.center = newValue
+                self = .markdown(item)
             case var .handDrawing(item):
                 item.center = newValue
                 self = .handDrawing(item)
@@ -216,6 +333,8 @@ enum CanvasBoardItem {
                 return item.size
             case let .text(item):
                 return item.size
+            case let .markdown(item):
+                return item.size
             case let .handDrawing(item):
                 return item.size
             }
@@ -228,6 +347,9 @@ enum CanvasBoardItem {
             case var .text(item):
                 item.size = newValue
                 self = .text(item)
+            case var .markdown(item):
+                item.size = newValue
+                self = .markdown(item)
             case var .handDrawing(item):
                 item.size = newValue
                 self = .handDrawing(item)
@@ -242,6 +364,8 @@ enum CanvasBoardItem {
                 return item.zIndex
             case let .text(item):
                 return item.zIndex
+            case let .markdown(item):
+                return item.zIndex
             case let .handDrawing(item):
                 return item.zIndex
             }
@@ -254,6 +378,9 @@ enum CanvasBoardItem {
             case var .text(item):
                 item.zIndex = newValue
                 self = .text(item)
+            case var .markdown(item):
+                item.zIndex = newValue
+                self = .markdown(item)
             case var .handDrawing(item):
                 item.zIndex = newValue
                 self = .handDrawing(item)
@@ -268,6 +395,8 @@ enum CanvasBoardItem {
                 return item.rotationRadians
             case let .text(item):
                 return item.rotationRadians
+            case let .markdown(item):
+                return item.rotationRadians
             case let .handDrawing(item):
                 return item.rotationRadians
             }
@@ -280,6 +409,9 @@ enum CanvasBoardItem {
             case var .text(item):
                 item.rotationRadians = newValue
                 self = .text(item)
+            case var .markdown(item):
+                item.rotationRadians = newValue
+                self = .markdown(item)
             case var .handDrawing(item):
                 item.rotationRadians = newValue
                 self = .handDrawing(item)
@@ -293,6 +425,8 @@ enum CanvasBoardItem {
             return item.localFrame
         case let .text(item):
             return item.localFrame
+        case let .markdown(item):
+            return item.localFrame
         case let .handDrawing(item):
             return item.localFrame
         }
@@ -303,6 +437,8 @@ enum CanvasBoardItem {
         case let .image(item):
             return item.worldQuad
         case let .text(item):
+            return item.worldQuad
+        case let .markdown(item):
             return item.worldQuad
         case let .handDrawing(item):
             return item.worldQuad
@@ -315,6 +451,8 @@ enum CanvasBoardItem {
             return item.worldFrame
         case let .text(item):
             return item.worldFrame
+        case let .markdown(item):
+            return item.worldFrame
         case let .handDrawing(item):
             return item.worldFrame
         }
@@ -325,6 +463,8 @@ enum CanvasBoardItem {
         case let .image(item):
             return item.worldBounds
         case let .text(item):
+            return item.worldBounds
+        case let .markdown(item):
             return item.worldBounds
         case let .handDrawing(item):
             return item.worldBounds
@@ -347,6 +487,14 @@ enum CanvasBoardItem {
         return item
     }
 
+    var markdownItem: CanvasMarkdownItem? {
+        guard case let .markdown(item) = self else {
+            return nil
+        }
+
+        return item
+    }
+
     var handDrawingItem: CanvasHandDrawingItem? {
         guard case let .handDrawing(item) = self else {
             return nil
@@ -361,6 +509,8 @@ enum CanvasBoardItem {
             return item.contains(worldPoint: worldPoint)
         case let .text(item):
             return item.contains(worldPoint: worldPoint)
+        case let .markdown(item):
+            return item.contains(worldPoint: worldPoint)
         case let .handDrawing(item):
             return item.contains(worldPoint: worldPoint)
         }
@@ -371,6 +521,8 @@ enum CanvasBoardItem {
         case let .image(item):
             return item.worldPoint(fromLocal: localPoint)
         case let .text(item):
+            return item.worldPoint(fromLocal: localPoint)
+        case let .markdown(item):
             return item.worldPoint(fromLocal: localPoint)
         case let .handDrawing(item):
             return item.worldPoint(fromLocal: localPoint)

@@ -117,17 +117,32 @@ struct CanvasMiniMapTextNodeProvider: CanvasMiniMapNodeProviding {
         context: CanvasMiniMapNodeProviderContext
     ) -> [CanvasMiniMapNode] {
         context.scene.orderedBoardItems().compactMap { boardItem in
-            guard let item = boardItem.textItem else {
+            let itemWorldQuad: CanvasQuad
+            let itemID: CanvasItemID
+            let zIndex: CGFloat
+            let isPreviewActive: Bool
+
+            if let item = boardItem.textItem {
+                itemWorldQuad = item.worldQuad
+                itemID = item.id
+                zIndex = item.zIndex
+                isPreviewActive = context.inlineEditState?.mode == .text &&
+                    context.inlineEditState?.itemID == item.id
+            } else if let item = boardItem.markdownItem {
+                itemWorldQuad = item.worldQuad
+                itemID = item.id
+                zIndex = item.zIndex
+                isPreviewActive = false
+            } else {
                 return nil
             }
 
             return CanvasMiniMapNode(
-                id: item.id,
+                id: itemID,
                 kind: .text,
-                worldQuad: item.worldQuad,
-                zIndex: item.zIndex,
-                isPreviewActive: context.inlineEditState?.mode == .text &&
-                    context.inlineEditState?.itemID == item.id
+                worldQuad: itemWorldQuad,
+                zIndex: zIndex,
+                isPreviewActive: isPreviewActive
             )
         }
     }

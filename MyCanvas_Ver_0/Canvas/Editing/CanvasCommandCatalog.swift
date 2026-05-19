@@ -26,6 +26,14 @@ struct CanvasCommandCatalog {
                 isEnabled: session.canAddTextItem,
                 isActive: false
             )
+        case .addMarkdownItem:
+            descriptor = CanvasCommandDescriptor(
+                id: .addMarkdownItem,
+                title: "Add Markdown",
+                systemImageName: "text.alignleft",
+                isEnabled: session.canAddMarkdownItem,
+                isActive: false
+            )
         case .addHandDrawingItem:
             descriptor = CanvasCommandDescriptor(
                 id: .addHandDrawingItem,
@@ -48,6 +56,20 @@ struct CanvasCommandCatalog {
                 } ?? false,
                 isActive: false
             )
+        case .beginMarkdownEdit:
+            let resolvedTargetItemID = singleEffectiveItemID(
+                in: context,
+                session: session
+            )
+            descriptor = CanvasCommandDescriptor(
+                id: .beginMarkdownEdit,
+                title: "Edit Markdown",
+                systemImageName: "pencil",
+                isEnabled: resolvedTargetItemID.map { itemID in
+                    return session.canBeginMarkdownEdit(withID: itemID)
+                } ?? false,
+                isActive: false
+            )
         case .commitTextEdit:
             descriptor = CanvasCommandDescriptor(
                 id: .commitTextEdit,
@@ -55,6 +77,14 @@ struct CanvasCommandCatalog {
                 systemImageName: "checkmark",
                 isEnabled: session.canCommitTextEdit,
                 isActive: session.isInlineTextModeActive
+            )
+        case .commitMarkdownEdit:
+            descriptor = CanvasCommandDescriptor(
+                id: .commitMarkdownEdit,
+                title: "Done",
+                systemImageName: "checkmark",
+                isEnabled: session.canCommitMarkdownEdit,
+                isActive: false
             )
         case .decreaseTextFontSize:
             descriptor = CanvasCommandDescriptor(
@@ -70,6 +100,22 @@ struct CanvasCommandCatalog {
                 title: "Larger Text",
                 systemImageName: "plus",
                 isEnabled: session.canIncreaseInlineTextFontSize,
+                isActive: false
+            )
+        case .decreaseMarkdownContentSize:
+            descriptor = CanvasCommandDescriptor(
+                id: .decreaseMarkdownContentSize,
+                title: "Smaller Markdown",
+                systemImageName: "minus",
+                isEnabled: session.canDecreaseMarkdownContentSize,
+                isActive: false
+            )
+        case .increaseMarkdownContentSize:
+            descriptor = CanvasCommandDescriptor(
+                id: .increaseMarkdownContentSize,
+                title: "Larger Markdown",
+                systemImageName: "plus",
+                isEnabled: session.canIncreaseMarkdownContentSize,
                 isActive: false
             )
         case .crop:

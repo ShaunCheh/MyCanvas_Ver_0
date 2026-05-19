@@ -34,6 +34,8 @@ extension BoardHistorySnapshot: Equatable {
                     lhsText.size == rhsText.size &&
                     lhsText.zIndex == rhsText.zIndex &&
                     lhsText.rotationRadians == rhsText.rotationRadians
+            case let (.markdown(lhsMarkdown), .markdown(rhsMarkdown)):
+                return lhsMarkdown.matchesDocumentState(rhsMarkdown)
             case let (.handDrawing(lhsHandDrawing), .handDrawing(rhsHandDrawing)):
                 return lhsHandDrawing.matchesDocumentState(rhsHandDrawing)
             default:

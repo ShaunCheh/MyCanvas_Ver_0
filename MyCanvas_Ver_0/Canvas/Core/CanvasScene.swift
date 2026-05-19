@@ -24,6 +24,10 @@ final class CanvasScene {
         append(.text(item))
     }
 
+    func append(_ item: CanvasMarkdownItem) {
+        append(.markdown(item))
+    }
+
     func append(_ item: CanvasHandDrawingItem) {
         append(.handDrawing(item))
     }
@@ -42,6 +46,10 @@ final class CanvasScene {
 
     func upsert(_ item: CanvasTextItem) {
         upsert(.text(item))
+    }
+
+    func upsert(_ item: CanvasMarkdownItem) {
+        upsert(.markdown(item))
     }
 
     func upsert(_ item: CanvasHandDrawingItem) {
@@ -82,6 +90,10 @@ final class CanvasScene {
 
     func textItem(withID id: CanvasItemID) -> CanvasTextItem? {
         boardItem(withID: id)?.textItem
+    }
+
+    func markdownItem(withID id: CanvasItemID) -> CanvasMarkdownItem? {
+        boardItem(withID: id)?.markdownItem
     }
 
     func handDrawingItem(withID id: CanvasItemID) -> CanvasHandDrawingItem? {
@@ -347,6 +359,25 @@ final class CanvasScene {
             textItem.style = style
             textItem.size = size
             return textItem
+        } ?? nil
+    }
+
+    @discardableResult
+    func updateMarkdownItem(
+        withID id: CanvasItemID,
+        markdownSource: String,
+        style: CanvasTextStyle,
+        size: CGSize
+    ) -> CanvasMarkdownItem? {
+        guard size.width > 0, size.height > 0 else {
+            return nil
+        }
+
+        return updateMarkdownItem(withID: id) { markdownItem in
+            markdownItem.markdownSource = markdownSource
+            markdownItem.style = style
+            markdownItem.size = size
+            return markdownItem
         } ?? nil
     }
 
@@ -758,6 +789,20 @@ final class CanvasScene {
                     rotationRadians: item.rotationRadians
                 )
             )
+        case let .markdown(item):
+            return .markdown(
+                CanvasMarkdownItem(
+                    markdownSource: item.markdownSource,
+                    style: item.style,
+                    center: CGPoint(
+                        x: item.center.x + offsetInWorld.x,
+                        y: item.center.y + offsetInWorld.y
+                    ),
+                    size: item.size,
+                    zIndex: item.zIndex,
+                    rotationRadians: item.rotationRadians
+                )
+            )
         case let .handDrawing(item):
             return .handDrawing(item.duplicated(offsetInWorld: offsetInWorld))
         }
@@ -769,7 +814,7 @@ final class CanvasScene {
         size: CGSize
     ) -> CanvasBoardItem {
         switch item {
-        case .image, .text:
+        case .image, .text, .markdown:
             var resizedItem = item
             resizedItem.center = center
             resizedItem.size = size
@@ -799,6 +844,24 @@ final class CanvasScene {
 
         let result = mutate(&item)
         items[index] = .text(item)
+        return result
+    }
+
+    @discardableResult
+    private func updateMarkdownItem<T>(
+        withID id: CanvasItemID,
+        _ mutate: (inout CanvasMarkdownItem) -> T
+    ) -> T? {
+        guard let index = items.firstIndex(where: { $0.id == id }) else {
+            return nil
+        }
+
+        guard case var .markdown(item) = items[index] else {
+            return nil
+        }
+
+        let result = mutate(&item)
+        items[index] = .markdown(item)
         return result
     }
 

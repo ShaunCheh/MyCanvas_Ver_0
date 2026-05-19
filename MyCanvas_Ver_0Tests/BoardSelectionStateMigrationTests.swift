@@ -3,6 +3,7 @@ import Foundation
 import XCTest
 @testable import MyCanvas_Ver_0
 
+@MainActor
 final class BoardSelectionStateMigrationTests: XCTestCase {
     func testCanvasInteractionStateAppendsMissingPrimarySelection() {
         let firstItemID = UUID()
@@ -223,6 +224,60 @@ final class BoardSelectionStateMigrationTests: XCTestCase {
             roundTrippedItem.previewAsset.reference.stableAssetFilename,
             item.previewImageFilename
         )
+    }
+
+    func testBoardDocumentMapperRoundTripsMarkdownItemPreservingExplicitContainerSize() throws {
+        let item = CanvasMarkdownItem(
+            id: UUID(),
+            markdownSource: "## Title\n\nBody",
+            style: CanvasTextStyle(fontSize: 20),
+            center: CGPoint(x: 140, y: 90),
+            size: CGSize(width: 320, height: 180),
+            zIndex: 2,
+            rotationRadians: .pi / 12
+        )
+        let runtimeState = BoardRuntimeState(
+            boardID: UUID(),
+            title: "Markdown Mapper",
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+            contentUpdatedAt: Date(timeIntervalSince1970: 1_700_000_100),
+            viewStateUpdatedAt: Date(timeIntervalSince1970: 1_700_000_100),
+            items: [.markdown(item)],
+            boardState: nil,
+            camera: CanvasCamera(),
+            interactionState: CanvasInteractionState(
+                selectedItemIDs: [item.id],
+                primarySelectedItemID: item.id
+            ),
+            workspaceMode: .editing
+        )
+
+        let document = BoardDocumentMapper.makeDocument(from: runtimeState)
+        XCTAssertEqual(document.formatVersion, BoardDocument.currentFormatVersion)
+        let markdownRecord = try XCTUnwrap(document.markdownItemRecords.first)
+        XCTAssertEqual(markdownRecord.id, item.id)
+        XCTAssertEqual(markdownRecord.markdownSource, item.markdownSource)
+        XCTAssertEqual(markdownRecord.style, BoardTextStyleRecord(item.style))
+        XCTAssertEqual(markdownRecord.center.cgPoint, item.center)
+        XCTAssertEqual(markdownRecord.size.cgSize, item.size)
+        XCTAssertEqual(markdownRecord.rotationRadians, Double(item.rotationRadians))
+
+        let roundTrippedState = try BoardDocumentMapper.makeRuntimeState(
+            from: document,
+            imageLoader: { _ in
+                throw BoardSelectionStateMigrationTestError.unexpectedImageDecode
+            }
+        )
+        let roundTrippedItem = try XCTUnwrap(roundTrippedState.markdownItems.first)
+
+        XCTAssertEqual(roundTrippedItem.id, item.id)
+        XCTAssertEqual(roundTrippedItem.markdownSource, item.markdownSource)
+        XCTAssertEqual(roundTrippedItem.style, item.style)
+        XCTAssertEqual(roundTrippedItem.center, item.center)
+        XCTAssertEqual(roundTrippedItem.size, item.size)
+        XCTAssertEqual(roundTrippedItem.rotationRadians, item.rotationRadians)
+        XCTAssertEqual(roundTrippedItem.zIndex, item.zIndex)
+        XCTAssertNil(roundTrippedState.boardState)
     }
 
     func testBoardHandDrawingItemRecordDecodesLegacyAssetIdentityFromItemID() throws {

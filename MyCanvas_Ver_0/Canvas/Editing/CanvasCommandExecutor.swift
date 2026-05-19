@@ -21,16 +21,26 @@ final class CanvasCommandExecutor {
             return request.isEmpty == false
         case .addTextItem:
             return session.canAddTextItem
+        case .addMarkdownItem:
+            return session.canAddMarkdownItem
         case .addHandDrawingItem:
             return session.canAddHandDrawingItem
         case let .beginTextEdit(itemID):
             return session.canBeginTextEdit(withID: itemID)
+        case let .beginMarkdownEdit(itemID):
+            return session.canBeginMarkdownEdit(withID: itemID)
         case .commitTextEdit:
             return session.canCommitTextEdit
+        case .commitMarkdownEdit:
+            return session.canCommitMarkdownEdit
         case .decreaseTextFontSize:
             return session.canDecreaseInlineTextFontSize
         case .increaseTextFontSize:
             return session.canIncreaseInlineTextFontSize
+        case .decreaseMarkdownContentSize:
+            return session.canDecreaseMarkdownContentSize
+        case .increaseMarkdownContentSize:
+            return session.canIncreaseMarkdownContentSize
         case .crop:
             return session.isInlineCropModeActive || session.canBeginCropMode
         case let .beginCropMode(itemID):
@@ -101,6 +111,14 @@ final class CanvasCommandExecutor {
             return CanvasCommandExecutionResult(
                 refreshReason: "add text item \(addedTextItem.id.uuidString)"
             )
+        case .addMarkdownItem:
+            guard let addedMarkdownItem = session.addMarkdownItem() else {
+                return nil
+            }
+
+            return CanvasCommandExecutionResult(
+                refreshReason: "add markdown item \(addedMarkdownItem.id.uuidString)"
+            )
         case let .addHandDrawingItem(paper):
             guard let addedHandDrawingItem = session.addHandDrawingItem(paper: paper) else {
                 return nil
@@ -120,6 +138,14 @@ final class CanvasCommandExecutor {
             return CanvasCommandExecutionResult(
                 refreshReason: "begin text edit \(itemID.uuidString)"
             )
+        case let .beginMarkdownEdit(itemID):
+            guard session.beginMarkdownEdit(withID: itemID) else {
+                return nil
+            }
+
+            return CanvasCommandExecutionResult(
+                refreshReason: "begin markdown edit \(itemID.uuidString)"
+            )
         case .commitTextEdit:
             guard let commitResult = session.commitTextEdit() else {
                 return nil
@@ -137,6 +163,14 @@ final class CanvasCommandExecutor {
             return CanvasCommandExecutionResult(
                 refreshReason: refreshReason
             )
+        case .commitMarkdownEdit:
+            guard session.commitMarkdownEdit() else {
+                return nil
+            }
+
+            return CanvasCommandExecutionResult(
+                refreshReason: "commit markdown edit"
+            )
         case .decreaseTextFontSize:
             guard let updatedItem = session.decreaseInlineTextFontSize() else {
                 return nil
@@ -152,6 +186,22 @@ final class CanvasCommandExecutor {
 
             return CanvasCommandExecutionResult(
                 refreshReason: "increase inline text font size \(updatedItem.id.uuidString)"
+            )
+        case .decreaseMarkdownContentSize:
+            guard let updatedItem = session.decreaseMarkdownContentSize() else {
+                return nil
+            }
+
+            return CanvasCommandExecutionResult(
+                refreshReason: "decrease markdown content size \(updatedItem.id.uuidString)"
+            )
+        case .increaseMarkdownContentSize:
+            guard let updatedItem = session.increaseMarkdownContentSize() else {
+                return nil
+            }
+
+            return CanvasCommandExecutionResult(
+                refreshReason: "increase markdown content size \(updatedItem.id.uuidString)"
             )
         case .crop:
             if session.isInlineCropModeActive {

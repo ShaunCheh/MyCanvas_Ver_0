@@ -50,6 +50,10 @@ enum BoardDocumentMapper {
                 )
             case let .text(textRecord):
                 return CanvasBoardItem.text(makeTextItem(from: textRecord))
+            case let .markdown(markdownRecord):
+                return CanvasBoardItem.markdown(
+                    makeMarkdownItem(from: markdownRecord)
+                )
             case let .handDrawing(handDrawingRecord):
                 return CanvasBoardItem.handDrawing(
                     makeHandDrawingItem(
@@ -106,6 +110,8 @@ enum BoardDocumentMapper {
             return .image(makeImageRecord(from: imageItem))
         case let .text(textItem):
             return .text(makeTextRecord(from: textItem))
+        case let .markdown(markdownItem):
+            return .markdown(makeMarkdownRecord(from: markdownItem))
         case let .handDrawing(handDrawingItem):
             return .handDrawing(makeHandDrawingRecord(from: handDrawingItem))
         }
@@ -124,6 +130,20 @@ enum BoardDocumentMapper {
             ),
             zIndex: CGFloat(textRecord.zIndex),
             rotationRadians: CGFloat(textRecord.rotationRadians ?? 0)
+        )
+    }
+
+    private static func makeMarkdownItem(
+        from markdownRecord: BoardMarkdownItemRecord
+    ) -> CanvasMarkdownItem {
+        CanvasMarkdownItem(
+            id: markdownRecord.id,
+            markdownSource: markdownRecord.markdownSource,
+            style: markdownRecord.style.canvasTextStyle,
+            center: markdownRecord.center.cgPoint,
+            size: markdownRecord.size.cgSize,
+            zIndex: CGFloat(markdownRecord.zIndex),
+            rotationRadians: CGFloat(markdownRecord.rotationRadians ?? 0)
         )
     }
 
@@ -171,6 +191,20 @@ enum BoardDocumentMapper {
             size: BoardSizeRecord(item.size),
             zIndex: Double(item.zIndex),
             text: item.text,
+            style: BoardTextStyleRecord(item.style),
+            rotationRadians: Double(item.rotationRadians)
+        )
+    }
+
+    private static func makeMarkdownRecord(
+        from item: CanvasMarkdownItem
+    ) -> BoardMarkdownItemRecord {
+        BoardMarkdownItemRecord(
+            id: item.id,
+            center: BoardPointRecord(item.center),
+            size: BoardSizeRecord(item.size),
+            zIndex: Double(item.zIndex),
+            markdownSource: item.markdownSource,
             style: BoardTextStyleRecord(item.style),
             rotationRadians: Double(item.rotationRadians)
         )

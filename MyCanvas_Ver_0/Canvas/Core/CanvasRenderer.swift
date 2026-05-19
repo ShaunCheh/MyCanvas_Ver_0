@@ -687,6 +687,12 @@ struct CanvasRenderer {
                 inlineEditState: inlineEditState,
                 rotationPreviewState: rotationPreviewState
             )
+        case let .markdown(markdownItem):
+            return makeMarkdownRenderItem(
+                for: markdownItem,
+                camera: camera,
+                rotationPreviewState: rotationPreviewState
+            )
         case let .handDrawing(handDrawingItem):
             return makeHandDrawingRenderItem(
                 for: handDrawingItem,
@@ -755,7 +761,7 @@ struct CanvasRenderer {
         ) {
         case let .handDrawing(resolvedHandDrawingItem):
             effectiveHandDrawingItem = resolvedHandDrawingItem
-        case .image, .text:
+        case .image, .text, .markdown:
             assertionFailure("Expected hand drawing item after applying geometry.")
             effectiveHandDrawingItem = item
         }
@@ -796,7 +802,7 @@ struct CanvasRenderer {
         ) {
         case let .text(resolvedTextItem):
             effectiveTextItem = resolvedTextItem
-        case .image, .handDrawing:
+        case .image, .markdown, .handDrawing:
             assertionFailure("Expected text item after applying text presentation.")
             effectiveTextItem = item
         }
@@ -824,6 +830,45 @@ struct CanvasRenderer {
                 CanvasTextRenderPayload(
                     text: resolvedText,
                     style: effectiveTextItem.style,
+                    zoomScale: camera.zoomScale
+                )
+            )
+        )
+    }
+
+    private func makeMarkdownRenderItem(
+        for item: CanvasMarkdownItem,
+        camera: CanvasCamera,
+        rotationPreviewState: CanvasRotationPreviewState?
+    ) -> CanvasRenderItem {
+        let effectiveMarkdownItem: CanvasMarkdownItem
+        switch effectiveBoardItem(
+            from: .markdown(item),
+            rotationPreviewState: rotationPreviewState
+        ) {
+        case let .markdown(resolvedMarkdownItem):
+            effectiveMarkdownItem = resolvedMarkdownItem
+        case .image, .text, .handDrawing:
+            assertionFailure("Expected markdown item after applying geometry.")
+            effectiveMarkdownItem = item
+        }
+
+        let screenQuad = camera.worldToViewport(effectiveMarkdownItem.worldQuad)
+        return CanvasRenderItem(
+            id: effectiveMarkdownItem.id,
+            screenFrame: screenQuad.boundingRect.standardized,
+            screenQuad: screenQuad,
+            screenCenter: camera.worldToViewport(effectiveMarkdownItem.center),
+            screenBoundsSize: CGSize(
+                width: effectiveMarkdownItem.size.width * camera.zoomScale,
+                height: effectiveMarkdownItem.size.height * camera.zoomScale
+            ),
+            rotationRadians: effectiveMarkdownItem.rotationRadians,
+            zIndex: effectiveMarkdownItem.zIndex,
+            payload: .text(
+                CanvasTextRenderPayload(
+                    text: effectiveMarkdownItem.markdownSource,
+                    style: effectiveMarkdownItem.style,
                     zoomScale: camera.zoomScale
                 )
             )

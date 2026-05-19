@@ -172,7 +172,7 @@ final class BoardThumbnailRenderer {
                 partialResult[runtimeHandDrawingItem.id] = runtimeHandDrawingItem
                     .previewAsset
                     .posterCGImage
-            case .text:
+            case .text, .markdown:
                 break
             }
         }
@@ -379,6 +379,25 @@ final class BoardThumbnailRenderer {
                     ],
                     renderOrder: renderOrder
                 )
+            case let .markdown(markdownItemRecord):
+                drawTextItem(
+                    BoardTextItemRecord(
+                        id: markdownItemRecord.id,
+                        center: markdownItemRecord.center,
+                        size: markdownItemRecord.size,
+                        zIndex: markdownItemRecord.zIndex,
+                        text: markdownItemRecord.markdownSource,
+                        style: markdownItemRecord.style,
+                        rotationRadians: markdownItemRecord.rotationRadians
+                    ),
+                    geometry: geometry,
+                    in: context,
+                    traceContext: traceContext,
+                    documentOrder: traceContext.documentOrderByID[
+                        markdownItemRecord.id
+                    ],
+                    renderOrder: renderOrder
+                )
             case let .handDrawing(handDrawingItemRecord):
                 let previewImageRecord = handDrawingItemRecord.previewImageRecord
                 let image = try imageProvider(
@@ -519,7 +538,7 @@ final class BoardThumbnailRenderer {
                 imageItemRecord = record
             case let .handDrawing(record):
                 imageItemRecord = record.previewImageRecord
-            case .text:
+            case .text, .markdown:
                 continue
             }
 

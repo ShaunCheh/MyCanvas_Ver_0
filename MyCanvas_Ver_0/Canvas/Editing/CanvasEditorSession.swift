@@ -24,6 +24,13 @@ private struct CanvasPreparedImportItem {
 
 final class CanvasEditorSession {
     private static let inlineTextFontSizeStep: CGFloat = 2
+    private static let markdownContentSizeStep: CGFloat = 2
+    private static let defaultMarkdownSource = """
+## Markdown
+
+Write here.
+"""
+    private static let defaultMarkdownItemSize = CGSize(width: 320, height: 180)
 
     let scene = CanvasScene()
     var camera = CanvasCamera()
@@ -134,6 +141,10 @@ final class CanvasEditorSession {
         inlineEditState == nil
     }
 
+    var canAddMarkdownItem: Bool {
+        inlineEditState == nil
+    }
+
     var canAddHandDrawingItem: Bool {
         inlineEditState == nil
     }
@@ -180,6 +191,18 @@ final class CanvasEditorSession {
 
     var canIncreaseInlineTextFontSize: Bool {
         canAdjustInlineTextFontSize(by: Self.inlineTextFontSizeStep)
+    }
+
+    var canCommitMarkdownEdit: Bool {
+        false
+    }
+
+    var canDecreaseMarkdownContentSize: Bool {
+        canAdjustMarkdownContentSize(by: -Self.markdownContentSizeStep)
+    }
+
+    var canIncreaseMarkdownContentSize: Bool {
+        canAdjustMarkdownContentSize(by: Self.markdownContentSizeStep)
     }
 
     var canClearSelection: Bool {
@@ -264,6 +287,10 @@ final class CanvasEditorSession {
 
     var selectedHandDrawingItem: CanvasHandDrawingItem? {
         selectedBoardItem?.handDrawingItem
+    }
+
+    var selectedMarkdownItem: CanvasMarkdownItem? {
+        selectedBoardItem?.markdownItem
     }
 
     var selectedBoardItems: [CanvasBoardItem] {
@@ -575,6 +602,14 @@ final class CanvasEditorSession {
         return scene.textItem(withID: itemID) != nil
     }
 
+    func canBeginMarkdownEdit(withID itemID: CanvasItemID) -> Bool {
+        guard inlineEditState == nil else {
+            return false
+        }
+
+        return scene.markdownItem(withID: itemID) != nil
+    }
+
     func canBeginCropMode(withID itemID: CanvasItemID) -> Bool {
         guard inlineEditState == nil else {
             return false
@@ -609,6 +644,18 @@ final class CanvasEditorSession {
     }
 
     @discardableResult
+    func beginMarkdownEdit(withID itemID: CanvasItemID) -> Bool {
+        guard canBeginMarkdownEdit(withID: itemID) else {
+            return false
+        }
+
+        return replaceSelection(
+            with: [itemID],
+            primarySelectedItemID: itemID
+        )
+    }
+
+    @discardableResult
     func updateTextEditDraft(_ draftText: String) -> Bool {
         guard
             var inlineEditState,
@@ -631,6 +678,16 @@ final class CanvasEditorSession {
     @discardableResult
     func increaseInlineTextFontSize() -> CanvasTextItem? {
         adjustInlineTextFontSize(by: Self.inlineTextFontSizeStep)
+    }
+
+    @discardableResult
+    func decreaseMarkdownContentSize() -> CanvasMarkdownItem? {
+        adjustMarkdownContentSize(by: -Self.markdownContentSizeStep)
+    }
+
+    @discardableResult
+    func increaseMarkdownContentSize() -> CanvasMarkdownItem? {
+        adjustMarkdownContentSize(by: Self.markdownContentSizeStep)
     }
 
     @discardableResult
@@ -710,6 +767,11 @@ final class CanvasEditorSession {
             didDeleteItem: false,
             didChangeDocument: true
         )
+    }
+
+    @discardableResult
+    func commitMarkdownEdit() -> Bool {
+        false
     }
 
     func handDrawingEditorContext(
@@ -2098,6 +2160,38 @@ final class CanvasEditorSession {
     }
 
     @discardableResult
+    func addMarkdownItem(
+        markdownSource: String = CanvasEditorSession.defaultMarkdownSource,
+        style: CanvasTextStyle = .default
+    ) -> CanvasMarkdownItem? {
+        guard canAddMarkdownItem else {
+            return nil
+        }
+
+        let beforeSnapshot = currentBoardHistorySnapshot()
+        let item = CanvasMarkdownItem(
+            markdownSource: markdownSource,
+            style: style,
+            center: camera.center,
+            size: Self.defaultMarkdownItemSize,
+            zIndex: nextBoardItemZIndex()
+        )
+        scene.append(item)
+        _ = replaceSelection(
+            with: [item.id],
+            primarySelectedItemID: item.id
+        )
+        expandBoardIfNeeded(toInclude: item.worldFrame)
+        let changeReason = "add markdown item"
+        _ = recordImmediateHistoryChange(
+            from: beforeSnapshot,
+            reason: changeReason,
+            autosaveReason: changeReason
+        )
+        return item
+    }
+
+    @discardableResult
     func addHandDrawingItem(
         paper: CanvasHandDrawingPaperSpec = .square
     ) -> CanvasHandDrawingItem? {
@@ -2197,6 +2291,62 @@ final class CanvasEditorSession {
         let changeReason = delta < 0
             ? "decrease inline text font size"
             : "increase inline text font size"
+        _ = recordImmediateHistoryChange(
+            from: beforeSnapshot,
+            reason: changeReason,
+            autosaveReason: changeReason
+        )
+        return updatedItem
+    }
+
+    private func canAdjustMarkdownContentSize(by delta: CGFloat) -> Bool {
+        guard
+            inlineEditState == nil,
+            let item = selectedMarkdownItem,
+            selectionCount == 1,
+            delta != 0
+        else {
+            return false
+        }
+
+        return adjustedInlineTextStyle(
+            from: item.style,
+            fontSizeDelta: delta
+        ) != item.style
+    }
+
+    @discardableResult
+    private func adjustMarkdownContentSize(by delta: CGFloat) -> CanvasMarkdownItem? {
+        guard
+            inlineEditState == nil,
+            let item = selectedMarkdownItem,
+            selectionCount == 1
+        else {
+            return nil
+        }
+
+        let updatedStyle = adjustedInlineTextStyle(
+            from: item.style,
+            fontSizeDelta: delta
+        )
+        guard updatedStyle != item.style else {
+            return nil
+        }
+
+        let beforeSnapshot = currentBoardHistorySnapshot()
+        guard let updatedItem = scene.updateMarkdownItem(
+            withID: item.id,
+            markdownSource: item.markdownSource,
+            style: updatedStyle,
+            size: item.size
+        ) else {
+            return nil
+        }
+
+        expandBoardIfNeeded(toInclude: updatedItem.worldBounds)
+        let changeReason = delta < 0
+            ? "decrease markdown content size"
+            : "increase markdown content size"
         _ = recordImmediateHistoryChange(
             from: beforeSnapshot,
             reason: changeReason,

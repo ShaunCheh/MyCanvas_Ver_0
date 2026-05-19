@@ -41,6 +41,46 @@ final class CanvasCommandPolicyParityTests: XCTestCase {
         XCTAssertFalse(executor.canExecute(.addTextItem))
     }
 
+    func testAddMarkdownDescriptorAndExecutorMatchPolicyInEditingMode() {
+        let session = makeCommandPolicyParityTestSession(workspaceMode: .editing)
+        let executor = CanvasCommandExecutor(session: session)
+        CanvasCommandPolicyParityTestRetainer.executors.append(executor)
+
+        let descriptor = commandCatalog.descriptor(
+            for: .addMarkdownItem,
+            session: session
+        )
+        let decision = policy.commandDecision(
+            for: .addMarkdownItem,
+            workspaceMode: session.workspaceMode
+        )
+
+        XCTAssertEqual(decision, .allow)
+        XCTAssertTrue(descriptor.isEnabled)
+        XCTAssertFalse(descriptor.isActive)
+        XCTAssertTrue(executor.canExecute(.addMarkdownItem))
+    }
+
+    func testAddMarkdownDescriptorAndExecutorMatchPolicyInReadingMode() {
+        let session = makeCommandPolicyParityTestSession(workspaceMode: .reading)
+        let executor = CanvasCommandExecutor(session: session)
+        CanvasCommandPolicyParityTestRetainer.executors.append(executor)
+
+        let descriptor = commandCatalog.descriptor(
+            for: .addMarkdownItem,
+            session: session
+        )
+        let decision = policy.commandDecision(
+            for: .addMarkdownItem,
+            workspaceMode: session.workspaceMode
+        )
+
+        XCTAssertEqual(decision, .block(reason: .readingMode, feedback: nil))
+        XCTAssertFalse(descriptor.isEnabled)
+        XCTAssertFalse(descriptor.isActive)
+        XCTAssertFalse(executor.canExecute(.addMarkdownItem))
+    }
+
     func testAddHandDrawingDescriptorAndExecutorMatchPolicyInEditingMode() {
         let session = makeCommandPolicyParityTestSession(workspaceMode: .editing)
         let executor = CanvasCommandExecutor(session: session)
@@ -128,6 +168,9 @@ final class CanvasCommandPolicyParityTests: XCTestCase {
     func testInlineTextFontSizeCommandsDoNotForceInlineCommit() {
         XCTAssertFalse(CanvasCommand.decreaseTextFontSize.shouldCommitActiveInlineTextBeforeExecuting)
         XCTAssertFalse(CanvasCommand.increaseTextFontSize.shouldCommitActiveInlineTextBeforeExecuting)
+        XCTAssertFalse(CanvasCommand.commitMarkdownEdit.shouldCommitActiveInlineTextBeforeExecuting)
+        XCTAssertFalse(CanvasCommand.decreaseMarkdownContentSize.shouldCommitActiveInlineTextBeforeExecuting)
+        XCTAssertFalse(CanvasCommand.increaseMarkdownContentSize.shouldCommitActiveInlineTextBeforeExecuting)
         XCTAssertTrue(CanvasCommand.undo.shouldCommitActiveInlineTextBeforeExecuting)
     }
 
@@ -245,6 +288,41 @@ final class CanvasCommandPolicyParityTests: XCTestCase {
         let redoneItem = try XCTUnwrap(session.scene.textItem(withID: item.id))
         XCTAssertEqual(redoneItem.style, resizedItem.style)
         XCTAssertEqual(redoneItem.size, resizedItem.size)
+    }
+
+    func testIncreaseMarkdownContentSizeCommandRecordsHistoryAndSupportsUndoRedo() throws {
+        let session = makeCommandPolicyParityTestSession(workspaceMode: .editing)
+        let executor = CanvasCommandExecutor(session: session)
+        CanvasCommandPolicyParityTestRetainer.executors.append(executor)
+        let initialStyle = CanvasTextStyle(fontSize: 20)
+        let item = try XCTUnwrap(
+            session.addMarkdownItem(
+                markdownSource: "## Seed",
+                style: initialStyle
+            )
+        )
+        let originalItem = try XCTUnwrap(session.scene.markdownItem(withID: item.id))
+
+        XCTAssertNotNil(executor.execute(.increaseMarkdownContentSize))
+
+        let resizedItem = try XCTUnwrap(session.scene.markdownItem(withID: item.id))
+        XCTAssertGreaterThan(resizedItem.style.fontSize, originalItem.style.fontSize)
+        XCTAssertEqual(resizedItem.size, originalItem.size)
+        XCTAssertEqual(resizedItem.markdownSource, originalItem.markdownSource)
+
+        XCTAssertNotNil(executor.execute(.undo))
+
+        let undoneItem = try XCTUnwrap(session.scene.markdownItem(withID: item.id))
+        XCTAssertEqual(undoneItem.style, originalItem.style)
+        XCTAssertEqual(undoneItem.size, originalItem.size)
+        XCTAssertEqual(undoneItem.markdownSource, originalItem.markdownSource)
+
+        XCTAssertNotNil(executor.execute(.redo))
+
+        let redoneItem = try XCTUnwrap(session.scene.markdownItem(withID: item.id))
+        XCTAssertEqual(redoneItem.style, resizedItem.style)
+        XCTAssertEqual(redoneItem.size, resizedItem.size)
+        XCTAssertEqual(redoneItem.markdownSource, resizedItem.markdownSource)
     }
 
     func testImportMediaExecutorMatchesPolicyInEditingMode() throws {

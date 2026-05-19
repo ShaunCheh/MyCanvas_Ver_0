@@ -3,11 +3,16 @@ import Foundation
 enum CanvasCommandID: String {
     case importMedia
     case addTextItem
+    case addMarkdownItem
     case addHandDrawingItem
     case beginTextEdit
     case commitTextEdit
     case decreaseTextFontSize
     case increaseTextFontSize
+    case beginMarkdownEdit
+    case commitMarkdownEdit
+    case decreaseMarkdownContentSize
+    case increaseMarkdownContentSize
     case crop
     case undo
     case redo
@@ -27,11 +32,16 @@ enum CanvasCommandID: String {
         switch self {
         case .importMedia,
              .addTextItem,
+             .addMarkdownItem,
              .addHandDrawingItem,
              .beginTextEdit,
              .commitTextEdit,
              .decreaseTextFontSize,
              .increaseTextFontSize,
+             .beginMarkdownEdit,
+             .commitMarkdownEdit,
+             .decreaseMarkdownContentSize,
+             .increaseMarkdownContentSize,
              .crop,
              .undo,
              .redo,
@@ -53,11 +63,16 @@ enum CanvasCommand {
     // intentionally consumes CanvasImportRequest instead of raw capture input.
     case importMedia(CanvasImportRequest)
     case addTextItem
+    case addMarkdownItem
     case addHandDrawingItem(paper: CanvasHandDrawingPaperSpec)
     case beginTextEdit(itemID: CanvasItemID)
     case commitTextEdit
     case decreaseTextFontSize
     case increaseTextFontSize
+    case beginMarkdownEdit(itemID: CanvasItemID)
+    case commitMarkdownEdit
+    case decreaseMarkdownContentSize
+    case increaseMarkdownContentSize
     case crop
     case beginCropMode(itemID: CanvasItemID)
     case undo
@@ -88,6 +103,8 @@ enum CanvasCommand {
             return .importMedia
         case .addTextItem:
             return .addTextItem
+        case .addMarkdownItem:
+            return .addMarkdownItem
         case .addHandDrawingItem:
             return .addHandDrawingItem
         case .beginTextEdit:
@@ -98,6 +115,14 @@ enum CanvasCommand {
             return .decreaseTextFontSize
         case .increaseTextFontSize:
             return .increaseTextFontSize
+        case .beginMarkdownEdit:
+            return .beginMarkdownEdit
+        case .commitMarkdownEdit:
+            return .commitMarkdownEdit
+        case .decreaseMarkdownContentSize:
+            return .decreaseMarkdownContentSize
+        case .increaseMarkdownContentSize:
+            return .increaseMarkdownContentSize
         case .crop:
             return .crop
         case .beginCropMode:
@@ -147,12 +172,17 @@ enum CanvasCommand {
         switch self {
         case .commitTextEdit,
              .decreaseTextFontSize,
-             .increaseTextFontSize:
+             .increaseTextFontSize,
+             .commitMarkdownEdit,
+             .decreaseMarkdownContentSize,
+             .increaseMarkdownContentSize:
             return false
         case .importMedia,
              .addTextItem,
+             .addMarkdownItem,
              .addHandDrawingItem,
              .beginTextEdit,
+             .beginMarkdownEdit,
              .crop,
              .beginCropMode,
              .undo,
@@ -182,11 +212,16 @@ enum CanvasCommand {
         switch self {
         case .importMedia,
              .addTextItem,
+             .addMarkdownItem,
              .addHandDrawingItem,
              .beginTextEdit,
              .commitTextEdit,
              .decreaseTextFontSize,
              .increaseTextFontSize,
+             .beginMarkdownEdit,
+             .commitMarkdownEdit,
+             .decreaseMarkdownContentSize,
+             .increaseMarkdownContentSize,
              .crop,
              .beginCropMode,
              .undo,

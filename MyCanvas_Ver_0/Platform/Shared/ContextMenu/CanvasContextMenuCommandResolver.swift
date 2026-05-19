@@ -79,6 +79,8 @@ struct CanvasContextMenuActionResolver {
             return nil
         case .addTextItem:
             return .addTextItem
+        case .addMarkdownItem:
+            return .addMarkdownItem
         case .addHandDrawingItem:
             return .addHandDrawingItem(paper: .square)
         case .beginTextEdit:
@@ -87,10 +89,20 @@ struct CanvasContextMenuActionResolver {
             }
 
             return .beginTextEdit(itemID: itemID)
+        case .beginMarkdownEdit:
+            guard let itemID = context.singleEffectiveItemID else {
+                return nil
+            }
+
+            return .beginMarkdownEdit(itemID: itemID)
         case .commitTextEdit:
             return .commitTextEdit
+        case .commitMarkdownEdit:
+            return nil
         case .decreaseTextFontSize,
-             .increaseTextFontSize:
+             .increaseTextFontSize,
+             .decreaseMarkdownContentSize,
+             .increaseMarkdownContentSize:
             return nil
         case .crop:
             if context.isInlineCropModeActive {

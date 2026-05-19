@@ -729,6 +729,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             break
         case .addTextItem:
             performCommand(.addTextItem)
+        case .addMarkdownItem:
+            performCommand(.addMarkdownItem)
         case .addHandDrawingItem:
             if supportsHandDrawingEditing {
                 performCommand(.addHandDrawingItem(paper: .square))
@@ -737,12 +739,22 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             if let selectedItemID = interactionState.selectedItemID {
                 performCommand(.beginTextEdit(itemID: selectedItemID))
             }
+        case .beginMarkdownEdit:
+            if let selectedItemID = interactionState.selectedItemID {
+                performCommand(.beginMarkdownEdit(itemID: selectedItemID))
+            }
         case .commitTextEdit:
             performCommand(.commitTextEdit)
+        case .commitMarkdownEdit:
+            performCommand(.commitMarkdownEdit)
         case .decreaseTextFontSize:
             performCommand(.decreaseTextFontSize)
         case .increaseTextFontSize:
             performCommand(.increaseTextFontSize)
+        case .decreaseMarkdownContentSize:
+            performCommand(.decreaseMarkdownContentSize)
+        case .increaseMarkdownContentSize:
+            performCommand(.increaseMarkdownContentSize)
         case .crop:
             performCommand(CanvasCommand.crop)
         case .undo:

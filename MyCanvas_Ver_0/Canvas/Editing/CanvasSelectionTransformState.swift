@@ -338,6 +338,8 @@ struct CanvasSelectionTransformSnapshot: Equatable {
                     scale: resizeDraft.scale
                 )
             )
+        case .markdown:
+            return item.applyingGeometry(scaledItemGeometry) ?? item
         case let .handDrawing(handDrawingItem):
             return .handDrawing(
                 resizedHandDrawingItem(
@@ -555,7 +557,7 @@ extension CanvasBoardItem {
         }
 
         switch self {
-        case .image, .text:
+        case .image, .text, .markdown:
             var updatedItem = self
             updatedItem.center = geometry.center
             updatedItem.size = geometry.size
