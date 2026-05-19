@@ -91,6 +91,33 @@ final class MarkdownPreviewParityTests: XCTestCase {
             "Expected markdown-only board thumbnail to contain visible pixels."
         )
     }
+
+    func testBoardThumbnailRendererKeepsEmptyCodeBlockPanelVisibleInThumbnail() throws {
+        let markdownItem = makeMarkdownPreviewTestItem(
+            markdownSource: """
+            ```
+
+            ```
+            """,
+            center: CGPoint(x: 160, y: 120),
+            size: CGSize(width: 260, height: 180),
+            zIndex: 1
+        )
+        let runtimeState = makeMarkdownPreviewRuntimeState(item: markdownItem)
+        let renderer = BoardThumbnailRenderer()
+        MarkdownPreviewParityTestRetainer.thumbnailRenderers.append(renderer)
+
+        let renderedImage = try XCTUnwrap(
+            renderer.renderPersistedThumbnail(
+                for: runtimeState,
+                maximumLongestSide: 256
+            )
+        )
+        XCTAssertTrue(
+            imageContainsVisiblePixels(renderedImage),
+            "Expected empty fenced code block to remain visible via markdown decorations in the thumbnail."
+        )
+    }
 }
 
 private func makeMarkdownPreviewTestItem(

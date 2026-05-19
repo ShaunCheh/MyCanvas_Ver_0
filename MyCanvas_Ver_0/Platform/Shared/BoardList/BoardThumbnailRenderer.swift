@@ -37,13 +37,16 @@ enum BoardThumbnailRendererError: LocalizedError {
 final class BoardThumbnailRenderer {
     private let geometryPreviewBuilder: BoardGeometryPreviewBuilder
     private let mediaPosterImageResolver: BoardMediaPosterImageResolver
+    private let markdownBitmapRenderer: CanvasMarkdownBitmapRenderer
 
     init(
         geometryPreviewBuilder: BoardGeometryPreviewBuilder = BoardGeometryPreviewBuilder(),
-        mediaPosterImageResolver: BoardMediaPosterImageResolver = BoardMediaPosterImageResolver()
+        mediaPosterImageResolver: BoardMediaPosterImageResolver = BoardMediaPosterImageResolver(),
+        markdownBitmapRenderer: CanvasMarkdownBitmapRenderer = CanvasMarkdownBitmapRenderer()
     ) {
         self.geometryPreviewBuilder = geometryPreviewBuilder
         self.mediaPosterImageResolver = mediaPosterImageResolver
+        self.markdownBitmapRenderer = markdownBitmapRenderer
     }
 
     func renderThumbnail(
@@ -771,6 +774,28 @@ final class BoardThumbnailRenderer {
         context.restoreGState()
     }
 
+    private func drawBitmapImage(
+        _ image: CGImage,
+        in rect: CGRect,
+        context: CGContext
+    ) {
+        guard rect.width > 0, rect.height > 0 else {
+            return
+        }
+
+        context.saveGState()
+        // `CGImage` drawing still uses Quartz's native y-up sampling, so
+        // compensate locally after the thumbnail surface has already been
+        // flipped into y-down.
+        context.translateBy(x: rect.minX, y: rect.maxY)
+        context.scaleBy(x: 1, y: -1)
+        context.draw(
+            image,
+            in: CGRect(origin: .zero, size: rect.size)
+        )
+        context.restoreGState()
+    }
+
     private func drawHandDrawingPaperFill(
         layout: PosterBackedThumbnailLayout,
         paperPath: CGPath,
@@ -940,18 +965,39 @@ final class BoardThumbnailRenderer {
             markdownSource: itemRecord.markdownSource,
             style: itemRecord.style.canvasTextStyle,
             maxLayoutWidth: mappedVisibleSize.width,
-            scale: geometry.scale
+            scale: geometry.scale,
+            // Stage 2 validates markdown bitmap rendering through thumbnails, so
+            // fenced code block panels now come from semantic decorations here.
+            includeCompatibilityCodeBlockBackgrounds: false
+        )
+        let imageRect = CGRect(
+            x: textRect.minX,
+            y: textRect.minY,
+            width: layout.contentSize.width,
+            height: layout.contentSize.height
+        ).standardized
+        let bitmapImage = markdownBitmapRenderer.render(
+            layout: layout,
+            rasterScale: 1
         )
 
         context.saveGState()
         context.translateBy(x: mappedCenter.x, y: mappedCenter.y)
         context.rotate(by: rotationRadians)
         context.clip(to: textRect)
-        drawAttributedText(
-            layout.attributedText,
-            in: textRect,
-            context: context
-        )
+        if let bitmapImage {
+            drawBitmapImage(
+                bitmapImage,
+                in: imageRect,
+                context: context
+            )
+        } else {
+            drawAttributedText(
+                layout.attributedText,
+                in: textRect,
+                context: context
+            )
+        }
         context.restoreGState()
     }
 
