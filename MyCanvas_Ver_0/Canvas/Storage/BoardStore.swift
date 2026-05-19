@@ -152,15 +152,30 @@ enum BoardStore {
                 documentID: documentID,
                 boardDirectoryURL: boardDirectoryURL
             ) {
-                return try HandDrawingDocumentStore.loadDocumentData(
+                return try HandDrawingDocumentStore.loadNormalizedDocumentData(
                     documentID: documentID,
                     boardDirectoryURL: boardDirectoryURL
                 )
             }
 
+            let boardDocumentURL = boardDirectoryURL.appendingPathComponent(
+                boardDocumentFilename
+            )
+            let boardDocument = try readBoardDocument(at: boardDocumentURL)
             let sourceURL = BoardHandDrawingAssetLocator(documentID: documentID)
                 .sourceDrawingURL(in: assetsDirectoryURL)
-            return try CoordinatedFileIO.readData(at: sourceURL)
+            let sourceData = try CoordinatedFileIO.readData(at: sourceURL)
+            guard
+                let record = boardDocument.handDrawingItemRecords.first(where: {
+                    $0.documentID == documentID
+                })
+            else {
+                return sourceData
+            }
+            return try HandDrawingDocumentLoader.normalizeDocumentData(
+                from: sourceData,
+                paper: record.paper.canvasPaperSpec
+            )
         }
     }
 

@@ -78,8 +78,25 @@ enum HandDrawingDocumentStore {
         documentID: HandDrawingDocumentID,
         boardDirectoryURL: URL
     ) throws -> HandDrawingDocument {
-        try HandDrawingDocumentCodec.decodeDocument(
+        let manifest = try loadManifest(
+            documentID: documentID,
+            boardDirectoryURL: boardDirectoryURL
+        )
+        return try HandDrawingDocumentLoader.loadDocument(
             from: loadDocumentData(
+                documentID: documentID,
+                boardDirectoryURL: boardDirectoryURL
+            ),
+            paper: manifest.paper.canvasPaperSpec
+        )
+    }
+
+    static func loadNormalizedDocumentData(
+        documentID: HandDrawingDocumentID,
+        boardDirectoryURL: URL
+    ) throws -> Data {
+        try HandDrawingDocumentCodec.makeDocumentData(
+            for: loadDocument(
                 documentID: documentID,
                 boardDirectoryURL: boardDirectoryURL
             )
@@ -137,7 +154,7 @@ enum HandDrawingDocumentStore {
         boardDirectoryURL: URL
     ) throws {
         _ = try loadManifest(documentID: documentID, boardDirectoryURL: boardDirectoryURL)
-        _ = try loadDocumentData(
+        _ = try loadDocument(
             documentID: documentID,
             boardDirectoryURL: boardDirectoryURL
         )
@@ -173,6 +190,10 @@ enum HandDrawingDocumentStore {
         _ = try ensureHandDrawingsDirectoryURL(in: boardDirectoryURL)
 
         let locator = HandDrawingBundleLocator(documentID: documentID)
+        let normalizedDrawingData = try HandDrawingDocumentLoader.normalizeDocumentData(
+            from: drawingData,
+            paper: paper
+        )
         let manifest = HandDrawingManifest(
             documentID: documentID,
             paper: paper,
@@ -199,7 +220,7 @@ enum HandDrawingDocumentStore {
             to: locator.manifestURL(in: boardDirectoryURL)
         )
         try CoordinatedFileIO.writeData(
-            drawingData,
+            normalizedDrawingData,
             to: locator.documentURL(in: boardDirectoryURL)
         )
         try CoordinatedFileIO.writeData(

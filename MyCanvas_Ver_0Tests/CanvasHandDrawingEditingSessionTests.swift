@@ -87,8 +87,13 @@ final class CanvasHandDrawingEditingSessionTests: XCTestCase {
         let item = try XCTUnwrap(session.addHandDrawingItem(paper: .square))
 
         let editorContext = try session.handDrawingEditorContext(for: item.id)
+        let document = try HandDrawingDocumentCodec.decodeDocument(
+            from: editorContext.documentData
+        )
         XCTAssertEqual(editorContext.itemID, item.id)
-        XCTAssertTrue(editorContext.documentData.isEmpty)
+        XCTAssertEqual(document.paper, HandDrawingPaper(.square))
+        XCTAssertTrue(document.isEmpty)
+        XCTAssertEqual(document.layers.count, 1)
         XCTAssertTrue(editorContext.isEmpty)
         XCTAssertEqual(editorContext.storage, .bundle)
         XCTAssertFalse(editorContext.didMigrateLegacyDocument)
@@ -135,6 +140,45 @@ final class CanvasHandDrawingEditingSessionTests: XCTestCase {
             XCTAssertFalse(editorContext.isEmpty)
             XCTAssertEqual(editorContext.storage, .bundle)
             XCTAssertFalse(editorContext.didMigrateLegacyDocument)
+        }
+    }
+
+    func testAddHandDrawingItemPersistsCanonicalBlankDocumentAcrossBoardReload() throws {
+        try withTemporaryHandDrawingEditingWorkspace { _, userDefaults in
+            let session = makeHandDrawingEditingTestSession(userDefaults: userDefaults)
+            session.startNewBoard(now: Date(timeIntervalSince1970: 1_720_300_100))
+
+            let item = try XCTUnwrap(session.addHandDrawingItem(paper: .square))
+            let boardID = try XCTUnwrap(session.activeBoardID)
+
+            let saveSnapshot = try XCTUnwrap(session.currentBoardSaveSnapshot())
+            try BoardStore.saveBoard(saveSnapshot, userDefaults: userDefaults)
+
+            let persistedDocument = try HandDrawingDocumentCodec.decodeDocument(
+                from: BoardStore.loadHandDrawingDocumentData(
+                    boardID: boardID,
+                    documentID: item.documentID,
+                    userDefaults: userDefaults
+                )
+            )
+            XCTAssertEqual(persistedDocument.paper, HandDrawingPaper(.square))
+            XCTAssertTrue(persistedDocument.isEmpty)
+
+            let restartedSession = makeHandDrawingEditingTestSession(
+                userDefaults: userDefaults
+            )
+            try restartedSession.loadBoard(id: boardID)
+
+            let editorContext = try restartedSession.handDrawingEditorContext(
+                for: item.id
+            )
+            let reopenedDocument = try HandDrawingDocumentCodec.decodeDocument(
+                from: editorContext.documentData
+            )
+            XCTAssertEqual(reopenedDocument.paper, HandDrawingPaper(.square))
+            XCTAssertTrue(reopenedDocument.isEmpty)
+            XCTAssertTrue(editorContext.isEmpty)
+            XCTAssertEqual(editorContext.storage, .bundle)
         }
     }
 }

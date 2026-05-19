@@ -35,6 +35,15 @@ enum HandDrawingDocumentLoader {
 
         throw HandDrawingDocumentLoaderError.invalidSourceData
     }
+
+    static func normalizeDocumentData(
+        from data: Data,
+        paper: CanvasHandDrawingPaperSpec
+    ) throws -> Data {
+        try HandDrawingDocumentCodec.makeDocumentData(
+            for: loadDocument(from: data, paper: paper)
+        )
+    }
 }
 
 enum HandDrawingLegacyPencilKitBridge {

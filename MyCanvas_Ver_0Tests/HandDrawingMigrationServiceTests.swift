@@ -20,7 +20,7 @@ final class HandDrawingMigrationServiceTests: XCTestCase {
 
             XCTAssertEqual(preparedDocument.record.storage, .bundle)
             XCTAssertTrue(preparedDocument.didMigrateLegacyDocument)
-            XCTAssertEqual(preparedDocument.documentData, fixture.drawingData)
+            try assertNormalizedEmptyDocumentData(preparedDocument.documentData)
 
             let manifest = try HandDrawingDocumentStore.loadManifest(
                 documentID: fixture.documentID,
@@ -43,11 +43,18 @@ final class HandDrawingMigrationServiceTests: XCTestCase {
             )
 
             XCTAssertEqual(manifest.migrationOrigin, .legacyFlatAssetPair)
-            XCTAssertEqual(storedDocumentData, fixture.drawingData)
+            try assertNormalizedEmptyDocumentData(storedDocumentData)
             XCTAssertEqual(storedLegacyBackupData, fixture.drawingData)
             XCTAssertEqual(
                 entry.document.handDrawingItemRecords.first?.storage,
                 .bundle
+            )
+            try assertNormalizedEmptyDocumentData(
+                BoardStore.loadHandDrawingDocumentData(
+                    boardID: fixture.boardID,
+                    documentID: fixture.documentID,
+                    userDefaults: userDefaults
+                )
             )
         }
     }
@@ -155,13 +162,12 @@ final class HandDrawingMigrationServiceTests: XCTestCase {
 
             XCTAssertFalse(preparedDocument.didMigrateLegacyDocument)
             XCTAssertEqual(preparedDocument.record.storage, .bundle)
-            XCTAssertEqual(preparedDocument.documentData, legacyBackupData)
-            XCTAssertEqual(
-                try HandDrawingDocumentStore.loadDocumentData(
+            try assertNormalizedEmptyDocumentData(preparedDocument.documentData)
+            try assertNormalizedEmptyDocumentData(
+                HandDrawingDocumentStore.loadDocumentData(
                     documentID: documentID,
                     boardDirectoryURL: boardDirectoryURL
-                ),
-                legacyBackupData
+                )
             )
         }
     }
@@ -193,11 +199,11 @@ final class HandDrawingMigrationServiceTests: XCTestCase {
             XCTAssertEqual(firstContext.documentID, fixture.documentID)
             XCTAssertEqual(firstContext.storage, .bundle)
             XCTAssertTrue(firstContext.didMigrateLegacyDocument)
-            XCTAssertEqual(firstContext.documentData, fixture.drawingData)
+            try assertNormalizedEmptyDocumentData(firstContext.documentData)
 
             XCTAssertEqual(secondContext.storage, .bundle)
             XCTAssertFalse(secondContext.didMigrateLegacyDocument)
-            XCTAssertEqual(secondContext.documentData, fixture.drawingData)
+            try assertNormalizedEmptyDocumentData(secondContext.documentData)
             XCTAssertEqual(
                 entry.document.handDrawingItemRecords.first?.storage,
                 .bundle
@@ -446,6 +452,18 @@ private func makeMigrationBoardDocument(
         workspaceMode: .editing,
         items: [.handDrawing(itemRecord)]
     )
+}
+
+private func assertNormalizedEmptyDocumentData(
+    _ data: Data,
+    file: StaticString = #filePath,
+    line: UInt = #line
+) throws {
+    let document = try HandDrawingDocumentCodec.decodeDocument(from: data)
+    XCTAssertEqual(document.paper, HandDrawingPaper(.square), file: file, line: line)
+    XCTAssertTrue(document.isEmpty, file: file, line: line)
+    XCTAssertEqual(document.layers.count, 1, file: file, line: line)
+    XCTAssertEqual(document.activeLayerStrokes.count, 0, file: file, line: line)
 }
 
 private func makeMigrationBoardDocumentData(

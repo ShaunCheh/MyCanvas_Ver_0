@@ -5,11 +5,10 @@ import XCTest
 
 @MainActor
 final class HandDrawingDocumentStoreTests: XCTestCase {
-    func testHandDrawingDocumentStorePersistsBundleRoundTrip() throws {
+    func testHandDrawingDocumentStoreNormalizesBlankDocumentDataBeforePersisting() throws {
         try withTemporaryHandDrawingBoardDirectory { boardDirectoryURL in
             let documentID = UUID()
             let contentRevision = UUID()
-            let drawingData = Data("bundle-round-trip".utf8)
             let previewImage = try makeHandDrawingDocumentStoreTestImage(
                 red: 0.15,
                 green: 0.35,
@@ -20,8 +19,8 @@ final class HandDrawingDocumentStoreTests: XCTestCase {
                 documentID: documentID,
                 paper: .square,
                 contentRevision: contentRevision,
-                isEmpty: false,
-                drawingData: drawingData,
+                isEmpty: true,
+                drawingData: Data(),
                 previewImageData: nil,
                 previewCGImage: previewImage,
                 boardDirectoryURL: boardDirectoryURL
@@ -44,8 +43,14 @@ final class HandDrawingDocumentStoreTests: XCTestCase {
             XCTAssertEqual(manifest.documentID, documentID)
             XCTAssertEqual(manifest.paper.canvasPaperSpec, .square)
             XCTAssertEqual(manifest.contentRevision, contentRevision)
-            XCTAssertFalse(manifest.isEmpty)
-            XCTAssertEqual(loadedDrawingData, drawingData)
+            XCTAssertTrue(manifest.isEmpty)
+            let loadedDocument = try HandDrawingDocumentCodec.decodeDocument(
+                from: loadedDrawingData
+            )
+            XCTAssertEqual(loadedDocument.paper, HandDrawingPaper(.square))
+            XCTAssertTrue(loadedDocument.isEmpty)
+            XCTAssertEqual(loadedDocument.layers.count, 1)
+            XCTAssertEqual(loadedDocument.activeLayerStrokes.count, 0)
             XCTAssertEqual(
                 BoardThumbnailImageSignature.describe(loadedPreviewImage),
                 BoardThumbnailImageSignature.describe(previewImage)
@@ -99,6 +104,9 @@ final class HandDrawingDocumentStoreTests: XCTestCase {
         try withTemporaryHandDrawingBoardDirectory { boardDirectoryURL in
             let documentID = UUID()
             let contentRevision = UUID()
+            let drawingData = try HandDrawingDocumentCodec.makeDocumentData(
+                for: makeHandDrawingTestDocument()
+            )
             let previewImage = try makeHandDrawingDocumentStoreTestImage(
                 red: 0.25,
                 green: 0.7,
@@ -114,7 +122,7 @@ final class HandDrawingDocumentStoreTests: XCTestCase {
                 paper: .square,
                 contentRevision: contentRevision,
                 isEmpty: false,
-                drawingData: Data("preview-image-data-round-trip".utf8),
+                drawingData: drawingData,
                 previewImageData: previewImageData,
                 previewCGImage: nil,
                 boardDirectoryURL: boardDirectoryURL
@@ -142,6 +150,9 @@ final class HandDrawingDocumentStoreTests: XCTestCase {
         try withTemporaryHandDrawingBoardDirectory { boardDirectoryURL in
             let keptDocumentID = UUID()
             let orphanDocumentID = UUID()
+            let drawingData = try HandDrawingDocumentCodec.makeDocumentData(
+                for: makeHandDrawingTestDocument()
+            )
             let previewImage = try makeHandDrawingDocumentStoreTestImage(
                 red: 0.9,
                 green: 0.2,
@@ -154,7 +165,7 @@ final class HandDrawingDocumentStoreTests: XCTestCase {
                     paper: .square,
                     contentRevision: UUID(),
                     isEmpty: false,
-                    drawingData: Data(documentID.uuidString.utf8),
+                    drawingData: drawingData,
                     previewImageData: nil,
                     previewCGImage: previewImage,
                     boardDirectoryURL: boardDirectoryURL

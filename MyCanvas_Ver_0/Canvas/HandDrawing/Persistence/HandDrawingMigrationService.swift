@@ -73,7 +73,7 @@ enum HandDrawingMigrationService {
         do {
             return HandDrawingPreparedEditingDocument(
                 record: record,
-                documentData: try HandDrawingDocumentStore.loadDocumentData(
+                documentData: try HandDrawingDocumentStore.loadNormalizedDocumentData(
                     documentID: record.documentID,
                     boardDirectoryURL: boardDirectoryURL
                 ),
@@ -159,7 +159,10 @@ enum HandDrawingMigrationService {
 
         return HandDrawingPreparedEditingDocument(
             record: record.replacingStorage(with: .bundle),
-            documentData: legacyDrawingData,
+            documentData: try HandDrawingDocumentStore.loadNormalizedDocumentData(
+                documentID: record.documentID,
+                boardDirectoryURL: entry.boardDirectoryURL
+            ),
             didMigrateLegacyDocument: true
         )
     }
@@ -179,7 +182,7 @@ enum HandDrawingMigrationService {
         }
 
         do {
-            let drawingData = try HandDrawingDocumentStore.loadDocumentData(
+            let drawingData = try HandDrawingDocumentStore.loadNormalizedDocumentData(
                 documentID: record.documentID,
                 boardDirectoryURL: boardDirectoryURL
             )
@@ -242,7 +245,10 @@ enum HandDrawingMigrationService {
             migrationOrigin: resolvedMigrationOrigin,
             legacyBackupDrawingData: legacyBackupDrawingData
         )
-        return legacyBackupDrawingData
+        return try HandDrawingDocumentStore.loadNormalizedDocumentData(
+            documentID: record.documentID,
+            boardDirectoryURL: boardDirectoryURL
+        )
     }
 
     private static func resolveBoardDocumentEntry(

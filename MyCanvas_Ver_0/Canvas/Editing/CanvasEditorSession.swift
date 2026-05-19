@@ -2107,6 +2107,8 @@ final class CanvasEditorSession {
 
         let beforeSnapshot = currentBoardHistorySnapshot()
         guard
+            let emptyDocumentData = try? HandDrawingDocumentLoader
+                .normalizeDocumentData(from: Data(), paper: paper),
             let previewImage = try? CanvasHandDrawingPreviewAssetFactory
                 .makeTransparentPreview(for: paper)
         else {
@@ -2133,7 +2135,7 @@ final class CanvasEditorSession {
         transientHandDrawingAssetPayloads[item.id] =
             BoardTransientHandDrawingAssetPayload(
                 itemID: item.id,
-                documentData: Data(),
+                documentData: emptyDocumentData,
                 previewCGImage: previewImage
             )
         _ = replaceSelection(
