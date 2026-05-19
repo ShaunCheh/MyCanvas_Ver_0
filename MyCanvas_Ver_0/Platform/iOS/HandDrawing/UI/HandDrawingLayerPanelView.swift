@@ -58,6 +58,7 @@ final class HandDrawingLayerPanelView: UIView {
         stackView.spacing = Layout.rowSpacing
         return stackView
     }()
+    private var scrollViewHeightConstraint: NSLayoutConstraint?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -67,6 +68,8 @@ final class HandDrawingLayerPanelView: UIView {
         layer.cornerCurve = .continuous
         layer.borderWidth = 1
         layer.borderColor = UIColor.separator.withAlphaComponent(0.18).cgColor
+        setContentHuggingPriority(.required, for: .vertical)
+        setContentCompressionResistancePriority(.required, for: .vertical)
         setupViewHierarchy()
         setupConstraints()
         bindActions()
@@ -81,6 +84,12 @@ final class HandDrawingLayerPanelView: UIView {
         addButton.isEnabled = state.canAddLayer
         addButton.alpha = state.canAddLayer ? 1 : 0.5
         rebuildRows(with: state.layers)
+        updateListHeight()
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        updateListHeight()
     }
 
     private func setupViewHierarchy() {
@@ -94,6 +103,8 @@ final class HandDrawingLayerPanelView: UIView {
     }
 
     private func setupConstraints() {
+        let scrollViewHeightConstraint = scrollView.heightAnchor.constraint(equalToConstant: 0)
+        self.scrollViewHeightConstraint = scrollViewHeightConstraint
         NSLayoutConstraint.activate([
             rootStackView.topAnchor.constraint(equalTo: topAnchor, constant: Layout.panelInset),
             rootStackView.leadingAnchor.constraint(
@@ -120,9 +131,7 @@ final class HandDrawingLayerPanelView: UIView {
                 equalTo: bottomAnchor,
                 constant: -Layout.panelInset
             ),
-            scrollView.heightAnchor.constraint(
-                lessThanOrEqualToConstant: Layout.maxListHeight
-            ),
+            scrollViewHeightConstraint,
             rowsStackView.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor),
             rowsStackView.leadingAnchor.constraint(
                 equalTo: scrollView.contentLayoutGuide.leadingAnchor
@@ -177,6 +186,34 @@ final class HandDrawingLayerPanelView: UIView {
             }
             rowsStackView.addArrangedSubview(rowView)
         }
+    }
+
+    private func updateListHeight() {
+        guard let scrollViewHeightConstraint else {
+            return
+        }
+
+        let availableWidth = max(
+            scrollView.bounds.width,
+            bounds.width - Layout.panelInset * 2
+        )
+        guard availableWidth > 0 else {
+            return
+        }
+
+        // UIScrollView 没有 intrinsic height；显式用 rows 内容高度驱动它，避免面板把列表压成 0 高。
+        let measuredHeight = rowsStackView.systemLayoutSizeFitting(
+            CGSize(
+                width: availableWidth,
+                height: UIView.layoutFittingCompressedSize.height
+            ),
+            withHorizontalFittingPriority: .required,
+            verticalFittingPriority: .fittingSizeLevel
+        ).height
+        scrollViewHeightConstraint.constant = min(
+            Layout.maxListHeight,
+            ceil(measuredHeight)
+        )
     }
 
     @objc
