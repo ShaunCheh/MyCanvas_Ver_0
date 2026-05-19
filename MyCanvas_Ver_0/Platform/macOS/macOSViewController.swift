@@ -232,6 +232,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         return view
     }()
     private let contextMenuHostView = CanvasContextMenuHostView()
+    private let selectionAccessoryHostView = SelectionAccessoryHostView()
     private let inputIndicatorHostView = CanvasInputIndicatorHostView()
     private let miniMapView = macOSCanvasMiniMapView()
     private let importButton: NSButton = {
@@ -453,7 +454,23 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         switch followUp {
         case .presentHandDrawingEditor:
             return
-        case .presentMarkdownEditor:
+        case let .presentMarkdownEditor(itemID):
+            presentMarkdownEditor(for: itemID)
+        }
+    }
+
+    private func performSelectionAccessoryCommand(_ commandID: CanvasCommandID) {
+        switch commandID {
+        case .beginMarkdownEdit:
+            guard let itemID = selectionAccessoryHostView.currentState?.itemID else {
+                return
+            }
+            performCommand(.beginMarkdownEdit(itemID: itemID))
+        case .decreaseMarkdownContentSize:
+            performCommand(.decreaseMarkdownContentSize)
+        case .increaseMarkdownContentSize:
+            performCommand(.increaseMarkdownContentSize)
+        default:
             return
         }
     }
@@ -511,6 +528,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             state: contextMenuState,
             layoutContext: layoutContext
         )
+        syncSelectionAccessoryPresentation(layoutContext: layoutContext)
     }
 
     private func contextMenuLayoutContextForCurrentChromeState() -> CanvasChromeLayoutContext {
@@ -559,6 +577,12 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         using layoutContext: CanvasChromeLayoutContext
     ) {
         inputIndicatorHostView.updateLayout(layoutContext: layoutContext)
+    }
+
+    private func updateSelectionAccessoryLayout(
+        using layoutContext: CanvasChromeLayoutContext
+    ) {
+        selectionAccessoryHostView.updateLayout(layoutContext: layoutContext)
     }
 
     private func performContextMenuAction(_ actionID: CanvasContextMenuActionID) {
@@ -703,6 +727,48 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
                 message: error.localizedDescription
             )
         }
+    }
+
+    private func presentMarkdownEditor(for itemID: CanvasItemID) {
+        guard presentedViewControllers?.isEmpty ?? true else {
+            return
+        }
+
+        guard let item = scene.markdownItem(withID: itemID) else {
+            presentMarkdownEditorError(
+                message: "Markdown item is no longer available."
+            )
+            return
+        }
+
+        cancelRotationInteractionIfNeeded(resetPointerDragState: true)
+        selectionAccessoryHostView.dismiss()
+
+        let editorViewController = macOSCanvasMarkdownEditorViewController(
+            markdownSource: item.markdownSource
+        ) { [weak self] markdownSource in
+            guard let self else {
+                return false
+            }
+
+            guard let commitResult = self.editorSession.commitMarkdownEdit(
+                withID: itemID,
+                markdownSource: markdownSource
+            ) else {
+                self.presentMarkdownEditorError(
+                    message: "Markdown item is no longer available."
+                )
+                return false
+            }
+
+            if commitResult.didChangeDocument {
+                self.refreshCanvas(
+                    reason: "commit markdown edit \(itemID.uuidString)"
+                )
+            }
+            return true
+        }
+        presentAsSheet(editorViewController)
     }
 
     private func performGIFFrameImport(
@@ -928,6 +994,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         setupWorkspaceModeButton()
         setupMiniMapView()
         setupContextMenuHostView()
+        setupSelectionAccessoryHostView()
         restoreInitialBoardState()
         setupCanvasViewport()
         applyTransitionInteractionFreeze()
@@ -984,6 +1051,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         )
         updateCameraViewportSizeIfNeeded(trigger: "viewDidAppear")
         updateChromeOverlayLayout()
+        syncSelectionAccessoryPresentation()
         updateKeyboardShortcutObservationIfNeeded()
     }
 
@@ -1067,6 +1135,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         toolbarHostView.translatesAutoresizingMaskIntoConstraints = true
         chromeOverlayView.addSubview(toolbarHostView)
         chromeOverlayView.addSubview(textEditorOverlayView)
+        chromeOverlayView.addSubview(selectionAccessoryHostView)
         chromeOverlayView.addSubview(inputIndicatorHostView)
         chromeOverlayView.addSubview(contextMenuHostView)
         chromeOverlayView.addSubview(backButton)
@@ -1095,6 +1164,10 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             inputIndicatorHostView.leadingAnchor.constraint(equalTo: chromeOverlayView.leadingAnchor),
             inputIndicatorHostView.trailingAnchor.constraint(equalTo: chromeOverlayView.trailingAnchor),
             inputIndicatorHostView.bottomAnchor.constraint(equalTo: chromeOverlayView.bottomAnchor),
+            selectionAccessoryHostView.topAnchor.constraint(equalTo: chromeOverlayView.topAnchor),
+            selectionAccessoryHostView.leadingAnchor.constraint(equalTo: chromeOverlayView.leadingAnchor),
+            selectionAccessoryHostView.trailingAnchor.constraint(equalTo: chromeOverlayView.trailingAnchor),
+            selectionAccessoryHostView.bottomAnchor.constraint(equalTo: chromeOverlayView.bottomAnchor),
             contextMenuHostView.topAnchor.constraint(equalTo: chromeOverlayView.topAnchor),
             contextMenuHostView.leadingAnchor.constraint(equalTo: chromeOverlayView.leadingAnchor),
             contextMenuHostView.trailingAnchor.constraint(equalTo: chromeOverlayView.trailingAnchor),
@@ -1147,6 +1220,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         }
         let contextMenuLayoutContext = performOverlayLayoutPass()
         updateInputIndicatorLayout(using: contextMenuLayoutContext)
+        updateSelectionAccessoryLayout(using: contextMenuLayoutContext)
         updateContextMenuLayout(using: contextMenuLayoutContext)
     }
 
@@ -1465,6 +1539,15 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         }
         contextMenuHostView.onActionSelected = { [weak self] actionID in
             self?.performContextMenuAction(actionID)
+        }
+    }
+
+    private func setupSelectionAccessoryHostView() {
+        selectionAccessoryHostView.onCommandSelected = { [weak self] commandID in
+            self?.performSelectionAccessoryCommand(commandID)
+        }
+        selectionAccessoryHostView.onDismissRequested = { [weak self] in
+            self?.selectionAccessoryHostView.dismiss()
         }
     }
 
@@ -2123,6 +2206,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         logCanvasState(reason: reason, snapshot: snapshot)
         canvasViewportView.apply(snapshot)
         refreshMiniMap()
+        syncSelectionAccessoryPresentation()
     }
 
     private func refreshMiniMap() {
@@ -4977,6 +5061,90 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         }
     }
 
+    private func syncSelectionAccessoryPresentation(
+        layoutContext: CanvasChromeLayoutContext? = nil
+    ) {
+        guard isViewLoaded else {
+            return
+        }
+
+        guard let state = resolvedMarkdownSelectionAccessoryState() else {
+            selectionAccessoryHostView.dismiss()
+            return
+        }
+
+        let resolvedLayoutContext =
+            layoutContext ?? contextMenuLayoutContextForCurrentChromeState()
+        selectionAccessoryHostView.apply(
+            state: state,
+            layoutContext: resolvedLayoutContext
+        )
+    }
+
+    private func resolvedMarkdownSelectionAccessoryState() -> SelectionAccessoryState? {
+        guard
+            workspaceMode == .editing,
+            isTransitionInteractionFrozen == false,
+            contextMenuState == nil,
+            presentedViewControllers?.isEmpty ?? true,
+            presentationInlineEditState == nil,
+            let itemID = editorSession.singleSelectedItemID,
+            scene.markdownItem(withID: itemID) != nil,
+            let anchorRect = markdownSelectionAccessoryAnchorRect(for: itemID)
+        else {
+            return nil
+        }
+
+        let editDescriptor = CanvasCommandDescriptor(
+            id: .beginMarkdownEdit,
+            title: "Edit Markdown",
+            systemImageName: "pencil",
+            isEnabled: editorSession.canBeginMarkdownEdit(withID: itemID),
+            isActive: false
+        )
+        let decreaseDescriptor = commandDescriptor(
+            for: .decreaseMarkdownContentSize
+        )
+        let increaseDescriptor = commandDescriptor(
+            for: .increaseMarkdownContentSize
+        )
+        return SelectionAccessoryState.markdown(
+            itemID: itemID,
+            anchorRect: anchorRect,
+            editDescriptor: editDescriptor,
+            decreaseDescriptor: decreaseDescriptor,
+            increaseDescriptor: increaseDescriptor
+        )
+    }
+
+    private func markdownSelectionAccessoryAnchorRect(
+        for itemID: CanvasItemID
+    ) -> CGRect? {
+        if let editOverlay = lastRenderSnapshot.editOverlay,
+           case let .selection(payload) = editOverlay.payload
+        {
+            switch payload.subject {
+            case let .singleItem(selectedItemID) where selectedItemID == itemID:
+                return selectionAccessoryHostView.convert(
+                    editOverlay.activeScreenQuad.boundingRect.standardized,
+                    from: canvasViewportView
+                )
+            case .singleItem, .group:
+                break
+            }
+        }
+
+        guard let renderItem = lastRenderSnapshot.items.first(where: {
+            $0.id == itemID
+        }) else {
+            return nil
+        }
+        return selectionAccessoryHostView.convert(
+            renderItem.screenQuad.boundingRect.standardized,
+            from: canvasViewportView
+        )
+    }
+
     private func syncTextEditorPresentation() {
         guard isViewLoaded else {
             return
@@ -5097,6 +5265,20 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = "Unable to Open GIF Frame Importer"
+        alert.informativeText = message
+        alert.addButton(withTitle: "OK")
+
+        if let window = view.window {
+            alert.beginSheetModal(for: window)
+        } else {
+            alert.runModal()
+        }
+    }
+
+    private func presentMarkdownEditorError(message: String) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Unable to Open Markdown Editor"
         alert.informativeText = message
         alert.addButton(withTitle: "OK")
 

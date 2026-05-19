@@ -8,7 +8,8 @@ struct CanvasMiniMapRenderer {
         self.nodeProviders = nodeProviders ?? [
             CanvasMiniMapImageNodeProvider(),
             CanvasMiniMapHandDrawingNodeProvider(),
-            CanvasMiniMapTextNodeProvider()
+            CanvasMiniMapTextNodeProvider(),
+            CanvasMiniMapMarkdownNodeProvider()
         ]
     }
 

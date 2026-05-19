@@ -90,7 +90,7 @@ struct BoardGeometryPreviewBuilder {
                 boardID: boardID,
                 documentOrder: documentOrder,
                 id: markdownRecord.id,
-                kind: .text,
+                kind: .markdown,
                 center: markdownRecord.center,
                 size: markdownRecord.size,
                 zIndex: markdownRecord.zIndex,
@@ -317,6 +317,8 @@ private func describeBoardPreviewNodeKind(_ kind: CanvasMiniMapNodeKind) -> Stri
         return "handDrawing"
     case .text:
         return "text"
+    case .markdown:
+        return "markdown"
     case .sticker:
         return "sticker"
     case .shape:

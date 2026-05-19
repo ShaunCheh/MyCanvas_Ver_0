@@ -117,32 +117,44 @@ struct CanvasMiniMapTextNodeProvider: CanvasMiniMapNodeProviding {
         context: CanvasMiniMapNodeProviderContext
     ) -> [CanvasMiniMapNode] {
         context.scene.orderedBoardItems().compactMap { boardItem in
-            let itemWorldQuad: CanvasQuad
-            let itemID: CanvasItemID
-            let zIndex: CGFloat
-            let isPreviewActive: Bool
-
-            if let item = boardItem.textItem {
-                itemWorldQuad = item.worldQuad
-                itemID = item.id
-                zIndex = item.zIndex
-                isPreviewActive = context.inlineEditState?.mode == .text &&
-                    context.inlineEditState?.itemID == item.id
-            } else if let item = boardItem.markdownItem {
-                itemWorldQuad = item.worldQuad
-                itemID = item.id
-                zIndex = item.zIndex
-                isPreviewActive = false
-            } else {
+            guard let item = boardItem.textItem else {
                 return nil
             }
 
             return CanvasMiniMapNode(
-                id: itemID,
+                id: item.id,
                 kind: .text,
-                worldQuad: itemWorldQuad,
-                zIndex: zIndex,
-                isPreviewActive: isPreviewActive
+                worldQuad: item.worldQuad,
+                zIndex: item.zIndex,
+                isPreviewActive: context.inlineEditState?.mode == .text &&
+                    context.inlineEditState?.itemID == item.id
+            )
+        }
+    }
+}
+
+struct CanvasMiniMapMarkdownNodeProvider: CanvasMiniMapNodeProviding {
+    func makeNodes(
+        context: CanvasMiniMapNodeProviderContext
+    ) -> [CanvasMiniMapNode] {
+        context.scene.orderedBoardItems().compactMap { boardItem in
+            guard let item = boardItem.markdownItem else {
+                return nil
+            }
+
+            let effectiveItem = effectiveMiniMapBoardItem(
+                from: .markdown(item),
+                rotationPreviewState: context.rotationPreviewState
+            ).markdownItem ?? item
+
+            return CanvasMiniMapNode(
+                id: effectiveItem.id,
+                kind: .markdown,
+                worldQuad: effectiveItem.worldQuad,
+                zIndex: effectiveItem.zIndex,
+                isPreviewActive: context.rotationPreviewState?.geometry(
+                    for: effectiveItem.id
+                ) != nil
             )
         }
     }

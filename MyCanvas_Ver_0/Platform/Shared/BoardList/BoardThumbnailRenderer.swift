@@ -380,16 +380,8 @@ final class BoardThumbnailRenderer {
                     renderOrder: renderOrder
                 )
             case let .markdown(markdownItemRecord):
-                drawTextItem(
-                    BoardTextItemRecord(
-                        id: markdownItemRecord.id,
-                        center: markdownItemRecord.center,
-                        size: markdownItemRecord.size,
-                        zIndex: markdownItemRecord.zIndex,
-                        text: markdownItemRecord.markdownSource,
-                        style: markdownItemRecord.style,
-                        rotationRadians: markdownItemRecord.rotationRadians
-                    ),
+                drawMarkdownItem(
+                    markdownItemRecord,
                     geometry: geometry,
                     in: context,
                     traceContext: traceContext,
@@ -891,6 +883,78 @@ final class BoardThumbnailRenderer {
         context.restoreGState()
     }
 
+    private func drawMarkdownItem(
+        _ itemRecord: BoardMarkdownItemRecord,
+        geometry: CanvasMiniMapViewGeometry,
+        in context: CGContext,
+        traceContext: BoardThumbnailTraceContext,
+        documentOrder: Int?,
+        renderOrder: Int
+    ) {
+        guard itemRecord.markdownSource.isEmpty == false else {
+            return
+        }
+
+        let visibleSize = itemRecord.size.cgSize
+        guard visibleSize.width > 0, visibleSize.height > 0 else {
+            return
+        }
+
+        let mappedVisibleSize = CGSize(
+            width: visibleSize.width * geometry.scale,
+            height: visibleSize.height * geometry.scale
+        )
+        guard mappedVisibleSize.width > 0, mappedVisibleSize.height > 0 else {
+            return
+        }
+
+        let mappedCenter = geometry.worldToMiniMap(itemRecord.center.cgPoint)
+        let textRect = CGRect(
+            x: -mappedVisibleSize.width / 2,
+            y: -mappedVisibleSize.height / 2,
+            width: mappedVisibleSize.width,
+            height: mappedVisibleSize.height
+        ).standardized
+        let rotationRadians = normalizedCanvasAngle(
+            CGFloat(itemRecord.rotationRadians ?? 0)
+        )
+        let previewTextRect = textRect.offsetBy(
+            dx: mappedCenter.x,
+            dy: mappedCenter.y
+        )
+
+        logTextDraw(
+            traceContext: traceContext,
+            itemID: itemRecord.id,
+            documentOrder: documentOrder,
+            renderOrder: renderOrder,
+            worldCenter: itemRecord.center.cgPoint,
+            mappedCenter: mappedCenter,
+            visibleSize: visibleSize,
+            previewTextRect: previewTextRect,
+            rotationRadians: rotationRadians,
+            context: context
+        )
+
+        let layout = CanvasMarkdownLayoutMeasurer.layout(
+            markdownSource: itemRecord.markdownSource,
+            style: itemRecord.style.canvasTextStyle,
+            maxLayoutWidth: mappedVisibleSize.width,
+            scale: geometry.scale
+        )
+
+        context.saveGState()
+        context.translateBy(x: mappedCenter.x, y: mappedCenter.y)
+        context.rotate(by: rotationRadians)
+        context.clip(to: textRect)
+        drawAttributedText(
+            layout.attributedText,
+            in: textRect,
+            context: context
+        )
+        context.restoreGState()
+    }
+
     private func drawText(
         _ text: String,
         style: BoardTextStyleRecord,
@@ -898,11 +962,6 @@ final class BoardThumbnailRenderer {
         worldToPixelScale: CGFloat,
         context: CGContext
     ) {
-        let availableSize = rect.size
-        guard availableSize.width > 0, availableSize.height > 0 else {
-            return
-        }
-
         let paragraphStyle = textParagraphStyle()
         let font = renderTextFont(
             style: style,
@@ -916,6 +975,27 @@ final class BoardThumbnailRenderer {
                 color: textColor(for: style.color)
             )
         )
+        drawAttributedText(
+            attributedText,
+            in: rect,
+            context: context
+        )
+    }
+
+    private func drawAttributedText(
+        _ attributedText: NSAttributedString,
+        in rect: CGRect,
+        context: CGContext
+    ) {
+        let availableSize = rect.size
+        guard
+            availableSize.width > 0,
+            availableSize.height > 0,
+            attributedText.length > 0
+        else {
+            return
+        }
+
         let framesetter = CTFramesetterCreateWithAttributedString(
             attributedText as CFAttributedString
         )
@@ -1472,6 +1552,8 @@ private func describeBoardThumbnailNodeKind(_ kind: CanvasMiniMapNodeKind) -> St
         return "handDrawing"
     case .text:
         return "text"
+    case .markdown:
+        return "markdown"
     case .sticker:
         return "sticker"
     case .shape:

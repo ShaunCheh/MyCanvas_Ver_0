@@ -7,6 +7,7 @@ enum CanvasMiniMapNodeKind {
     case image
     case handDrawing
     case text
+    case markdown
     case sticker
     case shape
 }
