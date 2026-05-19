@@ -309,6 +309,27 @@ final class CanvasEditorSessionAlignmentOverlayTests: XCTestCase {
         XCTAssertEqual(editOverlay.handles.count, CanvasSelectionHandleRole.allCases.count)
     }
 
+    func testMakeCanvasSnapshotKeepsResizeHandlesForSingleMarkdownSelection() throws {
+        let item = CanvasMarkdownItem(
+            markdownSource: "## Markdown",
+            center: CGPoint(x: 40, y: 20),
+            size: CGSize(width: 140, height: 84)
+        )
+        let session = makeAlignmentOverlayTestSession(
+            items: [.markdown(item)],
+            selectedItemID: item.id
+        )
+
+        let snapshot = session.makeCanvasSnapshot()
+        let editOverlay = try XCTUnwrap(snapshot.editOverlay)
+
+        XCTAssertEqual(editOverlay.itemID, item.id)
+        XCTAssertEqual(
+            editOverlay.handles.count,
+            CanvasSelectionHandleRole.allCases.count
+        )
+    }
+
     func testResolvePointerTargetHitsSelectionTranslationAreaForSingleSelectionOutline() throws {
         let item = CanvasTextItem(
             text: "single",

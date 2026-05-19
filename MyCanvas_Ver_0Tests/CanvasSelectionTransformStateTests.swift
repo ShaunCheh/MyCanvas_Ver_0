@@ -218,6 +218,40 @@ final class CanvasSelectionTransformStateTests: XCTestCase {
             accuracy: 0.0001
         )
     }
+
+    func testResizedMemberItemsKeepMarkdownFontSizeAndStretchContainerGeometry() throws {
+        let markdownStyle = CanvasTextStyle(fontSize: 20)
+        let markdownItem = CanvasMarkdownItem(
+            markdownSource: "## Title\n\nBody",
+            style: markdownStyle,
+            center: CGPoint(x: 40, y: 30),
+            size: CGSize(width: 80, height: 60)
+        )
+        let snapshot = CanvasSelectionTransformSnapshot(
+            primaryItemID: markdownItem.id,
+            memberItems: [.markdown(markdownItem)],
+            selectionBounds: CGRect(x: 0, y: 0, width: 80, height: 60)
+        )
+
+        let resizedItems = try XCTUnwrap(
+            snapshot.resizedMemberItems(
+                handleRole: .bottomTrailing,
+                draggedWorldCorner: CGPoint(x: 160, y: 90),
+                minimumScale: 0.1
+            )
+        )
+        let resizedMarkdownItem = try XCTUnwrap(
+            resizedItems.first?.markdownItem
+        )
+
+        XCTAssertEqual(resizedMarkdownItem.center, CGPoint(x: 80, y: 45))
+        XCTAssertEqual(resizedMarkdownItem.size, CGSize(width: 160, height: 90))
+        XCTAssertEqual(resizedMarkdownItem.style, markdownItem.style)
+        XCTAssertEqual(
+            resizedMarkdownItem.markdownSource,
+            markdownItem.markdownSource
+        )
+    }
 }
 
 private func makeSelectionTransformTestImageItem(

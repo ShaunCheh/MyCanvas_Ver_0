@@ -198,7 +198,8 @@ struct CanvasSelectionTransformSnapshot: Equatable {
         return memberGeometries.map { geometry in
             scaledGeometry(
                 from: geometry,
-                using: resizeDraft
+                using: resizeDraft,
+                scalingMode: resizeScalingMode(for: geometry.itemID)
             )
         }
     }
@@ -289,31 +290,36 @@ struct CanvasSelectionTransformSnapshot: Equatable {
         )
         let widthScale = abs(constrainedCorner.x - fixedCorner.x) / selectionBounds.width
         let heightScale = abs(constrainedCorner.y - fixedCorner.y) / selectionBounds.height
-        let scale = max(widthScale, heightScale, minimumScale)
-        guard scale.isFinite else {
+        guard widthScale.isFinite, heightScale.isFinite else {
             return nil
         }
 
         return CanvasSelectionResizeDraft(
             fixedCorner: fixedCorner,
-            scale: scale
+            widthScale: max(widthScale, minimumScale),
+            heightScale: max(heightScale, minimumScale)
         )
     }
 
     private func scaledGeometry(
         from geometry: CanvasBoardItemGeometry,
-        using resizeDraft: CanvasSelectionResizeDraft
+        using resizeDraft: CanvasSelectionResizeDraft,
+        scalingMode: CanvasSelectionResizeScalingMode
     ) -> CanvasBoardItemGeometry {
-        CanvasBoardItemGeometry(
+        let resolvedScale = resolvedScale(
+            from: resizeDraft,
+            scalingMode: scalingMode
+        )
+        return CanvasBoardItemGeometry(
             itemID: geometry.itemID,
             center: canvasScalePoint(
                 geometry.center,
                 around: resizeDraft.fixedCorner,
-                by: resizeDraft.scale
+                by: resolvedScale
             ),
             size: CGSize(
-                width: geometry.size.width * resizeDraft.scale,
-                height: geometry.size.height * resizeDraft.scale
+                width: geometry.size.width * resolvedScale.width,
+                height: geometry.size.height * resolvedScale.height
             ),
             rotationRadians: geometry.rotationRadians
         )
@@ -323,9 +329,11 @@ struct CanvasSelectionTransformSnapshot: Equatable {
         _ item: CanvasBoardItem,
         using resizeDraft: CanvasSelectionResizeDraft
     ) -> CanvasBoardItem {
+        let scalingMode = resizeScalingMode(for: item.id)
         let scaledItemGeometry = scaledGeometry(
             from: CanvasBoardItemGeometry(item: item),
-            using: resizeDraft
+            using: resizeDraft,
+            scalingMode: scalingMode
         )
         switch item {
         case .image:
@@ -335,7 +343,7 @@ struct CanvasSelectionTransformSnapshot: Equatable {
                 resizedTextItem(
                     textItem,
                     scaledCenter: scaledItemGeometry.center,
-                    scale: resizeDraft.scale
+                    scale: resizeDraft.uniformScale
                 )
             )
         case .markdown:
@@ -345,7 +353,7 @@ struct CanvasSelectionTransformSnapshot: Equatable {
                 resizedHandDrawingItem(
                     handDrawingItem,
                     scaledCenter: scaledItemGeometry.center,
-                    scale: resizeDraft.scale
+                    proposedSize: scaledItemGeometry.size
                 )
             )
         }
@@ -381,12 +389,41 @@ struct CanvasSelectionTransformSnapshot: Equatable {
     private func resizedHandDrawingItem(
         _ item: CanvasHandDrawingItem,
         scaledCenter: CGPoint,
-        scale: CGFloat
+        proposedSize: CGSize
     ) -> CanvasHandDrawingItem {
         item.resized(
             center: scaledCenter,
-            proposedSize: item.scaledCanvasSize(by: scale)
+            proposedSize: proposedSize
         )
+    }
+
+    private func resizeScalingMode(
+        for itemID: CanvasItemID
+    ) -> CanvasSelectionResizeScalingMode {
+        switch sourceItemsByID[itemID]?.kind {
+        case .some(.markdown):
+            return .nonUniform
+        case .some(.image), .some(.text), .some(.handDrawing), .none:
+            return .uniform
+        }
+    }
+
+    private func resolvedScale(
+        from resizeDraft: CanvasSelectionResizeDraft,
+        scalingMode: CanvasSelectionResizeScalingMode
+    ) -> CGSize {
+        switch scalingMode {
+        case .uniform:
+            return CGSize(
+                width: resizeDraft.uniformScale,
+                height: resizeDraft.uniformScale
+            )
+        case .nonUniform:
+            return CGSize(
+                width: resizeDraft.widthScale,
+                height: resizeDraft.heightScale
+            )
+        }
     }
 
     private func fixedOppositeCorner(
@@ -577,7 +614,17 @@ extension CanvasBoardItem {
 
 private struct CanvasSelectionResizeDraft {
     let fixedCorner: CGPoint
-    let scale: CGFloat
+    let widthScale: CGFloat
+    let heightScale: CGFloat
+
+    var uniformScale: CGFloat {
+        max(widthScale, heightScale)
+    }
+}
+
+private enum CanvasSelectionResizeScalingMode {
+    case uniform
+    case nonUniform
 }
 
 private func canvasRotatePoint(
@@ -604,11 +651,11 @@ private func canvasRotatePoint(
 private func canvasScalePoint(
     _ point: CGPoint,
     around pivot: CGPoint,
-    by scale: CGFloat
+    by scale: CGSize
 ) -> CGPoint {
     CGPoint(
-        x: pivot.x + ((point.x - pivot.x) * scale),
-        y: pivot.y + ((point.y - pivot.y) * scale)
+        x: pivot.x + ((point.x - pivot.x) * scale.width),
+        y: pivot.y + ((point.y - pivot.y) * scale.height)
     )
 }
 

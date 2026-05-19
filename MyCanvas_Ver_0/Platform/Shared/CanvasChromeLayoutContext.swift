@@ -7,6 +7,7 @@ enum CanvasChromeBlockerKind: String, Sendable {
     case toolbar
     case miniMap
     case contextMenu
+    case selectionAccessory
 }
 
 struct CanvasChromeBlocker: Hashable, Sendable {
