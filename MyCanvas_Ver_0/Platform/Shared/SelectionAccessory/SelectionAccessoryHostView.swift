@@ -68,7 +68,7 @@ final class SelectionAccessoryHostView: UIView {
         }
 
         let hitView = super.hitTest(point, with: event)
-        return hitView === self ? self : hitView
+        return hitView === self ? nil : hitView
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -270,7 +270,7 @@ final class SelectionAccessoryHostView: NSView {
         }
 
         let hitView = super.hitTest(point)
-        return hitView === self ? self : hitView
+        return hitView === self ? nil : hitView
     }
 
     override func mouseDown(with event: NSEvent) {

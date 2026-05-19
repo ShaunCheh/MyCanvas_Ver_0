@@ -252,6 +252,7 @@ enum CanvasCommand {
 
 enum CanvasCommandFollowUp: Equatable {
     case presentHandDrawingEditor(itemID: CanvasItemID)
+    case presentMarkdownEditor(itemID: CanvasItemID)
 }
 
 struct CanvasCommandDescriptor {

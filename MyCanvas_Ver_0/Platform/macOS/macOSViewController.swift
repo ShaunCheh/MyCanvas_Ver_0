@@ -453,6 +453,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         switch followUp {
         case .presentHandDrawingEditor:
             return
+        case .presentMarkdownEditor:
+            return
         }
     }
 

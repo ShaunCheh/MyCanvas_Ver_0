@@ -13,7 +13,7 @@ todos:
     status: pending
   - id: phase4-ios-editor
     content: 接入 iOS 最简 Markdown 编辑器与 Session 回写逻辑
-    status: pending
+    status: completed
   - id: phase5-previews-macos
     content: 补 board thumbnail、minimap 与 macOS 选中/编辑入口 parity
     status: pending

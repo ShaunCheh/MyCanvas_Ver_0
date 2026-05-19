@@ -106,6 +106,24 @@ final class CanvasCommandPolicyParityTests: XCTestCase {
         XCTAssertEqual(item.size.height, expectedHeight, accuracy: 0.0001)
     }
 
+    func testBeginMarkdownEditCommandProducesEditorFollowUp() throws {
+        let session = makeCommandPolicyParityTestSession(workspaceMode: .editing)
+        let executor = CanvasCommandExecutor(session: session)
+        CanvasCommandPolicyParityTestRetainer.executors.append(executor)
+        let item = try XCTUnwrap(session.addMarkdownItem())
+
+        let result = try XCTUnwrap(
+            executor.execute(.beginMarkdownEdit(itemID: item.id))
+        )
+        guard case let .presentMarkdownEditor(followUpItemID)? = result.followUp else {
+            XCTFail("Expected beginMarkdownEdit to request markdown editor follow-up.")
+            return
+        }
+
+        XCTAssertEqual(followUpItemID, item.id)
+        XCTAssertEqual(session.singleSelectedItemID, item.id)
+    }
+
     func testAddHandDrawingDescriptorAndExecutorMatchPolicyInEditingMode() {
         let session = makeCommandPolicyParityTestSession(workspaceMode: .editing)
         let executor = CanvasCommandExecutor(session: session)
@@ -326,13 +344,29 @@ final class CanvasCommandPolicyParityTests: XCTestCase {
                 style: initialStyle
             )
         )
-        let originalItem = try XCTUnwrap(session.scene.markdownItem(withID: item.id))
+        let resizedContainer = try XCTUnwrap(
+            session.scene.updateMarkdownItem(
+                withID: item.id,
+                markdownSource: item.markdownSource,
+                style: item.style,
+                size: CGSize(width: 180, height: 48)
+            )
+        )
+        let originalItem = try XCTUnwrap(
+            session.scene.markdownItem(withID: resizedContainer.id)
+        )
 
         XCTAssertNotNil(executor.execute(.increaseMarkdownContentSize))
 
         let resizedItem = try XCTUnwrap(session.scene.markdownItem(withID: item.id))
+        let expectedResizedHeight = CanvasMarkdownLayoutMeasurer.measuredContentHeight(
+            markdownSource: originalItem.markdownSource,
+            style: resizedItem.style,
+            maxLayoutWidth: originalItem.size.width
+        )
         XCTAssertGreaterThan(resizedItem.style.fontSize, originalItem.style.fontSize)
-        XCTAssertEqual(resizedItem.size, originalItem.size)
+        XCTAssertEqual(resizedItem.size.width, originalItem.size.width)
+        XCTAssertEqual(resizedItem.size.height, expectedResizedHeight, accuracy: 0.0001)
         XCTAssertEqual(resizedItem.markdownSource, originalItem.markdownSource)
 
         XCTAssertNotNil(executor.execute(.undo))
@@ -348,6 +382,47 @@ final class CanvasCommandPolicyParityTests: XCTestCase {
         XCTAssertEqual(redoneItem.style, resizedItem.style)
         XCTAssertEqual(redoneItem.size, resizedItem.size)
         XCTAssertEqual(redoneItem.markdownSource, resizedItem.markdownSource)
+    }
+
+    func testCommitMarkdownEditKeepsCurrentWidthAndRemeasuresHeight() throws {
+        let session = makeCommandPolicyParityTestSession(workspaceMode: .editing)
+        let item = try XCTUnwrap(
+            session.addMarkdownItem(
+                markdownSource: "Seed",
+                style: CanvasTextStyle(fontSize: 18)
+            )
+        )
+        let customizedItem = try XCTUnwrap(
+            session.scene.updateMarkdownItem(
+                withID: item.id,
+                markdownSource: item.markdownSource,
+                style: item.style,
+                size: CGSize(width: 210, height: 60)
+            )
+        )
+        let updatedSource = """
+        ## Updated
+
+        A much longer markdown paragraph that should be reflowed using the current block width.
+        """
+
+        let commitResult = try XCTUnwrap(
+            session.commitMarkdownEdit(
+                withID: item.id,
+                markdownSource: updatedSource
+            )
+        )
+        let updatedItem = try XCTUnwrap(session.scene.markdownItem(withID: item.id))
+        let expectedHeight = CanvasMarkdownLayoutMeasurer.measuredContentHeight(
+            markdownSource: updatedSource,
+            style: customizedItem.style,
+            maxLayoutWidth: customizedItem.size.width
+        )
+
+        XCTAssertTrue(commitResult.didChangeDocument)
+        XCTAssertEqual(updatedItem.size.width, customizedItem.size.width)
+        XCTAssertEqual(updatedItem.size.height, expectedHeight, accuracy: 0.0001)
+        XCTAssertEqual(updatedItem.markdownSource, updatedSource)
     }
 
     func testImportMediaExecutorMatchesPolicyInEditingMode() throws {

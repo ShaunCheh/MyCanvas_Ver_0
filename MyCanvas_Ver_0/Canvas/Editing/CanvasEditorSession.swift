@@ -7,6 +7,11 @@ struct CanvasTextEditCommitResult {
     let didChangeDocument: Bool
 }
 
+struct CanvasMarkdownEditCommitResult {
+    let itemID: CanvasItemID
+    let didChangeDocument: Bool
+}
+
 struct CanvasVideoPosterUpdateResult {
     let item: CanvasImageItem
     let refreshReason: String
@@ -649,6 +654,10 @@ Write here.
             return false
         }
 
+        if singleSelectedItemID == itemID {
+            return true
+        }
+
         return replaceSelection(
             with: [itemID],
             primarySelectedItemID: itemID
@@ -772,6 +781,44 @@ Write here.
     @discardableResult
     func commitMarkdownEdit() -> Bool {
         false
+    }
+
+    @discardableResult
+    func commitMarkdownEdit(
+        withID itemID: CanvasItemID,
+        markdownSource: String
+    ) -> CanvasMarkdownEditCommitResult? {
+        guard let item = scene.markdownItem(withID: itemID) else {
+            return nil
+        }
+
+        if markdownSource == item.markdownSource {
+            return CanvasMarkdownEditCommitResult(
+                itemID: itemID,
+                didChangeDocument: false
+            )
+        }
+
+        let beforeSnapshot = currentBoardHistorySnapshot()
+        guard let updatedItem = updateMarkdownItemContent(
+            withID: itemID,
+            markdownSource: markdownSource,
+            style: item.style
+        ) else {
+            return nil
+        }
+
+        expandBoardIfNeeded(toInclude: updatedItem.worldBounds)
+        let changeReason = "edit markdown item"
+        _ = recordImmediateHistoryChange(
+            from: beforeSnapshot,
+            reason: changeReason,
+            autosaveReason: changeReason
+        )
+        return CanvasMarkdownEditCommitResult(
+            itemID: itemID,
+            didChangeDocument: true
+        )
     }
 
     func handDrawingEditorContext(
@@ -1936,6 +1983,22 @@ Write here.
         )
     }
 
+    func measuredMarkdownItemSize(
+        for markdownSource: String,
+        style: CanvasTextStyle,
+        layoutWidth: CGFloat
+    ) -> CGSize {
+        let resolvedLayoutWidth = max(layoutWidth, 1)
+        return CGSize(
+            width: resolvedLayoutWidth,
+            height: CanvasMarkdownLayoutMeasurer.measuredContentHeight(
+                markdownSource: markdownSource,
+                style: style,
+                maxLayoutWidth: resolvedLayoutWidth
+            )
+        )
+    }
+
     @discardableResult
     func updateTextItemContent(
         withID itemID: CanvasItemID,
@@ -1949,6 +2012,29 @@ Write here.
         return scene.updateTextItem(
             withID: itemID,
             text: text,
+            style: style,
+            size: size
+        )
+    }
+
+    @discardableResult
+    func updateMarkdownItemContent(
+        withID itemID: CanvasItemID,
+        markdownSource: String,
+        style: CanvasTextStyle
+    ) -> CanvasMarkdownItem? {
+        guard let item = scene.markdownItem(withID: itemID) else {
+            return nil
+        }
+
+        let size = measuredMarkdownItemSize(
+            for: markdownSource,
+            style: style,
+            layoutWidth: item.size.width
+        )
+        return scene.updateMarkdownItem(
+            withID: itemID,
+            markdownSource: markdownSource,
             style: style,
             size: size
         )
@@ -2342,11 +2428,10 @@ Write here.
         }
 
         let beforeSnapshot = currentBoardHistorySnapshot()
-        guard let updatedItem = scene.updateMarkdownItem(
+        guard let updatedItem = updateMarkdownItemContent(
             withID: item.id,
             markdownSource: item.markdownSource,
-            style: updatedStyle,
-            size: item.size
+            style: updatedStyle
         ) else {
             return nil
         }

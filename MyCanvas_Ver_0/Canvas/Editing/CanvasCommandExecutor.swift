@@ -144,7 +144,8 @@ final class CanvasCommandExecutor {
             }
 
             return CanvasCommandExecutionResult(
-                refreshReason: "begin markdown edit \(itemID.uuidString)"
+                refreshReason: "begin markdown edit \(itemID.uuidString)",
+                followUp: .presentMarkdownEditor(itemID: itemID)
             )
         case .commitTextEdit:
             guard let commitResult = session.commitTextEdit() else {
