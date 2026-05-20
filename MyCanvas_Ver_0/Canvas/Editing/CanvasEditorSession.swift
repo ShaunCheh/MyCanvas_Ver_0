@@ -31,6 +31,7 @@ final class CanvasEditorSession {
     private static let inlineTextFontSizeStep: CGFloat = 2
     private static let markdownContentSizeStep: CGFloat = 2
     private static let geometryComparisonEpsilon: CGFloat = 0.0001
+    private static let isMarkdownTraceLoggingEnabled = true
     private static let defaultMarkdownSource = """
 ## Markdown
 
@@ -795,6 +796,13 @@ Write here.
         }
 
         if markdownSource == item.markdownSource {
+            logMarkdownCommitTrace(
+                action: "noop",
+                itemID: itemID,
+                oldSize: item.size,
+                newSize: item.size,
+                markdownSource: markdownSource
+            )
             return CanvasMarkdownEditCommitResult(
                 itemID: itemID,
                 didChangeDocument: false
@@ -809,6 +817,13 @@ Write here.
         ) else {
             return nil
         }
+        logMarkdownCommitTrace(
+            action: "apply",
+            itemID: itemID,
+            oldSize: item.size,
+            newSize: updatedItem.size,
+            markdownSource: markdownSource
+        )
 
         expandBoardIfNeeded(toInclude: updatedItem.worldBounds)
         let changeReason = "edit markdown item"
@@ -1993,7 +2008,7 @@ Write here.
         // Markdown reflow is width-driven: edits keep the current container
         // width and only recompute the committed height from content.
         let resolvedLayoutWidth = max(layoutWidth, 1)
-        return CGSize(
+        let measuredSize = CGSize(
             width: resolvedLayoutWidth,
             height: CanvasMarkdownLayoutMeasurer.measuredContentHeight(
                 markdownSource: markdownSource,
@@ -2001,6 +2016,78 @@ Write here.
                 maxLayoutWidth: resolvedLayoutWidth
             )
         )
+        logMarkdownMeasurementTrace(
+            markdownSource: markdownSource,
+            layoutWidth: resolvedLayoutWidth,
+            measuredSize: measuredSize
+        )
+        return measuredSize
+    }
+
+    private func logMarkdownMeasurementTrace(
+        markdownSource: String,
+        layoutWidth: CGFloat,
+        measuredSize: CGSize
+    ) {
+        guard Self.isMarkdownTraceLoggingEnabled else {
+            return
+        }
+        print(
+            "[Canvas Markdown][Measure] " +
+            "action=sessionMeasure " +
+            "width=\(Self.debugMarkdownScalar(layoutWidth)) " +
+            "size=\(Self.debugMarkdownSize(measuredSize)) " +
+            "lastLine=\"\(Self.debugMarkdownLastNonEmptyLine(in: markdownSource))\" " +
+            "tail=\"\(Self.debugMarkdownTail(markdownSource))\""
+        )
+    }
+
+    private func logMarkdownCommitTrace(
+        action: String,
+        itemID: CanvasItemID,
+        oldSize: CGSize,
+        newSize: CGSize,
+        markdownSource: String
+    ) {
+        guard Self.isMarkdownTraceLoggingEnabled else {
+            return
+        }
+        print(
+            "[Canvas Markdown][Commit] " +
+            "action=\(action) " +
+            "itemID=\(itemID.uuidString) " +
+            "oldSize=\(Self.debugMarkdownSize(oldSize)) " +
+            "newSize=\(Self.debugMarkdownSize(newSize)) " +
+            "lastLine=\"\(Self.debugMarkdownLastNonEmptyLine(in: markdownSource))\" " +
+            "tail=\"\(Self.debugMarkdownTail(markdownSource))\""
+        )
+    }
+
+    private static func debugMarkdownSize(_ size: CGSize) -> String {
+        "\(debugMarkdownScalar(size.width))x\(debugMarkdownScalar(size.height))"
+    }
+
+    private static func debugMarkdownScalar(_ value: CGFloat) -> String {
+        String(format: "%.2f", value)
+    }
+
+    private static func debugMarkdownTail(_ source: String, maxLength: Int = 120) -> String {
+        debugMarkdownSingleLine(String(source.suffix(maxLength)))
+    }
+
+    private static func debugMarkdownLastNonEmptyLine(in source: String) -> String {
+        let line = source
+            .components(separatedBy: .newlines)
+            .reversed()
+            .first { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false }
+            ?? ""
+        return debugMarkdownSingleLine(line)
+    }
+
+    private static func debugMarkdownSingleLine(_ text: String) -> String {
+        text
+            .replacingOccurrences(of: "\r", with: "\\r")
+            .replacingOccurrences(of: "\n", with: "\\n")
     }
 
     @discardableResult

@@ -15,6 +15,7 @@ struct CanvasRenderer {
     private static let workspaceMinorGridStepWorld: CGFloat = 64
     private static let workspaceMajorGridLineEvery: Int = 4
     private static let workspaceGridIndexEpsilonFactor: CGFloat = 0.0001
+    private static let isMarkdownTraceLoggingEnabled = true
     private let presentationResolver = CanvasImagePresentationResolver()
 
     func makeSnapshot(
@@ -857,6 +858,10 @@ struct CanvasRenderer {
         // content-layer swaps do not break selection, rotation, or accessory
         // anchoring contracts.
         let screenQuad = camera.worldToViewport(effectiveMarkdownItem.worldQuad)
+        logMarkdownPayloadTrace(
+            item: effectiveMarkdownItem,
+            zoomScale: camera.zoomScale
+        )
         return CanvasRenderItem(
             id: effectiveMarkdownItem.id,
             screenFrame: screenQuad.boundingRect.standardized,
@@ -877,6 +882,50 @@ struct CanvasRenderer {
                 )
             )
         )
+    }
+
+    private func logMarkdownPayloadTrace(
+        item: CanvasMarkdownItem,
+        zoomScale: CGFloat
+    ) {
+        guard Self.isMarkdownTraceLoggingEnabled else {
+            return
+        }
+        print(
+            "[Canvas Markdown][Payload] " +
+            "itemID=\(item.id.uuidString) " +
+            "logicalSize=\(Self.debugMarkdownSize(item.size)) " +
+            "zoom=\(Self.debugMarkdownScalar(zoomScale)) " +
+            "lastLine=\"\(Self.debugMarkdownLastNonEmptyLine(in: item.markdownSource))\" " +
+            "tail=\"\(Self.debugMarkdownTail(item.markdownSource))\""
+        )
+    }
+
+    private static func debugMarkdownSize(_ size: CGSize) -> String {
+        "\(debugMarkdownScalar(size.width))x\(debugMarkdownScalar(size.height))"
+    }
+
+    private static func debugMarkdownScalar(_ value: CGFloat) -> String {
+        String(format: "%.2f", value)
+    }
+
+    private static func debugMarkdownTail(_ source: String, maxLength: Int = 120) -> String {
+        debugMarkdownSingleLine(String(source.suffix(maxLength)))
+    }
+
+    private static func debugMarkdownLastNonEmptyLine(in source: String) -> String {
+        let line = source
+            .components(separatedBy: .newlines)
+            .reversed()
+            .first { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false }
+            ?? ""
+        return debugMarkdownSingleLine(line)
+    }
+
+    private static func debugMarkdownSingleLine(_ text: String) -> String {
+        text
+            .replacingOccurrences(of: "\r", with: "\\r")
+            .replacingOccurrences(of: "\n", with: "\\n")
     }
 
     private func makeCornerEditHandles(

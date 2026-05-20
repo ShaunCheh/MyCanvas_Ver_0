@@ -1,4 +1,5 @@
 import CoreGraphics
+import Foundation
 import QuartzCore
 
 // Markdown content renders into a bitmap in logical item space. Camera zoom only
@@ -12,6 +13,8 @@ final class CanvasMarkdownContentLayer: CALayer {
     private static let rasterScaleBuckets: [CGFloat] = [
         1, 1.5, 2, 3, 4, 6, 8, 12, 16, 24
     ]
+    private static let isTraceLoggingEnabled = true
+    private static let layoutMismatchThreshold: CGFloat = 0.5
 
     private struct LayoutCacheKey: Hashable {
         let markdownSource: String
@@ -135,6 +138,12 @@ final class CanvasMarkdownContentLayer: CALayer {
             markdownPayload: markdownPayload,
             contentsScale: contentsScale
         )
+        logLayoutMismatchIfNeeded(
+            markdownPayload: markdownPayload,
+            layout: layout,
+            contentsScale: contentsScale,
+            rasterScaleBucket: rasterScaleBucket
+        )
         applyBitmapIfNeeded(
             for: layout,
             layoutKey: layoutKey,
@@ -249,5 +258,63 @@ final class CanvasMarkdownContentLayer: CALayer {
                 Self.rasterScaleBuckets.last ?? 1
             )
         return RasterScaleBucket(scale: Double(bucketScale))
+    }
+
+    private func logLayoutMismatchIfNeeded(
+        markdownPayload: CanvasMarkdownRenderPayload,
+        layout: CanvasMarkdownLayoutResult,
+        contentsScale: CGFloat,
+        rasterScaleBucket: RasterScaleBucket
+    ) {
+        guard Self.isTraceLoggingEnabled else {
+            return
+        }
+        let widthDelta = layout.contentSize.width - markdownPayload.logicalSize.width
+        let heightDelta = layout.contentSize.height - markdownPayload.logicalSize.height
+        guard
+            abs(widthDelta) > Self.layoutMismatchThreshold ||
+            abs(heightDelta) > Self.layoutMismatchThreshold
+        else {
+            return
+        }
+        print(
+            "[Canvas Markdown][ClipRisk] " +
+            "itemID=\(itemID.uuidString) " +
+            "payloadSize=\(Self.debugMarkdownSize(markdownPayload.logicalSize)) " +
+            "layoutSize=\(Self.debugMarkdownSize(layout.contentSize)) " +
+            "delta=\(Self.debugMarkdownSize(CGSize(width: widthDelta, height: heightDelta))) " +
+            "zoom=\(Self.debugMarkdownScalar(markdownPayload.cameraZoomScale)) " +
+            "contentsScale=\(Self.debugMarkdownScalar(contentsScale)) " +
+            "rasterBucket=\(Self.debugMarkdownScalar(rasterScaleBucket.cgFloatScale)) " +
+            "lastLine=\"\(Self.debugMarkdownLastNonEmptyLine(in: markdownPayload.markdownSource))\" " +
+            "tail=\"\(Self.debugMarkdownTail(markdownPayload.markdownSource))\""
+        )
+    }
+
+    private static func debugMarkdownSize(_ size: CGSize) -> String {
+        "\(debugMarkdownScalar(size.width))x\(debugMarkdownScalar(size.height))"
+    }
+
+    private static func debugMarkdownScalar(_ value: CGFloat) -> String {
+        String(format: "%.2f", value)
+    }
+
+    private static func debugMarkdownTail(_ source: String, maxLength: Int = 120) -> String {
+        debugMarkdownSingleLine(String(source.suffix(maxLength)))
+    }
+
+    private static func debugMarkdownLastNonEmptyLine(in source: String) -> String {
+        let line = source
+            .components(separatedBy: .newlines)
+            .reversed()
+            .first { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false }
+            ?? ""
+        return debugMarkdownSingleLine(line)
+    }
+
+    private static func debugMarkdownSingleLine(_ text: String) -> String {
+        text
+            .replacingOccurrences(of: "\r", with: "\\r")
+            .replacingOccurrences(of: "\n", with: "\\n")
     }
 }

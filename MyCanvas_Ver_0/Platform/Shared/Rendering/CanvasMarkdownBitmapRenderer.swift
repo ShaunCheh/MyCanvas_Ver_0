@@ -10,6 +10,9 @@ protocol CanvasMarkdownBitmapRendering: AnyObject {
 }
 
 final class CanvasMarkdownBitmapRenderer: CanvasMarkdownBitmapRendering {
+    private static let isTraceLoggingEnabled = true
+    private static let visibleRangeGapThreshold: CGFloat = 0.5
+
     func render(
         layout: CanvasMarkdownLayoutResult,
         rasterScale: CGFloat
@@ -122,6 +125,16 @@ final class CanvasMarkdownBitmapRenderer: CanvasMarkdownBitmapRendering {
             attributedText as CFAttributedString
         )
         let textBounds = CGRect(origin: .zero, size: availableSize)
+        let suggestedSize = CTFramesetterSuggestFrameSizeWithConstraints(
+            framesetter,
+            CFRange(location: 0, length: attributedText.length),
+            nil,
+            CGSize(
+                width: availableSize.width,
+                height: CGFloat.greatestFiniteMagnitude
+            ),
+            nil
+        )
 
         context.saveGState()
         context.translateBy(x: rect.minX, y: rect.maxY)
@@ -132,6 +145,12 @@ final class CanvasMarkdownBitmapRenderer: CanvasMarkdownBitmapRendering {
             CFRange(location: 0, length: attributedText.length),
             CGPath(rect: textBounds, transform: nil),
             nil
+        )
+        logVisibleRangeIfNeeded(
+            frame: frame,
+            attributedText: attributedText,
+            availableSize: availableSize,
+            suggestedSize: suggestedSize
         )
         CTFrameDraw(frame, context)
         context.restoreGState()
@@ -144,5 +163,62 @@ final class CanvasMarkdownBitmapRenderer: CanvasMarkdownBitmapRendering {
             blue: color.blue,
             alpha: color.alpha
         )
+    }
+
+    private func logVisibleRangeIfNeeded(
+        frame: CTFrame,
+        attributedText: NSAttributedString,
+        availableSize: CGSize,
+        suggestedSize: CGSize
+    ) {
+        guard Self.isTraceLoggingEnabled else {
+            return
+        }
+        let visibleRange = CTFrameGetVisibleStringRange(frame)
+        let totalLength = attributedText.length
+        let hiddenLocation = visibleRange.location + visibleRange.length
+        let hiddenLength = max(totalLength - hiddenLocation, 0)
+        let heightGap = suggestedSize.height - availableSize.height
+        guard hiddenLength > 0 || heightGap > Self.visibleRangeGapThreshold else {
+            return
+        }
+        let plainText = attributedText.string as NSString
+        let hiddenTail = hiddenLength > 0
+            ? plainText.substring(with: NSRange(location: hiddenLocation, length: hiddenLength))
+            : ""
+        let visiblePreview = plainText.substring(
+            with: NSRange(
+                location: 0,
+                length: min(visibleRange.length, totalLength)
+            )
+        )
+        print(
+            "[Canvas Markdown][Draw] " +
+            "rect=\(Self.debugMarkdownSize(availableSize)) " +
+            "suggested=\(Self.debugMarkdownSize(suggestedSize)) " +
+            "heightGap=\(Self.debugMarkdownScalar(heightGap)) " +
+            "visibleRange=\(visibleRange.location)+\(visibleRange.length) " +
+            "totalLength=\(totalLength) " +
+            "visibleTail=\"\(Self.debugMarkdownTail(visiblePreview))\" " +
+            "hiddenTail=\"\(Self.debugMarkdownTail(hiddenTail))\""
+        )
+    }
+
+    private static func debugMarkdownSize(_ size: CGSize) -> String {
+        "\(debugMarkdownScalar(size.width))x\(debugMarkdownScalar(size.height))"
+    }
+
+    private static func debugMarkdownScalar(_ value: CGFloat) -> String {
+        String(format: "%.2f", value)
+    }
+
+    private static func debugMarkdownTail(_ source: String, maxLength: Int = 120) -> String {
+        debugMarkdownSingleLine(String(source.suffix(maxLength)))
+    }
+
+    private static func debugMarkdownSingleLine(_ text: String) -> String {
+        text
+            .replacingOccurrences(of: "\r", with: "\\r")
+            .replacingOccurrences(of: "\n", with: "\\n")
     }
 }

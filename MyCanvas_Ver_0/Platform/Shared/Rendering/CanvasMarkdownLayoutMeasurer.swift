@@ -52,6 +52,7 @@ enum CanvasMarkdownLayoutMeasurer {
     private struct AttributedComposition {
         let attributedText: NSAttributedString
         let codeBlockRanges: [NSRange]
+        let blocks: [Block]
     }
 
     private struct CodeBlockDecorationMetrics {
@@ -90,6 +91,7 @@ enum CanvasMarkdownLayoutMeasurer {
     private static let maximumCodeBlockPanelCornerRadius: CGFloat = 10
     private static let quotePrefix = "▌ "
     private static let unorderedListPrefix = "• "
+    private static let isTraceLoggingEnabled = true
 
     static func layout(
         markdownSource: String,
@@ -123,6 +125,14 @@ enum CanvasMarkdownLayoutMeasurer {
                 style: style,
                 scale: scale
             )))
+        )
+        logLayoutTrace(
+            markdownSource: markdownSource,
+            blocks: composition.blocks,
+            measuredRect: measuredRect,
+            contentSize: contentSize,
+            attributedTextLength: attributedText.length,
+            resolvedLayoutWidth: resolvedLayoutWidth
         )
         return CanvasMarkdownLayoutResult(
             attributedText: attributedText,
@@ -187,8 +197,90 @@ enum CanvasMarkdownLayoutMeasurer {
         }
         return AttributedComposition(
             attributedText: composed,
-            codeBlockRanges: codeBlockRanges
+            codeBlockRanges: codeBlockRanges,
+            blocks: resolvedBlocks
         )
+    }
+
+    private static func logLayoutTrace(
+        markdownSource: String,
+        blocks: [Block],
+        measuredRect: CGRect,
+        contentSize: CGSize,
+        attributedTextLength: Int,
+        resolvedLayoutWidth: CGFloat
+    ) {
+        guard isTraceLoggingEnabled else {
+            return
+        }
+        print(
+            "[Canvas Markdown][Parse] " +
+            "width=\(debugScalar(resolvedLayoutWidth)) " +
+            "blocks=\(debugBlockSummary(blocks)) " +
+            "lastLine=\"\(debugLastNonEmptyLine(in: markdownSource))\" " +
+            "tail=\"\(debugTail(markdownSource))\""
+        )
+        print(
+            "[Canvas Markdown][Measure] " +
+            "width=\(debugScalar(resolvedLayoutWidth)) " +
+            "measuredRectHeight=\(debugScalar(measuredRect.height)) " +
+            "committedHeight=\(debugScalar(contentSize.height)) " +
+            "attributedLength=\(attributedTextLength)"
+        )
+    }
+
+    private static func debugBlockSummary(_ blocks: [Block]) -> String {
+        guard blocks.isEmpty == false else {
+            return "[]"
+        }
+        let parts = blocks.map { block -> String in
+            switch block {
+            case let .heading(level, text):
+                return "h\(level)(\(debugCharacterCount(for: text)))"
+            case let .paragraph(text):
+                return "p(\(debugCharacterCount(for: text)))"
+            case let .unorderedList(items):
+                let count = items.count
+                let characters = items.reduce(0) { $0 + debugCharacterCount(for: $1) }
+                return "ul(items:\(count),chars:\(characters))"
+            case let .orderedList(items):
+                let count = items.count
+                let characters = items.reduce(0) { $0 + debugCharacterCount(for: $1.text) }
+                return "ol(items:\(count),chars:\(characters))"
+            case let .quote(text):
+                return "quote(\(debugCharacterCount(for: text)))"
+            case let .codeBlock(text):
+                return "code(\(debugCharacterCount(for: text)))"
+            }
+        }
+        return "[" + parts.joined(separator: ",") + "]"
+    }
+
+    private static func debugCharacterCount(for text: String) -> Int {
+        text.trimmingCharacters(in: .whitespacesAndNewlines).count
+    }
+
+    private static func debugLastNonEmptyLine(in source: String) -> String {
+        let line = source
+            .components(separatedBy: .newlines)
+            .reversed()
+            .first { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false }
+            ?? ""
+        return debugSingleLine(line)
+    }
+
+    private static func debugTail(_ source: String, maxLength: Int = 120) -> String {
+        debugSingleLine(String(source.suffix(maxLength)))
+    }
+
+    private static func debugSingleLine(_ text: String) -> String {
+        text
+            .replacingOccurrences(of: "\r", with: "\\r")
+            .replacingOccurrences(of: "\n", with: "\\n")
+    }
+
+    private static func debugScalar(_ value: CGFloat) -> String {
+        String(format: "%.2f", value)
     }
 
     private static func makeRenderedBlock(
