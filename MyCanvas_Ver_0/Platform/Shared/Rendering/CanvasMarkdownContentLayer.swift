@@ -119,6 +119,10 @@ final class CanvasMarkdownContentLayer: CALayer {
         return nil
     }
 
+    var currentLayout: CanvasMarkdownLayoutResult? {
+        activeLayout
+    }
+
     func update(
         with markdownPayload: CanvasMarkdownRenderPayload,
         contentsScale: CGFloat

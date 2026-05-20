@@ -173,16 +173,18 @@ final class CanvasMarkdownLayerTests: XCTestCase {
             markdownSource: """
             ## Title
 
+            ```swift
+            let root = fiberRoot.current
+            prepareFreshStack(root)
+            workLoopConcurrent()
+            ```
+
             Line 1
 
             Line 2
-
-            Line 3
-
-            Line 4
             """,
             style: CanvasTextStyle(fontSize: 18),
-            logicalSize: CGSize(width: 220, height: 72),
+            logicalSize: CGSize(width: 320, height: 72),
             scrollOffsetY: 10_000,
             cameraZoomScale: 1
         )
@@ -207,13 +209,18 @@ final class CanvasMarkdownLayerTests: XCTestCase {
             -expectedMaxScrollOffsetY,
             accuracy: 0.0001
         )
+        let expectedTrackX = expectedMarkdownScrollbarTrackX(
+            logicalSize: payload.logicalSize,
+            layout: expectedLayout
+        )
         XCTAssertFalse(layer.scrollbarTrackLayer.isHidden)
         XCTAssertFalse(layer.scrollbarThumbLayer.isHidden)
         XCTAssertEqual(
-            layer.scrollbarTrackLayer.frame.maxX,
-            payload.logicalSize.width - 3,
+            layer.scrollbarTrackLayer.frame.minX,
+            expectedTrackX,
             accuracy: 0.0001
         )
+        XCTAssertEqual(layer.scrollbarTrackLayer.frame.width, 6, accuracy: 0.0001)
         XCTAssertLessThan(
             layer.scrollbarThumbLayer.frame.height,
             layer.scrollbarTrackLayer.frame.height
@@ -222,6 +229,55 @@ final class CanvasMarkdownLayerTests: XCTestCase {
             layer.scrollbarThumbLayer.frame.maxY,
             layer.scrollbarTrackLayer.frame.maxY,
             accuracy: 0.0001
+        )
+    }
+
+    func testScrollbarAnchorsToNarrowUsedContentInsteadOfContainerEdge() {
+        let itemID = CanvasItemID()
+        let layer = CanvasMarkdownItemLayer(itemID: itemID)
+        let payload = CanvasMarkdownRenderPayload(
+            markdownSource: """
+            A
+
+            B
+
+            C
+
+            D
+
+            E
+
+            F
+
+            G
+            """,
+            style: CanvasTextStyle(fontSize: 18),
+            logicalSize: CGSize(width: 320, height: 56),
+            scrollOffsetY: 24,
+            cameraZoomScale: 1
+        )
+        let renderItem = makeMarkdownLayerRenderItem(
+            itemID: itemID,
+            payload: payload
+        )
+        let expectedLayout = makeExpectedMarkdownLayout(for: payload)
+        let expectedTrackX = expectedMarkdownScrollbarTrackX(
+            logicalSize: payload.logicalSize,
+            layout: expectedLayout
+        )
+
+        layer.update(
+            with: renderItem,
+            markdownPayload: payload,
+            contentsScale: 2
+        )
+
+        XCTAssertFalse(layer.scrollbarTrackLayer.isHidden)
+        XCTAssertEqual(layer.scrollbarTrackLayer.frame.minX, expectedTrackX, accuracy: 0.0001)
+        XCTAssertEqual(layer.scrollbarTrackLayer.frame.width, 6, accuracy: 0.0001)
+        XCTAssertLessThan(
+            layer.scrollbarTrackLayer.frame.maxX,
+            payload.logicalSize.width - 120
         )
     }
 
@@ -369,6 +425,25 @@ private func makeMarkdownContentPayload(
         logicalSize: CGSize(width: logicalWidth, height: logicalHeight),
         scrollOffsetY: scrollOffsetY,
         cameraZoomScale: cameraZoomScale
+    )
+}
+
+private func expectedMarkdownScrollbarTrackX(
+    logicalSize: CGSize,
+    layout: CanvasMarkdownLayoutResult,
+    thickness: CGFloat = 6,
+    outerInset: CGFloat = 3,
+    contentGap: CGFloat = 3
+) -> CGFloat {
+    let maximumTrackX = max(logicalSize.width - outerInset - thickness, 0)
+    let minimumTrackX = min(outerInset, maximumTrackX)
+    let contentRightEdge = min(
+        max(layout.usedContentRightEdge, 0),
+        logicalSize.width
+    )
+    return min(
+        max(contentRightEdge + contentGap, minimumTrackX),
+        maximumTrackX
     )
 }
 

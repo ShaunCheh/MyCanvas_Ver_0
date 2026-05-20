@@ -16,8 +16,13 @@ struct CanvasMarkdownLayoutResult {
     let attributedText: NSAttributedString
     let contentSize: CGSize
     let decorations: [CanvasMarkdownDecoration]
+    let usedContentBounds: CGRect
 
     var contentHeight: CGFloat {
         contentSize.height
+    }
+
+    var usedContentRightEdge: CGFloat {
+        usedContentBounds.maxX
     }
 }

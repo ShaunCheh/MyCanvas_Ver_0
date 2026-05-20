@@ -126,6 +126,17 @@ enum CanvasMarkdownLayoutMeasurer {
                 scale: scale
             )))
         )
+        let textLayoutContext = makeTextLayoutContext(
+            attributedText: attributedText,
+            maxLayoutWidth: resolvedLayoutWidth
+        )
+        let decorations = makeCodeBlockDecorations(
+            codeBlockRanges: composition.codeBlockRanges,
+            layoutContext: textLayoutContext,
+            style: style,
+            scale: scale,
+            contentSize: contentSize
+        )
         logLayoutTrace(
             markdownSource: markdownSource,
             blocks: composition.blocks,
@@ -138,13 +149,11 @@ enum CanvasMarkdownLayoutMeasurer {
         return CanvasMarkdownLayoutResult(
             attributedText: attributedText,
             contentSize: contentSize,
-            decorations: makeCodeBlockDecorations(
-                codeBlockRanges: composition.codeBlockRanges,
-                attributedText: attributedText,
-                maxLayoutWidth: resolvedLayoutWidth,
-                style: style,
-                scale: scale,
-                contentSize: contentSize
+            decorations: decorations,
+            usedContentBounds: measuredUsedContentBounds(
+                layoutContext: textLayoutContext,
+                contentSize: contentSize,
+                decorations: decorations
             )
         )
     }
@@ -688,8 +697,7 @@ enum CanvasMarkdownLayoutMeasurer {
 
     private static func makeCodeBlockDecorations(
         codeBlockRanges: [NSRange],
-        attributedText: NSAttributedString,
-        maxLayoutWidth: CGFloat,
+        layoutContext: TextLayoutContext,
         style: CanvasTextStyle,
         scale: CGFloat,
         contentSize: CGSize
@@ -698,10 +706,6 @@ enum CanvasMarkdownLayoutMeasurer {
             return []
         }
 
-        let layoutContext = makeTextLayoutContext(
-            attributedText: attributedText,
-            maxLayoutWidth: maxLayoutWidth
-        )
         let metrics = codeBlockDecorationMetrics(
             style: style,
             scale: scale
@@ -723,6 +727,35 @@ enum CanvasMarkdownLayoutMeasurer {
                 cornerRadius: metrics.cornerRadius
             )
         }
+    }
+
+    private static func measuredUsedContentBounds(
+        layoutContext: TextLayoutContext,
+        contentSize: CGSize,
+        decorations: [CanvasMarkdownDecoration]
+    ) -> CGRect {
+        let contentBounds = CGRect(origin: .zero, size: contentSize)
+        let glyphRange = layoutContext.layoutManager.glyphRange(
+            for: layoutContext.textContainer
+        )
+        var resolvedBounds = standardizedVisibleRect(
+            usedRect(
+                forGlyphRange: glyphRange,
+                layoutContext: layoutContext
+            ),
+            within: contentBounds
+        )
+        for decoration in decorations {
+            guard let clippedRect = standardizedVisibleRect(
+                decoration.rect,
+                within: contentBounds
+            ) else {
+                continue
+            }
+            resolvedBounds = resolvedBounds.map { $0.union(clippedRect).standardized }
+                ?? clippedRect
+        }
+        return resolvedBounds ?? .zero
     }
 
     private static func makeTextLayoutContext(
@@ -764,7 +797,32 @@ enum CanvasMarkdownLayoutMeasurer {
             return nil
         }
 
-        var blockUsedRect: CGRect?
+        guard let blockUsedRect = usedRect(
+            forGlyphRange: glyphRange,
+            layoutContext: layoutContext
+        ) else {
+            return nil
+        }
+
+        let expandedRect = blockUsedRect.insetBy(
+            dx: -metrics.horizontalPadding,
+            dy: -metrics.verticalPadding
+        )
+        return standardizedVisibleRect(
+            expandedRect,
+            within: contentBounds
+        )
+    }
+
+    private static func usedRect(
+        forGlyphRange glyphRange: NSRange,
+        layoutContext: TextLayoutContext
+    ) -> CGRect? {
+        guard glyphRange.length > 0 else {
+            return nil
+        }
+
+        var resolvedUsedRect: CGRect?
         layoutContext.layoutManager.enumerateLineFragments(forGlyphRange: glyphRange) {
             _,
             usedRect,
@@ -775,18 +833,19 @@ enum CanvasMarkdownLayoutMeasurer {
             guard NSIntersectionRange(lineGlyphRange, glyphRange).length > 0 else {
                 return
             }
-            blockUsedRect = blockUsedRect.map { $0.union(usedRect) } ?? usedRect
+            resolvedUsedRect = resolvedUsedRect.map { $0.union(usedRect) } ?? usedRect
         }
+        return resolvedUsedRect
+    }
 
-        guard let blockUsedRect else {
+    private static func standardizedVisibleRect(
+        _ rect: CGRect?,
+        within contentBounds: CGRect
+    ) -> CGRect? {
+        guard let rect else {
             return nil
         }
-
-        let expandedRect = blockUsedRect.insetBy(
-            dx: -metrics.horizontalPadding,
-            dy: -metrics.verticalPadding
-        )
-        let clippedRect = expandedRect.intersection(contentBounds)
+        let clippedRect = rect.intersection(contentBounds)
         guard clippedRect.isNull == false, clippedRect.isEmpty == false else {
             return nil
         }

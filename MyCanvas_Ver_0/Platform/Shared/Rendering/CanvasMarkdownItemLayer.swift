@@ -5,9 +5,10 @@ import QuartzCore
 // generation to the nested content layer in logical item space.
 final class CanvasMarkdownItemLayer: CALayer {
     private static let scrollbarVisibilityEpsilon: CGFloat = 0.5
-    private static let preferredScrollbarThickness: CGFloat = 4
-    private static let minimumScrollbarThickness: CGFloat = 2
-    private static let preferredScrollbarInset: CGFloat = 3
+    private static let preferredScrollbarThickness: CGFloat = 6
+    private static let minimumScrollbarThickness: CGFloat = 3
+    private static let preferredScrollbarOuterInset: CGFloat = 3
+    private static let preferredScrollbarGapFromContent: CGFloat = 3
     private static let scrollbarTrackGray: CGFloat = 0.42
     private static let scrollbarTrackAlpha: CGFloat = 0.16
     private static let scrollbarThumbAlpha: CGFloat = 0.55
@@ -116,9 +117,13 @@ final class CanvasMarkdownItemLayer: CALayer {
             with: markdownPayload,
             contentsScale: contentsScale
         )
+        guard let layout = contentLayer.currentLayout else {
+            CATransaction.commit()
+            return
+        }
         applyScrollbar(
             logicalSize: markdownPayload.logicalSize,
-            contentSize: contentLayer.bounds.size,
+            layout: layout,
             scrollOffsetY: max(-contentLayer.position.y, 0)
         )
 
@@ -173,12 +178,12 @@ final class CanvasMarkdownItemLayer: CALayer {
 
     private func applyScrollbar(
         logicalSize: CGSize,
-        contentSize: CGSize,
+        layout: CanvasMarkdownLayoutResult,
         scrollOffsetY: CGFloat
     ) {
         guard let metrics = resolvedScrollbarMetrics(
             logicalSize: logicalSize,
-            contentSize: contentSize,
+            layout: layout,
             scrollOffsetY: scrollOffsetY
         ) else {
             guard lastAppliedScrollbarMetrics != nil else {
@@ -203,24 +208,20 @@ final class CanvasMarkdownItemLayer: CALayer {
 
     private func resolvedScrollbarMetrics(
         logicalSize: CGSize,
-        contentSize: CGSize,
+        layout: CanvasMarkdownLayoutResult,
         scrollOffsetY: CGFloat
     ) -> ScrollbarMetrics? {
         guard
             logicalSize.width > 0,
             logicalSize.height > 0,
-            contentSize.height - logicalSize.height > Self.scrollbarVisibilityEpsilon
+            layout.contentSize.height - logicalSize.height > Self.scrollbarVisibilityEpsilon
         else {
             return nil
         }
 
         let thickness = resolvedScrollbarThickness(forLogicalWidth: logicalSize.width)
-        let horizontalInset = min(
-            Self.preferredScrollbarInset,
-            max((logicalSize.width - thickness) / 2, 0)
-        )
         let verticalInset = min(
-            Self.preferredScrollbarInset,
+            Self.preferredScrollbarOuterInset,
             max((logicalSize.height - thickness) / 2, 0)
         )
         let trackHeight = logicalSize.height - (verticalInset * 2)
@@ -228,19 +229,34 @@ final class CanvasMarkdownItemLayer: CALayer {
             return nil
         }
 
-        let maxScrollOffsetY = max(contentSize.height - logicalSize.height, 0)
+        let maxScrollOffsetY = max(layout.contentSize.height - logicalSize.height, 0)
         guard maxScrollOffsetY > Self.scrollbarVisibilityEpsilon else {
             return nil
         }
         let minimumThumbHeight = min(trackHeight, thickness * 2)
-        let proportionalThumbHeight = trackHeight * (logicalSize.height / contentSize.height)
+        let proportionalThumbHeight = trackHeight * (logicalSize.height / layout.contentSize.height)
         let thumbHeight = min(
             max(proportionalThumbHeight, minimumThumbHeight),
             trackHeight
         )
         let thumbTravel = max(trackHeight - thumbHeight, 0)
         let progress = min(max(scrollOffsetY / maxScrollOffsetY, 0), 1)
-        let trackX = max(logicalSize.width - horizontalInset - thickness, 0)
+        let maximumTrackX = max(
+            logicalSize.width - Self.preferredScrollbarOuterInset - thickness,
+            0
+        )
+        let minimumTrackX = min(Self.preferredScrollbarOuterInset, maximumTrackX)
+        let contentRightEdge = min(
+            max(layout.usedContentRightEdge, 0),
+            logicalSize.width
+        )
+        let trackX = min(
+            max(
+                contentRightEdge + Self.preferredScrollbarGapFromContent,
+                minimumTrackX
+            ),
+            maximumTrackX
+        )
         let trackY = verticalInset
         let thumbY = trackY + (thumbTravel * progress)
         return ScrollbarMetrics(
