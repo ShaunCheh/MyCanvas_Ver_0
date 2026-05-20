@@ -155,6 +155,91 @@ final class CanvasMarkdownLayerTests: XCTestCase {
         XCTAssertEqual(zoomedImage.width, Int(ceil(expectedLayout.contentSize.width * 3)))
         XCTAssertEqual(zoomedImage.height, Int(ceil(expectedLayout.contentSize.height * 3)))
     }
+
+    func testContentLayerSkipsLayoutAndBitmapRefreshWithinSameRasterBucket() throws {
+        let renderer = CanvasMarkdownBitmapRendererSpy()
+        var layoutInvocationCount = 0
+        let layer = CanvasMarkdownContentLayer(
+            itemID: CanvasItemID(),
+            bitmapRenderer: renderer,
+            layoutProvider: { payload in
+                layoutInvocationCount += 1
+                return makeExpectedMarkdownLayout(for: payload)
+            }
+        )
+        let firstPayload = makeMarkdownContentPayload(cameraZoomScale: 1.1)
+        let secondPayload = makeMarkdownContentPayload(cameraZoomScale: 1.4)
+        let expectedLayout = makeExpectedMarkdownLayout(for: firstPayload)
+
+        layer.update(with: firstPayload, contentsScale: 1)
+        let firstImage = try markdownContentImage(from: layer)
+
+        layer.update(with: secondPayload, contentsScale: 1)
+        let secondImage = try markdownContentImage(from: layer)
+
+        XCTAssertEqual(layoutInvocationCount, 1)
+        XCTAssertEqual(renderer.rasterScales, [1.5])
+        XCTAssertEqual(layer.bounds.size, expectedLayout.contentSize)
+        XCTAssertEqual(firstImage.width, secondImage.width)
+        XCTAssertEqual(firstImage.height, secondImage.height)
+    }
+
+    func testContentLayerCrossingRasterBucketRerendersWithoutRelayout() throws {
+        let renderer = CanvasMarkdownBitmapRendererSpy()
+        var layoutInvocationCount = 0
+        let layer = CanvasMarkdownContentLayer(
+            itemID: CanvasItemID(),
+            bitmapRenderer: renderer,
+            layoutProvider: { payload in
+                layoutInvocationCount += 1
+                return makeExpectedMarkdownLayout(for: payload)
+            }
+        )
+        let firstPayload = makeMarkdownContentPayload(cameraZoomScale: 1.4)
+        let secondPayload = makeMarkdownContentPayload(cameraZoomScale: 1.6)
+        let expectedLayout = makeExpectedMarkdownLayout(for: firstPayload)
+
+        layer.update(with: firstPayload, contentsScale: 1)
+        let firstImage = try markdownContentImage(from: layer)
+
+        layer.update(with: secondPayload, contentsScale: 1)
+        let secondImage = try markdownContentImage(from: layer)
+
+        XCTAssertEqual(layoutInvocationCount, 1)
+        XCTAssertEqual(renderer.rasterScales, [1.5, 2])
+        XCTAssertEqual(layer.bounds.size, expectedLayout.contentSize)
+        XCTAssertGreaterThan(secondImage.width, firstImage.width)
+        XCTAssertGreaterThan(secondImage.height, firstImage.height)
+    }
+
+    func testContentLayerReusesCachedBitmapWhenReturningToPreviousRasterBucket() throws {
+        let renderer = CanvasMarkdownBitmapRendererSpy()
+        var layoutInvocationCount = 0
+        let layer = CanvasMarkdownContentLayer(
+            itemID: CanvasItemID(),
+            bitmapRenderer: renderer,
+            layoutProvider: { payload in
+                layoutInvocationCount += 1
+                return makeExpectedMarkdownLayout(for: payload)
+            }
+        )
+        let initialPayload = makeMarkdownContentPayload(cameraZoomScale: 1.4)
+        let higherBucketPayload = makeMarkdownContentPayload(cameraZoomScale: 1.6)
+        let returnPayload = makeMarkdownContentPayload(cameraZoomScale: 1.3)
+
+        layer.update(with: initialPayload, contentsScale: 1)
+        let initialImage = try markdownContentImage(from: layer)
+
+        layer.update(with: higherBucketPayload, contentsScale: 1)
+
+        layer.update(with: returnPayload, contentsScale: 1)
+        let returnedImage = try markdownContentImage(from: layer)
+
+        XCTAssertEqual(layoutInvocationCount, 1)
+        XCTAssertEqual(renderer.rasterScales, [1.5, 2])
+        XCTAssertEqual(returnedImage.width, initialImage.width)
+        XCTAssertEqual(returnedImage.height, initialImage.height)
+    }
 }
 
 private func makeMarkdownLayerRenderItem(
@@ -198,6 +283,24 @@ private func makeExpectedMarkdownLayout(
     )
 }
 
+private func makeMarkdownContentPayload(
+    markdownSource: String = """
+    ## Title
+
+    Body with `code`
+    """,
+    logicalWidth: CGFloat = 220,
+    logicalHeight: CGFloat = 120,
+    cameraZoomScale: CGFloat
+) -> CanvasMarkdownRenderPayload {
+    CanvasMarkdownRenderPayload(
+        markdownSource: markdownSource,
+        style: CanvasTextStyle(fontSize: 18),
+        logicalSize: CGSize(width: logicalWidth, height: logicalHeight),
+        cameraZoomScale: cameraZoomScale
+    )
+}
+
 private func markdownLayerTransformScale(
     _ transform: CGAffineTransform
 ) -> CGFloat {
@@ -215,4 +318,63 @@ private func markdownContentImage(
 ) throws -> CGImage {
     let contents = try XCTUnwrap(layer.contents)
     return contents as! CGImage
+}
+
+private final class CanvasMarkdownBitmapRendererSpy: CanvasMarkdownBitmapRendering {
+    private(set) var rasterScales: [CGFloat] = []
+    private(set) var images: [CGImage] = []
+
+    func render(
+        layout: CanvasMarkdownLayoutResult,
+        rasterScale: CGFloat
+    ) -> CGImage? {
+        rasterScales.append(rasterScale)
+        let image = makeMarkdownLayerTestImage(
+            pixelWidth: Int(ceil(layout.contentSize.width * rasterScale)),
+            pixelHeight: Int(ceil(layout.contentSize.height * rasterScale))
+        )
+        if let image {
+            images.append(image)
+        }
+        return image
+    }
+}
+
+private func makeMarkdownLayerTestImage(
+    pixelWidth: Int,
+    pixelHeight: Int
+) -> CGImage? {
+    guard
+        pixelWidth > 0,
+        pixelHeight > 0,
+        let context = CGContext(
+            data: nil,
+            width: pixelWidth,
+            height: pixelHeight,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        )
+    else {
+        return nil
+    }
+
+    context.setFillColor(
+        CGColor(
+            red: 0,
+            green: 0,
+            blue: 0,
+            alpha: 1
+        )
+    )
+    context.fill(
+        CGRect(
+            x: 0,
+            y: 0,
+            width: pixelWidth,
+            height: pixelHeight
+        )
+    )
+    return context.makeImage()
 }

@@ -4,30 +4,77 @@ import QuartzCore
 // Markdown content renders into a bitmap in logical item space. Camera zoom only
 // influences raster density, never the semantic layout width or font sizing.
 final class CanvasMarkdownContentLayer: CALayer {
+    typealias LayoutProvider = (CanvasMarkdownRenderPayload) -> CanvasMarkdownLayoutResult
+
+    // Discrete upward buckets keep zoom behavior predictable: pinch updates can
+    // reuse the current bitmap until the requested density crosses the next
+    // threshold, at which point we reraster once without relaying out text.
+    private static let rasterScaleBuckets: [CGFloat] = [
+        1, 1.5, 2, 3, 4, 6, 8, 12, 16, 24
+    ]
+
+    private struct LayoutCacheKey: Hashable {
+        let markdownSource: String
+        let fontName: String
+        let fontSize: Double
+        let colorRed: Double
+        let colorGreen: Double
+        let colorBlue: Double
+        let colorAlpha: Double
+        let logicalWidth: Double
+
+        init(markdownPayload: CanvasMarkdownRenderPayload) {
+            markdownSource = markdownPayload.markdownSource
+            fontName = markdownPayload.style.fontName
+            fontSize = Double(markdownPayload.style.fontSize)
+            colorRed = Double(markdownPayload.style.color.red)
+            colorGreen = Double(markdownPayload.style.color.green)
+            colorBlue = Double(markdownPayload.style.color.blue)
+            colorAlpha = Double(markdownPayload.style.color.alpha)
+            logicalWidth = Double(markdownPayload.logicalSize.width)
+        }
+    }
+
+    private struct RasterScaleBucket: Hashable {
+        let scale: Double
+
+        var cgFloatScale: CGFloat {
+            CGFloat(scale)
+        }
+    }
+
+    private struct BitmapCacheKey: Hashable {
+        let layoutKey: LayoutCacheKey
+        let rasterScaleBucket: RasterScaleBucket
+    }
+
     let itemID: CanvasItemID
 
-    private let bitmapRenderer: CanvasMarkdownBitmapRenderer
+    private let bitmapRenderer: any CanvasMarkdownBitmapRendering
+    private let layoutProvider: LayoutProvider
     private var lastAppliedContentsScale: CGFloat
-    private var lastAppliedMarkdownSource: String
-    private var lastAppliedStyle: CanvasTextStyle?
-    private var lastAppliedLogicalWidth: CGFloat
-    private var lastAppliedRasterScale: CGFloat
     private var lastAppliedLayoutSize: CGSize
-    private var cachedLayout: CanvasMarkdownLayoutResult?
+    private var activeLayoutKey: LayoutCacheKey?
+    private var activeBitmapKey: BitmapCacheKey?
+    private var activeLayout: CanvasMarkdownLayoutResult?
+    private var layoutCache: [LayoutCacheKey: CanvasMarkdownLayoutResult]
+    private var bitmapCache: [BitmapCacheKey: CGImage]
 
     init(
         itemID: CanvasItemID,
-        bitmapRenderer: CanvasMarkdownBitmapRenderer = CanvasMarkdownBitmapRenderer()
+        bitmapRenderer: any CanvasMarkdownBitmapRendering = CanvasMarkdownBitmapRenderer(),
+        layoutProvider: @escaping LayoutProvider = CanvasMarkdownContentLayer.defaultLayout(for:)
     ) {
         self.itemID = itemID
         self.bitmapRenderer = bitmapRenderer
+        self.layoutProvider = layoutProvider
         lastAppliedContentsScale = .nan
-        lastAppliedMarkdownSource = ""
-        lastAppliedStyle = nil
-        lastAppliedLogicalWidth = .nan
-        lastAppliedRasterScale = .nan
         lastAppliedLayoutSize = CGSize(width: CGFloat.nan, height: CGFloat.nan)
-        cachedLayout = nil
+        activeLayoutKey = nil
+        activeBitmapKey = nil
+        activeLayout = nil
+        layoutCache = [:]
+        bitmapCache = [:]
         super.init()
         configureLayer()
     }
@@ -36,23 +83,25 @@ final class CanvasMarkdownContentLayer: CALayer {
         if let contentLayer = layer as? CanvasMarkdownContentLayer {
             itemID = contentLayer.itemID
             bitmapRenderer = contentLayer.bitmapRenderer
+            layoutProvider = contentLayer.layoutProvider
             lastAppliedContentsScale = contentLayer.lastAppliedContentsScale
-            lastAppliedMarkdownSource = contentLayer.lastAppliedMarkdownSource
-            lastAppliedStyle = contentLayer.lastAppliedStyle
-            lastAppliedLogicalWidth = contentLayer.lastAppliedLogicalWidth
-            lastAppliedRasterScale = contentLayer.lastAppliedRasterScale
             lastAppliedLayoutSize = contentLayer.lastAppliedLayoutSize
-            cachedLayout = contentLayer.cachedLayout
+            activeLayoutKey = contentLayer.activeLayoutKey
+            activeBitmapKey = contentLayer.activeBitmapKey
+            activeLayout = contentLayer.activeLayout
+            layoutCache = contentLayer.layoutCache
+            bitmapCache = contentLayer.bitmapCache
         } else {
             itemID = UUID()
             bitmapRenderer = CanvasMarkdownBitmapRenderer()
+            layoutProvider = CanvasMarkdownContentLayer.defaultLayout(for:)
             lastAppliedContentsScale = .nan
-            lastAppliedMarkdownSource = ""
-            lastAppliedStyle = nil
-            lastAppliedLogicalWidth = .nan
-            lastAppliedRasterScale = .nan
             lastAppliedLayoutSize = CGSize(width: CGFloat.nan, height: CGFloat.nan)
-            cachedLayout = nil
+            activeLayoutKey = nil
+            activeBitmapKey = nil
+            activeLayout = nil
+            layoutCache = [:]
+            bitmapCache = [:]
         }
 
         super.init(layer: layer)
@@ -75,57 +124,28 @@ final class CanvasMarkdownContentLayer: CALayer {
             lastAppliedContentsScale = contentsScale
         }
 
-        let needsLayoutRefresh = shouldRefreshLayout(
-            markdownPayload: markdownPayload
-        ) || cachedLayout == nil
-        if needsLayoutRefresh {
-            cachedLayout = makeLayout(
-                from: markdownPayload
-            )
-            lastAppliedMarkdownSource = markdownPayload.markdownSource
-            lastAppliedStyle = markdownPayload.style
-            lastAppliedLogicalWidth = markdownPayload.logicalSize.width
-        }
+        let layoutKey = LayoutCacheKey(markdownPayload: markdownPayload)
+        let layout = resolvedLayout(
+            for: markdownPayload,
+            layoutKey: layoutKey
+        )
+        applyLayoutGeometry(layout)
 
-        if let cachedLayout {
-            applyLayoutGeometry(cachedLayout)
-            let rasterScale = resolvedRasterScale(
-                markdownPayload: markdownPayload,
-                contentsScale: contentsScale
-            )
-            if needsLayoutRefresh || lastAppliedRasterScale != rasterScale || contents == nil {
-                contents = bitmapRenderer.render(
-                    layout: cachedLayout,
-                    rasterScale: rasterScale
-                )
-                lastAppliedRasterScale = rasterScale
-            }
-        } else {
-            contents = nil
-            lastAppliedRasterScale = .nan
-        }
+        let rasterScaleBucket = resolvedRasterScaleBucket(
+            markdownPayload: markdownPayload,
+            contentsScale: contentsScale
+        )
+        applyBitmapIfNeeded(
+            for: layout,
+            layoutKey: layoutKey,
+            rasterScaleBucket: rasterScaleBucket
+        )
 
         CATransaction.commit()
     }
 
-    private func configureLayer() {
-        anchorPoint = .zero
-        position = .zero
-        contentsGravity = .resize
-        masksToBounds = false
-        isOpaque = false
-    }
-
-    private func shouldRefreshLayout(
-        markdownPayload: CanvasMarkdownRenderPayload
-    ) -> Bool {
-        lastAppliedMarkdownSource != markdownPayload.markdownSource ||
-        lastAppliedStyle != markdownPayload.style ||
-        lastAppliedLogicalWidth != markdownPayload.logicalSize.width
-    }
-
-    private func makeLayout(
-        from markdownPayload: CanvasMarkdownRenderPayload
+    nonisolated private static func defaultLayout(
+        for markdownPayload: CanvasMarkdownRenderPayload
     ) -> CanvasMarkdownLayoutResult {
         CanvasMarkdownLayoutMeasurer.layout(
             markdownSource: markdownPayload.markdownSource,
@@ -134,6 +154,67 @@ final class CanvasMarkdownContentLayer: CALayer {
             scale: 1,
             includeCompatibilityCodeBlockBackgrounds: false
         )
+    }
+
+    private func resolvedLayout(
+        for markdownPayload: CanvasMarkdownRenderPayload,
+        layoutKey: LayoutCacheKey
+    ) -> CanvasMarkdownLayoutResult {
+        if activeLayoutKey == layoutKey, let activeLayout {
+            return activeLayout
+        }
+
+        if let cachedLayout = layoutCache[layoutKey] {
+            activeLayoutKey = layoutKey
+            activeLayout = cachedLayout
+            return cachedLayout
+        }
+
+        let resolvedLayout = layoutProvider(markdownPayload)
+        layoutCache[layoutKey] = resolvedLayout
+        activeLayoutKey = layoutKey
+        activeLayout = resolvedLayout
+        return resolvedLayout
+    }
+
+    private func applyBitmapIfNeeded(
+        for layout: CanvasMarkdownLayoutResult,
+        layoutKey: LayoutCacheKey,
+        rasterScaleBucket: RasterScaleBucket
+    ) {
+        let bitmapKey = BitmapCacheKey(
+            layoutKey: layoutKey,
+            rasterScaleBucket: rasterScaleBucket
+        )
+        guard activeBitmapKey != bitmapKey || contents == nil else {
+            return
+        }
+
+        if let cachedImage = bitmapCache[bitmapKey] {
+            contents = cachedImage
+            activeBitmapKey = bitmapKey
+            return
+        }
+
+        let renderedImage = bitmapRenderer.render(
+            layout: layout,
+            rasterScale: rasterScaleBucket.cgFloatScale
+        )
+        contents = renderedImage
+        if let renderedImage {
+            bitmapCache[bitmapKey] = renderedImage
+            activeBitmapKey = bitmapKey
+        } else {
+            activeBitmapKey = nil
+        }
+    }
+
+    private func configureLayer() {
+        anchorPoint = .zero
+        position = .zero
+        contentsGravity = .resize
+        masksToBounds = false
+        isOpaque = false
     }
 
     private func applyLayoutGeometry(
@@ -147,16 +228,26 @@ final class CanvasMarkdownContentLayer: CALayer {
         lastAppliedLayoutSize = layout.contentSize
     }
 
-    private func resolvedRasterScale(
+    private func resolvedRasterScaleBucket(
         markdownPayload: CanvasMarkdownRenderPayload,
         contentsScale: CGFloat
-    ) -> CGFloat {
+    ) -> RasterScaleBucket {
         let resolvedContentsScale =
             contentsScale.isFinite && contentsScale > 0 ? contentsScale : 1
         let resolvedZoomScale =
             markdownPayload.cameraZoomScale.isFinite && markdownPayload.cameraZoomScale > 0
             ? markdownPayload.cameraZoomScale
             : 1
-        return max(resolvedContentsScale * resolvedZoomScale, 1)
+        let requestedRasterScale = max(
+            resolvedContentsScale * resolvedZoomScale,
+            1
+        )
+        let bucketScale =
+            Self.rasterScaleBuckets.first(where: { requestedRasterScale <= $0 })
+            ?? max(
+                ceil(requestedRasterScale),
+                Self.rasterScaleBuckets.last ?? 1
+            )
+        return RasterScaleBucket(scale: Double(bucketScale))
     }
 }

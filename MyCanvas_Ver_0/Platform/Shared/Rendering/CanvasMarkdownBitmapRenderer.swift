@@ -2,7 +2,14 @@ import CoreGraphics
 import CoreText
 import Foundation
 
-final class CanvasMarkdownBitmapRenderer {
+protocol CanvasMarkdownBitmapRendering: AnyObject {
+    func render(
+        layout: CanvasMarkdownLayoutResult,
+        rasterScale: CGFloat
+    ) -> CGImage?
+}
+
+final class CanvasMarkdownBitmapRenderer: CanvasMarkdownBitmapRendering {
     func render(
         layout: CanvasMarkdownLayoutResult,
         rasterScale: CGFloat
