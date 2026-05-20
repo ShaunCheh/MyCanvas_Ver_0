@@ -10,7 +10,7 @@ protocol CanvasMarkdownBitmapRendering: AnyObject {
 }
 
 final class CanvasMarkdownBitmapRenderer: CanvasMarkdownBitmapRendering {
-    private static let isTraceLoggingEnabled = true
+    private static let isTraceLoggingEnabled = false
     private static let visibleRangeGapThreshold: CGFloat = 0.5
 
     func render(

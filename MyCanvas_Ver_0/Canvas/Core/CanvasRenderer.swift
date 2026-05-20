@@ -15,7 +15,7 @@ struct CanvasRenderer {
     private static let workspaceMinorGridStepWorld: CGFloat = 64
     private static let workspaceMajorGridLineEvery: Int = 4
     private static let workspaceGridIndexEpsilonFactor: CGFloat = 0.0001
-    private static let isMarkdownTraceLoggingEnabled = true
+    private static let isMarkdownTraceLoggingEnabled = false
     private let presentationResolver = CanvasImagePresentationResolver()
 
     func makeSnapshot(

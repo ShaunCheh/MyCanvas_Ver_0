@@ -31,7 +31,7 @@ final class CanvasEditorSession {
     private static let inlineTextFontSizeStep: CGFloat = 2
     private static let markdownContentSizeStep: CGFloat = 2
     private static let geometryComparisonEpsilon: CGFloat = 0.0001
-    private static let isMarkdownTraceLoggingEnabled = true
+    private static let isMarkdownTraceLoggingEnabled = false
     private static let defaultMarkdownSource = """
 ## Markdown
 
@@ -2186,21 +2186,26 @@ Write here.
     @discardableResult
     func updateMarkdownItemScrollOffset(
         withID itemID: CanvasItemID,
-        scrollOffsetY: CGFloat
+        scrollOffsetY: CGFloat,
+        contentHeight: CGFloat? = nil
     ) -> CanvasMarkdownItem? {
         guard let item = scene.markdownItem(withID: itemID) else {
             return nil
         }
-        let updatedItem = normalizedMarkdownItem(
-            item,
-            scrollOffsetY: scrollOffsetY
+        let resolvedContentHeight = contentHeight ?? measuredMarkdownContentHeight(
+            for: item
         )
-        guard abs(updatedItem.scrollOffsetY - item.scrollOffsetY) > Self.geometryComparisonEpsilon else {
+        let resolvedScrollOffsetY = clampedMarkdownScrollOffsetY(
+            proposedScrollOffsetY: scrollOffsetY,
+            contentHeight: resolvedContentHeight,
+            containerHeight: item.size.height
+        )
+        guard abs(resolvedScrollOffsetY - item.scrollOffsetY) > Self.geometryComparisonEpsilon else {
             return nil
         }
         return scene.updateMarkdownItemScrollOffset(
             withID: itemID,
-            scrollOffsetY: updatedItem.scrollOffsetY
+            scrollOffsetY: resolvedScrollOffsetY
         )
     }
 

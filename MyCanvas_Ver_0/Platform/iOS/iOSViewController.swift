@@ -31,6 +31,13 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         let itemID: CanvasItemID
     }
 
+    private struct TransientMarkdownScrollState {
+        let itemID: CanvasItemID
+        let contentHeight: CGFloat
+        let maxScrollOffsetY: CGFloat
+        var scrollOffsetY: CGFloat
+    }
+
     private struct PointerCropState {
         let itemID: CanvasImageItemID
         let handleRole: CanvasCropHandleRole
@@ -160,6 +167,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     )
     private var isMarkdownScrollHistoryTransactionActive = false
     private var markdownScrollHistoryCommitWorkItem: DispatchWorkItem?
+    private var transientMarkdownScrollState: TransientMarkdownScrollState?
     private let commandCatalog = CanvasCommandCatalog()
     private let markdownSelectionAccessoryResolver =
         CanvasMarkdownSelectionAccessoryResolver()
@@ -1962,7 +1970,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             isItemBodyTarget,
             let itemID = pressContext.targetItemID,
             let markdownItem = scene.markdownItem(withID: itemID),
-            markdownItemSupportsInternalScroll(markdownItem),
+            makeTransientMarkdownScrollState(for: markdownItem) != nil,
             isVerticalDominantPointerDrag(from: pressedLocation, to: currentLocation)
         else {
             return nil
@@ -1970,11 +1978,37 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         return PointerMarkdownScrollState(itemID: itemID)
     }
 
-    private func markdownItemSupportsInternalScroll(
-        _ item: CanvasMarkdownItem
-    ) -> Bool {
+    private func makeTransientMarkdownScrollState(
+        for item: CanvasMarkdownItem,
+        commitExistingIfNeeded: Bool = true
+    ) -> TransientMarkdownScrollState? {
+        if let transientMarkdownScrollState {
+            if transientMarkdownScrollState.itemID == item.id {
+                return transientMarkdownScrollState
+            }
+            if commitExistingIfNeeded {
+                commitMarkdownScrollHistoryTransactionIfNeeded()
+            }
+        }
+
         let contentHeight = editorSession.measuredMarkdownContentHeight(for: item)
-        return contentHeight - item.size.height > Self.geometryComparisonEpsilon
+        let maxScrollOffsetY = max(contentHeight - item.size.height, 0)
+        guard maxScrollOffsetY > Self.geometryComparisonEpsilon else {
+            transientMarkdownScrollState = nil
+            return nil
+        }
+
+        let scrollState = TransientMarkdownScrollState(
+            itemID: item.id,
+            contentHeight: contentHeight,
+            maxScrollOffsetY: maxScrollOffsetY,
+            scrollOffsetY: min(
+                max(item.scrollOffsetY, 0),
+                maxScrollOffsetY
+            )
+        )
+        transientMarkdownScrollState = scrollState
+        return scrollState
     }
 
     private func isVerticalDominantPointerDrag(
@@ -2049,7 +2083,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         guard let markdownItem = scene.topmostBoardItem(containing: worldLocation)?.markdownItem else {
             return nil
         }
-        guard markdownItemSupportsInternalScroll(markdownItem) else {
+        guard makeTransientMarkdownScrollState(for: markdownItem) != nil else {
             return nil
         }
         return consumeMarkdownScrollIfNeeded(
@@ -2063,11 +2097,12 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         markdownItemID: CanvasItemID
     ) -> CGPoint {
         guard let markdownItem = scene.markdownItem(withID: markdownItemID) else {
+            if transientMarkdownScrollState?.itemID == markdownItemID {
+                transientMarkdownScrollState = nil
+            }
             return translation
         }
-        let contentHeight = editorSession.measuredMarkdownContentHeight(for: markdownItem)
-        let maxScrollOffsetY = max(contentHeight - markdownItem.size.height, 0)
-        guard maxScrollOffsetY > Self.geometryComparisonEpsilon else {
+        guard var scrollState = makeTransientMarkdownScrollState(for: markdownItem) else {
             return translation
         }
         let resolvedZoomScale =
@@ -2077,18 +2112,31 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             return translation
         }
 
+        let previousScrollOffsetY = scrollState.scrollOffsetY
         let resolvedScrollOffsetY = min(
-            max(markdownItem.scrollOffsetY + proposedScrollDeltaY, 0),
-            maxScrollOffsetY
+            max(previousScrollOffsetY + proposedScrollDeltaY, 0),
+            scrollState.maxScrollOffsetY
         )
-        let appliedScrollDeltaY = resolvedScrollOffsetY - markdownItem.scrollOffsetY
+        let proposedAppliedScrollDeltaY = resolvedScrollOffsetY - previousScrollOffsetY
+        var appliedScrollDeltaY = proposedAppliedScrollDeltaY
         if abs(appliedScrollDeltaY) > Self.geometryComparisonEpsilon {
             beginMarkdownScrollHistoryTransactionIfNeeded()
-            if editorSession.updateMarkdownItemScrollOffset(
-                withID: markdownItem.id,
+            if let appliedScrollOffsetY = canvasViewportView.applyTransientMarkdownScroll(
+                for: markdownItem.id,
                 scrollOffsetY: resolvedScrollOffsetY
-            ) != nil {
-                requestCanvasRefresh(reason: "scroll markdown item")
+            ) {
+                scrollState.scrollOffsetY = appliedScrollOffsetY
+                transientMarkdownScrollState = scrollState
+                appliedScrollDeltaY = appliedScrollOffsetY - previousScrollOffsetY
+                scheduleMarkdownScrollHistoryCommit()
+            } else if let updatedItem = editorSession.updateMarkdownItemScrollOffset(
+                withID: markdownItem.id,
+                scrollOffsetY: resolvedScrollOffsetY,
+                contentHeight: scrollState.contentHeight
+            ) {
+                transientMarkdownScrollState = nil
+                appliedScrollDeltaY = updatedItem.scrollOffsetY - previousScrollOffsetY
+                requestCanvasRefresh(reason: "scroll markdown item fallback")
                 scheduleMarkdownScrollHistoryCommit()
             }
         }
@@ -5000,6 +5048,16 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     private func commitMarkdownScrollHistoryTransactionIfNeeded() {
         markdownScrollHistoryCommitWorkItem?.cancel()
         markdownScrollHistoryCommitWorkItem = nil
+        let transientScrollState = transientMarkdownScrollState
+        transientMarkdownScrollState = nil
+        if let transientScrollState {
+            _ = editorSession.updateMarkdownItemScrollOffset(
+                withID: transientScrollState.itemID,
+                scrollOffsetY: transientScrollState.scrollOffsetY,
+                contentHeight: transientScrollState.contentHeight
+            )
+            requestCanvasRefresh(reason: "commit markdown scroll item")
+        }
         guard isMarkdownScrollHistoryTransactionActive else {
             return
         }

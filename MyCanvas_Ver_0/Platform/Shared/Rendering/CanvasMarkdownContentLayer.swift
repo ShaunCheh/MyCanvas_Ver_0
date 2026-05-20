@@ -13,7 +13,7 @@ final class CanvasMarkdownContentLayer: CALayer {
     private static let rasterScaleBuckets: [CGFloat] = [
         1, 1.5, 2, 3, 4, 6, 8, 12, 16, 24
     ]
-    private static let isTraceLoggingEnabled = true
+    private static let isTraceLoggingEnabled = false
     private static let layoutMismatchThreshold: CGFloat = 0.5
 
     private struct LayoutCacheKey: Hashable {
@@ -121,6 +121,26 @@ final class CanvasMarkdownContentLayer: CALayer {
 
     var currentLayout: CanvasMarkdownLayoutResult? {
         activeLayout
+    }
+
+    @discardableResult
+    func applyTransientScrollOffset(
+        _ scrollOffsetY: CGFloat,
+        logicalSize: CGSize
+    ) -> CGFloat? {
+        guard let layout = currentLayout else {
+            return nil
+        }
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        let resolvedScrollOffsetY = applyResolvedScrollOffset(
+            proposedScrollOffsetY: scrollOffsetY,
+            logicalSize: logicalSize,
+            layout: layout
+        )
+        CATransaction.commit()
+        return resolvedScrollOffsetY
     }
 
     func update(
@@ -250,19 +270,33 @@ final class CanvasMarkdownContentLayer: CALayer {
         markdownPayload: CanvasMarkdownRenderPayload,
         layout: CanvasMarkdownLayoutResult
     ) {
+        _ = applyResolvedScrollOffset(
+            proposedScrollOffsetY: markdownPayload.scrollOffsetY,
+            logicalSize: markdownPayload.logicalSize,
+            layout: layout
+        )
+    }
+
+    @discardableResult
+    private func applyResolvedScrollOffset(
+        proposedScrollOffsetY: CGFloat,
+        logicalSize: CGSize,
+        layout: CanvasMarkdownLayoutResult
+    ) -> CGFloat {
         let maxScrollOffsetY = max(
-            layout.contentSize.height - markdownPayload.logicalSize.height,
+            layout.contentSize.height - logicalSize.height,
             0
         )
         let resolvedScrollOffsetY = min(
-            max(markdownPayload.scrollOffsetY, 0),
+            max(proposedScrollOffsetY, 0),
             maxScrollOffsetY
         )
         guard lastAppliedScrollOffsetY != resolvedScrollOffsetY else {
-            return
+            return resolvedScrollOffsetY
         }
         position = CGPoint(x: 0, y: -resolvedScrollOffsetY)
         lastAppliedScrollOffsetY = resolvedScrollOffsetY
+        return resolvedScrollOffsetY
     }
 
     private func resolvedRasterScaleBucket(

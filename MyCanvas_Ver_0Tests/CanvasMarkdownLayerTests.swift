@@ -232,6 +232,106 @@ final class CanvasMarkdownLayerTests: XCTestCase {
         )
     }
 
+    func testTransientContentScrollOffsetMovesLayerWithoutRelayoutOrRerender() throws {
+        let renderer = CanvasMarkdownBitmapRendererSpy()
+        var layoutInvocationCount = 0
+        let layer = CanvasMarkdownContentLayer(
+            itemID: CanvasItemID(),
+            bitmapRenderer: renderer,
+            layoutProvider: { payload in
+                layoutInvocationCount += 1
+                return makeExpectedMarkdownLayout(for: payload)
+            }
+        )
+        let payload = CanvasMarkdownRenderPayload(
+            markdownSource: """
+            ## Scroll
+
+            Line 1
+
+            Line 2
+
+            Line 3
+
+            Line 4
+            """,
+            style: CanvasTextStyle(fontSize: 18),
+            logicalSize: CGSize(width: 220, height: 52),
+            scrollOffsetY: 0,
+            cameraZoomScale: 1
+        )
+        let expectedLayout = makeExpectedMarkdownLayout(for: payload)
+
+        layer.update(with: payload, contentsScale: 1)
+        let initialImage = try markdownContentImage(from: layer)
+        let resolvedScrollOffsetY = try XCTUnwrap(
+            layer.applyTransientScrollOffset(
+                10_000,
+                logicalSize: payload.logicalSize
+            )
+        )
+        let imageAfterTransientScroll = try markdownContentImage(from: layer)
+
+        XCTAssertEqual(layoutInvocationCount, 1)
+        XCTAssertEqual(renderer.rasterScales, [1])
+        XCTAssertEqual(layer.bounds.size, expectedLayout.contentSize)
+        XCTAssertTrue(initialImage === imageAfterTransientScroll)
+        XCTAssertEqual(
+            resolvedScrollOffsetY,
+            max(expectedLayout.contentSize.height - payload.logicalSize.height, 0),
+            accuracy: 0.0001
+        )
+        XCTAssertEqual(layer.position.y, -resolvedScrollOffsetY, accuracy: 0.0001)
+    }
+
+    func testItemLayerTransientScrollOffsetMovesScrollbarThumb() {
+        let itemID = CanvasItemID()
+        let layer = CanvasMarkdownItemLayer(itemID: itemID)
+        let payload = CanvasMarkdownRenderPayload(
+            markdownSource: """
+            ## Scroll
+
+            Line 1
+
+            Line 2
+
+            Line 3
+
+            Line 4
+            """,
+            style: CanvasTextStyle(fontSize: 18),
+            logicalSize: CGSize(width: 220, height: 52),
+            scrollOffsetY: 0,
+            cameraZoomScale: 1
+        )
+        let renderItem = makeMarkdownLayerRenderItem(
+            itemID: itemID,
+            payload: payload
+        )
+
+        layer.update(
+            with: renderItem,
+            markdownPayload: payload,
+            contentsScale: 2
+        )
+        let initialThumbFrame = layer.scrollbarThumbLayer.frame
+
+        let resolvedScrollOffsetY = layer.updateTransientScrollOffset(24)
+
+        XCTAssertFalse(layer.scrollbarTrackLayer.isHidden)
+        XCTAssertFalse(layer.scrollbarThumbLayer.isHidden)
+        XCTAssertNotNil(resolvedScrollOffsetY)
+        XCTAssertGreaterThan(
+            layer.scrollbarThumbLayer.frame.minY,
+            initialThumbFrame.minY
+        )
+        XCTAssertEqual(
+            layer.contentLayer.position.y,
+            -(resolvedScrollOffsetY ?? 0),
+            accuracy: 0.0001
+        )
+    }
+
     func testScrollbarAnchorsToNarrowUsedContentInsteadOfContainerEdge() {
         let itemID = CanvasItemID()
         let layer = CanvasMarkdownItemLayer(itemID: itemID)

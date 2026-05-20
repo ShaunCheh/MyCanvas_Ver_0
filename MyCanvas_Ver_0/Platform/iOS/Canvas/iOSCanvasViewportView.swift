@@ -302,6 +302,24 @@ final class iOSCanvasViewportView: UIView {
         }
     }
 
+    @discardableResult
+    func applyTransientMarkdownScroll(
+        for itemID: CanvasItemID,
+        scrollOffsetY: CGFloat
+    ) -> CGFloat? {
+        guard let markdownLayer = markdownLayers[itemID] else {
+            return nil
+        }
+
+        var resolvedScrollOffsetY: CGFloat?
+        performWithoutLayerActions {
+            resolvedScrollOffsetY = markdownLayer.updateTransientScrollOffset(
+                scrollOffsetY
+            )
+        }
+        return resolvedScrollOffsetY
+    }
+
     private func setupLayers() {
         backgroundColor = .clear
         clipsToBounds = true

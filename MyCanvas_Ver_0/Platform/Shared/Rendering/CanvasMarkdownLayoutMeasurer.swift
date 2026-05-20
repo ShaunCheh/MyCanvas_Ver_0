@@ -92,7 +92,7 @@ enum CanvasMarkdownLayoutMeasurer {
     private static let maximumCodeBlockPanelCornerRadius: CGFloat = 10
     private static let quotePrefix = "▌ "
     private static let unorderedListPrefix = "• "
-    private static let isTraceLoggingEnabled = true
+    private static let isTraceLoggingEnabled = false
 
     static func layout(
         markdownSource: String,

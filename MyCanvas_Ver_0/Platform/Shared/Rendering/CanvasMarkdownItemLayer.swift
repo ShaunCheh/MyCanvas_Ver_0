@@ -130,6 +130,34 @@ final class CanvasMarkdownItemLayer: CALayer {
         CATransaction.commit()
     }
 
+    @discardableResult
+    func updateTransientScrollOffset(
+        _ scrollOffsetY: CGFloat
+    ) -> CGFloat? {
+        let logicalSize = bounds.size
+        guard
+            logicalSize.width > 0,
+            logicalSize.height > 0,
+            let layout = contentLayer.currentLayout,
+            let resolvedScrollOffsetY = contentLayer.applyTransientScrollOffset(
+                scrollOffsetY,
+                logicalSize: logicalSize
+            )
+        else {
+            return nil
+        }
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        applyScrollbar(
+            logicalSize: logicalSize,
+            layout: layout,
+            scrollOffsetY: resolvedScrollOffsetY
+        )
+        CATransaction.commit()
+        return resolvedScrollOffsetY
+    }
+
     private func configureLayer() {
         anchorPoint = CGPoint(x: 0.5, y: 0.5)
         masksToBounds = true
