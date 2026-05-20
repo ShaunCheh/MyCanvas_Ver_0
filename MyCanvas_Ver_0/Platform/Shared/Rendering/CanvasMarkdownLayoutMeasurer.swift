@@ -1,4 +1,5 @@
 import CoreGraphics
+import CoreText
 import Foundation
 #if os(macOS)
 import AppKit
@@ -108,20 +109,19 @@ enum CanvasMarkdownLayoutMeasurer {
             includeCompatibilityCodeBlockBackgrounds: includeCompatibilityCodeBlockBackgrounds
         )
         let attributedText = composition.attributedText
-        let measuredRect = attributedText.boundingRect(
-            with: CGSize(
-                width: resolvedLayoutWidth,
-                height: CGFloat.greatestFiniteMagnitude
-            ),
-            options: [
-                .usesLineFragmentOrigin,
-                .usesFontLeading
-            ],
-            context: nil
+        let measuredTextHeight = measuredAttributedTextHeight(
+            attributedText,
+            maxLayoutWidth: resolvedLayoutWidth
         )
+        let legacyBoundingRectHeight = isTraceLoggingEnabled
+            ? legacyMeasuredTextHeight(
+                attributedText,
+                maxLayoutWidth: resolvedLayoutWidth
+            )
+            : nil
         let contentSize = CGSize(
             width: resolvedLayoutWidth,
-            height: ceil(max(measuredRect.height, minimumContentHeight(
+            height: ceil(max(measuredTextHeight, minimumContentHeight(
                 style: style,
                 scale: scale
             )))
@@ -129,7 +129,8 @@ enum CanvasMarkdownLayoutMeasurer {
         logLayoutTrace(
             markdownSource: markdownSource,
             blocks: composition.blocks,
-            measuredRect: measuredRect,
+            measuredTextHeight: measuredTextHeight,
+            legacyBoundingRectHeight: legacyBoundingRectHeight,
             contentSize: contentSize,
             attributedTextLength: attributedText.length,
             resolvedLayoutWidth: resolvedLayoutWidth
@@ -205,7 +206,8 @@ enum CanvasMarkdownLayoutMeasurer {
     private static func logLayoutTrace(
         markdownSource: String,
         blocks: [Block],
-        measuredRect: CGRect,
+        measuredTextHeight: CGFloat,
+        legacyBoundingRectHeight: CGFloat?,
         contentSize: CGSize,
         attributedTextLength: Int,
         resolvedLayoutWidth: CGFloat
@@ -223,10 +225,48 @@ enum CanvasMarkdownLayoutMeasurer {
         print(
             "[Canvas Markdown][Measure] " +
             "width=\(debugScalar(resolvedLayoutWidth)) " +
-            "measuredRectHeight=\(debugScalar(measuredRect.height)) " +
+            "measuredTextHeight=\(debugScalar(measuredTextHeight)) " +
+            "legacyBoundingRectHeight=\(debugOptionalScalar(legacyBoundingRectHeight)) " +
             "committedHeight=\(debugScalar(contentSize.height)) " +
             "attributedLength=\(attributedTextLength)"
         )
+    }
+
+    private static func measuredAttributedTextHeight(
+        _ attributedText: NSAttributedString,
+        maxLayoutWidth: CGFloat
+    ) -> CGFloat {
+        let framesetter = CTFramesetterCreateWithAttributedString(
+            attributedText as CFAttributedString
+        )
+        let suggestedSize = CTFramesetterSuggestFrameSizeWithConstraints(
+            framesetter,
+            CFRange(location: 0, length: attributedText.length),
+            nil,
+            CGSize(
+                width: max(maxLayoutWidth, 1),
+                height: CGFloat.greatestFiniteMagnitude
+            ),
+            nil
+        )
+        return suggestedSize.height
+    }
+
+    private static func legacyMeasuredTextHeight(
+        _ attributedText: NSAttributedString,
+        maxLayoutWidth: CGFloat
+    ) -> CGFloat {
+        attributedText.boundingRect(
+            with: CGSize(
+                width: max(maxLayoutWidth, 1),
+                height: CGFloat.greatestFiniteMagnitude
+            ),
+            options: [
+                .usesLineFragmentOrigin,
+                .usesFontLeading
+            ],
+            context: nil
+        ).height
     }
 
     private static func debugBlockSummary(_ blocks: [Block]) -> String {
@@ -281,6 +321,13 @@ enum CanvasMarkdownLayoutMeasurer {
 
     private static func debugScalar(_ value: CGFloat) -> String {
         String(format: "%.2f", value)
+    }
+
+    private static func debugOptionalScalar(_ value: CGFloat?) -> String {
+        guard let value else {
+            return "nil"
+        }
+        return debugScalar(value)
     }
 
     private static func makeRenderedBlock(

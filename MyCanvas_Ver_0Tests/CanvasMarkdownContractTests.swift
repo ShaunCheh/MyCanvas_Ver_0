@@ -1,4 +1,5 @@
 import CoreGraphics
+import CoreText
 import XCTest
 @testable import MyCanvas_Ver_0
 
@@ -139,6 +140,94 @@ final class CanvasMarkdownContractTests: XCTestCase {
         XCTAssertEqual(payload.logicalSize, item.size)
         XCTAssertEqual(payload.cameraZoomScale, session.camera.zoomScale)
     }
+
+    func testMeasuredMarkdownHeightKeepsTrailingParagraphVisibleInCoreTextFrame() {
+        let source = """
+        # Event Loop
+
+        # React Scheduler
+
+        Summary.
+
+        ```swift
+        func workLoop() {
+            while hasWork {
+                if shouldYieldToHost() {
+                    break
+                }
+                performUnitOfWork()
+            }
+        }
+        ```
+
+        Yield note.
+
+        ```javascript
+        function shouldYieldToHost() {
+            return performance.now() >= deadline
+        }
+        ```
+
+        More details around cooperative scheduling and host yielding continue here.
+
+        ```typescript
+        export function scheduleWork() {
+            requestHostCallback(flushWork)
+        }
+        ```
+
+        Continue reading.
+
+        React Scheduler 源码里也能看到类似逻辑：Scheduler 会周期性 yield，让主线程有机会处理用户事件等工作；`shouldYieldToHost` 会根据当前任务占用主线程的时间判断是否让出。
+
+        Test
+
+        Line 2
+        """
+        let style = CanvasTextStyle(fontSize: 22)
+        let layoutWidth: CGFloat = 1197.67
+        let layout = CanvasMarkdownLayoutMeasurer.layout(
+            markdownSource: source,
+            style: style,
+            maxLayoutWidth: layoutWidth,
+            scale: 1,
+            includeCompatibilityCodeBlockBackgrounds: false
+        )
+        let suggestedSize = coreTextSuggestedSize(
+            for: layout.attributedText,
+            maxLayoutWidth: layoutWidth
+        )
+        let visibleRange = coreTextVisibleRange(
+            for: layout.attributedText,
+            size: layout.contentSize
+        )
+        let legacyBoundingRectHeight = layout.attributedText.boundingRect(
+            with: CGSize(
+                width: layoutWidth,
+                height: CGFloat.greatestFiniteMagnitude
+            ),
+            options: [
+                .usesLineFragmentOrigin,
+                .usesFontLeading
+            ],
+            context: nil
+        ).height
+
+        XCTAssertEqual(
+            visibleRange.location + visibleRange.length,
+            layout.attributedText.length,
+            "Expected measured markdown height to keep the trailing paragraph visible."
+        )
+        XCTAssertGreaterThanOrEqual(
+            layout.contentSize.height,
+            ceil(suggestedSize.height)
+        )
+        XCTAssertGreaterThan(
+            suggestedSize.height - legacyBoundingRectHeight,
+            0.5,
+            "Regression fixture should stay sensitive to the old boundingRect under-measurement."
+        )
+    }
 }
 
 private enum CanvasMarkdownContractTestRetainer {
@@ -152,4 +241,39 @@ private func makeMarkdownContractTestSession() -> CanvasEditorSession {
     )
     CanvasMarkdownContractTestRetainer.sessions.append(session)
     return session
+}
+
+private func coreTextSuggestedSize(
+    for attributedText: NSAttributedString,
+    maxLayoutWidth: CGFloat
+) -> CGSize {
+    let framesetter = CTFramesetterCreateWithAttributedString(
+        attributedText as CFAttributedString
+    )
+    return CTFramesetterSuggestFrameSizeWithConstraints(
+        framesetter,
+        CFRange(location: 0, length: attributedText.length),
+        nil,
+        CGSize(
+            width: maxLayoutWidth,
+            height: CGFloat.greatestFiniteMagnitude
+        ),
+        nil
+    )
+}
+
+private func coreTextVisibleRange(
+    for attributedText: NSAttributedString,
+    size: CGSize
+) -> CFRange {
+    let framesetter = CTFramesetterCreateWithAttributedString(
+        attributedText as CFAttributedString
+    )
+    let frame = CTFramesetterCreateFrame(
+        framesetter,
+        CFRange(location: 0, length: attributedText.length),
+        CGPath(rect: CGRect(origin: .zero, size: size), transform: nil),
+        nil
+    )
+    return CTFrameGetVisibleStringRange(frame)
 }
