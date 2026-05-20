@@ -872,7 +872,8 @@ struct CanvasRenderer {
                 CanvasMarkdownRenderPayload(
                     markdownSource: effectiveMarkdownItem.markdownSource,
                     style: effectiveMarkdownItem.style,
-                    zoomScale: camera.zoomScale
+                    logicalSize: effectiveMarkdownItem.size,
+                    cameraZoomScale: camera.zoomScale
                 )
             )
         )

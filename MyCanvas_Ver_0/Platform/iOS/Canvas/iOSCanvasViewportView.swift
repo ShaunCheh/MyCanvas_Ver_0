@@ -102,7 +102,7 @@ final class iOSCanvasViewportView: UIView {
     private var imageLayers: [CanvasItemID: CanvasImageLayer] = [:]
     private var handDrawingLayers: [CanvasItemID: CanvasImageLayer] = [:]
     private var textLayers: [CanvasItemID: CanvasTextLayer] = [:]
-    private var markdownLayers: [CanvasItemID: CanvasMarkdownLayer] = [:]
+    private var markdownLayers: [CanvasItemID: CanvasMarkdownItemLayer] = [:]
     private var lastReportedViewportSize: CGSize?
     private var snapshot: CanvasRenderSnapshot = .empty
     private var interactionState: TouchInteractionState = .idle
@@ -1361,12 +1361,12 @@ final class iOSCanvasViewportView: UIView {
         return textLayer
     }
 
-    private func markdownLayer(for itemID: CanvasItemID) -> CanvasMarkdownLayer {
+    private func markdownLayer(for itemID: CanvasItemID) -> CanvasMarkdownItemLayer {
         if let markdownLayer = markdownLayers[itemID] {
             return markdownLayer
         }
 
-        let markdownLayer = CanvasMarkdownLayer(itemID: itemID)
+        let markdownLayer = CanvasMarkdownItemLayer(itemID: itemID)
         itemsLayer.addSublayer(markdownLayer)
         markdownLayers[itemID] = markdownLayer
         return markdownLayer

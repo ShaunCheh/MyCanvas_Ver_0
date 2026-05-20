@@ -1,20 +1,13 @@
 import CoreGraphics
 import QuartzCore
 import XCTest
-#if os(macOS)
-import AppKit
-private typealias MarkdownLayerTestFont = NSFont
-#elseif canImport(UIKit)
-import UIKit
-private typealias MarkdownLayerTestFont = UIFont
-#endif
 @testable import MyCanvas_Ver_0
 
 @MainActor
 final class CanvasMarkdownLayerTests: XCTestCase {
-    func testUpdateBuildsAttributedMarkdownUsingZoomScaledFonts() throws {
+    func testItemLayerUsesLogicalBoundsAndCameraScaleTransform() throws {
         let itemID = CanvasItemID()
-        let layer = CanvasMarkdownLayer(itemID: itemID)
+        let layer = CanvasMarkdownItemLayer(itemID: itemID)
         let payload = CanvasMarkdownRenderPayload(
             markdownSource: """
             ## Title
@@ -22,12 +15,15 @@ final class CanvasMarkdownLayerTests: XCTestCase {
             Body with `code`
             """,
             style: CanvasTextStyle(fontSize: 18),
-            zoomScale: 1.5
+            logicalSize: CGSize(width: 220, height: 120),
+            cameraZoomScale: 1.5
         )
         let renderItem = makeMarkdownLayerRenderItem(
             itemID: itemID,
-            size: CGSize(width: 220, height: 120),
-            payload: payload
+            payload: payload,
+            screenCenter: CGPoint(x: 180, y: 120),
+            rotationRadians: .pi / 6,
+            zIndex: 4
         )
 
         layer.update(
@@ -36,186 +32,187 @@ final class CanvasMarkdownLayerTests: XCTestCase {
             contentsScale: 2
         )
 
-        let attributedText = try XCTUnwrap(layer.string as? NSAttributedString)
-        let rendered = attributedText.string as NSString
-        let titleFont = try XCTUnwrap(
-            attributedText.attribute(
-                .font,
-                at: 0,
-                effectiveRange: nil
-            ) as? MarkdownLayerTestFont
-        )
-        let bodyRange = rendered.range(of: "Body")
-        XCTAssertNotEqual(bodyRange.location, NSNotFound)
-        let bodyFont = try XCTUnwrap(
-            attributedText.attribute(
-                .font,
-                at: bodyRange.location,
-                effectiveRange: nil
-            ) as? MarkdownLayerTestFont
-        )
+        let contentImage = try markdownContentImage(from: layer.contentLayer)
+        let expectedLayout = makeExpectedMarkdownLayout(for: payload)
+        let affineTransform = CATransform3DGetAffineTransform(layer.transform)
 
-        XCTAssertTrue(rendered.contains("Title"))
-        XCTAssertTrue(rendered.contains("code"))
-        XCTAssertEqual(layer.bounds.size, CGSize(width: 220, height: 120))
-        XCTAssertGreaterThan(
-            bodyFont.pointSize,
-            payload.style.fontSize
-        )
-        XCTAssertGreaterThan(titleFont.pointSize, bodyFont.pointSize)
+        XCTAssertEqual(layer.bounds.size, payload.logicalSize)
+        XCTAssertEqual(layer.position, renderItem.screenCenter)
+        XCTAssertEqual(layer.zPosition, 4)
+        XCTAssertTrue(layer.masksToBounds)
+        XCTAssertTrue(layer.contentLayer.superlayer === layer)
+        XCTAssertEqual(layer.contentLayer.bounds.size, expectedLayout.contentSize)
+        XCTAssertEqual(contentImage.width, Int(ceil(expectedLayout.contentSize.width * 3)))
+        XCTAssertEqual(contentImage.height, Int(ceil(expectedLayout.contentSize.height * 3)))
+        XCTAssertEqual(markdownLayerTransformScale(affineTransform), 1.5, accuracy: 0.001)
+        XCTAssertEqual(markdownLayerTransformRotation(affineTransform), .pi / 6, accuracy: 0.001)
     }
 
-    func testUpdateReflowsAttributedMarkdownWhenLayoutWidthChanges() throws {
+    func testContentLayerReflowsWhenLogicalWidthChanges() throws {
         let itemID = CanvasItemID()
-        let layer = CanvasMarkdownLayer(itemID: itemID)
-        let payload = CanvasMarkdownRenderPayload(
+        let layer = CanvasMarkdownItemLayer(itemID: itemID)
+        let widePayload = CanvasMarkdownRenderPayload(
             markdownSource: """
             ## Title
 
             A long markdown paragraph that should wrap onto additional lines when the block becomes narrower.
             """,
             style: CanvasTextStyle(fontSize: 18),
-            zoomScale: 1
+            logicalSize: CGSize(width: 260, height: 140),
+            cameraZoomScale: 1
         )
         let wideRenderItem = makeMarkdownLayerRenderItem(
             itemID: itemID,
-            size: CGSize(width: 260, height: 120),
-            payload: payload
+            payload: widePayload
         )
         layer.update(
             with: wideRenderItem,
-            markdownPayload: payload,
+            markdownPayload: widePayload,
             contentsScale: 2
         )
-        let wideAttributedText = try XCTUnwrap(layer.string as? NSAttributedString)
-        let wideRenderedHeight = measureMarkdownAttributedTextHeight(
-            wideAttributedText,
-            width: wideRenderItem.screenBoundsSize.width
-        )
+        let wideLayoutSize = layer.contentLayer.bounds.size
 
+        let narrowPayload = CanvasMarkdownRenderPayload(
+            markdownSource: widePayload.markdownSource,
+            style: widePayload.style,
+            logicalSize: CGSize(width: 140, height: 140),
+            cameraZoomScale: 1
+        )
         let narrowRenderItem = makeMarkdownLayerRenderItem(
             itemID: itemID,
-            size: CGSize(width: 140, height: 120),
-            payload: payload
+            payload: narrowPayload
         )
         layer.update(
             with: narrowRenderItem,
-            markdownPayload: payload,
+            markdownPayload: narrowPayload,
             contentsScale: 2
         )
-        let narrowAttributedText = try XCTUnwrap(layer.string as? NSAttributedString)
-        let narrowRenderedHeight = measureMarkdownAttributedTextHeight(
-            narrowAttributedText,
-            width: narrowRenderItem.screenBoundsSize.width
-        )
-        let expectedNarrowHeight = CanvasMarkdownLayoutMeasurer.measuredContentHeight(
-            markdownSource: payload.markdownSource,
-            style: payload.style,
-            maxLayoutWidth: narrowRenderItem.screenBoundsSize.width,
-            scale: payload.zoomScale
-        )
+        let narrowLayoutSize = layer.contentLayer.bounds.size
+        let expectedNarrowLayout = makeExpectedMarkdownLayout(for: narrowPayload)
 
-        XCTAssertEqual(layer.bounds.size, narrowRenderItem.screenBoundsSize)
-        XCTAssertGreaterThan(narrowRenderedHeight, wideRenderedHeight)
-        XCTAssertEqual(
-            narrowRenderedHeight,
-            expectedNarrowHeight,
-            accuracy: 1
-        )
+        XCTAssertEqual(layer.bounds.size, narrowPayload.logicalSize)
+        XCTAssertEqual(wideLayoutSize.width, widePayload.logicalSize.width)
+        XCTAssertEqual(narrowLayoutSize, expectedNarrowLayout.contentSize)
+        XCTAssertGreaterThan(narrowLayoutSize.height, wideLayoutSize.height)
     }
 
-    func testUpdateKeepsMarkdownFontSizesWhenOnlyHeightChanges() throws {
+    func testContentLayerKeepsLogicalLayoutSizeWhenOnlyHeightOrZoomChanges() throws {
         let itemID = CanvasItemID()
-        let layer = CanvasMarkdownLayer(itemID: itemID)
-        let payload = CanvasMarkdownRenderPayload(
+        let layer = CanvasMarkdownItemLayer(itemID: itemID)
+        let compactPayload = CanvasMarkdownRenderPayload(
             markdownSource: """
             ## Title
 
             Body with `code`
             """,
             style: CanvasTextStyle(fontSize: 18),
-            zoomScale: 1.25
+            logicalSize: CGSize(width: 220, height: 80),
+            cameraZoomScale: 1
         )
-        let compactRenderItem = makeMarkdownLayerRenderItem(
-            itemID: itemID,
-            size: CGSize(width: 220, height: 80),
-            payload: payload
-        )
+        let compactRenderItem = makeMarkdownLayerRenderItem(itemID: itemID, payload: compactPayload)
         layer.update(
             with: compactRenderItem,
-            markdownPayload: payload,
+            markdownPayload: compactPayload,
             contentsScale: 2
         )
-        let compactAttributedText = try XCTUnwrap(layer.string as? NSAttributedString)
-        let compactFonts = try markdownLayerTestFonts(in: compactAttributedText)
+        let expectedLayout = makeExpectedMarkdownLayout(for: compactPayload)
+        let compactImage = try markdownContentImage(from: layer.contentLayer)
 
-        let tallerRenderItem = makeMarkdownLayerRenderItem(
-            itemID: itemID,
-            size: CGSize(width: 220, height: 180),
-            payload: payload
+        let tallerPayload = CanvasMarkdownRenderPayload(
+            markdownSource: compactPayload.markdownSource,
+            style: compactPayload.style,
+            logicalSize: CGSize(width: 220, height: 180),
+            cameraZoomScale: 1
         )
+        let tallerRenderItem = makeMarkdownLayerRenderItem(itemID: itemID, payload: tallerPayload)
         layer.update(
             with: tallerRenderItem,
-            markdownPayload: payload,
+            markdownPayload: tallerPayload,
             contentsScale: 2
         )
-        let tallerAttributedText = try XCTUnwrap(layer.string as? NSAttributedString)
-        let tallerFonts = try markdownLayerTestFonts(in: tallerAttributedText)
+        let tallerImage = try markdownContentImage(from: layer.contentLayer)
 
-        XCTAssertEqual(layer.bounds.size, tallerRenderItem.screenBoundsSize)
-        XCTAssertEqual(tallerFonts.title.pointSize, compactFonts.title.pointSize)
-        XCTAssertEqual(tallerFonts.body.pointSize, compactFonts.body.pointSize)
+        let zoomedPayload = CanvasMarkdownRenderPayload(
+            markdownSource: compactPayload.markdownSource,
+            style: compactPayload.style,
+            logicalSize: tallerPayload.logicalSize,
+            cameraZoomScale: 1.5
+        )
+        let zoomedRenderItem = makeMarkdownLayerRenderItem(itemID: itemID, payload: zoomedPayload)
+        layer.update(
+            with: zoomedRenderItem,
+            markdownPayload: zoomedPayload,
+            contentsScale: 2
+        )
+        let zoomedImage = try markdownContentImage(from: layer.contentLayer)
+
+        XCTAssertEqual(layer.contentLayer.bounds.size, expectedLayout.contentSize)
+        XCTAssertEqual(layer.bounds.size, tallerPayload.logicalSize)
+        XCTAssertEqual(compactImage.width, Int(ceil(expectedLayout.contentSize.width * 2)))
+        XCTAssertEqual(compactImage.height, Int(ceil(expectedLayout.contentSize.height * 2)))
+        XCTAssertEqual(tallerImage.width, compactImage.width)
+        XCTAssertEqual(tallerImage.height, compactImage.height)
+        XCTAssertEqual(zoomedImage.width, Int(ceil(expectedLayout.contentSize.width * 3)))
+        XCTAssertEqual(zoomedImage.height, Int(ceil(expectedLayout.contentSize.height * 3)))
     }
 }
 
 private func makeMarkdownLayerRenderItem(
     itemID: CanvasItemID,
-    size: CGSize,
-    payload: CanvasMarkdownRenderPayload
+    payload: CanvasMarkdownRenderPayload,
+    screenCenter: CGPoint = CGPoint(x: 140, y: 90),
+    rotationRadians: CGFloat = 0,
+    zIndex: CGFloat = 0
 ) -> CanvasRenderItem {
-    let rect = CGRect(origin: .zero, size: size)
+    let screenSize = CGSize(
+        width: payload.logicalSize.width * payload.cameraZoomScale,
+        height: payload.logicalSize.height * payload.cameraZoomScale
+    )
+    let rect = CGRect(
+        x: screenCenter.x - screenSize.width / 2,
+        y: screenCenter.y - screenSize.height / 2,
+        width: screenSize.width,
+        height: screenSize.height
+    )
     return CanvasRenderItem(
         id: itemID,
         screenFrame: rect,
         screenQuad: CanvasQuad(rect: rect),
-        screenCenter: CGPoint(x: rect.midX, y: rect.midY),
-        screenBoundsSize: size,
-        rotationRadians: 0,
-        zIndex: 0,
+        screenCenter: screenCenter,
+        screenBoundsSize: screenSize,
+        rotationRadians: rotationRadians,
+        zIndex: zIndex,
         payload: .markdown(payload)
     )
 }
 
-private func markdownLayerTestFonts(
-    in attributedText: NSAttributedString
-) throws -> (title: MarkdownLayerTestFont, body: MarkdownLayerTestFont) {
-    let rendered = attributedText.string as NSString
-    let titleFont = try XCTUnwrap(
-        attributedText.attribute(
-            .font,
-            at: 0,
-            effectiveRange: nil
-        ) as? MarkdownLayerTestFont
+private func makeExpectedMarkdownLayout(
+    for payload: CanvasMarkdownRenderPayload
+) -> CanvasMarkdownLayoutResult {
+    CanvasMarkdownLayoutMeasurer.layout(
+        markdownSource: payload.markdownSource,
+        style: payload.style,
+        maxLayoutWidth: payload.logicalSize.width,
+        scale: 1,
+        includeCompatibilityCodeBlockBackgrounds: false
     )
-    let bodyRange = rendered.range(of: "Body")
-    XCTAssertNotEqual(bodyRange.location, NSNotFound)
-    let bodyFont = try XCTUnwrap(
-        attributedText.attribute(
-            .font,
-            at: bodyRange.location,
-            effectiveRange: nil
-        ) as? MarkdownLayerTestFont
-    )
-    return (title: titleFont, body: bodyFont)
 }
 
-private func measureMarkdownAttributedTextHeight(
-    _ attributedText: NSAttributedString,
-    width: CGFloat
+private func markdownLayerTransformScale(
+    _ transform: CGAffineTransform
 ) -> CGFloat {
-    attributedText.boundingRect(
-        with: CGSize(width: width, height: CGFloat.greatestFiniteMagnitude),
-        options: [.usesLineFragmentOrigin, .usesFontLeading],
-        context: nil
-    ).height
+    hypot(transform.a, transform.c)
+}
+
+private func markdownLayerTransformRotation(
+    _ transform: CGAffineTransform
+) -> CGFloat {
+    atan2(transform.b, transform.a)
+}
+
+private func markdownContentImage(
+    from layer: CanvasMarkdownContentLayer
+) throws -> CGImage {
+    let contents = try XCTUnwrap(layer.contents)
+    return contents as! CGImage
 }

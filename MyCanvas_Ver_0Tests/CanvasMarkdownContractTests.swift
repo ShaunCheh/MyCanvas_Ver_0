@@ -136,7 +136,8 @@ final class CanvasMarkdownContractTests: XCTestCase {
 
         XCTAssertEqual(payload.markdownSource, item.markdownSource)
         XCTAssertEqual(payload.style, item.style)
-        XCTAssertEqual(payload.zoomScale, session.camera.zoomScale)
+        XCTAssertEqual(payload.logicalSize, item.size)
+        XCTAssertEqual(payload.cameraZoomScale, session.camera.zoomScale)
     }
 }
 

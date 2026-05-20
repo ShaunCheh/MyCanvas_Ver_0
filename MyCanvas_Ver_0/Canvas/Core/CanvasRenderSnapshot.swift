@@ -35,12 +35,15 @@ struct CanvasTextRenderPayload {
     let zoomScale: CGFloat
 }
 
-// Markdown payload stays strictly render-time. Future bitmap caches or
-// intermediate layout artifacts must remain outside the document model.
+// Markdown payload stays strictly render-time. It carries stable world-space
+// layout inputs plus the current camera zoom for rasterization decisions;
+// future bitmap caches or intermediate artifacts must remain outside the
+// document model.
 struct CanvasMarkdownRenderPayload {
     let markdownSource: String
     let style: CanvasTextStyle
-    let zoomScale: CGFloat
+    let logicalSize: CGSize
+    let cameraZoomScale: CGFloat
 }
 
 enum CanvasRenderPayload {
