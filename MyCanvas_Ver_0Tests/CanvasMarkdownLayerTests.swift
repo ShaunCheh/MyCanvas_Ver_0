@@ -42,6 +42,10 @@ final class CanvasMarkdownLayerTests: XCTestCase {
         XCTAssertEqual(layer.zPosition, 4)
         XCTAssertTrue(layer.masksToBounds)
         XCTAssertTrue(layer.contentLayer.superlayer === layer)
+        XCTAssertTrue(layer.scrollbarTrackLayer.superlayer === layer)
+        XCTAssertTrue(layer.scrollbarThumbLayer.superlayer === layer)
+        XCTAssertTrue(layer.scrollbarTrackLayer.isHidden)
+        XCTAssertTrue(layer.scrollbarThumbLayer.isHidden)
         XCTAssertEqual(layer.contentLayer.bounds.size, expectedLayout.contentSize)
         XCTAssertEqual(contentImage.width, Int(ceil(expectedLayout.contentSize.width * 3)))
         XCTAssertEqual(contentImage.height, Int(ceil(expectedLayout.contentSize.height * 3)))
@@ -201,6 +205,22 @@ final class CanvasMarkdownLayerTests: XCTestCase {
         XCTAssertEqual(
             layer.contentLayer.position.y,
             -expectedMaxScrollOffsetY,
+            accuracy: 0.0001
+        )
+        XCTAssertFalse(layer.scrollbarTrackLayer.isHidden)
+        XCTAssertFalse(layer.scrollbarThumbLayer.isHidden)
+        XCTAssertEqual(
+            layer.scrollbarTrackLayer.frame.maxX,
+            payload.logicalSize.width - 3,
+            accuracy: 0.0001
+        )
+        XCTAssertLessThan(
+            layer.scrollbarThumbLayer.frame.height,
+            layer.scrollbarTrackLayer.frame.height
+        )
+        XCTAssertEqual(
+            layer.scrollbarThumbLayer.frame.maxY,
+            layer.scrollbarTrackLayer.frame.maxY,
             accuracy: 0.0001
         )
     }
