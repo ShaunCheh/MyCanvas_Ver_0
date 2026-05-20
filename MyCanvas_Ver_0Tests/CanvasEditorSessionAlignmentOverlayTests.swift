@@ -274,7 +274,7 @@ final class CanvasEditorSessionAlignmentOverlayTests: XCTestCase {
         XCTAssertEqual(primaryItemID, secondItem.id)
         XCTAssertEqual(memberItemIDs, [firstItem.id, secondItem.id])
         XCTAssertEqual(editOverlay.activeWorldQuad.boundingRect.standardized, expectedWorldBounds)
-        XCTAssertEqual(editOverlay.handles.count, CanvasSelectionHandleRole.allCases.count)
+        XCTAssertEqual(editOverlay.handles.count, 4)
     }
 
     func testMakeCanvasSnapshotOmitsResizeHandlesForSingleTextSelection() throws {
@@ -306,7 +306,7 @@ final class CanvasEditorSessionAlignmentOverlayTests: XCTestCase {
         let editOverlay = try XCTUnwrap(snapshot.editOverlay)
 
         XCTAssertEqual(editOverlay.itemID, item.id)
-        XCTAssertEqual(editOverlay.handles.count, CanvasSelectionHandleRole.allCases.count)
+        XCTAssertEqual(editOverlay.handles.count, 4)
     }
 
     func testMakeCanvasSnapshotKeepsResizeHandlesForSingleMarkdownSelection() throws {
@@ -324,10 +324,32 @@ final class CanvasEditorSessionAlignmentOverlayTests: XCTestCase {
         let editOverlay = try XCTUnwrap(snapshot.editOverlay)
 
         XCTAssertEqual(editOverlay.itemID, item.id)
-        XCTAssertEqual(
-            editOverlay.handles.count,
-            CanvasSelectionHandleRole.allCases.count
+        XCTAssertEqual(editOverlay.handles.map(\.role), [.leading, .trailing])
+    }
+
+    func testMakeCanvasSnapshotUsesWidthOnlyHandlesForAllMarkdownMultiSelection() throws {
+        let firstItem = CanvasMarkdownItem(
+            markdownSource: "## First",
+            center: CGPoint(x: -60, y: 0),
+            size: CGSize(width: 140, height: 84)
         )
+        let secondItem = CanvasMarkdownItem(
+            markdownSource: "## Second",
+            center: CGPoint(x: 80, y: 40),
+            size: CGSize(width: 180, height: 96)
+        )
+        let session = makeAlignmentOverlayTestSession(
+            items: [.markdown(firstItem), .markdown(secondItem)],
+            interactionState: CanvasInteractionState(
+                selectedItemIDs: [firstItem.id, secondItem.id],
+                primarySelectedItemID: secondItem.id
+            )
+        )
+
+        let snapshot = session.makeCanvasSnapshot()
+        let editOverlay = try XCTUnwrap(snapshot.editOverlay)
+
+        XCTAssertEqual(editOverlay.handles.map(\.role), [.leading, .trailing])
     }
 
     func testResolvePointerTargetHitsSelectionTranslationAreaForSingleSelectionOutline() throws {
@@ -479,6 +501,43 @@ final class CanvasEditorSessionAlignmentOverlayTests: XCTestCase {
             return
         }
         XCTAssertEqual(role, .topLeading)
+        XCTAssertEqual(pressContext.targetItemID, secondItem.id)
+    }
+
+    func testResolvePointerTargetHitsGroupWidthOnlySelectionHandleForMarkdownMultiSelection() throws {
+        let firstItem = CanvasMarkdownItem(
+            markdownSource: "## First",
+            center: CGPoint(x: -40, y: 0),
+            size: CGSize(width: 140, height: 84)
+        )
+        let secondItem = CanvasMarkdownItem(
+            markdownSource: "## Second",
+            center: CGPoint(x: 100, y: 50),
+            size: CGSize(width: 180, height: 96)
+        )
+        let session = makeAlignmentOverlayTestSession(
+            items: [.markdown(firstItem), .markdown(secondItem)],
+            interactionState: CanvasInteractionState(
+                selectedItemIDs: [firstItem.id, secondItem.id],
+                primarySelectedItemID: secondItem.id
+            )
+        )
+        let snapshot = session.makeCanvasSnapshot()
+        let editOverlay = try XCTUnwrap(snapshot.editOverlay)
+        let leadingHandle = try XCTUnwrap(
+            editOverlay.handles.first(where: { $0.role == .leading })
+        )
+
+        let pressContext = session.resolvePointerTarget(
+            at: leadingHandle.screenCenter,
+            interactionMetrics: makeAlignmentOverlayTestContextResolverMetrics()
+        )
+
+        guard case let .groupSelectionHandle(role) = pressContext.targetKind else {
+            XCTFail("Expected all-markdown multi-selection handle hit to resolve as groupSelectionHandle.")
+            return
+        }
+        XCTAssertEqual(role, .leading)
         XCTAssertEqual(pressContext.targetItemID, secondItem.id)
     }
 

@@ -208,7 +208,10 @@ struct CanvasSelectionTransformSnapshot: Equatable {
             scaledGeometry(
                 from: geometry,
                 using: resizeDraft,
-                scalingMode: resizeScalingMode(for: geometry.itemID)
+                scalingMode: resizeScalingMode(
+                    for: geometry.itemID,
+                    handleRole: handleRole
+                )
             )
         }
     }
@@ -237,7 +240,8 @@ struct CanvasSelectionTransformSnapshot: Equatable {
             resizedItems.append(
                 resizedItem(
                     item,
-                    using: resizeDraft
+                    using: resizeDraft,
+                    handleRole: handleRole
                 )
             )
         }
@@ -336,9 +340,13 @@ struct CanvasSelectionTransformSnapshot: Equatable {
 
     private func resizedItem(
         _ item: CanvasBoardItem,
-        using resizeDraft: CanvasSelectionResizeDraft
+        using resizeDraft: CanvasSelectionResizeDraft,
+        handleRole: CanvasSelectionHandleRole
     ) -> CanvasBoardItem {
-        let scalingMode = resizeScalingMode(for: item.id)
+        let scalingMode = resizeScalingMode(
+            for: item.id,
+            handleRole: handleRole
+        )
         let scaledItemGeometry = scaledGeometry(
             from: CanvasBoardItemGeometry(item: item),
             using: resizeDraft,
@@ -355,8 +363,15 @@ struct CanvasSelectionTransformSnapshot: Equatable {
                     scale: resizeDraft.uniformScale
                 )
             )
-        case .markdown:
-            return item.applyingGeometry(scaledItemGeometry) ?? item
+        case let .markdown(markdownItem):
+            return .markdown(
+                resizedMarkdownItem(
+                    markdownItem,
+                    scaledCenter: scaledItemGeometry.center,
+                    proposedSize: scaledItemGeometry.size,
+                    scalingMode: scalingMode
+                )
+            )
         case let .handDrawing(handDrawingItem):
             return .handDrawing(
                 resizedHandDrawingItem(
@@ -406,9 +421,44 @@ struct CanvasSelectionTransformSnapshot: Equatable {
         )
     }
 
+    private func resizedMarkdownItem(
+        _ item: CanvasMarkdownItem,
+        scaledCenter: CGPoint,
+        proposedSize: CGSize,
+        scalingMode: CanvasSelectionResizeScalingMode
+    ) -> CanvasMarkdownItem {
+        let resolvedSize: CGSize
+        switch scalingMode {
+        case .uniform, .nonUniform:
+            resolvedSize = proposedSize
+        case .widthOnly:
+            resolvedSize = CGSize(
+                width: max(proposedSize.width, 1),
+                height: CanvasMarkdownLayoutMeasurer.measuredContentHeight(
+                    markdownSource: item.markdownSource,
+                    style: item.style,
+                    maxLayoutWidth: max(proposedSize.width, 1)
+                )
+            )
+        }
+        return CanvasMarkdownItem(
+            id: item.id,
+            markdownSource: item.markdownSource,
+            style: item.style,
+            center: scaledCenter,
+            size: resolvedSize,
+            zIndex: item.zIndex,
+            rotationRadians: item.rotationRadians
+        )
+    }
+
     private func resizeScalingMode(
-        for itemID: CanvasItemID
+        for itemID: CanvasItemID,
+        handleRole: CanvasSelectionHandleRole
     ) -> CanvasSelectionResizeScalingMode {
+        if handleRole.isWidthOnly {
+            return .widthOnly
+        }
         switch sourceItemsByID[itemID]?.kind {
         case .some(.markdown):
             return .nonUniform
@@ -431,6 +481,11 @@ struct CanvasSelectionTransformSnapshot: Equatable {
             return CGSize(
                 width: resizeDraft.widthScale,
                 height: resizeDraft.heightScale
+            )
+        case .widthOnly:
+            return CGSize(
+                width: resizeDraft.widthScale,
+                height: 1
             )
         }
     }
@@ -460,6 +515,16 @@ struct CanvasSelectionTransformSnapshot: Equatable {
             return CGPoint(
                 x: standardizedBounds.minX,
                 y: standardizedBounds.minY
+            )
+        case .leading:
+            return CGPoint(
+                x: standardizedBounds.maxX,
+                y: standardizedBounds.midY
+            )
+        case .trailing:
+            return CGPoint(
+                x: standardizedBounds.minX,
+                y: standardizedBounds.midY
             )
         }
     }
@@ -491,6 +556,16 @@ struct CanvasSelectionTransformSnapshot: Equatable {
             return CGPoint(
                 x: max(draggedWorldCorner.x, oppositeCorner.x + minimumWidth),
                 y: max(draggedWorldCorner.y, oppositeCorner.y + minimumHeight)
+            )
+        case .leading:
+            return CGPoint(
+                x: min(draggedWorldCorner.x, oppositeCorner.x - minimumWidth),
+                y: oppositeCorner.y
+            )
+        case .trailing:
+            return CGPoint(
+                x: max(draggedWorldCorner.x, oppositeCorner.x + minimumWidth),
+                y: oppositeCorner.y
             )
         }
     }
@@ -634,6 +709,7 @@ private struct CanvasSelectionResizeDraft {
 private enum CanvasSelectionResizeScalingMode {
     case uniform
     case nonUniform
+    case widthOnly
 }
 
 private func canvasRotatePoint(

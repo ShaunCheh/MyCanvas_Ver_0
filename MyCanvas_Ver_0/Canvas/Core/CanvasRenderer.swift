@@ -322,9 +322,10 @@ struct CanvasRenderer {
             worldQuad = effectiveItem.worldQuad
             screenQuad = camera.worldToViewport(worldQuad)
             screenCenter = camera.worldToViewport(effectiveItem.center)
-            selectionHandles = effectiveItem.kind == .text
-                ? []
-                : makeCornerEditHandles(for: screenQuad)
+            selectionHandles = selectionEditHandles(
+                forSingleSelectedItem: effectiveItem,
+                screenQuad: screenQuad
+            )
         } else {
             let groupWorldBounds = groupSelectionWorldBounds(for: selectedItems)
             subject = .group(
@@ -336,7 +337,10 @@ struct CanvasRenderer {
             screenCenter = camera.worldToViewport(
                 CGPoint(x: groupWorldBounds.midX, y: groupWorldBounds.midY)
             )
-            selectionHandles = makeCornerEditHandles(for: screenQuad)
+            selectionHandles = selectionEditHandles(
+                forGroupSelectedItems: selectedItems,
+                screenQuad: screenQuad
+            )
         }
         let selectionPayload = CanvasEditSelectionOverlayPayload(
             subject: subject,
@@ -942,6 +946,18 @@ struct CanvasRenderer {
         )
     }
 
+    private func makeWidthOnlyEditHandles(
+        for screenQuad: CanvasQuad
+    ) -> [CanvasEditHandleGeometry] {
+        makeEditHandles(
+            for: screenQuad,
+            roles: [
+                .leading,
+                .trailing
+            ]
+        )
+    }
+
     private func makeCropEditHandles(
         for screenQuad: CanvasQuad
     ) -> [CanvasEditHandleGeometry] {
@@ -1001,6 +1017,33 @@ struct CanvasRenderer {
                 screenQuad.topTrailing.x - screenQuad.topLeading.x
             )
         )
+    }
+
+    private func selectionEditHandles(
+        forSingleSelectedItem item: CanvasBoardItem,
+        screenQuad: CanvasQuad
+    ) -> [CanvasEditHandleGeometry] {
+        switch item.kind {
+        case .text:
+            return []
+        case .markdown:
+            return makeWidthOnlyEditHandles(for: screenQuad)
+        case .image, .handDrawing:
+            return makeCornerEditHandles(for: screenQuad)
+        }
+    }
+
+    private func selectionEditHandles(
+        forGroupSelectedItems items: [CanvasBoardItem],
+        screenQuad: CanvasQuad
+    ) -> [CanvasEditHandleGeometry] {
+        guard items.isEmpty == false else {
+            return []
+        }
+        if items.allSatisfy({ $0.kind == .markdown }) {
+            return makeWidthOnlyEditHandles(for: screenQuad)
+        }
+        return makeCornerEditHandles(for: screenQuad)
     }
 
     private func makeRotateAffordance(

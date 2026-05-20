@@ -2672,6 +2672,10 @@ Write here.
             return CGPoint(x: localFrame.maxX, y: localFrame.minY)
         case .bottomTrailing:
             return CGPoint(x: localFrame.minX, y: localFrame.minY)
+        case .leading:
+            return CGPoint(x: localFrame.maxX, y: localFrame.midY)
+        case .trailing:
+            return CGPoint(x: localFrame.minX, y: localFrame.midY)
         }
     }
 
@@ -2706,6 +2710,20 @@ Write here.
             return CGRect(
                 x: oppositeCorner.x,
                 y: oppositeCorner.y,
+                width: size.width,
+                height: size.height
+            )
+        case .leading:
+            return CGRect(
+                x: oppositeCorner.x - size.width,
+                y: oppositeCorner.y - (size.height / 2),
+                width: size.width,
+                height: size.height
+            )
+        case .trailing:
+            return CGRect(
+                x: oppositeCorner.x,
+                y: oppositeCorner.y - (size.height / 2),
                 width: size.width,
                 height: size.height
             )

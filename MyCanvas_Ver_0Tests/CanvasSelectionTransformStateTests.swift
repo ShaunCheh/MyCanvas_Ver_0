@@ -252,6 +252,97 @@ final class CanvasSelectionTransformStateTests: XCTestCase {
             markdownItem.markdownSource
         )
     }
+
+    func testResizedMemberItemsUseWidthOnlyHandleForSingleMarkdownSelection() throws {
+        let markdownStyle = CanvasTextStyle(fontSize: 20)
+        let markdownItem = CanvasMarkdownItem(
+            markdownSource: "## Title\n\nA longer markdown paragraph that should reflow when width changes.",
+            style: markdownStyle,
+            center: CGPoint(x: 40, y: 30),
+            size: CGSize(width: 80, height: 60)
+        )
+        let snapshot = CanvasSelectionTransformSnapshot(
+            primaryItemID: markdownItem.id,
+            memberItems: [.markdown(markdownItem)],
+            selectionBounds: CGRect(x: 0, y: 0, width: 80, height: 60)
+        )
+
+        let resizedItems = try XCTUnwrap(
+            snapshot.resizedMemberItems(
+                handleRole: .trailing,
+                draggedWorldCorner: CGPoint(x: 160, y: 30),
+                minimumScale: 0.1
+            )
+        )
+        let resizedMarkdownItem = try XCTUnwrap(
+            resizedItems.first?.markdownItem
+        )
+        let expectedHeight = CanvasMarkdownLayoutMeasurer.measuredContentHeight(
+            markdownSource: markdownItem.markdownSource,
+            style: markdownStyle,
+            maxLayoutWidth: 160
+        )
+
+        XCTAssertEqual(resizedMarkdownItem.center.x, 80, accuracy: 0.0001)
+        XCTAssertEqual(resizedMarkdownItem.center.y, markdownItem.center.y, accuracy: 0.0001)
+        XCTAssertEqual(resizedMarkdownItem.size.width, 160, accuracy: 0.0001)
+        XCTAssertEqual(resizedMarkdownItem.size.height, expectedHeight, accuracy: 0.0001)
+        XCTAssertEqual(resizedMarkdownItem.style, markdownItem.style)
+    }
+
+    func testResizedMemberItemsUseWidthOnlyHandleForAllMarkdownSelection() throws {
+        let firstItem = CanvasMarkdownItem(
+            markdownSource: "## First\n\nAlpha beta gamma delta.",
+            style: CanvasTextStyle(fontSize: 20),
+            center: CGPoint(x: 40, y: 30),
+            size: CGSize(width: 80, height: 60)
+        )
+        let secondItem = CanvasMarkdownItem(
+            markdownSource: "## Second\n\nA different markdown paragraph that also reflows.",
+            style: CanvasTextStyle(fontSize: 18),
+            center: CGPoint(x: 140, y: 50),
+            size: CGSize(width: 60, height: 40)
+        )
+        let snapshot = CanvasSelectionTransformSnapshot(
+            primaryItemID: secondItem.id,
+            memberItems: [.markdown(firstItem), .markdown(secondItem)],
+            selectionBounds: CGRect(x: 0, y: 0, width: 170, height: 70)
+        )
+
+        let resizedItems = try XCTUnwrap(
+            snapshot.resizedMemberItems(
+                handleRole: .trailing,
+                draggedWorldCorner: CGPoint(x: 255, y: 35),
+                minimumScale: 0.1
+            )
+        )
+        let resizedFirstItem = try XCTUnwrap(
+            resizedItems.first(where: { $0.id == firstItem.id })?.markdownItem
+        )
+        let resizedSecondItem = try XCTUnwrap(
+            resizedItems.first(where: { $0.id == secondItem.id })?.markdownItem
+        )
+        let expectedFirstHeight = CanvasMarkdownLayoutMeasurer.measuredContentHeight(
+            markdownSource: firstItem.markdownSource,
+            style: firstItem.style,
+            maxLayoutWidth: 120
+        )
+        let expectedSecondHeight = CanvasMarkdownLayoutMeasurer.measuredContentHeight(
+            markdownSource: secondItem.markdownSource,
+            style: secondItem.style,
+            maxLayoutWidth: 90
+        )
+
+        XCTAssertEqual(resizedFirstItem.center.x, 60, accuracy: 0.0001)
+        XCTAssertEqual(resizedFirstItem.center.y, firstItem.center.y, accuracy: 0.0001)
+        XCTAssertEqual(resizedFirstItem.size.width, 120, accuracy: 0.0001)
+        XCTAssertEqual(resizedFirstItem.size.height, expectedFirstHeight, accuracy: 0.0001)
+
+        XCTAssertEqual(resizedSecondItem.center.x, 210, accuracy: 0.0001)
+        XCTAssertEqual(resizedSecondItem.center.y, secondItem.center.y, accuracy: 0.0001)
+        XCTAssertEqual(resizedSecondItem.size.width, 90, accuracy: 0.0001)
+        XCTAssertEqual(resizedSecondItem.size.height, expectedSecondHeight, accuracy: 0.0001)
+    }
 }
 
 private func makeSelectionTransformTestImageItem(

@@ -3989,10 +3989,15 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         }
 
         let minimumWorldDimension = Self.minimumResizeViewportDimension / camera.zoomScale
-        let minimumScale = max(
-            minimumWorldDimension / initialLocalFrame.width,
-            minimumWorldDimension / initialLocalFrame.height
-        )
+        let minimumScale: CGFloat
+        if handleRole.isWidthOnly {
+            minimumScale = minimumWorldDimension / initialLocalFrame.width
+        } else {
+            minimumScale = max(
+                minimumWorldDimension / initialLocalFrame.width,
+                minimumWorldDimension / initialLocalFrame.height
+            )
+        }
 
         return PointerResizeState(
             itemID: itemID,
@@ -4021,10 +4026,15 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         }
 
         let minimumWorldDimension = Self.minimumResizeViewportDimension / camera.zoomScale
-        let minimumScale = max(
-            minimumWorldDimension / snapshot.selectionBounds.width,
-            minimumWorldDimension / snapshot.selectionBounds.height
-        )
+        let minimumScale: CGFloat
+        if handleRole.isWidthOnly {
+            minimumScale = minimumWorldDimension / snapshot.selectionBounds.width
+        } else {
+            minimumScale = max(
+                minimumWorldDimension / snapshot.selectionBounds.width,
+                minimumWorldDimension / snapshot.selectionBounds.height
+            )
+        }
         return CanvasSelectionResizeState(
             snapshot: snapshot,
             handleRole: handleRole,
@@ -4039,13 +4049,28 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         to viewportLocation: CGPoint
     ) {
         guard
-            let resizedLocalFrame = makeResizedLocalFrame(
+            let proposedLocalFrame = makeResizedLocalFrame(
                 using: resizeState,
                 draggedViewportLocation: viewportLocation
             ),
             let currentItem = scene.boardItem(withID: resizeState.itemID)
         else {
             return
+        }
+        let resizedLocalFrame: CGRect
+        if let markdownItem = currentItem.markdownItem, resizeState.handleRole.isWidthOnly {
+            let measuredSize = editorSession.measuredMarkdownItemSize(
+                for: markdownItem.markdownSource,
+                style: markdownItem.style,
+                layoutWidth: proposedLocalFrame.width
+            )
+            resizedLocalFrame = localFrame(
+                for: resizeState.handleRole,
+                withFixedOppositeCorner: resizeState.fixedOppositeLocalCorner,
+                size: measuredSize
+            )
+        } else {
+            resizedLocalFrame = proposedLocalFrame
         }
 
         let resizedCenter = referenceWorldPoint(
@@ -4143,15 +4168,26 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
 
         let widthScale = abs(draggedLocalCorner.x - resizeState.fixedOppositeLocalCorner.x) / resizeState.initialLocalFrame.width
         let heightScale = abs(draggedLocalCorner.y - resizeState.fixedOppositeLocalCorner.y) / resizeState.initialLocalFrame.height
-        let scale = max(widthScale, heightScale, resizeState.minimumScale)
-        guard scale.isFinite else {
-            return nil
+        let resizedSize: CGSize
+        if resizeState.handleRole.isWidthOnly {
+            let resolvedWidthScale = max(widthScale, resizeState.minimumScale)
+            guard resolvedWidthScale.isFinite else {
+                return nil
+            }
+            resizedSize = CGSize(
+                width: resizeState.initialLocalFrame.width * resolvedWidthScale,
+                height: resizeState.initialLocalFrame.height
+            )
+        } else {
+            let scale = max(widthScale, heightScale, resizeState.minimumScale)
+            guard scale.isFinite else {
+                return nil
+            }
+            resizedSize = CGSize(
+                width: resizeState.initialLocalFrame.width * scale,
+                height: resizeState.initialLocalFrame.height * scale
+            )
         }
-
-        let resizedSize = CGSize(
-            width: resizeState.initialLocalFrame.width * scale,
-            height: resizeState.initialLocalFrame.height * scale
-        )
 
         return localFrame(
             for: resizeState.handleRole,
@@ -4173,6 +4209,10 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             return CGPoint(x: localFrame.maxX, y: localFrame.minY)
         case .bottomTrailing:
             return CGPoint(x: localFrame.minX, y: localFrame.minY)
+        case .leading:
+            return CGPoint(x: localFrame.maxX, y: localFrame.midY)
+        case .trailing:
+            return CGPoint(x: localFrame.minX, y: localFrame.midY)
         }
     }
 
@@ -4203,6 +4243,16 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             return CGPoint(
                 x: max(draggedLocalCorner.x, oppositeCorner.x + minimumWidth),
                 y: max(draggedLocalCorner.y, oppositeCorner.y + minimumHeight)
+            )
+        case .leading:
+            return CGPoint(
+                x: min(draggedLocalCorner.x, oppositeCorner.x - minimumWidth),
+                y: oppositeCorner.y
+            )
+        case .trailing:
+            return CGPoint(
+                x: max(draggedLocalCorner.x, oppositeCorner.x + minimumWidth),
+                y: oppositeCorner.y
             )
         }
     }
@@ -4238,6 +4288,20 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             return CGRect(
                 x: oppositeCorner.x,
                 y: oppositeCorner.y,
+                width: size.width,
+                height: size.height
+            )
+        case .leading:
+            return CGRect(
+                x: oppositeCorner.x - size.width,
+                y: oppositeCorner.y - (size.height / 2),
+                width: size.width,
+                height: size.height
+            )
+        case .trailing:
+            return CGRect(
+                x: oppositeCorner.x,
+                y: oppositeCorner.y - (size.height / 2),
                 width: size.width,
                 height: size.height
             )

@@ -165,6 +165,65 @@ final class CanvasCommandPolicyParityTests: XCTestCase {
         XCTAssertEqual(committedFixedCorner.y, provisionalFixedCorner.y, accuracy: 0.0001)
     }
 
+    func testFinalizeMarkdownWidthOnlyResizeCommitRemeasuresHeightAndPreservesFixedEdge() throws {
+        let session = makeCommandPolicyParityTestSession(workspaceMode: .editing)
+        let source = """
+        ## Markdown
+
+        A wrapped paragraph that should only resize by width and remeasure height from content.
+
+        - First
+        - Second
+        """
+        let style = CanvasTextStyle(fontSize: 20)
+        let originalItem = CanvasMarkdownItem(
+            markdownSource: source,
+            style: style,
+            center: CGPoint(x: 40, y: 30),
+            size: CGSize(width: 80, height: 60)
+        )
+        session.scene.append(originalItem)
+
+        let provisionalItem = try XCTUnwrap(
+            session.scene.resizeBoardItem(
+                withID: originalItem.id,
+                toCenter: CGPoint(x: 80, y: 30),
+                size: CGSize(width: 160, height: 90)
+            )?.markdownItem
+        )
+        let provisionalFixedEdgeAnchor = provisionalItem.worldPoint(
+            fromLocal: CGPoint(
+                x: provisionalItem.localFrame.minX,
+                y: provisionalItem.localFrame.midY
+            )
+        )
+
+        let committedItem = try XCTUnwrap(
+            session.finalizeMarkdownResizeCommit(
+                withID: originalItem.id,
+                handleRole: .trailing,
+                originalLayoutWidth: originalItem.size.width
+            )
+        )
+        let expectedHeight = CanvasMarkdownLayoutMeasurer.measuredContentHeight(
+            markdownSource: source,
+            style: style,
+            maxLayoutWidth: provisionalItem.size.width
+        )
+        let committedFixedEdgeAnchor = committedItem.worldPoint(
+            fromLocal: CGPoint(
+                x: committedItem.localFrame.minX,
+                y: committedItem.localFrame.midY
+            )
+        )
+
+        XCTAssertEqual(committedItem.size.width, provisionalItem.size.width, accuracy: 0.0001)
+        XCTAssertEqual(committedItem.size.height, expectedHeight, accuracy: 0.0001)
+        XCTAssertEqual(committedItem.center.y, provisionalItem.center.y, accuracy: 0.0001)
+        XCTAssertEqual(committedFixedEdgeAnchor.x, provisionalFixedEdgeAnchor.x, accuracy: 0.0001)
+        XCTAssertEqual(committedFixedEdgeAnchor.y, provisionalFixedEdgeAnchor.y, accuracy: 0.0001)
+    }
+
     func testBeginMarkdownEditCommandProducesEditorFollowUp() throws {
         let session = makeCommandPolicyParityTestSession(workspaceMode: .editing)
         let executor = CanvasCommandExecutor(session: session)

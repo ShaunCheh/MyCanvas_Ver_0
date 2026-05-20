@@ -88,6 +88,8 @@ enum CanvasSelectionHandleRole: CaseIterable {
     case topTrailing
     case bottomLeading
     case bottomTrailing
+    case leading
+    case trailing
 }
 
 enum CanvasEditOverlayKind {
@@ -262,6 +264,19 @@ extension CanvasSelectionHandleRole {
             return .bottomLeading
         case .bottomTrailing:
             return .bottomTrailing
+        case .leading:
+            return .leading
+        case .trailing:
+            return .trailing
+        }
+    }
+
+    var isWidthOnly: Bool {
+        switch self {
+        case .leading, .trailing:
+            return true
+        case .topLeading, .topTrailing, .bottomLeading, .bottomTrailing:
+            return false
         }
     }
 }
@@ -300,7 +315,11 @@ extension CanvasEditHandleRole {
             return .bottomLeading
         case .bottomTrailing:
             return .bottomTrailing
-        case .top, .trailing, .bottom, .leading, .rotate:
+        case .leading:
+            return .leading
+        case .trailing:
+            return .trailing
+        case .top, .bottom, .rotate:
             return nil
         }
     }

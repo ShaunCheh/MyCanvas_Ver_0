@@ -25,6 +25,8 @@ final class macOSCanvasViewportView: NSView {
     private static let selectionOutlineLineWidth: CGFloat = 2
     private static let selectionHandleLineWidth: CGFloat = 2
     private static let selectionHandleSize: CGFloat = 10
+    private static let selectionEdgeHandleLength: CGFloat = 24
+    private static let selectionEdgeHandleThickness: CGFloat = 8
     private static let cropMaskFillColor = CGColor(gray: 0, alpha: 0.4)
     private static let cropOutlineStrokeColor = CGColor(
         red: 1,
@@ -850,6 +852,7 @@ final class macOSCanvasViewportView: NSView {
 
             handleLayer.frame = bounds
             handleLayer.path = Self.selectionHandlePath(
+                for: role,
                 centeredAt: handle.screenCenter,
                 rotationRadians: handle.screenRotationRadians
             )
@@ -1075,14 +1078,49 @@ final class macOSCanvasViewportView: NSView {
     }
 
     private static func selectionHandlePath(
+        for role: CanvasSelectionHandleRole,
         centeredAt center: CGPoint,
         rotationRadians: CGFloat
     ) -> CGPath {
-        squareHandlePath(
+        switch role {
+        case .leading, .trailing:
+            return edgeHandlePath(
+                centeredAt: center,
+                length: selectionEdgeHandleLength,
+                thickness: selectionEdgeHandleThickness,
+                rotationRadians: rotationRadians
+            )
+        case .topLeading, .topTrailing, .bottomLeading, .bottomTrailing:
+            break
+        }
+        return squareHandlePath(
             centeredAt: center,
             size: selectionHandleSize,
             rotationRadians: rotationRadians
         )
+    }
+
+    private static func edgeHandlePath(
+        centeredAt center: CGPoint,
+        length: CGFloat,
+        thickness: CGFloat,
+        rotationRadians: CGFloat
+    ) -> CGPath {
+        let localRect = CGRect(
+            x: -thickness / 2,
+            y: -length / 2,
+            width: thickness,
+            height: length
+        )
+        var transform = CGAffineTransform(translationX: center.x, y: center.y)
+        transform = transform.rotated(by: rotationRadians)
+        let localPath = CGPath(
+            roundedRect: localRect,
+            cornerWidth: thickness / 2,
+            cornerHeight: thickness / 2,
+            transform: nil
+        )
+        return localPath.copy(using: &transform) ?? localPath
     }
 
     private static func squareHandlePath(
