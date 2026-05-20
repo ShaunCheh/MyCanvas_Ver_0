@@ -215,6 +215,8 @@ final class SelectionAccessoryHostView: UIView {
 import AppKit
 
 final class SelectionAccessoryHostView: NSView {
+    private static let isTraceLoggingEnabled = true
+
     var onCommandSelected: ((CanvasCommandID) -> Void)?
     var onDismissRequested: (() -> Void)?
 
@@ -302,6 +304,10 @@ final class SelectionAccessoryHostView: NSView {
         layoutContext: CanvasChromeLayoutContext
     ) {
         currentState = state
+        logApply(
+            state: state,
+            layoutContext: layoutContext
+        )
 
         guard let state, state.isEmpty == false else {
             dismiss()
@@ -320,11 +326,18 @@ final class SelectionAccessoryHostView: NSView {
         }
 
         let preferredSize = preferredAccessorySize()
-        guard let accessoryFrame = layoutSolver.resolveAccessoryFrame(
+        let resolvedAccessoryFrame = layoutSolver.resolveAccessoryFrame(
             anchorRect: currentState.anchorRect,
             preferredSize: preferredSize,
             layoutContext: layoutContext
-        ) else {
+        )
+        logLayout(
+            state: currentState,
+            layoutContext: layoutContext,
+            preferredSize: preferredSize,
+            resolvedAccessoryFrame: resolvedAccessoryFrame
+        )
+        guard let accessoryFrame = resolvedAccessoryFrame else {
             containerView.frame = .zero
             return
         }
@@ -407,6 +420,70 @@ final class SelectionAccessoryHostView: NSView {
             width: stackSize.width + 16,
             height: stackSize.height + 16
         )
+    }
+
+    private func logApply(
+        state: SelectionAccessoryState?,
+        layoutContext: CanvasChromeLayoutContext
+    ) {
+        guard Self.isTraceLoggingEnabled else {
+            return
+        }
+
+        let resolvedActionStates = state?.actionStates.map {
+            "\(String(describing: $0.commandID)) enabled=\($0.descriptor.isEnabled)"
+        }.joined(separator: ", ") ?? "nil"
+        print(
+            "[Canvas macOS][MarkdownAccessoryHost] " +
+            "event=apply " +
+            "stateItemID=\(state.map { $0.itemID.uuidString } ?? "nil") " +
+            "stateAnchorRect=\(state.map { Self.describe(rect: $0.anchorRect) } ?? "nil") " +
+            "stateIsEmpty=\(state?.isEmpty ?? true) " +
+            "actionCount=\(state?.actionStates.count ?? 0) " +
+            "actionStates=[\(resolvedActionStates)] " +
+            "layoutSafeBounds=\(Self.describe(rect: layoutContext.safeBounds)) " +
+            "hostBounds=\(Self.describe(rect: bounds)) " +
+            "hostFrame=\(Self.describe(rect: frame)) " +
+            "containerFrame=\(Self.describe(rect: containerView.frame))"
+        )
+    }
+
+    private func logLayout(
+        state: SelectionAccessoryState,
+        layoutContext: CanvasChromeLayoutContext,
+        preferredSize: CGSize,
+        resolvedAccessoryFrame: CGRect?
+    ) {
+        guard Self.isTraceLoggingEnabled else {
+            return
+        }
+
+        print(
+            "[Canvas macOS][MarkdownAccessoryHost] " +
+            "event=layout " +
+            "stateItemID=\(state.itemID.uuidString) " +
+            "anchorRect=\(Self.describe(rect: state.anchorRect)) " +
+            "preferredSize=\(Self.describe(size: preferredSize)) " +
+            "stackFittingSize=\(Self.describe(size: stackView.fittingSize)) " +
+            "stackFrame=\(Self.describe(rect: stackView.frame)) " +
+            "layoutSafeBounds=\(Self.describe(rect: layoutContext.safeBounds)) " +
+            "occupiedRectCount=\(layoutContext.occupiedRects.count) " +
+            "hostBounds=\(Self.describe(rect: bounds)) " +
+            "hostFrame=\(Self.describe(rect: frame)) " +
+            "resolvedAccessoryFrame=\(resolvedAccessoryFrame.map { Self.describe(rect: $0) } ?? "nil")"
+        )
+    }
+
+    private static func formatCoordinate(_ value: CGFloat) -> String {
+        String(format: "%.2f", value)
+    }
+
+    private static func describe(size: CGSize) -> String {
+        "{\(formatCoordinate(size.width)), \(formatCoordinate(size.height))}"
+    }
+
+    private static func describe(rect: CGRect) -> String {
+        "{{\(formatCoordinate(rect.origin.x)), \(formatCoordinate(rect.origin.y))}, {\(formatCoordinate(rect.size.width)), \(formatCoordinate(rect.size.height))}}"
     }
 }
 

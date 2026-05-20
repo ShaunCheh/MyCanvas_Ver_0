@@ -130,6 +130,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     private static let rotateHandleHitTargetSize: CGFloat = 22
     private static let geometryComparisonEpsilon: CGFloat = 0.0001
     private static let markdownScrollHistoryCommitDelay: TimeInterval = 0.25
+    private static let isMarkdownSelectionAccessoryTraceLoggingEnabled = true
     private static let observedKeyboardShortcutReuseWindow: TimeInterval = 0.45
     private static let continuousRawInputObservationInterval: TimeInterval = 0.32
 
@@ -5333,12 +5334,20 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         }
 
         guard let state = resolvedMarkdownSelectionAccessoryState() else {
+            logMarkdownSelectionAccessoryPresentation(
+                state: nil,
+                layoutContext: layoutContext
+            )
             selectionAccessoryHostView.dismiss()
             return
         }
 
         let resolvedLayoutContext =
             layoutContext ?? contextMenuLayoutContextForCurrentChromeState()
+        logMarkdownSelectionAccessoryPresentation(
+            state: state,
+            layoutContext: resolvedLayoutContext
+        )
         selectionAccessoryHostView.apply(
             state: state,
             layoutContext: resolvedLayoutContext
@@ -5346,19 +5355,40 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     }
 
     private func resolvedMarkdownSelectionAccessoryState() -> SelectionAccessoryState? {
-        markdownSelectionAccessoryResolver.resolveState(
+        let resolvedWorkspaceMode = workspaceMode
+        let resolvedIsTransitionInteractionFrozen = isTransitionInteractionFrozen
+        let resolvedHasContextMenu = contextMenuState != nil
+        let resolvedHasPresentedOverlayEditor =
+            !(presentedViewControllers?.isEmpty ?? true)
+        let resolvedHasInlineEditPresentation = presentationInlineEditState != nil
+        let resolvedSelectedItemID = editorSession.singleSelectedItemID
+        let resolvedAnchorRect = resolvedSelectedItemID.flatMap {
+            markdownSelectionAccessoryAnchorRect(for: $0)
+        }
+        let resolvedState = markdownSelectionAccessoryResolver.resolveState(
             session: editorSession,
             environment: CanvasMarkdownSelectionAccessoryResolver.Environment(
-                workspaceMode: workspaceMode,
-                isTransitionInteractionFrozen: isTransitionInteractionFrozen,
-                hasContextMenu: contextMenuState != nil,
-                hasPresentedOverlayEditor: !(presentedViewControllers?.isEmpty ?? true),
-                hasInlineEditPresentation: presentationInlineEditState != nil
+                workspaceMode: resolvedWorkspaceMode,
+                isTransitionInteractionFrozen: resolvedIsTransitionInteractionFrozen,
+                hasContextMenu: resolvedHasContextMenu,
+                hasPresentedOverlayEditor: resolvedHasPresentedOverlayEditor,
+                hasInlineEditPresentation: resolvedHasInlineEditPresentation
             ),
-            anchorRect: editorSession.singleSelectedItemID.flatMap {
-                markdownSelectionAccessoryAnchorRect(for: $0)
-            }
+            anchorRect: resolvedAnchorRect
         )
+        logMarkdownSelectionAccessoryResolution(
+            selectedItemID: resolvedSelectedItemID,
+            selectedMarkdownItemID: editorSession.selectedMarkdownItem?.id,
+            selectedItemKind: editorSession.selectedBoardItemKind,
+            workspaceMode: resolvedWorkspaceMode,
+            isTransitionInteractionFrozen: resolvedIsTransitionInteractionFrozen,
+            hasContextMenu: resolvedHasContextMenu,
+            hasPresentedOverlayEditor: resolvedHasPresentedOverlayEditor,
+            hasInlineEditPresentation: resolvedHasInlineEditPresentation,
+            anchorRect: resolvedAnchorRect,
+            state: resolvedState
+        )
+        return resolvedState
     }
 
     private func markdownSelectionAccessoryAnchorRect(
@@ -5369,10 +5399,16 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         {
             switch payload.subject {
             case let .singleItem(selectedItemID) where selectedItemID == itemID:
-                return selectionAccessoryHostView.convert(
+                let resolvedRect = selectionAccessoryHostView.convert(
                     editOverlay.activeScreenQuad.boundingRect.standardized,
                     from: canvasViewportView
                 )
+                logMarkdownSelectionAccessoryAnchorRect(
+                    itemID: itemID,
+                    source: "editOverlay",
+                    resolvedRect: resolvedRect
+                )
+                return resolvedRect
             case .singleItem, .group:
                 break
             }
@@ -5381,12 +5417,23 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         guard let renderItem = lastRenderSnapshot.items.first(where: {
             $0.id == itemID
         }) else {
+            logMarkdownSelectionAccessoryAnchorRect(
+                itemID: itemID,
+                source: "renderItemFallbackMissing",
+                resolvedRect: nil
+            )
             return nil
         }
-        return selectionAccessoryHostView.convert(
+        let resolvedRect = selectionAccessoryHostView.convert(
             renderItem.screenQuad.boundingRect.standardized,
             from: canvasViewportView
         )
+        logMarkdownSelectionAccessoryAnchorRect(
+            itemID: itemID,
+            source: "renderItemFallback",
+            resolvedRect: resolvedRect
+        )
+        return resolvedRect
     }
 
     private func syncTextEditorPresentation() {
@@ -5604,6 +5651,91 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
 
     private func describe(itemID: CanvasItemID?) -> String {
         itemID?.uuidString ?? "nil"
+    }
+
+    private func logMarkdownSelectionAccessoryResolution(
+        selectedItemID: CanvasItemID?,
+        selectedMarkdownItemID: CanvasItemID?,
+        selectedItemKind: CanvasBoardItemKind?,
+        workspaceMode: CanvasWorkspaceMode,
+        isTransitionInteractionFrozen: Bool,
+        hasContextMenu: Bool,
+        hasPresentedOverlayEditor: Bool,
+        hasInlineEditPresentation: Bool,
+        anchorRect: CGRect?,
+        state: SelectionAccessoryState?
+    ) {
+        guard Self.isMarkdownSelectionAccessoryTraceLoggingEnabled else {
+            return
+        }
+
+        let resolvedAnchorRect = anchorRect.map(describe(rect:)) ?? "nil"
+        let resolvedStateAnchorRect = state.map { describe(rect: $0.anchorRect) } ?? "nil"
+        let resolvedActionStates = state?.actionStates.map {
+            "\(String(describing: $0.commandID)) enabled=\($0.descriptor.isEnabled)"
+        }.joined(separator: ", ") ?? "nil"
+        print(
+            "[Canvas macOS][MarkdownAccessory] " +
+            "event=resolveState " +
+            "selectedItemID=\(describe(itemID: selectedItemID)) " +
+            "selectedMarkdownItemID=\(describe(itemID: selectedMarkdownItemID)) " +
+            "selectedItemKind=\(String(describing: selectedItemKind)) " +
+            "workspaceMode=\(workspaceMode.rawValue) " +
+            "isTransitionInteractionFrozen=\(isTransitionInteractionFrozen) " +
+            "hasContextMenu=\(hasContextMenu) " +
+            "hasPresentedOverlayEditor=\(hasPresentedOverlayEditor) " +
+            "hasInlineEditPresentation=\(hasInlineEditPresentation) " +
+            "anchorRect=\(resolvedAnchorRect) " +
+            "resolvedStateItemID=\(describe(itemID: state?.itemID)) " +
+            "resolvedStateAnchorRect=\(resolvedStateAnchorRect) " +
+            "resolvedActionCount=\(state?.actionStates.count ?? 0) " +
+            "resolvedActionStates=[\(resolvedActionStates)]"
+        )
+    }
+
+    private func logMarkdownSelectionAccessoryPresentation(
+        state: SelectionAccessoryState?,
+        layoutContext: CanvasChromeLayoutContext?
+    ) {
+        guard Self.isMarkdownSelectionAccessoryTraceLoggingEnabled else {
+            return
+        }
+
+        let resolvedSafeBounds = layoutContext.map { describe(rect: $0.safeBounds) } ?? "nil"
+        let resolvedOccupiedRectCount = layoutContext?.occupiedRects.count ?? 0
+        print(
+            "[Canvas macOS][MarkdownAccessory] " +
+            "event=syncPresentation " +
+            "stateItemID=\(describe(itemID: state?.itemID)) " +
+            "stateAnchorRect=\(state.map { describe(rect: $0.anchorRect) } ?? "nil") " +
+            "stateIsEmpty=\(state?.isEmpty ?? true) " +
+            "actionCount=\(state?.actionStates.count ?? 0) " +
+            "layoutSafeBounds=\(resolvedSafeBounds) " +
+            "occupiedRectCount=\(resolvedOccupiedRectCount) " +
+            "hostViewBounds=\(describe(rect: selectionAccessoryHostView.bounds)) " +
+            "hostViewFrame=\(describe(rect: selectionAccessoryHostView.frame))"
+        )
+    }
+
+    private func logMarkdownSelectionAccessoryAnchorRect(
+        itemID: CanvasItemID,
+        source: String,
+        resolvedRect: CGRect?
+    ) {
+        guard Self.isMarkdownSelectionAccessoryTraceLoggingEnabled else {
+            return
+        }
+
+        print(
+            "[Canvas macOS][MarkdownAccessory] " +
+            "event=resolveAnchorRect " +
+            "itemID=\(itemID.uuidString) " +
+            "source=\(source) " +
+            "resolvedRect=\(resolvedRect.map { describe(rect: $0) } ?? "nil") " +
+            "hostBounds=\(describe(rect: selectionAccessoryHostView.bounds)) " +
+            "viewportBounds=\(describe(rect: canvasViewportView.bounds)) " +
+            "snapshotViewportBounds=\(describe(rect: lastRenderSnapshot.viewportBounds))"
+        )
     }
 
     private func describe(selectionState: CanvasInteractionState) -> String {
