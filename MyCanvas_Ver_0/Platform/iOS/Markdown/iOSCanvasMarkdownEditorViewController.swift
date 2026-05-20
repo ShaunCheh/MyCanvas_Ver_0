@@ -126,6 +126,8 @@ final class iOSCanvasMarkdownEditorViewController: UIViewController {
 
     private func setupConstraints() {
         let safeAreaLayoutGuide = view.safeAreaLayoutGuide
+        let keyboardLayoutGuide = view.keyboardLayoutGuide
+        keyboardLayoutGuide.followsUndockedKeyboard = true
         NSLayoutConstraint.activate([
             cancelButton.leadingAnchor.constraint(
                 equalTo: safeAreaLayoutGuide.leadingAnchor,
@@ -163,7 +165,7 @@ final class iOSCanvasMarkdownEditorViewController: UIViewController {
                 constant: -20
             ),
             textContainerView.bottomAnchor.constraint(
-                equalTo: safeAreaLayoutGuide.bottomAnchor,
+                equalTo: keyboardLayoutGuide.topAnchor,
                 constant: -20
             ),
             textView.topAnchor.constraint(equalTo: textContainerView.topAnchor),
