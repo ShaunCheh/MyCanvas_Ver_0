@@ -118,6 +118,41 @@ final class MarkdownPreviewParityTests: XCTestCase {
             "Expected empty fenced code block to remain visible via markdown decorations in the thumbnail."
         )
     }
+
+    func testBoardThumbnailRendererUsesWorldSpaceMarkdownLayoutWidth() throws {
+        let markdownItem = makeMarkdownPreviewTestItem(
+            markdownSource: """
+            # Heading
+
+            This thumbnail should reuse the markdown semantic layout width from the persisted world item instead of reflowing in preview space.
+            """,
+            center: CGPoint(x: 220, y: 160),
+            size: CGSize(width: 420, height: 240),
+            zIndex: 1
+        )
+        let runtimeState = makeMarkdownPreviewRuntimeState(item: markdownItem)
+        let bitmapRendererSpy = MarkdownPreviewBitmapRendererSpy()
+        let renderer = BoardThumbnailRenderer(
+            markdownBitmapRenderer: bitmapRendererSpy
+        )
+        MarkdownPreviewParityTestRetainer.thumbnailRenderers.append(renderer)
+
+        let renderedImage = try XCTUnwrap(
+            renderer.renderPersistedThumbnail(
+                for: runtimeState,
+                maximumLongestSide: 256
+            )
+        )
+        let renderedLayout = try XCTUnwrap(bitmapRendererSpy.layouts.first)
+
+        XCTAssertTrue(imageContainsVisiblePixels(renderedImage))
+        XCTAssertEqual(
+            renderedLayout.contentSize.width,
+            markdownItem.size.width,
+            accuracy: 0.0001
+        )
+        XCTAssertGreaterThan(bitmapRendererSpy.rasterScales.first ?? 0, 0)
+    }
 }
 
 private func makeMarkdownPreviewTestItem(
@@ -190,6 +225,42 @@ private func imageContainsVisiblePixels(_ image: CGImage) -> Bool {
     return stride(from: 3, to: pixelBytes.count, by: 4).contains {
         pixelBytes[$0] > 0
     }
+}
+
+private final class MarkdownPreviewBitmapRendererSpy: CanvasMarkdownBitmapRendering {
+    private(set) var layouts: [CanvasMarkdownLayoutResult] = []
+    private(set) var rasterScales: [CGFloat] = []
+
+    func render(
+        layout: CanvasMarkdownLayoutResult,
+        rasterScale: CGFloat
+    ) -> CGImage? {
+        layouts.append(layout)
+        rasterScales.append(rasterScale)
+        return makeMarkdownPreviewBitmapRendererSpyImage()
+    }
+}
+
+private func makeMarkdownPreviewBitmapRendererSpyImage() -> CGImage? {
+    let colorSpace = CGColorSpaceCreateDeviceRGB()
+    let bitmapInfo =
+        CGImageAlphaInfo.premultipliedLast.rawValue
+        | CGBitmapInfo.byteOrder32Big.rawValue
+    guard let context = CGContext(
+        data: nil,
+        width: 1,
+        height: 1,
+        bitsPerComponent: 8,
+        bytesPerRow: 4,
+        space: colorSpace,
+        bitmapInfo: bitmapInfo
+    ) else {
+        return nil
+    }
+
+    context.setFillColor(red: 1, green: 1, blue: 1, alpha: 1)
+    context.fill(CGRect(x: 0, y: 0, width: 1, height: 1))
+    return context.makeImage()
 }
 
 private enum MarkdownPreviewParityTestRetainer {

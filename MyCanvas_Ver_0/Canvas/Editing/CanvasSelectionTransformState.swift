@@ -148,6 +148,15 @@ struct CanvasSelectionTransformSnapshot: Equatable {
         memberGeometries.map(\.itemID)
     }
 
+    func markdownLayoutWidthsByItemID() -> [CanvasItemID: CGFloat] {
+        memberItemIDs.reduce(into: [:]) { partialResult, itemID in
+            guard let markdownItem = sourceItemsByID[itemID]?.markdownItem else {
+                return
+            }
+            partialResult[itemID] = markdownItem.size.width
+        }
+    }
+
     var selectionCenter: CGPoint {
         CGPoint(
             x: selectionBounds.midX,

@@ -2112,8 +2112,10 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
                 refreshReason: "finish move alignment interaction"
             )
         case .resizingSelectedItem:
+            finalizeMarkdownResizeCommitIfNeeded(for: pointerDragState)
             commitPendingPointerHistoryTransaction(autosaveReason: "resize item")
         case .resizingSelection:
+            finalizeMarkdownResizeCommitIfNeeded(for: pointerDragState)
             commitPendingPointerHistoryTransaction(autosaveReason: "resize selection")
         case .draggingCanvas, .idle:
             break
@@ -2139,8 +2141,10 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
                 refreshReason: "cancel move alignment interaction"
             )
         case .resizingSelectedItem:
+            finalizeMarkdownResizeCommitIfNeeded(for: pointerDragState)
             commitPendingPointerHistoryTransaction(autosaveReason: "resize item")
         case .resizingSelection:
+            finalizeMarkdownResizeCommitIfNeeded(for: pointerDragState)
             commitPendingPointerHistoryTransaction(autosaveReason: "resize selection")
         case .pressed, .draggingCanvas, .idle:
             editorSession.cancelPendingHistoryTransaction()
@@ -4958,6 +4962,35 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             return
         }
         updateInlineEditButtonsAppearance()
+    }
+
+    private func finalizeMarkdownResizeCommitIfNeeded(
+        for pointerDragState: PointerDragState
+    ) {
+        let updatedItems: [CanvasMarkdownItem]
+        switch pointerDragState {
+        case let .resizingSelectedItem(resizeState):
+            updatedItems = editorSession.finalizeMarkdownResizeCommit(
+                withID: resizeState.itemID,
+                handleRole: resizeState.handleRole,
+                originalLayoutWidth: resizeState.initialLocalFrame.width
+            ).map { [$0] } ?? []
+        case let .resizingSelection(resizeState):
+            updatedItems = editorSession.finalizeMarkdownResizeCommits(
+                handleRole: resizeState.handleRole,
+                originalLayoutWidthsByItemID: resizeState.snapshot
+                    .markdownLayoutWidthsByItemID()
+            )
+        case .idle, .pressed, .croppingSelectedItem, .movingCropFrame,
+             .rotatingSelectedItem, .rotatingSelection, .draggingSelectedItem,
+             .draggingSelection, .draggingCanvas:
+            return
+        }
+
+        guard updatedItems.isEmpty == false else {
+            return
+        }
+        refreshCanvas(reason: "finalize markdown resize commit")
     }
 
     private func recordImmediateHistoryChange(

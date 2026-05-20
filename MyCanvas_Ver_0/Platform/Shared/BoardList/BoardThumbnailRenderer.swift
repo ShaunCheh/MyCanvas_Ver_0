@@ -37,12 +37,12 @@ enum BoardThumbnailRendererError: LocalizedError {
 final class BoardThumbnailRenderer {
     private let geometryPreviewBuilder: BoardGeometryPreviewBuilder
     private let mediaPosterImageResolver: BoardMediaPosterImageResolver
-    private let markdownBitmapRenderer: CanvasMarkdownBitmapRenderer
+    private let markdownBitmapRenderer: any CanvasMarkdownBitmapRendering
 
     init(
         geometryPreviewBuilder: BoardGeometryPreviewBuilder = BoardGeometryPreviewBuilder(),
         mediaPosterImageResolver: BoardMediaPosterImageResolver = BoardMediaPosterImageResolver(),
-        markdownBitmapRenderer: CanvasMarkdownBitmapRenderer = CanvasMarkdownBitmapRenderer()
+        markdownBitmapRenderer: any CanvasMarkdownBitmapRendering = CanvasMarkdownBitmapRenderer()
     ) {
         self.geometryPreviewBuilder = geometryPreviewBuilder
         self.mediaPosterImageResolver = mediaPosterImageResolver
@@ -961,11 +961,14 @@ final class BoardThumbnailRenderer {
             context: context
         )
 
+        // Thumbnails now share the same world-space markdown layout contract as
+        // the main canvas: semantic line breaking comes from the persisted item
+        // width, while preview scale only affects the rasterized bitmap density.
         let layout = CanvasMarkdownLayoutMeasurer.layout(
             markdownSource: itemRecord.markdownSource,
             style: itemRecord.style.canvasTextStyle,
-            maxLayoutWidth: mappedVisibleSize.width,
-            scale: geometry.scale,
+            maxLayoutWidth: visibleSize.width,
+            scale: 1,
             // Stage 2 validates markdown bitmap rendering through thumbnails, so
             // fenced code block panels now come from semantic decorations here.
             includeCompatibilityCodeBlockBackgrounds: false
@@ -973,12 +976,12 @@ final class BoardThumbnailRenderer {
         let imageRect = CGRect(
             x: textRect.minX,
             y: textRect.minY,
-            width: layout.contentSize.width,
-            height: layout.contentSize.height
+            width: layout.contentSize.width * geometry.scale,
+            height: layout.contentSize.height * geometry.scale
         ).standardized
         let bitmapImage = markdownBitmapRenderer.render(
             layout: layout,
-            rasterScale: 1
+            rasterScale: max(geometry.scale, 0.01)
         )
 
         context.saveGState()
@@ -992,8 +995,15 @@ final class BoardThumbnailRenderer {
                 context: context
             )
         } else {
+            let fallbackLayout = CanvasMarkdownLayoutMeasurer.layout(
+                markdownSource: itemRecord.markdownSource,
+                style: itemRecord.style.canvasTextStyle,
+                maxLayoutWidth: mappedVisibleSize.width,
+                scale: geometry.scale,
+                includeCompatibilityCodeBlockBackgrounds: false
+            )
             drawAttributedText(
-                layout.attributedText,
+                fallbackLayout.attributedText,
                 in: textRect,
                 context: context
             )

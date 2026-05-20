@@ -30,6 +30,7 @@ private struct CanvasPreparedImportItem {
 final class CanvasEditorSession {
     private static let inlineTextFontSizeStep: CGFloat = 2
     private static let markdownContentSizeStep: CGFloat = 2
+    private static let geometryComparisonEpsilon: CGFloat = 0.0001
     private static let defaultMarkdownSource = """
 ## Markdown
 
@@ -2043,6 +2044,71 @@ Write here.
         )
     }
 
+    @discardableResult
+    func finalizeMarkdownResizeCommit(
+        withID itemID: CanvasItemID,
+        handleRole: CanvasSelectionHandleRole,
+        originalLayoutWidth: CGFloat
+    ) -> CanvasMarkdownItem? {
+        guard
+            let item = scene.markdownItem(withID: itemID),
+            markdownLayoutWidthChanged(
+                for: item,
+                originalLayoutWidth: originalLayoutWidth
+            ),
+            let updatedItem = resolvedMarkdownResizeCommittedItem(
+                from: item,
+                handleRole: handleRole
+            ),
+            let appliedItem = scene.applyBoardItems([.markdown(updatedItem)])?
+                .first?
+                .markdownItem
+        else {
+            return nil
+        }
+
+        expandBoardIfNeeded(toInclude: appliedItem.worldBounds)
+        return appliedItem
+    }
+
+    @discardableResult
+    func finalizeMarkdownResizeCommits(
+        handleRole: CanvasSelectionHandleRole,
+        originalLayoutWidthsByItemID: [CanvasItemID: CGFloat]
+    ) -> [CanvasMarkdownItem] {
+        let updatedBoardItems: [CanvasBoardItem] = originalLayoutWidthsByItemID.compactMap { entry in
+            let itemID = entry.key
+            let originalLayoutWidth = entry.value
+            guard
+                let item = scene.markdownItem(withID: itemID),
+                markdownLayoutWidthChanged(
+                    for: item,
+                    originalLayoutWidth: originalLayoutWidth
+                )
+            else {
+                return nil
+            }
+
+            return resolvedMarkdownResizeCommittedItem(
+                from: item,
+                handleRole: handleRole
+            ).map(CanvasBoardItem.markdown)
+        }
+
+        guard
+            updatedBoardItems.isEmpty == false,
+            let appliedItems = scene.applyBoardItems(updatedBoardItems)
+        else {
+            return []
+        }
+
+        let updatedMarkdownItems = appliedItems.compactMap { $0.markdownItem }
+        for item in updatedMarkdownItems {
+            expandBoardIfNeeded(toInclude: item.worldBounds)
+        }
+        return updatedMarkdownItems
+    }
+
     func nextBoardItemZIndex() -> CGFloat {
         (scene.orderedBoardItems().last?.zIndex ?? -1) + 1
     }
@@ -2460,6 +2526,103 @@ Write here.
             fontSize: style.fontSize + fontSizeDelta,
             color: style.color
         )
+    }
+
+    private func markdownLayoutWidthChanged(
+        for item: CanvasMarkdownItem,
+        originalLayoutWidth: CGFloat
+    ) -> Bool {
+        abs(item.size.width - originalLayoutWidth) > Self.geometryComparisonEpsilon
+    }
+
+    private func resolvedMarkdownResizeCommittedItem(
+        from item: CanvasMarkdownItem,
+        handleRole: CanvasSelectionHandleRole
+    ) -> CanvasMarkdownItem? {
+        let committedSize = measuredMarkdownItemSize(
+            for: item.markdownSource,
+            style: item.style,
+            layoutWidth: item.size.width
+        )
+        guard
+            abs(committedSize.width - item.size.width) > Self.geometryComparisonEpsilon ||
+            abs(committedSize.height - item.size.height) > Self.geometryComparisonEpsilon
+        else {
+            return nil
+        }
+
+        let currentLocalFrame = item.localFrame.standardized
+        let fixedOppositeLocalCorner = markdownFixedOppositeResizeLocalCorner(
+            for: handleRole,
+            in: currentLocalFrame
+        )
+        let committedLocalFrame = markdownResizeLocalFrame(
+            for: handleRole,
+            withFixedOppositeCorner: fixedOppositeLocalCorner,
+            size: committedSize
+        )
+        var updatedItem = item
+        updatedItem.center = item.worldPoint(
+            fromLocal: CGPoint(
+                x: committedLocalFrame.midX,
+                y: committedLocalFrame.midY
+            )
+        )
+        updatedItem.size = committedSize
+        return updatedItem
+    }
+
+    private func markdownFixedOppositeResizeLocalCorner(
+        for handleRole: CanvasSelectionHandleRole,
+        in localFrame: CGRect
+    ) -> CGPoint {
+        switch handleRole {
+        case .topLeading:
+            return CGPoint(x: localFrame.maxX, y: localFrame.maxY)
+        case .topTrailing:
+            return CGPoint(x: localFrame.minX, y: localFrame.maxY)
+        case .bottomLeading:
+            return CGPoint(x: localFrame.maxX, y: localFrame.minY)
+        case .bottomTrailing:
+            return CGPoint(x: localFrame.minX, y: localFrame.minY)
+        }
+    }
+
+    private func markdownResizeLocalFrame(
+        for handleRole: CanvasSelectionHandleRole,
+        withFixedOppositeCorner oppositeCorner: CGPoint,
+        size: CGSize
+    ) -> CGRect {
+        switch handleRole {
+        case .topLeading:
+            return CGRect(
+                x: oppositeCorner.x - size.width,
+                y: oppositeCorner.y - size.height,
+                width: size.width,
+                height: size.height
+            )
+        case .topTrailing:
+            return CGRect(
+                x: oppositeCorner.x,
+                y: oppositeCorner.y - size.height,
+                width: size.width,
+                height: size.height
+            )
+        case .bottomLeading:
+            return CGRect(
+                x: oppositeCorner.x - size.width,
+                y: oppositeCorner.y,
+                width: size.width,
+                height: size.height
+            )
+        case .bottomTrailing:
+            return CGRect(
+                x: oppositeCorner.x,
+                y: oppositeCorner.y,
+                width: size.width,
+                height: size.height
+            )
+        }
     }
 
     @discardableResult

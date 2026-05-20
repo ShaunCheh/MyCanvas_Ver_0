@@ -106,6 +106,65 @@ final class CanvasCommandPolicyParityTests: XCTestCase {
         XCTAssertEqual(item.size.height, expectedHeight, accuracy: 0.0001)
     }
 
+    func testFinalizeMarkdownResizeCommitRemeasuresHeightAndPreservesFixedCorner() throws {
+        let session = makeCommandPolicyParityTestSession(workspaceMode: .editing)
+        let source = """
+        ## Markdown
+
+        A wrapped paragraph that needs a real height recompute after resize commit.
+
+        - First
+        - Second
+        - Third
+        """
+        let style = CanvasTextStyle(fontSize: 20)
+        let originalItem = CanvasMarkdownItem(
+            markdownSource: source,
+            style: style,
+            center: CGPoint(x: 40, y: 30),
+            size: CGSize(width: 80, height: 60)
+        )
+        session.scene.append(originalItem)
+
+        let provisionalItem = try XCTUnwrap(
+            session.scene.resizeBoardItem(
+                withID: originalItem.id,
+                toCenter: CGPoint(x: 80, y: 45),
+                size: CGSize(width: 160, height: 90)
+            )?.markdownItem
+        )
+        let provisionalFixedCorner = provisionalItem.worldPoint(
+            fromLocal: CGPoint(
+                x: provisionalItem.localFrame.minX,
+                y: provisionalItem.localFrame.minY
+            )
+        )
+
+        let committedItem = try XCTUnwrap(
+            session.finalizeMarkdownResizeCommit(
+                withID: originalItem.id,
+                handleRole: .bottomTrailing,
+                originalLayoutWidth: originalItem.size.width
+            )
+        )
+        let expectedHeight = CanvasMarkdownLayoutMeasurer.measuredContentHeight(
+            markdownSource: source,
+            style: style,
+            maxLayoutWidth: provisionalItem.size.width
+        )
+        let committedFixedCorner = committedItem.worldPoint(
+            fromLocal: CGPoint(
+                x: committedItem.localFrame.minX,
+                y: committedItem.localFrame.minY
+            )
+        )
+
+        XCTAssertEqual(committedItem.size.width, provisionalItem.size.width, accuracy: 0.0001)
+        XCTAssertEqual(committedItem.size.height, expectedHeight, accuracy: 0.0001)
+        XCTAssertEqual(committedFixedCorner.x, provisionalFixedCorner.x, accuracy: 0.0001)
+        XCTAssertEqual(committedFixedCorner.y, provisionalFixedCorner.y, accuracy: 0.0001)
+    }
+
     func testBeginMarkdownEditCommandProducesEditorFollowUp() throws {
         let session = makeCommandPolicyParityTestSession(workspaceMode: .editing)
         let executor = CanvasCommandExecutor(session: session)
