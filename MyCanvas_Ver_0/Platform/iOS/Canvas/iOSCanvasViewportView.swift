@@ -122,7 +122,7 @@ final class iOSCanvasViewportView: UIView {
     var onPointerUp: ((CGPoint, CanvasPointerModifiers) -> Void)?
     var onPointerCancel: (() -> Void)?
     var onLongPress: ((CGPoint) -> Void)?
-    var onPan: ((CGPoint) -> Void)?
+    var onPan: ((CGPoint, CGPoint) -> Void)?
     var onZoom: ((CGFloat, CGPoint) -> Void)?
     var onZoomGestureBegan: (() -> Void)?
     var onZoomGestureEnded: (() -> Void)?
@@ -1173,7 +1173,16 @@ final class iOSCanvasViewportView: UIView {
                 centeredAt: center,
                 length: selectionEdgeHandleLength,
                 thickness: selectionEdgeHandleThickness,
-                rotationRadians: rotationRadians
+                rotationRadians: rotationRadians,
+                isHorizontal: false
+            )
+        case .top, .bottom:
+            return edgeHandlePath(
+                centeredAt: center,
+                length: selectionEdgeHandleLength,
+                thickness: selectionEdgeHandleThickness,
+                rotationRadians: rotationRadians,
+                isHorizontal: true
             )
         case .topLeading, .topTrailing, .bottomLeading, .bottomTrailing:
             break
@@ -1189,13 +1198,14 @@ final class iOSCanvasViewportView: UIView {
         centeredAt center: CGPoint,
         length: CGFloat,
         thickness: CGFloat,
-        rotationRadians: CGFloat
+        rotationRadians: CGFloat,
+        isHorizontal: Bool
     ) -> CGPath {
         let localRect = CGRect(
-            x: -thickness / 2,
-            y: -length / 2,
-            width: thickness,
-            height: length
+            x: isHorizontal ? -length / 2 : -thickness / 2,
+            y: isHorizontal ? -thickness / 2 : -length / 2,
+            width: isHorizontal ? length : thickness,
+            height: isHorizontal ? thickness : length
         )
         var transform = CGAffineTransform(translationX: center.x, y: center.y)
         transform = transform.rotated(by: rotationRadians)
@@ -1536,7 +1546,7 @@ final class iOSCanvasViewportView: UIView {
                 return
             }
 
-            onPan?(delta)
+            onPan?(delta, gestureRecognizer.location(in: self))
             gestureRecognizer.setTranslation(.zero, in: self)
         default:
             break

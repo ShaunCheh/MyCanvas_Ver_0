@@ -128,6 +128,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     private static let cropOutlineHitTargetWidth: CGFloat = 14
     private static let minimumCropViewportDimension: CGFloat = 20
     private static let rotateHandleHitTargetSize: CGFloat = 22
+    private static let geometryComparisonEpsilon: CGFloat = 0.0001
+    private static let markdownScrollHistoryCommitDelay: TimeInterval = 0.25
     private static let observedKeyboardShortcutReuseWindow: TimeInterval = 0.45
     private static let continuousRawInputObservationInterval: TimeInterval = 0.32
 
@@ -140,6 +142,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         saveQueueLabel: "MyCanvas.BoardSave.macOS",
         logPrefix: "[BoardStore][macOS]"
     )
+    private var isMarkdownScrollHistoryTransactionActive = false
+    private var markdownScrollHistoryCommitWorkItem: DispatchWorkItem?
     private let commandCatalog = CanvasCommandCatalog()
     private let markdownSelectionAccessoryResolver =
         CanvasMarkdownSelectionAccessoryResolver()
@@ -1603,7 +1607,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         canvasViewportView.onSecondaryClick = { [weak self] location in
             self?.handleSecondaryClick(at: location)
         }
-        canvasViewportView.onPan = { [weak self] translation in
+        canvasViewportView.onPan = { [weak self] translation, location in
             self?.observeContinuousRawInput(
                 .pointerScrollGesture,
                 sourceDescription: RawInputDeliverySource.scrollGesture.debugName,
@@ -1612,7 +1616,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             guard self?.isTransitionInteractionFrozen == false else {
                 return
             }
-            self?.handleIndirectPan(translation)
+            self?.handleIndirectPan(translation, at: location)
         }
         canvasViewportView.onZoom = { [weak self] scaleDelta, anchor in
             self?.observeContinuousRawInput(
@@ -2164,17 +2168,81 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         return distanceSquared >= thresholdSquared
     }
 
-    private func handleIndirectPan(_ translation: CGPoint) {
+    private func handleIndirectPan(
+        _ translation: CGPoint,
+        at viewportLocation: CGPoint
+    ) {
         if contextMenuState != nil {
             dismissContextMenu()
             return
         }
 
-        camera.pan(by: translation)
-        refreshCanvas()
+        guard case .idle = pointerDragState else {
+            return
+        }
+
+        let remainingTranslation =
+            consumeMarkdownScrollIfNeeded(
+                for: translation,
+                at: viewportLocation
+            )
+            ?? translation
+        guard remainingTranslation != .zero else {
+            return
+        }
+
+        camera.pan(by: remainingTranslation)
+        refreshCanvas(reason: "indirect pan \(describe(point: remainingTranslation))")
         scheduleAutosave(
             reason: "pan canvas",
             updateKind: .viewStateOnly
+        )
+    }
+
+    private func consumeMarkdownScrollIfNeeded(
+        for translation: CGPoint,
+        at viewportLocation: CGPoint
+    ) -> CGPoint? {
+        guard isInlineEditModeActive == false else {
+            return nil
+        }
+        let worldLocation = camera.viewportToWorld(viewportLocation)
+        guard let markdownItem = scene.topmostBoardItem(containing: worldLocation)?.markdownItem else {
+            return nil
+        }
+        let contentHeight = editorSession.measuredMarkdownContentHeight(for: markdownItem)
+        let maxScrollOffsetY = max(contentHeight - markdownItem.size.height, 0)
+        guard maxScrollOffsetY > Self.geometryComparisonEpsilon else {
+            return nil
+        }
+
+        let resolvedZoomScale =
+            camera.zoomScale.isFinite && camera.zoomScale > 0 ? camera.zoomScale : 1
+        let proposedScrollDeltaY = -translation.y / resolvedZoomScale
+        guard proposedScrollDeltaY.isFinite else {
+            return translation
+        }
+
+        let resolvedScrollOffsetY = min(
+            max(markdownItem.scrollOffsetY + proposedScrollDeltaY, 0),
+            maxScrollOffsetY
+        )
+        let appliedScrollDeltaY = resolvedScrollOffsetY - markdownItem.scrollOffsetY
+        if abs(appliedScrollDeltaY) > Self.geometryComparisonEpsilon {
+            beginMarkdownScrollHistoryTransactionIfNeeded()
+            if editorSession.updateMarkdownItemScrollOffset(
+                withID: markdownItem.id,
+                scrollOffsetY: resolvedScrollOffsetY
+            ) != nil {
+                refreshCanvas(reason: "scroll markdown item")
+                scheduleMarkdownScrollHistoryCommit()
+            }
+        }
+
+        let consumedViewportDeltaY = -appliedScrollDeltaY * resolvedZoomScale
+        return CGPoint(
+            x: translation.x,
+            y: translation.y - consumedViewportDeltaY
         )
     }
 
@@ -4194,6 +4262,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         let minimumScale: CGFloat
         if handleRole.isWidthOnly {
             minimumScale = minimumWorldDimension / initialLocalFrame.width
+        } else if handleRole.isHeightOnly {
+            minimumScale = minimumWorldDimension / initialLocalFrame.height
         } else {
             minimumScale = max(
                 minimumWorldDimension / initialLocalFrame.width,
@@ -4231,6 +4301,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         let minimumScale: CGFloat
         if handleRole.isWidthOnly {
             minimumScale = minimumWorldDimension / snapshot.selectionBounds.width
+        } else if handleRole.isHeightOnly {
+            minimumScale = minimumWorldDimension / snapshot.selectionBounds.height
         } else {
             minimumScale = max(
                 minimumWorldDimension / snapshot.selectionBounds.width,
@@ -4259,21 +4331,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         else {
             return
         }
-        let resizedLocalFrame: CGRect
-        if let markdownItem = currentItem.markdownItem, resizeState.handleRole.isWidthOnly {
-            let measuredSize = editorSession.measuredMarkdownItemSize(
-                for: markdownItem.markdownSource,
-                style: markdownItem.style,
-                layoutWidth: proposedLocalFrame.width
-            )
-            resizedLocalFrame = localFrame(
-                for: resizeState.handleRole,
-                withFixedOppositeCorner: resizeState.fixedOppositeLocalCorner,
-                size: measuredSize
-            )
-        } else {
-            resizedLocalFrame = proposedLocalFrame
-        }
+        let resizedLocalFrame = proposedLocalFrame
 
         let resizedCenter = referenceWorldPoint(
             fromLocal: CGPoint(
@@ -4283,19 +4341,35 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             center: resizeState.referenceCenter,
             rotationRadians: resizeState.referenceRotationRadians
         )
-        guard
-            currentItem.center != resizedCenter ||
-            currentItem.size != resizedLocalFrame.size
-        else {
-            return
-        }
-
-        guard let resizedItem = scene.resizeBoardItem(
-            withID: resizeState.itemID,
-            toCenter: resizedCenter,
-            size: resizedLocalFrame.size
-        ) else {
-            return
+        let resizedItem: CanvasBoardItem
+        if let markdownItem = currentItem.markdownItem {
+            let updatedItem = editorSession.normalizedMarkdownItem(
+                markdownItem,
+                center: resizedCenter,
+                size: resizedLocalFrame.size
+            )
+            guard
+                currentItem.center != updatedItem.center ||
+                currentItem.size != updatedItem.size ||
+                abs(updatedItem.scrollOffsetY - markdownItem.scrollOffsetY) > Self.geometryComparisonEpsilon,
+                let appliedItem = scene.applyBoardItems([.markdown(updatedItem)])?.first
+            else {
+                return
+            }
+            resizedItem = appliedItem
+        } else {
+            guard
+                currentItem.center != resizedCenter ||
+                currentItem.size != resizedLocalFrame.size,
+                let appliedItem = scene.resizeBoardItem(
+                    withID: resizeState.itemID,
+                    toCenter: resizedCenter,
+                    size: resizedLocalFrame.size
+                )
+            else {
+                return
+            }
+            resizedItem = appliedItem
         }
 
         expandBoardIfNeeded(toInclude: resizedItem.worldBounds)
@@ -4378,6 +4452,15 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
                 width: resizeState.initialLocalFrame.width * resolvedWidthScale,
                 height: resizeState.initialLocalFrame.height
             )
+        } else if resizeState.handleRole.isHeightOnly {
+            let resolvedHeightScale = max(heightScale, resizeState.minimumScale)
+            guard resolvedHeightScale.isFinite else {
+                return nil
+            }
+            resizedSize = CGSize(
+                width: resizeState.initialLocalFrame.width,
+                height: resizeState.initialLocalFrame.height * resolvedHeightScale
+            )
         } else {
             let scale = max(widthScale, heightScale, resizeState.minimumScale)
             guard scale.isFinite else {
@@ -4403,12 +4486,16 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         switch handleRole {
         case .topLeading:
             return CGPoint(x: localFrame.maxX, y: localFrame.maxY)
+        case .top:
+            return CGPoint(x: localFrame.midX, y: localFrame.maxY)
         case .topTrailing:
             return CGPoint(x: localFrame.minX, y: localFrame.maxY)
         case .bottomLeading:
             return CGPoint(x: localFrame.maxX, y: localFrame.minY)
         case .bottomTrailing:
             return CGPoint(x: localFrame.minX, y: localFrame.minY)
+        case .bottom:
+            return CGPoint(x: localFrame.midX, y: localFrame.minY)
         case .leading:
             return CGPoint(x: localFrame.maxX, y: localFrame.midY)
         case .trailing:
@@ -4429,6 +4516,11 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
                 x: min(draggedLocalCorner.x, oppositeCorner.x - minimumWidth),
                 y: min(draggedLocalCorner.y, oppositeCorner.y - minimumHeight)
             )
+        case .top:
+            return CGPoint(
+                x: oppositeCorner.x,
+                y: min(draggedLocalCorner.y, oppositeCorner.y - minimumHeight)
+            )
         case .topTrailing:
             return CGPoint(
                 x: max(draggedLocalCorner.x, oppositeCorner.x + minimumWidth),
@@ -4442,6 +4534,11 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         case .bottomTrailing:
             return CGPoint(
                 x: max(draggedLocalCorner.x, oppositeCorner.x + minimumWidth),
+                y: max(draggedLocalCorner.y, oppositeCorner.y + minimumHeight)
+            )
+        case .bottom:
+            return CGPoint(
+                x: oppositeCorner.x,
                 y: max(draggedLocalCorner.y, oppositeCorner.y + minimumHeight)
             )
         case .leading:
@@ -4470,6 +4567,13 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
                 width: size.width,
                 height: size.height
             )
+        case .top:
+            return CGRect(
+                x: oppositeCorner.x - (size.width / 2),
+                y: oppositeCorner.y - size.height,
+                width: size.width,
+                height: size.height
+            )
         case .topTrailing:
             return CGRect(
                 x: oppositeCorner.x,
@@ -4487,6 +4591,13 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         case .bottomTrailing:
             return CGRect(
                 x: oppositeCorner.x,
+                y: oppositeCorner.y,
+                width: size.width,
+                height: size.height
+            )
+        case .bottom:
+            return CGRect(
+                x: oppositeCorner.x - (size.width / 2),
                 y: oppositeCorner.y,
                 width: size.width,
                 height: size.height
@@ -4994,6 +5105,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     private func beginPointerHistoryTransactionIfNeeded(
         for pressContext: CanvasPointerPressContext
     ) {
+        commitMarkdownScrollHistoryTransactionIfNeeded()
         let reason: String
         switch pressContext.targetKind {
         case .rotateHandle:
@@ -5015,6 +5127,41 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         }
 
         editorSession.beginHistoryTransaction(reason: reason)
+    }
+
+    private func beginMarkdownScrollHistoryTransactionIfNeeded() {
+        guard isMarkdownScrollHistoryTransactionActive == false else {
+            return
+        }
+        editorSession.beginHistoryTransaction(reason: "scroll markdown item")
+        isMarkdownScrollHistoryTransactionActive = true
+    }
+
+    private func scheduleMarkdownScrollHistoryCommit() {
+        markdownScrollHistoryCommitWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.commitMarkdownScrollHistoryTransactionIfNeeded()
+        }
+        markdownScrollHistoryCommitWorkItem = workItem
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + Self.markdownScrollHistoryCommitDelay,
+            execute: workItem
+        )
+    }
+
+    private func commitMarkdownScrollHistoryTransactionIfNeeded() {
+        markdownScrollHistoryCommitWorkItem?.cancel()
+        markdownScrollHistoryCommitWorkItem = nil
+        guard isMarkdownScrollHistoryTransactionActive else {
+            return
+        }
+        isMarkdownScrollHistoryTransactionActive = false
+        guard editorSession.commitPendingHistoryTransaction(
+            autosaveReason: "scroll markdown item"
+        ) else {
+            return
+        }
+        updateInlineEditButtonsAppearance()
     }
 
     private func commitPendingPointerHistoryTransaction(

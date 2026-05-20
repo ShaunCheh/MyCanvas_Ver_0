@@ -122,7 +122,8 @@ final class CanvasCommandPolicyParityTests: XCTestCase {
             markdownSource: source,
             style: style,
             center: CGPoint(x: 40, y: 30),
-            size: CGSize(width: 80, height: 60)
+            size: CGSize(width: 80, height: 60),
+            scrollOffsetY: 10_000
         )
         session.scene.append(originalItem)
 
@@ -147,10 +148,14 @@ final class CanvasCommandPolicyParityTests: XCTestCase {
                 originalLayoutWidth: originalItem.size.width
             )
         )
-        let expectedHeight = CanvasMarkdownLayoutMeasurer.measuredContentHeight(
+        let expectedContentHeight = CanvasMarkdownLayoutMeasurer.measuredContentHeight(
             markdownSource: source,
             style: style,
             maxLayoutWidth: provisionalItem.size.width
+        )
+        let expectedScrollOffsetY = min(
+            originalItem.scrollOffsetY,
+            max(expectedContentHeight - provisionalItem.size.height, 0)
         )
         let committedFixedCorner = committedItem.worldPoint(
             fromLocal: CGPoint(
@@ -160,17 +165,18 @@ final class CanvasCommandPolicyParityTests: XCTestCase {
         )
 
         XCTAssertEqual(committedItem.size.width, provisionalItem.size.width, accuracy: 0.0001)
-        XCTAssertEqual(committedItem.size.height, expectedHeight, accuracy: 0.0001)
+        XCTAssertEqual(committedItem.size.height, provisionalItem.size.height, accuracy: 0.0001)
+        XCTAssertEqual(committedItem.scrollOffsetY, expectedScrollOffsetY, accuracy: 0.0001)
         XCTAssertEqual(committedFixedCorner.x, provisionalFixedCorner.x, accuracy: 0.0001)
         XCTAssertEqual(committedFixedCorner.y, provisionalFixedCorner.y, accuracy: 0.0001)
     }
 
-    func testFinalizeMarkdownWidthOnlyResizeCommitRemeasuresHeightAndPreservesFixedEdge() throws {
+    func testFinalizeMarkdownWidthOnlyResizeCommitClampsScrollAndPreservesFixedEdge() throws {
         let session = makeCommandPolicyParityTestSession(workspaceMode: .editing)
         let source = """
         ## Markdown
 
-        A wrapped paragraph that should only resize by width and remeasure height from content.
+        A wrapped paragraph that should only resize by width while keeping the explicit viewport height.
 
         - First
         - Second
@@ -180,7 +186,8 @@ final class CanvasCommandPolicyParityTests: XCTestCase {
             markdownSource: source,
             style: style,
             center: CGPoint(x: 40, y: 30),
-            size: CGSize(width: 80, height: 60)
+            size: CGSize(width: 80, height: 60),
+            scrollOffsetY: 10_000
         )
         session.scene.append(originalItem)
 
@@ -205,10 +212,14 @@ final class CanvasCommandPolicyParityTests: XCTestCase {
                 originalLayoutWidth: originalItem.size.width
             )
         )
-        let expectedHeight = CanvasMarkdownLayoutMeasurer.measuredContentHeight(
+        let expectedContentHeight = CanvasMarkdownLayoutMeasurer.measuredContentHeight(
             markdownSource: source,
             style: style,
             maxLayoutWidth: provisionalItem.size.width
+        )
+        let expectedScrollOffsetY = min(
+            originalItem.scrollOffsetY,
+            max(expectedContentHeight - provisionalItem.size.height, 0)
         )
         let committedFixedEdgeAnchor = committedItem.worldPoint(
             fromLocal: CGPoint(
@@ -218,8 +229,9 @@ final class CanvasCommandPolicyParityTests: XCTestCase {
         )
 
         XCTAssertEqual(committedItem.size.width, provisionalItem.size.width, accuracy: 0.0001)
-        XCTAssertEqual(committedItem.size.height, expectedHeight, accuracy: 0.0001)
+        XCTAssertEqual(committedItem.size.height, provisionalItem.size.height, accuracy: 0.0001)
         XCTAssertEqual(committedItem.center.y, provisionalItem.center.y, accuracy: 0.0001)
+        XCTAssertEqual(committedItem.scrollOffsetY, expectedScrollOffsetY, accuracy: 0.0001)
         XCTAssertEqual(committedFixedEdgeAnchor.x, provisionalFixedEdgeAnchor.x, accuracy: 0.0001)
         XCTAssertEqual(committedFixedEdgeAnchor.y, provisionalFixedEdgeAnchor.y, accuracy: 0.0001)
     }
@@ -451,7 +463,7 @@ final class CanvasCommandPolicyParityTests: XCTestCase {
         XCTAssertEqual(redoneItem.size, resizedItem.size)
     }
 
-    func testIncreaseMarkdownContentSizeCommandRecordsHistoryAndSupportsUndoRedo() throws {
+    func testIncreaseMarkdownContentSizeCommandPreservesViewportHeightAndSupportsUndoRedo() throws {
         let session = makeCommandPolicyParityTestSession(workspaceMode: .editing)
         let executor = CanvasCommandExecutor(session: session)
         CanvasCommandPolicyParityTestRetainer.executors.append(executor)
@@ -477,14 +489,9 @@ final class CanvasCommandPolicyParityTests: XCTestCase {
         XCTAssertNotNil(executor.execute(.increaseMarkdownContentSize))
 
         let resizedItem = try XCTUnwrap(session.scene.markdownItem(withID: item.id))
-        let expectedResizedHeight = CanvasMarkdownLayoutMeasurer.measuredContentHeight(
-            markdownSource: originalItem.markdownSource,
-            style: resizedItem.style,
-            maxLayoutWidth: originalItem.size.width
-        )
         XCTAssertGreaterThan(resizedItem.style.fontSize, originalItem.style.fontSize)
         XCTAssertEqual(resizedItem.size.width, originalItem.size.width)
-        XCTAssertEqual(resizedItem.size.height, expectedResizedHeight, accuracy: 0.0001)
+        XCTAssertEqual(resizedItem.size.height, originalItem.size.height, accuracy: 0.0001)
         XCTAssertEqual(resizedItem.markdownSource, originalItem.markdownSource)
 
         XCTAssertNotNil(executor.execute(.undo))
@@ -502,7 +509,7 @@ final class CanvasCommandPolicyParityTests: XCTestCase {
         XCTAssertEqual(redoneItem.markdownSource, resizedItem.markdownSource)
     }
 
-    func testCommitMarkdownEditKeepsCurrentWidthAndRemeasuresHeight() throws {
+    func testCommitMarkdownEditKeepsCurrentWidthAndViewportHeight() throws {
         let session = makeCommandPolicyParityTestSession(workspaceMode: .editing)
         let item = try XCTUnwrap(
             session.addMarkdownItem(
@@ -531,15 +538,10 @@ final class CanvasCommandPolicyParityTests: XCTestCase {
             )
         )
         let updatedItem = try XCTUnwrap(session.scene.markdownItem(withID: item.id))
-        let expectedHeight = CanvasMarkdownLayoutMeasurer.measuredContentHeight(
-            markdownSource: updatedSource,
-            style: customizedItem.style,
-            maxLayoutWidth: customizedItem.size.width
-        )
 
         XCTAssertTrue(commitResult.didChangeDocument)
         XCTAssertEqual(updatedItem.size.width, customizedItem.size.width)
-        XCTAssertEqual(updatedItem.size.height, expectedHeight, accuracy: 0.0001)
+        XCTAssertEqual(updatedItem.size.height, customizedItem.size.height, accuracy: 0.0001)
         XCTAssertEqual(updatedItem.markdownSource, updatedSource)
     }
 

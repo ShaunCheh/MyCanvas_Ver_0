@@ -788,6 +788,7 @@ struct BoardMarkdownItemRecord: Codable, Equatable {
     var markdownSource: String
     var style: BoardTextStyleRecord
     var rotationRadians: Double?
+    var scrollOffsetY: Double? = nil
 }
 
 struct BoardHandDrawingPaperRecord: Codable, Equatable {

@@ -167,6 +167,9 @@ struct CanvasMarkdownItem {
     // clip height and may intentionally differ from the current intrinsic
     // content height after manual resize.
     var size: CGSize
+    // Scroll is stored in logical markdown coordinates so overflow presentation
+    // survives save/load, undo/redo, and duplication.
+    var scrollOffsetY: CGFloat
     var zIndex: CGFloat
     var rotationRadians: CGFloat
 
@@ -176,6 +179,7 @@ struct CanvasMarkdownItem {
         style: CanvasTextStyle = .default,
         center: CGPoint,
         size: CGSize,
+        scrollOffsetY: CGFloat = 0,
         zIndex: CGFloat = 0,
         rotationRadians: CGFloat = 0
     ) {
@@ -184,6 +188,7 @@ struct CanvasMarkdownItem {
         self.style = style
         self.center = center
         self.size = size
+        self.scrollOffsetY = scrollOffsetY
         self.zIndex = zIndex
         self.rotationRadians = rotationRadians
     }
@@ -244,6 +249,7 @@ struct CanvasMarkdownItem {
             style == other.style &&
             center == other.center &&
             size == other.size &&
+            scrollOffsetY == other.scrollOffsetY &&
             zIndex == other.zIndex &&
             rotationRadians == other.rotationRadians
     }

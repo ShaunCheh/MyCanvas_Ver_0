@@ -259,7 +259,8 @@ final class CanvasSelectionTransformStateTests: XCTestCase {
             markdownSource: "## Title\n\nA longer markdown paragraph that should reflow when width changes.",
             style: markdownStyle,
             center: CGPoint(x: 40, y: 30),
-            size: CGSize(width: 80, height: 60)
+            size: CGSize(width: 80, height: 60),
+            scrollOffsetY: 18
         )
         let snapshot = CanvasSelectionTransformSnapshot(
             primaryItemID: markdownItem.id,
@@ -277,16 +278,21 @@ final class CanvasSelectionTransformStateTests: XCTestCase {
         let resizedMarkdownItem = try XCTUnwrap(
             resizedItems.first?.markdownItem
         )
-        let expectedHeight = CanvasMarkdownLayoutMeasurer.measuredContentHeight(
+        let expectedContentHeight = CanvasMarkdownLayoutMeasurer.measuredContentHeight(
             markdownSource: markdownItem.markdownSource,
             style: markdownStyle,
             maxLayoutWidth: 160
+        )
+        let expectedScrollOffsetY = min(
+            markdownItem.scrollOffsetY,
+            max(expectedContentHeight - markdownItem.size.height, 0)
         )
 
         XCTAssertEqual(resizedMarkdownItem.center.x, 80, accuracy: 0.0001)
         XCTAssertEqual(resizedMarkdownItem.center.y, markdownItem.center.y, accuracy: 0.0001)
         XCTAssertEqual(resizedMarkdownItem.size.width, 160, accuracy: 0.0001)
-        XCTAssertEqual(resizedMarkdownItem.size.height, expectedHeight, accuracy: 0.0001)
+        XCTAssertEqual(resizedMarkdownItem.size.height, markdownItem.size.height, accuracy: 0.0001)
+        XCTAssertEqual(resizedMarkdownItem.scrollOffsetY, expectedScrollOffsetY, accuracy: 0.0001)
         XCTAssertEqual(resizedMarkdownItem.style, markdownItem.style)
     }
 
@@ -295,13 +301,15 @@ final class CanvasSelectionTransformStateTests: XCTestCase {
             markdownSource: "## First\n\nAlpha beta gamma delta.",
             style: CanvasTextStyle(fontSize: 20),
             center: CGPoint(x: 40, y: 30),
-            size: CGSize(width: 80, height: 60)
+            size: CGSize(width: 80, height: 60),
+            scrollOffsetY: 10
         )
         let secondItem = CanvasMarkdownItem(
             markdownSource: "## Second\n\nA different markdown paragraph that also reflows.",
             style: CanvasTextStyle(fontSize: 18),
             center: CGPoint(x: 140, y: 50),
-            size: CGSize(width: 60, height: 40)
+            size: CGSize(width: 60, height: 40),
+            scrollOffsetY: 6
         )
         let snapshot = CanvasSelectionTransformSnapshot(
             primaryItemID: secondItem.id,
@@ -322,12 +330,12 @@ final class CanvasSelectionTransformStateTests: XCTestCase {
         let resizedSecondItem = try XCTUnwrap(
             resizedItems.first(where: { $0.id == secondItem.id })?.markdownItem
         )
-        let expectedFirstHeight = CanvasMarkdownLayoutMeasurer.measuredContentHeight(
+        let expectedFirstContentHeight = CanvasMarkdownLayoutMeasurer.measuredContentHeight(
             markdownSource: firstItem.markdownSource,
             style: firstItem.style,
             maxLayoutWidth: 120
         )
-        let expectedSecondHeight = CanvasMarkdownLayoutMeasurer.measuredContentHeight(
+        let expectedSecondContentHeight = CanvasMarkdownLayoutMeasurer.measuredContentHeight(
             markdownSource: secondItem.markdownSource,
             style: secondItem.style,
             maxLayoutWidth: 90
@@ -336,12 +344,54 @@ final class CanvasSelectionTransformStateTests: XCTestCase {
         XCTAssertEqual(resizedFirstItem.center.x, 60, accuracy: 0.0001)
         XCTAssertEqual(resizedFirstItem.center.y, firstItem.center.y, accuracy: 0.0001)
         XCTAssertEqual(resizedFirstItem.size.width, 120, accuracy: 0.0001)
-        XCTAssertEqual(resizedFirstItem.size.height, expectedFirstHeight, accuracy: 0.0001)
+        XCTAssertEqual(resizedFirstItem.size.height, firstItem.size.height, accuracy: 0.0001)
+        XCTAssertEqual(
+            resizedFirstItem.scrollOffsetY,
+            min(firstItem.scrollOffsetY, max(expectedFirstContentHeight - firstItem.size.height, 0)),
+            accuracy: 0.0001
+        )
 
         XCTAssertEqual(resizedSecondItem.center.x, 210, accuracy: 0.0001)
         XCTAssertEqual(resizedSecondItem.center.y, secondItem.center.y, accuracy: 0.0001)
         XCTAssertEqual(resizedSecondItem.size.width, 90, accuracy: 0.0001)
-        XCTAssertEqual(resizedSecondItem.size.height, expectedSecondHeight, accuracy: 0.0001)
+        XCTAssertEqual(resizedSecondItem.size.height, secondItem.size.height, accuracy: 0.0001)
+        XCTAssertEqual(
+            resizedSecondItem.scrollOffsetY,
+            min(secondItem.scrollOffsetY, max(expectedSecondContentHeight - secondItem.size.height, 0)),
+            accuracy: 0.0001
+        )
+    }
+
+    func testResizedMemberItemsUseHeightOnlyHandleForSingleMarkdownSelection() throws {
+        let markdownItem = CanvasMarkdownItem(
+            markdownSource: "## Title\n\nA longer markdown paragraph that can overflow.",
+            style: CanvasTextStyle(fontSize: 20),
+            center: CGPoint(x: 40, y: 60),
+            size: CGSize(width: 120, height: 80),
+            scrollOffsetY: 18
+        )
+        let snapshot = CanvasSelectionTransformSnapshot(
+            primaryItemID: markdownItem.id,
+            memberItems: [.markdown(markdownItem)],
+            selectionBounds: CGRect(x: -20, y: 20, width: 120, height: 80)
+        )
+
+        let resizedItems = try XCTUnwrap(
+            snapshot.resizedMemberItems(
+                handleRole: .bottom,
+                draggedWorldCorner: CGPoint(x: 40, y: 140),
+                minimumScale: 0.1
+            )
+        )
+        let resizedMarkdownItem = try XCTUnwrap(
+            resizedItems.first?.markdownItem
+        )
+
+        XCTAssertEqual(resizedMarkdownItem.center.x, markdownItem.center.x, accuracy: 0.0001)
+        XCTAssertEqual(resizedMarkdownItem.center.y, 80, accuracy: 0.0001)
+        XCTAssertEqual(resizedMarkdownItem.size.width, markdownItem.size.width, accuracy: 0.0001)
+        XCTAssertEqual(resizedMarkdownItem.size.height, 120, accuracy: 0.0001)
+        XCTAssertEqual(resizedMarkdownItem.scrollOffsetY, markdownItem.scrollOffsetY, accuracy: 0.0001)
     }
 }
 

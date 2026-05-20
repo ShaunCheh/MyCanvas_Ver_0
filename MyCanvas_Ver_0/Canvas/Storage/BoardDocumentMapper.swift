@@ -142,6 +142,7 @@ enum BoardDocumentMapper {
             style: markdownRecord.style.canvasTextStyle,
             center: markdownRecord.center.cgPoint,
             size: markdownRecord.size.cgSize,
+            scrollOffsetY: CGFloat(markdownRecord.scrollOffsetY ?? 0),
             zIndex: CGFloat(markdownRecord.zIndex),
             rotationRadians: CGFloat(markdownRecord.rotationRadians ?? 0)
         )
@@ -206,7 +207,8 @@ enum BoardDocumentMapper {
             zIndex: Double(item.zIndex),
             markdownSource: item.markdownSource,
             style: BoardTextStyleRecord(item.style),
-            rotationRadians: Double(item.rotationRadians)
+            rotationRadians: Double(item.rotationRadians),
+            scrollOffsetY: Double(item.scrollOffsetY)
         )
     }
 

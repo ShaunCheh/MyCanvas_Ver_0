@@ -57,6 +57,7 @@ final class CanvasMarkdownContentLayer: CALayer {
     private let layoutProvider: LayoutProvider
     private var lastAppliedContentsScale: CGFloat
     private var lastAppliedLayoutSize: CGSize
+    private var lastAppliedScrollOffsetY: CGFloat
     private var activeLayoutKey: LayoutCacheKey?
     private var activeBitmapKey: BitmapCacheKey?
     private var activeLayout: CanvasMarkdownLayoutResult?
@@ -73,6 +74,7 @@ final class CanvasMarkdownContentLayer: CALayer {
         self.layoutProvider = layoutProvider
         lastAppliedContentsScale = .nan
         lastAppliedLayoutSize = CGSize(width: CGFloat.nan, height: CGFloat.nan)
+        lastAppliedScrollOffsetY = .nan
         activeLayoutKey = nil
         activeBitmapKey = nil
         activeLayout = nil
@@ -89,6 +91,7 @@ final class CanvasMarkdownContentLayer: CALayer {
             layoutProvider = contentLayer.layoutProvider
             lastAppliedContentsScale = contentLayer.lastAppliedContentsScale
             lastAppliedLayoutSize = contentLayer.lastAppliedLayoutSize
+            lastAppliedScrollOffsetY = contentLayer.lastAppliedScrollOffsetY
             activeLayoutKey = contentLayer.activeLayoutKey
             activeBitmapKey = contentLayer.activeBitmapKey
             activeLayout = contentLayer.activeLayout
@@ -100,6 +103,7 @@ final class CanvasMarkdownContentLayer: CALayer {
             layoutProvider = CanvasMarkdownContentLayer.defaultLayout(for:)
             lastAppliedContentsScale = .nan
             lastAppliedLayoutSize = CGSize(width: CGFloat.nan, height: CGFloat.nan)
+            lastAppliedScrollOffsetY = .nan
             activeLayoutKey = nil
             activeBitmapKey = nil
             activeLayout = nil
@@ -133,6 +137,7 @@ final class CanvasMarkdownContentLayer: CALayer {
             layoutKey: layoutKey
         )
         applyLayoutGeometry(layout)
+        applyScrollOffset(markdownPayload: markdownPayload, layout: layout)
 
         let rasterScaleBucket = resolvedRasterScaleBucket(
             markdownPayload: markdownPayload,
@@ -237,6 +242,25 @@ final class CanvasMarkdownContentLayer: CALayer {
         lastAppliedLayoutSize = layout.contentSize
     }
 
+    private func applyScrollOffset(
+        markdownPayload: CanvasMarkdownRenderPayload,
+        layout: CanvasMarkdownLayoutResult
+    ) {
+        let maxScrollOffsetY = max(
+            layout.contentSize.height - markdownPayload.logicalSize.height,
+            0
+        )
+        let resolvedScrollOffsetY = min(
+            max(markdownPayload.scrollOffsetY, 0),
+            maxScrollOffsetY
+        )
+        guard lastAppliedScrollOffsetY != resolvedScrollOffsetY else {
+            return
+        }
+        position = CGPoint(x: 0, y: -resolvedScrollOffsetY)
+        lastAppliedScrollOffsetY = resolvedScrollOffsetY
+    }
+
     private func resolvedRasterScaleBucket(
         markdownPayload: CanvasMarkdownRenderPayload,
         contentsScale: CGFloat
@@ -272,8 +296,7 @@ final class CanvasMarkdownContentLayer: CALayer {
         let widthDelta = layout.contentSize.width - markdownPayload.logicalSize.width
         let heightDelta = layout.contentSize.height - markdownPayload.logicalSize.height
         guard
-            abs(widthDelta) > Self.layoutMismatchThreshold ||
-            abs(heightDelta) > Self.layoutMismatchThreshold
+            abs(widthDelta) > Self.layoutMismatchThreshold
         else {
             return
         }

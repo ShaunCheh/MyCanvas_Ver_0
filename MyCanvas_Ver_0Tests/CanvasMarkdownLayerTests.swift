@@ -16,6 +16,7 @@ final class CanvasMarkdownLayerTests: XCTestCase {
             """,
             style: CanvasTextStyle(fontSize: 18),
             logicalSize: CGSize(width: 220, height: 120),
+            scrollOffsetY: 0,
             cameraZoomScale: 1.5
         )
         let renderItem = makeMarkdownLayerRenderItem(
@@ -59,6 +60,7 @@ final class CanvasMarkdownLayerTests: XCTestCase {
             """,
             style: CanvasTextStyle(fontSize: 18),
             logicalSize: CGSize(width: 260, height: 140),
+            scrollOffsetY: 0,
             cameraZoomScale: 1
         )
         let wideRenderItem = makeMarkdownLayerRenderItem(
@@ -76,6 +78,7 @@ final class CanvasMarkdownLayerTests: XCTestCase {
             markdownSource: widePayload.markdownSource,
             style: widePayload.style,
             logicalSize: CGSize(width: 140, height: 140),
+            scrollOffsetY: 0,
             cameraZoomScale: 1
         )
         let narrowRenderItem = makeMarkdownLayerRenderItem(
@@ -107,6 +110,7 @@ final class CanvasMarkdownLayerTests: XCTestCase {
             """,
             style: CanvasTextStyle(fontSize: 18),
             logicalSize: CGSize(width: 220, height: 80),
+            scrollOffsetY: 0,
             cameraZoomScale: 1
         )
         let compactRenderItem = makeMarkdownLayerRenderItem(itemID: itemID, payload: compactPayload)
@@ -122,6 +126,7 @@ final class CanvasMarkdownLayerTests: XCTestCase {
             markdownSource: compactPayload.markdownSource,
             style: compactPayload.style,
             logicalSize: CGSize(width: 220, height: 180),
+            scrollOffsetY: 0,
             cameraZoomScale: 1
         )
         let tallerRenderItem = makeMarkdownLayerRenderItem(itemID: itemID, payload: tallerPayload)
@@ -136,6 +141,7 @@ final class CanvasMarkdownLayerTests: XCTestCase {
             markdownSource: compactPayload.markdownSource,
             style: compactPayload.style,
             logicalSize: tallerPayload.logicalSize,
+            scrollOffsetY: 0,
             cameraZoomScale: 1.5
         )
         let zoomedRenderItem = makeMarkdownLayerRenderItem(itemID: itemID, payload: zoomedPayload)
@@ -154,6 +160,49 @@ final class CanvasMarkdownLayerTests: XCTestCase {
         XCTAssertEqual(tallerImage.height, compactImage.height)
         XCTAssertEqual(zoomedImage.width, Int(ceil(expectedLayout.contentSize.width * 3)))
         XCTAssertEqual(zoomedImage.height, Int(ceil(expectedLayout.contentSize.height * 3)))
+    }
+
+    func testContentLayerOffsetsBitmapByClampedScrollOffset() {
+        let itemID = CanvasItemID()
+        let layer = CanvasMarkdownItemLayer(itemID: itemID)
+        let payload = CanvasMarkdownRenderPayload(
+            markdownSource: """
+            ## Title
+
+            Line 1
+
+            Line 2
+
+            Line 3
+
+            Line 4
+            """,
+            style: CanvasTextStyle(fontSize: 18),
+            logicalSize: CGSize(width: 220, height: 72),
+            scrollOffsetY: 10_000,
+            cameraZoomScale: 1
+        )
+        let renderItem = makeMarkdownLayerRenderItem(
+            itemID: itemID,
+            payload: payload
+        )
+        let expectedLayout = makeExpectedMarkdownLayout(for: payload)
+        let expectedMaxScrollOffsetY = max(
+            expectedLayout.contentSize.height - payload.logicalSize.height,
+            0
+        )
+
+        layer.update(
+            with: renderItem,
+            markdownPayload: payload,
+            contentsScale: 2
+        )
+
+        XCTAssertEqual(
+            layer.contentLayer.position.y,
+            -expectedMaxScrollOffsetY,
+            accuracy: 0.0001
+        )
     }
 
     func testContentLayerSkipsLayoutAndBitmapRefreshWithinSameRasterBucket() throws {
@@ -291,12 +340,14 @@ private func makeMarkdownContentPayload(
     """,
     logicalWidth: CGFloat = 220,
     logicalHeight: CGFloat = 120,
+    scrollOffsetY: CGFloat = 0,
     cameraZoomScale: CGFloat
 ) -> CanvasMarkdownRenderPayload {
     CanvasMarkdownRenderPayload(
         markdownSource: markdownSource,
         style: CanvasTextStyle(fontSize: 18),
         logicalSize: CGSize(width: logicalWidth, height: logicalHeight),
+        scrollOffsetY: scrollOffsetY,
         cameraZoomScale: cameraZoomScale
     )
 }

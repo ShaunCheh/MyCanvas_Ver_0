@@ -41,13 +41,14 @@ final class CanvasMarkdownContractTests: XCTestCase {
         XCTAssertEqual(item.worldQuad.center, item.center)
     }
 
-    func testUpdateMarkdownItemContentKeepsCurrentWidthAndRemeasuresHeight() throws {
+    func testUpdateMarkdownItemContentKeepsExplicitViewportHeightAndClampsScrollOffset() throws {
         let session = makeMarkdownContractTestSession()
         let originalItem = CanvasMarkdownItem(
             markdownSource: "Seed",
             style: CanvasTextStyle(fontSize: 18),
             center: CGPoint(x: 40, y: 24),
             size: CGSize(width: 210, height: 48),
+            scrollOffsetY: 30,
             zIndex: 1,
             rotationRadians: .pi / 9
         )
@@ -67,17 +68,63 @@ final class CanvasMarkdownContractTests: XCTestCase {
                 style: updatedStyle
             )
         )
-        let expectedHeight = CanvasMarkdownLayoutMeasurer.measuredContentHeight(
+        let expectedContentHeight = CanvasMarkdownLayoutMeasurer.measuredContentHeight(
             markdownSource: updatedSource,
             style: updatedStyle,
             maxLayoutWidth: originalItem.size.width
+        )
+        let expectedScrollOffset = min(
+            max(originalItem.scrollOffsetY, 0),
+            max(expectedContentHeight - originalItem.size.height, 0)
         )
 
         XCTAssertEqual(updatedItem.center, originalItem.center)
         XCTAssertEqual(updatedItem.rotationRadians, originalItem.rotationRadians)
         XCTAssertEqual(updatedItem.zIndex, originalItem.zIndex)
         XCTAssertEqual(updatedItem.size.width, originalItem.size.width)
-        XCTAssertEqual(updatedItem.size.height, expectedHeight, accuracy: 0.0001)
+        XCTAssertEqual(updatedItem.size.height, originalItem.size.height, accuracy: 0.0001)
+        XCTAssertEqual(updatedItem.scrollOffsetY, expectedScrollOffset, accuracy: 0.0001)
+    }
+
+    func testUpdateMarkdownItemScrollOffsetClampsIntoOverflowRange() throws {
+        let session = makeMarkdownContractTestSession()
+        let item = CanvasMarkdownItem(
+            markdownSource: """
+            ## Scroll
+
+            Line 1
+
+            Line 2
+
+            Line 3
+
+            Line 4
+            """,
+            style: CanvasTextStyle(fontSize: 18),
+            center: CGPoint(x: 10, y: 20),
+            size: CGSize(width: 180, height: 52),
+            zIndex: 1
+        )
+        session.scene.append(item)
+
+        let updatedItem = try XCTUnwrap(
+            session.updateMarkdownItemScrollOffset(
+                withID: item.id,
+                scrollOffsetY: 10_000
+            )
+        )
+        let expectedContentHeight = CanvasMarkdownLayoutMeasurer.measuredContentHeight(
+            markdownSource: item.markdownSource,
+            style: item.style,
+            maxLayoutWidth: item.size.width
+        )
+
+        XCTAssertEqual(updatedItem.size, item.size)
+        XCTAssertEqual(
+            updatedItem.scrollOffsetY,
+            max(expectedContentHeight - item.size.height, 0),
+            accuracy: 0.0001
+        )
     }
 
     func testCanvasSnapshotMapsMarkdownWorldGeometryIntoSharedScreenContract() throws {
@@ -138,6 +185,7 @@ final class CanvasMarkdownContractTests: XCTestCase {
         XCTAssertEqual(payload.markdownSource, item.markdownSource)
         XCTAssertEqual(payload.style, item.style)
         XCTAssertEqual(payload.logicalSize, item.size)
+        XCTAssertEqual(payload.scrollOffsetY, item.scrollOffsetY)
         XCTAssertEqual(payload.cameraZoomScale, session.camera.zoomScale)
     }
 

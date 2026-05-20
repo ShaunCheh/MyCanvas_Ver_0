@@ -324,7 +324,7 @@ final class CanvasEditorSessionAlignmentOverlayTests: XCTestCase {
         let editOverlay = try XCTUnwrap(snapshot.editOverlay)
 
         XCTAssertEqual(editOverlay.itemID, item.id)
-        XCTAssertEqual(editOverlay.handles.map(\.role), [.leading, .trailing])
+        XCTAssertEqual(editOverlay.handles.map(\.role), [.top, .trailing, .bottom, .leading])
     }
 
     func testMakeCanvasSnapshotUsesWidthOnlyHandlesForAllMarkdownMultiSelection() throws {
@@ -349,7 +349,7 @@ final class CanvasEditorSessionAlignmentOverlayTests: XCTestCase {
         let snapshot = session.makeCanvasSnapshot()
         let editOverlay = try XCTUnwrap(snapshot.editOverlay)
 
-        XCTAssertEqual(editOverlay.handles.map(\.role), [.leading, .trailing])
+        XCTAssertEqual(editOverlay.handles.map(\.role), [.top, .trailing, .bottom, .leading])
     }
 
     func testResolvePointerTargetHitsSelectionTranslationAreaForSingleSelectionOutline() throws {

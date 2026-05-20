@@ -367,7 +367,8 @@ final class CanvasScene {
         withID id: CanvasItemID,
         markdownSource: String,
         style: CanvasTextStyle,
-        size: CGSize
+        size: CGSize,
+        scrollOffsetY: CGFloat? = nil
     ) -> CanvasMarkdownItem? {
         guard size.width > 0, size.height > 0 else {
             return nil
@@ -377,6 +378,20 @@ final class CanvasScene {
             markdownItem.markdownSource = markdownSource
             markdownItem.style = style
             markdownItem.size = size
+            if let scrollOffsetY {
+                markdownItem.scrollOffsetY = scrollOffsetY
+            }
+            return markdownItem
+        } ?? nil
+    }
+
+    @discardableResult
+    func updateMarkdownItemScrollOffset(
+        withID id: CanvasItemID,
+        scrollOffsetY: CGFloat
+    ) -> CanvasMarkdownItem? {
+        updateMarkdownItem(withID: id) { markdownItem in
+            markdownItem.scrollOffsetY = scrollOffsetY
             return markdownItem
         } ?? nil
     }
@@ -799,6 +814,7 @@ final class CanvasScene {
                         y: item.center.y + offsetInWorld.y
                     ),
                     size: item.size,
+                    scrollOffsetY: item.scrollOffsetY,
                     zIndex: item.zIndex,
                     rotationRadians: item.rotationRadians
                 )

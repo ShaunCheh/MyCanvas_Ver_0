@@ -882,6 +882,7 @@ struct CanvasRenderer {
                     markdownSource: effectiveMarkdownItem.markdownSource,
                     style: effectiveMarkdownItem.style,
                     logicalSize: effectiveMarkdownItem.size,
+                    scrollOffsetY: effectiveMarkdownItem.scrollOffsetY,
                     cameraZoomScale: camera.zoomScale
                 )
             )
@@ -899,6 +900,7 @@ struct CanvasRenderer {
             "[Canvas Markdown][Payload] " +
             "itemID=\(item.id.uuidString) " +
             "logicalSize=\(Self.debugMarkdownSize(item.size)) " +
+            "scrollOffsetY=\(Self.debugMarkdownScalar(item.scrollOffsetY)) " +
             "zoom=\(Self.debugMarkdownScalar(zoomScale)) " +
             "lastLine=\"\(Self.debugMarkdownLastNonEmptyLine(in: item.markdownSource))\" " +
             "tail=\"\(Self.debugMarkdownTail(item.markdownSource))\""
@@ -946,14 +948,16 @@ struct CanvasRenderer {
         )
     }
 
-    private func makeWidthOnlyEditHandles(
+    private func makeMarkdownEdgeEditHandles(
         for screenQuad: CanvasQuad
     ) -> [CanvasEditHandleGeometry] {
         makeEditHandles(
             for: screenQuad,
             roles: [
+                .top,
+                .trailing,
+                .bottom,
                 .leading,
-                .trailing
             ]
         )
     }
@@ -1027,7 +1031,7 @@ struct CanvasRenderer {
         case .text:
             return []
         case .markdown:
-            return makeWidthOnlyEditHandles(for: screenQuad)
+            return makeMarkdownEdgeEditHandles(for: screenQuad)
         case .image, .handDrawing:
             return makeCornerEditHandles(for: screenQuad)
         }
@@ -1041,7 +1045,7 @@ struct CanvasRenderer {
             return []
         }
         if items.allSatisfy({ $0.kind == .markdown }) {
-            return makeWidthOnlyEditHandles(for: screenQuad)
+            return makeMarkdownEdgeEditHandles(for: screenQuad)
         }
         return makeCornerEditHandles(for: screenQuad)
     }

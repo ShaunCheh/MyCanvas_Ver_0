@@ -43,6 +43,7 @@ struct CanvasMarkdownRenderPayload {
     let markdownSource: String
     let style: CanvasTextStyle
     let logicalSize: CGSize
+    let scrollOffsetY: CGFloat
     let cameraZoomScale: CGFloat
 }
 
@@ -85,11 +86,13 @@ struct CanvasWorkspaceRenderOverlay {
 
 enum CanvasSelectionHandleRole: CaseIterable {
     case topLeading
+    case top
     case topTrailing
+    case trailing
     case bottomLeading
     case bottomTrailing
+    case bottom
     case leading
-    case trailing
 }
 
 enum CanvasEditOverlayKind {
@@ -258,16 +261,20 @@ extension CanvasSelectionHandleRole {
         switch self {
         case .topLeading:
             return .topLeading
+        case .top:
+            return .top
         case .topTrailing:
             return .topTrailing
+        case .trailing:
+            return .trailing
         case .bottomLeading:
             return .bottomLeading
         case .bottomTrailing:
             return .bottomTrailing
+        case .bottom:
+            return .bottom
         case .leading:
             return .leading
-        case .trailing:
-            return .trailing
         }
     }
 
@@ -275,7 +282,16 @@ extension CanvasSelectionHandleRole {
         switch self {
         case .leading, .trailing:
             return true
-        case .topLeading, .topTrailing, .bottomLeading, .bottomTrailing:
+        case .topLeading, .top, .topTrailing, .bottomTrailing, .bottom, .bottomLeading:
+            return false
+        }
+    }
+
+    var isHeightOnly: Bool {
+        switch self {
+        case .top, .bottom:
+            return true
+        case .topLeading, .topTrailing, .trailing, .bottomTrailing, .bottomLeading, .leading:
             return false
         }
     }
@@ -309,17 +325,21 @@ extension CanvasEditHandleRole {
         switch self {
         case .topLeading:
             return .topLeading
+        case .top:
+            return .top
         case .topTrailing:
             return .topTrailing
+        case .trailing:
+            return .trailing
         case .bottomLeading:
             return .bottomLeading
         case .bottomTrailing:
             return .bottomTrailing
+        case .bottom:
+            return .bottom
         case .leading:
             return .leading
-        case .trailing:
-            return .trailing
-        case .top, .bottom, .rotate:
+        case .rotate:
             return nil
         }
     }

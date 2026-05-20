@@ -429,24 +429,28 @@ struct CanvasSelectionTransformSnapshot: Equatable {
     ) -> CanvasMarkdownItem {
         let resolvedSize: CGSize
         switch scalingMode {
-        case .uniform, .nonUniform:
-            resolvedSize = proposedSize
-        case .widthOnly:
+        case .uniform, .nonUniform, .widthOnly, .heightOnly:
             resolvedSize = CGSize(
                 width: max(proposedSize.width, 1),
-                height: CanvasMarkdownLayoutMeasurer.measuredContentHeight(
-                    markdownSource: item.markdownSource,
-                    style: item.style,
-                    maxLayoutWidth: max(proposedSize.width, 1)
-                )
+                height: max(proposedSize.height, 1)
             )
         }
+        let contentHeight = markdownContentHeight(
+            for: item,
+            layoutWidth: resolvedSize.width
+        )
+        let resolvedScrollOffsetY = clampedMarkdownScrollOffsetY(
+            proposedScrollOffsetY: item.scrollOffsetY,
+            contentHeight: contentHeight,
+            containerHeight: resolvedSize.height
+        )
         return CanvasMarkdownItem(
             id: item.id,
             markdownSource: item.markdownSource,
             style: item.style,
             center: scaledCenter,
             size: resolvedSize,
+            scrollOffsetY: resolvedScrollOffsetY,
             zIndex: item.zIndex,
             rotationRadians: item.rotationRadians
         )
@@ -458,6 +462,9 @@ struct CanvasSelectionTransformSnapshot: Equatable {
     ) -> CanvasSelectionResizeScalingMode {
         if handleRole.isWidthOnly {
             return .widthOnly
+        }
+        if handleRole.isHeightOnly, sourceItemsByID[itemID]?.kind == .markdown {
+            return .heightOnly
         }
         switch sourceItemsByID[itemID]?.kind {
         case .some(.markdown):
@@ -487,6 +494,11 @@ struct CanvasSelectionTransformSnapshot: Equatable {
                 width: resizeDraft.widthScale,
                 height: 1
             )
+        case .heightOnly:
+            return CGSize(
+                width: 1,
+                height: resizeDraft.heightScale
+            )
         }
     }
 
@@ -499,6 +511,11 @@ struct CanvasSelectionTransformSnapshot: Equatable {
         case .topLeading:
             return CGPoint(
                 x: standardizedBounds.maxX,
+                y: standardizedBounds.maxY
+            )
+        case .top:
+            return CGPoint(
+                x: standardizedBounds.midX,
                 y: standardizedBounds.maxY
             )
         case .topTrailing:
@@ -514,6 +531,11 @@ struct CanvasSelectionTransformSnapshot: Equatable {
         case .bottomTrailing:
             return CGPoint(
                 x: standardizedBounds.minX,
+                y: standardizedBounds.minY
+            )
+        case .bottom:
+            return CGPoint(
+                x: standardizedBounds.midX,
                 y: standardizedBounds.minY
             )
         case .leading:
@@ -542,6 +564,11 @@ struct CanvasSelectionTransformSnapshot: Equatable {
                 x: min(draggedWorldCorner.x, oppositeCorner.x - minimumWidth),
                 y: min(draggedWorldCorner.y, oppositeCorner.y - minimumHeight)
             )
+        case .top:
+            return CGPoint(
+                x: oppositeCorner.x,
+                y: min(draggedWorldCorner.y, oppositeCorner.y - minimumHeight)
+            )
         case .topTrailing:
             return CGPoint(
                 x: max(draggedWorldCorner.x, oppositeCorner.x + minimumWidth),
@@ -557,6 +584,11 @@ struct CanvasSelectionTransformSnapshot: Equatable {
                 x: max(draggedWorldCorner.x, oppositeCorner.x + minimumWidth),
                 y: max(draggedWorldCorner.y, oppositeCorner.y + minimumHeight)
             )
+        case .bottom:
+            return CGPoint(
+                x: oppositeCorner.x,
+                y: max(draggedWorldCorner.y, oppositeCorner.y + minimumHeight)
+            )
         case .leading:
             return CGPoint(
                 x: min(draggedWorldCorner.x, oppositeCorner.x - minimumWidth),
@@ -568,6 +600,26 @@ struct CanvasSelectionTransformSnapshot: Equatable {
                 y: oppositeCorner.y
             )
         }
+    }
+
+    private func markdownContentHeight(
+        for item: CanvasMarkdownItem,
+        layoutWidth: CGFloat
+    ) -> CGFloat {
+        CanvasMarkdownLayoutMeasurer.measuredContentHeight(
+            markdownSource: item.markdownSource,
+            style: item.style,
+            maxLayoutWidth: max(layoutWidth, 1)
+        )
+    }
+
+    private func clampedMarkdownScrollOffsetY(
+        proposedScrollOffsetY: CGFloat,
+        contentHeight: CGFloat,
+        containerHeight: CGFloat
+    ) -> CGFloat {
+        let maxScrollOffsetY = max(contentHeight - max(containerHeight, 1), 0)
+        return min(max(proposedScrollOffsetY, 0), maxScrollOffsetY)
     }
 }
 
@@ -710,6 +762,7 @@ private enum CanvasSelectionResizeScalingMode {
     case uniform
     case nonUniform
     case widthOnly
+    case heightOnly
 }
 
 private func canvasRotatePoint(

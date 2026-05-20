@@ -233,6 +233,7 @@ final class BoardSelectionStateMigrationTests: XCTestCase {
             style: CanvasTextStyle(fontSize: 20),
             center: CGPoint(x: 140, y: 90),
             size: CGSize(width: 320, height: 180),
+            scrollOffsetY: 36,
             zIndex: 2,
             rotationRadians: .pi / 12
         )
@@ -261,6 +262,7 @@ final class BoardSelectionStateMigrationTests: XCTestCase {
         XCTAssertEqual(markdownRecord.center.cgPoint, item.center)
         XCTAssertEqual(markdownRecord.size.cgSize, item.size)
         XCTAssertEqual(markdownRecord.rotationRadians, Double(item.rotationRadians))
+        XCTAssertEqual(markdownRecord.scrollOffsetY, Double(item.scrollOffsetY))
 
         let roundTrippedState = try BoardDocumentMapper.makeRuntimeState(
             from: document,
@@ -276,6 +278,7 @@ final class BoardSelectionStateMigrationTests: XCTestCase {
         XCTAssertEqual(roundTrippedItem.center, item.center)
         XCTAssertEqual(roundTrippedItem.size, item.size)
         XCTAssertEqual(roundTrippedItem.rotationRadians, item.rotationRadians)
+        XCTAssertEqual(roundTrippedItem.scrollOffsetY, item.scrollOffsetY)
         XCTAssertEqual(roundTrippedItem.zIndex, item.zIndex)
         XCTAssertNil(roundTrippedState.boardState)
     }
@@ -288,7 +291,8 @@ final class BoardSelectionStateMigrationTests: XCTestCase {
             zIndex: 3,
             markdownSource: "## Title\n\nBody",
             style: BoardTextStyleRecord(CanvasTextStyle(fontSize: 22)),
-            rotationRadians: Double.pi / 10
+            rotationRadians: Double.pi / 10,
+            scrollOffsetY: 24
         )
         let document = makeBoardDocument(
             selectedItemIDs: [markdownRecord.id],

@@ -2005,15 +2005,13 @@ Write here.
         style: CanvasTextStyle,
         layoutWidth: CGFloat
     ) -> CGSize {
-        // Markdown reflow is width-driven: edits keep the current container
-        // width and only recompute the committed height from content.
         let resolvedLayoutWidth = max(layoutWidth, 1)
         let measuredSize = CGSize(
             width: resolvedLayoutWidth,
-            height: CanvasMarkdownLayoutMeasurer.measuredContentHeight(
+            height: measuredMarkdownContentHeight(
                 markdownSource: markdownSource,
                 style: style,
-                maxLayoutWidth: resolvedLayoutWidth
+                layoutWidth: resolvedLayoutWidth
             )
         )
         logMarkdownMeasurementTrace(
@@ -2022,6 +2020,58 @@ Write here.
             measuredSize: measuredSize
         )
         return measuredSize
+    }
+
+    func measuredMarkdownContentHeight(
+        for item: CanvasMarkdownItem
+    ) -> CGFloat {
+        measuredMarkdownContentHeight(
+            markdownSource: item.markdownSource,
+            style: item.style,
+            layoutWidth: item.size.width
+        )
+    }
+
+    func normalizedMarkdownItem(
+        _ item: CanvasMarkdownItem,
+        markdownSource: String? = nil,
+        style: CanvasTextStyle? = nil,
+        center: CGPoint? = nil,
+        size: CGSize? = nil,
+        scrollOffsetY: CGFloat? = nil
+    ) -> CanvasMarkdownItem {
+        var normalizedItem = item
+        if let markdownSource {
+            normalizedItem.markdownSource = markdownSource
+        }
+        if let style {
+            normalizedItem.style = style
+        }
+        if let center {
+            normalizedItem.center = center
+        }
+        if let size {
+            normalizedItem.size = CGSize(
+                width: max(size.width, 1),
+                height: max(size.height, 1)
+            )
+        } else {
+            normalizedItem.size = CGSize(
+                width: max(normalizedItem.size.width, 1),
+                height: max(normalizedItem.size.height, 1)
+            )
+        }
+        if let scrollOffsetY {
+            normalizedItem.scrollOffsetY = scrollOffsetY
+        }
+
+        let contentHeight = measuredMarkdownContentHeight(for: normalizedItem)
+        normalizedItem.scrollOffsetY = clampedMarkdownScrollOffsetY(
+            proposedScrollOffsetY: normalizedItem.scrollOffsetY,
+            contentHeight: contentHeight,
+            containerHeight: normalizedItem.size.height
+        )
+        return normalizedItem
     }
 
     private func logMarkdownMeasurementTrace(
@@ -2117,17 +2167,40 @@ Write here.
         guard let item = scene.markdownItem(withID: itemID) else {
             return nil
         }
-
-        let size = measuredMarkdownItemSize(
-            for: markdownSource,
-            style: style,
-            layoutWidth: item.size.width
-        )
-        return scene.updateMarkdownItem(
-            withID: itemID,
+        let updatedItem = normalizedMarkdownItem(
+            item,
             markdownSource: markdownSource,
-            style: style,
-            size: size
+            style: style
+        )
+        guard
+            updatedItem.markdownSource != item.markdownSource ||
+            updatedItem.style != item.style ||
+            updatedItem.size != item.size ||
+            abs(updatedItem.scrollOffsetY - item.scrollOffsetY) > Self.geometryComparisonEpsilon
+        else {
+            return item
+        }
+        return scene.applyBoardItems([.markdown(updatedItem)])?.first?.markdownItem
+    }
+
+    @discardableResult
+    func updateMarkdownItemScrollOffset(
+        withID itemID: CanvasItemID,
+        scrollOffsetY: CGFloat
+    ) -> CanvasMarkdownItem? {
+        guard let item = scene.markdownItem(withID: itemID) else {
+            return nil
+        }
+        let updatedItem = normalizedMarkdownItem(
+            item,
+            scrollOffsetY: scrollOffsetY
+        )
+        guard abs(updatedItem.scrollOffsetY - item.scrollOffsetY) > Self.geometryComparisonEpsilon else {
+            return nil
+        }
+        return scene.updateMarkdownItemScrollOffset(
+            withID: itemID,
+            scrollOffsetY: updatedItem.scrollOffsetY
         )
     }
 
@@ -2626,16 +2699,16 @@ Write here.
         from item: CanvasMarkdownItem,
         handleRole: CanvasSelectionHandleRole
     ) -> CanvasMarkdownItem? {
-        let committedSize = measuredMarkdownItemSize(
-            for: item.markdownSource,
-            style: item.style,
-            layoutWidth: item.size.width
-        )
+        let normalizedItem = normalizedMarkdownItem(item)
         guard
-            abs(committedSize.width - item.size.width) > Self.geometryComparisonEpsilon ||
-            abs(committedSize.height - item.size.height) > Self.geometryComparisonEpsilon
+            abs(normalizedItem.size.width - item.size.width) > Self.geometryComparisonEpsilon ||
+            abs(normalizedItem.size.height - item.size.height) > Self.geometryComparisonEpsilon ||
+            abs(normalizedItem.scrollOffsetY - item.scrollOffsetY) > Self.geometryComparisonEpsilon
         else {
             return nil
+        }
+        guard normalizedItem.size != item.size else {
+            return normalizedItem
         }
 
         let currentLocalFrame = item.localFrame.standardized
@@ -2646,16 +2719,15 @@ Write here.
         let committedLocalFrame = markdownResizeLocalFrame(
             for: handleRole,
             withFixedOppositeCorner: fixedOppositeLocalCorner,
-            size: committedSize
+            size: normalizedItem.size
         )
-        var updatedItem = item
+        var updatedItem = normalizedItem
         updatedItem.center = item.worldPoint(
             fromLocal: CGPoint(
                 x: committedLocalFrame.midX,
                 y: committedLocalFrame.midY
             )
         )
-        updatedItem.size = committedSize
         return updatedItem
     }
 
@@ -2666,12 +2738,16 @@ Write here.
         switch handleRole {
         case .topLeading:
             return CGPoint(x: localFrame.maxX, y: localFrame.maxY)
+        case .top:
+            return CGPoint(x: localFrame.midX, y: localFrame.maxY)
         case .topTrailing:
             return CGPoint(x: localFrame.minX, y: localFrame.maxY)
         case .bottomLeading:
             return CGPoint(x: localFrame.maxX, y: localFrame.minY)
         case .bottomTrailing:
             return CGPoint(x: localFrame.minX, y: localFrame.minY)
+        case .bottom:
+            return CGPoint(x: localFrame.midX, y: localFrame.minY)
         case .leading:
             return CGPoint(x: localFrame.maxX, y: localFrame.midY)
         case .trailing:
@@ -2692,6 +2768,13 @@ Write here.
                 width: size.width,
                 height: size.height
             )
+        case .top:
+            return CGRect(
+                x: oppositeCorner.x - (size.width / 2),
+                y: oppositeCorner.y - size.height,
+                width: size.width,
+                height: size.height
+            )
         case .topTrailing:
             return CGRect(
                 x: oppositeCorner.x,
@@ -2713,6 +2796,13 @@ Write here.
                 width: size.width,
                 height: size.height
             )
+        case .bottom:
+            return CGRect(
+                x: oppositeCorner.x - (size.width / 2),
+                y: oppositeCorner.y,
+                width: size.width,
+                height: size.height
+            )
         case .leading:
             return CGRect(
                 x: oppositeCorner.x - size.width,
@@ -2728,6 +2818,27 @@ Write here.
                 height: size.height
             )
         }
+    }
+
+    private func measuredMarkdownContentHeight(
+        markdownSource: String,
+        style: CanvasTextStyle,
+        layoutWidth: CGFloat
+    ) -> CGFloat {
+        CanvasMarkdownLayoutMeasurer.measuredContentHeight(
+            markdownSource: markdownSource,
+            style: style,
+            maxLayoutWidth: max(layoutWidth, 1)
+        )
+    }
+
+    private func clampedMarkdownScrollOffsetY(
+        proposedScrollOffsetY: CGFloat,
+        contentHeight: CGFloat,
+        containerHeight: CGFloat
+    ) -> CGFloat {
+        let maxScrollOffsetY = max(contentHeight - max(containerHeight, 1), 0)
+        return min(max(proposedScrollOffsetY, 0), maxScrollOffsetY)
     }
 
     @discardableResult
