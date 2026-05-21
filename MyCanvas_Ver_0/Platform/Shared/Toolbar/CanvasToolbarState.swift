@@ -8,6 +8,7 @@ enum CanvasToolbarDockAlignment: String, Sendable {
 enum CanvasToolbarItemID: String, CaseIterable, Sendable {
     case crop
     case multiSelect
+    case deleteSelection
     case save
     case text
     case markdown

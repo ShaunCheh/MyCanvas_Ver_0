@@ -34,6 +34,12 @@ struct CanvasToolbarStateBuilder {
                 isEnabled: canToggleMultiSelectMode(session: session)
             )
         )
+        if shouldShowDeleteItem(
+            session: session,
+            isMultiSelectModeActive: isMultiSelectModeActive
+        ) {
+            itemStates.append(deleteItemState(session: session))
+        }
         itemStates.append(saveItemState(saveState: saveState))
         itemStates.append(textItemState(session: session))
         itemStates.append(markdownItemState(session: session))
@@ -130,6 +136,24 @@ struct CanvasToolbarStateBuilder {
         )
     }
 
+    func deleteItemState(session: CanvasEditorSession) -> CanvasToolbarItemState {
+        let descriptor = commandCatalog.descriptor(
+            for: .deleteItem,
+            session: session
+        )
+        let selectionCount = session.selectionCount
+        let accessibilityLabel = selectionCount > 1
+            ? "Delete selected items"
+            : "Delete selected item"
+        return CanvasToolbarItemState(
+            id: .deleteSelection,
+            systemImageName: descriptor.systemImageName,
+            isEnabled: descriptor.isEnabled,
+            accessibilityLabel: accessibilityLabel,
+            visualRole: .danger
+        )
+    }
+
     func textItemState(session: CanvasEditorSession) -> CanvasToolbarItemState {
         let descriptor = commandCatalog.descriptor(
             for: session.isInlineTextModeActive ? .commitTextEdit : .addTextItem,
@@ -212,5 +236,35 @@ struct CanvasToolbarStateBuilder {
         session: CanvasEditorSession
     ) -> Bool {
         session.isInlineEditModeActive == false
+    }
+
+    private func shouldShowDeleteItem(
+        session: CanvasEditorSession,
+        isMultiSelectModeActive: Bool
+    ) -> Bool {
+        guard session.canDeleteSelection else {
+            return false
+        }
+
+        if isMultiSelectModeActive {
+            return true
+        }
+
+        if session.selectionCount > 1 {
+            return true
+        }
+
+        return canShowDeleteForSingleSelection(session: session)
+    }
+
+    private func canShowDeleteForSingleSelection(
+        session: CanvasEditorSession
+    ) -> Bool {
+        switch session.selectedBoardItemKind {
+        case .text, .markdown, .handDrawing:
+            return true
+        case .image, .none:
+            return false
+        }
     }
 }

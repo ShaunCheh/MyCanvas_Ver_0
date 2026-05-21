@@ -281,6 +281,11 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         button.translatesAutoresizingMaskIntoConstraints = false
         return button
     }()
+    private let deleteSelectionButton: UIButton = {
+        let button = UIButton(type: .system)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }()
     private let textButton: UIButton = {
         let button = UIButton(type: .system)
         button.translatesAutoresizingMaskIntoConstraints = false
@@ -312,6 +317,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             .redo: redoButton,
             .crop: cropButton,
             .multiSelect: multiSelectButton,
+            .deleteSelection: deleteSelectionButton,
             .save: saveButton,
             .text: textButton,
             .markdown: markdownButton,
@@ -919,6 +925,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         setupSaveButton()
         setupCropButton()
         setupMultiSelectButton()
+        setupDeleteSelectionButton()
         setupTextButton()
         setupMarkdownButton()
         setupHandDrawingButton()
@@ -1298,6 +1305,15 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         multiSelectButton.addTarget(
             self,
             action: #selector(handleMultiSelectButtonTap),
+            for: .touchUpInside
+        )
+        renderToolbar()
+    }
+
+    private func setupDeleteSelectionButton() {
+        deleteSelectionButton.addTarget(
+            self,
+            action: #selector(handleDeleteSelectionButtonTap),
             for: .touchUpInside
         )
         renderToolbar()
@@ -2314,6 +2330,11 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         }
 
         isMultiSelectModeActive.toggle()
+    }
+
+    @objc
+    private func handleDeleteSelectionButtonTap() {
+        performCommand(.deleteSelection(recordHistory: true))
     }
 
     @objc

@@ -50,6 +50,59 @@ final class CanvasToolbarStateBuilderTests: XCTestCase {
         XCTAssertEqual(markdownItem.visualRole, .accent)
     }
 
+    func testSelectedTextShowsDeleteToolbarItem() throws {
+        let session = makeToolbarStateBuilderTestSession()
+        let builder = CanvasToolbarStateBuilder()
+        let textItem = CanvasTextItem(
+            text: "Delete me",
+            center: CGPoint(x: 80, y: 60),
+            size: CGSize(width: 180, height: 80)
+        )
+        session.scene.append(textItem)
+        session.interactionState = CanvasInteractionState(selectedItemID: textItem.id)
+
+        let state = builder.mainToolbarState(
+            session: session,
+            saveState: .idle,
+            placement: CanvasToolbarPlacement(preferredEdge: .trailing)
+        )
+
+        let deleteItem = try XCTUnwrap(
+            state.items.first(where: { $0.id == .deleteSelection })
+        )
+        XCTAssertEqual(deleteItem.systemImageName, "trash")
+        XCTAssertEqual(deleteItem.accessibilityLabel, "Delete selected item")
+        XCTAssertEqual(deleteItem.visualRole, .danger)
+        XCTAssertTrue(deleteItem.isEnabled)
+    }
+
+    func testSelectedMarkdownShowsDeleteToolbarItem() throws {
+        let session = makeToolbarStateBuilderTestSession()
+        let builder = CanvasToolbarStateBuilder()
+        let markdownItem = CanvasMarkdownItem(
+            markdownSource: "# Delete me",
+            center: CGPoint(x: 100, y: 72),
+            size: CGSize(width: 220, height: 140)
+        )
+        session.scene.append(markdownItem)
+        session.interactionState = CanvasInteractionState(
+            selectedItemID: markdownItem.id
+        )
+
+        let state = builder.mainToolbarState(
+            session: session,
+            saveState: .idle,
+            placement: CanvasToolbarPlacement(preferredEdge: .trailing)
+        )
+
+        let deleteItem = try XCTUnwrap(
+            state.items.first(where: { $0.id == .deleteSelection })
+        )
+        XCTAssertEqual(deleteItem.accessibilityLabel, "Delete selected item")
+        XCTAssertEqual(deleteItem.visualRole, .danger)
+        XCTAssertTrue(deleteItem.isEnabled)
+    }
+
     func testMainToolbarStateReflectsActiveMultiSelectMode() throws {
         let session = makeToolbarStateBuilderTestSession()
         let builder = CanvasToolbarStateBuilder()
@@ -118,6 +171,47 @@ final class CanvasToolbarStateBuilderTests: XCTestCase {
         XCTAssertTrue(multiSelectItem.isActive)
     }
 
+    func testMultiSelectionShowsDeleteToolbarItem() throws {
+        let session = makeToolbarStateBuilderTestSession()
+        let builder = CanvasToolbarStateBuilder()
+        let firstImageItem = CanvasImageItem(
+            asset: CanvasImageAsset.transientStaticImage(
+                cgImage: try makeToolbarStateBuilderTestImage()
+            ),
+            center: CGPoint(x: 60, y: 40),
+            size: CGSize(width: 120, height: 80),
+            zIndex: 0
+        )
+        let secondImageItem = CanvasImageItem(
+            asset: CanvasImageAsset.transientStaticImage(
+                cgImage: try makeToolbarStateBuilderTestImage()
+            ),
+            center: CGPoint(x: 180, y: 120),
+            size: CGSize(width: 96, height: 96),
+            zIndex: 1
+        )
+        session.scene.append(firstImageItem)
+        session.scene.append(secondImageItem)
+        session.interactionState = CanvasInteractionState(
+            selectedItemIDs: [firstImageItem.id, secondImageItem.id],
+            primarySelectedItemID: secondImageItem.id
+        )
+
+        let state = builder.mainToolbarState(
+            session: session,
+            saveState: .idle,
+            placement: CanvasToolbarPlacement(preferredEdge: .trailing),
+            isMultiSelectModeActive: true
+        )
+
+        let deleteItem = try XCTUnwrap(
+            state.items.first(where: { $0.id == .deleteSelection })
+        )
+        XCTAssertEqual(deleteItem.accessibilityLabel, "Delete selected items")
+        XCTAssertEqual(deleteItem.visualRole, .danger)
+        XCTAssertTrue(deleteItem.isEnabled)
+    }
+
     func testMainToolbarStateHidesItemsInReadingMode() {
         let session = makeToolbarStateBuilderTestSession()
         let builder = CanvasToolbarStateBuilder()
@@ -171,8 +265,13 @@ final class CanvasToolbarStateBuilderTests: XCTestCase {
         let handDrawingToolbarItem = try XCTUnwrap(
             state.items.first(where: { $0.id == .handDrawing })
         )
+        let deleteItem = try XCTUnwrap(
+            state.items.first(where: { $0.id == .deleteSelection })
+        )
         XCTAssertEqual(handDrawingToolbarItem.accessibilityLabel, "Edit hand drawing")
         XCTAssertEqual(handDrawingToolbarItem.systemImageName, "pencil.and.scribble")
+        XCTAssertEqual(deleteItem.accessibilityLabel, "Delete selected item")
+        XCTAssertEqual(deleteItem.visualRole, .danger)
         XCTAssertFalse(state.items.contains(where: { $0.id == .crop }))
     }
 }

@@ -262,6 +262,11 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         button.translatesAutoresizingMaskIntoConstraints = false
         return button
     }()
+    private let deleteSelectionButton: NSButton = {
+        let button = NSButton()
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }()
     private let textButton: NSButton = {
         let button = NSButton()
         button.translatesAutoresizingMaskIntoConstraints = false
@@ -293,6 +298,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             .redo: redoButton,
             .crop: cropButton,
             .multiSelect: multiSelectButton,
+            .deleteSelection: deleteSelectionButton,
             .save: saveButton,
             .text: textButton,
             .markdown: markdownButton,
@@ -999,6 +1005,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         setupSaveButton()
         setupCropButton()
         setupMultiSelectButton()
+        setupDeleteSelectionButton()
         setupTextButton()
         setupMarkdownButton()
         setupHandDrawingButton()
@@ -1489,6 +1496,12 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     private func setupMultiSelectButton() {
         multiSelectButton.target = self
         multiSelectButton.action = #selector(handleMultiSelectButtonClick)
+        renderToolbar()
+    }
+
+    private func setupDeleteSelectionButton() {
+        deleteSelectionButton.target = self
+        deleteSelectionButton.action = #selector(handleDeleteSelectionButtonClick)
         renderToolbar()
     }
 
@@ -2391,6 +2404,11 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         }
 
         isMultiSelectModeActive.toggle()
+    }
+
+    @objc
+    private func handleDeleteSelectionButtonClick() {
+        performCommand(.deleteSelection(recordHistory: true))
     }
 
     @objc
