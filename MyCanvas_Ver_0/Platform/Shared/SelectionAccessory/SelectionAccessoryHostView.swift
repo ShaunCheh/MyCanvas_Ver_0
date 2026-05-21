@@ -215,7 +215,7 @@ final class SelectionAccessoryHostView: UIView {
 import AppKit
 
 final class SelectionAccessoryHostView: NSView {
-    private static let isTraceLoggingEnabled = true
+    private static let isTraceLoggingEnabled = false
 
     var onCommandSelected: ((CanvasCommandID) -> Void)?
     var onDismissRequested: (() -> Void)?
@@ -343,6 +343,7 @@ final class SelectionAccessoryHostView: NSView {
         }
 
         containerView.frame = accessoryFrame.integral
+        synchronizeLayoutAfterFrameChange()
     }
 
     func dismiss() {
@@ -420,6 +421,16 @@ final class SelectionAccessoryHostView: NSView {
             width: stackSize.width + 16,
             height: stackSize.height + 16
         )
+    }
+
+    private func synchronizeLayoutAfterFrameChange() {
+        // AppKit will otherwise leave the stack view at zero size on the first
+        // presentation after a manual frame update, so flush the layout now.
+        needsLayout = true
+        containerView.needsLayout = true
+        stackView.needsLayout = true
+        layoutSubtreeIfNeeded()
+        containerView.layoutSubtreeIfNeeded()
     }
 
     private func logApply(

@@ -130,7 +130,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     private static let rotateHandleHitTargetSize: CGFloat = 22
     private static let geometryComparisonEpsilon: CGFloat = 0.0001
     private static let markdownScrollHistoryCommitDelay: TimeInterval = 0.25
-    private static let isMarkdownSelectionAccessoryTraceLoggingEnabled = true
+    private static let isMarkdownSelectionAccessoryTraceLoggingEnabled = false
     private static let observedKeyboardShortcutReuseWindow: TimeInterval = 0.45
     private static let continuousRawInputObservationInterval: TimeInterval = 0.32
 
