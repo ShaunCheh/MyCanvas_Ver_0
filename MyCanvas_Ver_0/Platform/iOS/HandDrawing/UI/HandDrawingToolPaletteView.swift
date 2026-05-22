@@ -7,10 +7,13 @@ final class HandDrawingToolPaletteView: UIView {
         static let itemSpacing: CGFloat = 8
         static let cornerRadius: CGFloat = 18
         static let colorSwatchSize: CGFloat = 30
+        static let opacityTitleWidth: CGFloat = 56
+        static let opacityValueWidth: CGFloat = 48
     }
 
     var onSelectTool: ((HandDrawingEditorTool) -> Void)?
     var onSelectColor: ((HandDrawingColor) -> Void)?
+    var onSelectBrushOpacity: ((Double) -> Void)?
     var onSelectBrushPreset: ((String) -> Void)?
     var onUndo: (() -> Void)?
     var onRedo: (() -> Void)?
@@ -25,6 +28,7 @@ final class HandDrawingToolPaletteView: UIView {
     }()
     private let toolStackView = HandDrawingToolPaletteView.makeHorizontalStack()
     private let colorStackView = HandDrawingToolPaletteView.makeHorizontalStack()
+    private let opacityStackView = HandDrawingToolPaletteView.makeHorizontalStack()
     private let brushPresetStackView = HandDrawingToolPaletteView.makeHorizontalStack()
     private let historyStackView = HandDrawingToolPaletteView.makeHorizontalStack()
     private let brushButton = HandDrawingToolPaletteView.makeActionButton(title: "Brush")
@@ -33,6 +37,17 @@ final class HandDrawingToolPaletteView: UIView {
     private let deselectButton = HandDrawingToolPaletteView.makeActionButton(title: "Deselect")
     private let undoButton = HandDrawingToolPaletteView.makeActionButton(title: "Undo")
     private let redoButton = HandDrawingToolPaletteView.makeActionButton(title: "Redo")
+    private let opacityTitleLabel = HandDrawingToolPaletteView.makeOpacityLabel(
+        text: "Opacity"
+    )
+    private let opacityValueLabel = HandDrawingToolPaletteView.makeOpacityValueLabel()
+    private let opacitySlider: UISlider = {
+        let slider = UISlider()
+        slider.minimumValue = 0
+        slider.maximumValue = 1
+        slider.minimumTrackTintColor = .systemBlue
+        return slider
+    }()
 
     private var colorButtons: [ColorSwatchButton] = []
     private var brushPresetButtons: [UIButton] = []
@@ -80,6 +95,11 @@ final class HandDrawingToolPaletteView: UIView {
             isSelected: false,
             isEnabled: state.canDeselectSelection
         )
+        let resolvedOpacity = Float(min(max(state.selectedBrushOpacity, 0), 1))
+        if opacitySlider.value != resolvedOpacity {
+            opacitySlider.value = resolvedOpacity
+        }
+        opacityValueLabel.text = Self.opacityText(for: state.selectedBrushOpacity)
         undoButton.isEnabled = state.canUndo
         redoButton.isEnabled = state.canRedo
 
@@ -102,12 +122,20 @@ final class HandDrawingToolPaletteView: UIView {
     private func setupViewHierarchy() {
         addSubview(rootStackView)
         [brushButton, eraserButton, lassoButton].forEach(toolStackView.addArrangedSubview)
+        [opacityTitleLabel, opacitySlider, opacityValueLabel]
+            .forEach(opacityStackView.addArrangedSubview)
         [deselectButton, undoButton, redoButton].forEach(historyStackView.addArrangedSubview)
-        [toolStackView, colorStackView, brushPresetStackView, historyStackView]
+        [toolStackView, colorStackView, opacityStackView, brushPresetStackView, historyStackView]
             .forEach(rootStackView.addArrangedSubview)
     }
 
     private func setupConstraints() {
+        opacityTitleLabel.widthAnchor.constraint(
+            equalToConstant: Layout.opacityTitleWidth
+        ).isActive = true
+        opacityValueLabel.widthAnchor.constraint(
+            equalToConstant: Layout.opacityValueWidth
+        ).isActive = true
         NSLayoutConstraint.activate([
             rootStackView.topAnchor.constraint(equalTo: topAnchor, constant: 14),
             rootStackView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
@@ -146,6 +174,11 @@ final class HandDrawingToolPaletteView: UIView {
             self,
             action: #selector(handleRedoButtonTap),
             for: .touchUpInside
+        )
+        opacitySlider.addTarget(
+            self,
+            action: #selector(handleOpacitySliderValueChanged(_:)),
+            for: .valueChanged
         )
     }
 
@@ -256,12 +289,42 @@ final class HandDrawingToolPaletteView: UIView {
         onSelectColor?(sender.color)
     }
 
+    @objc
+    private func handleOpacitySliderValueChanged(_ sender: UISlider) {
+        let resolvedOpacity = Double(min(max(sender.value, 0), 1))
+        opacityValueLabel.text = Self.opacityText(for: resolvedOpacity)
+        onSelectBrushOpacity?(resolvedOpacity)
+    }
+
     private static func makeHorizontalStack() -> UIStackView {
         let stackView = UIStackView()
         stackView.axis = .horizontal
         stackView.spacing = Layout.itemSpacing
         stackView.alignment = .center
         return stackView
+    }
+
+    private static func makeOpacityLabel(text: String) -> UILabel {
+        let label = UILabel()
+        label.text = text
+        label.font = .preferredFont(forTextStyle: .subheadline)
+        label.textColor = .secondaryLabel
+        label.setContentHuggingPriority(.required, for: .horizontal)
+        return label
+    }
+
+    private static func makeOpacityValueLabel() -> UILabel {
+        let label = UILabel()
+        label.font = .monospacedDigitSystemFont(ofSize: 13, weight: .medium)
+        label.textColor = .secondaryLabel
+        label.textAlignment = .right
+        label.setContentHuggingPriority(.required, for: .horizontal)
+        label.text = opacityText(for: 1)
+        return label
+    }
+
+    private static func opacityText(for opacity: Double) -> String {
+        "\(Int((min(max(opacity, 0), 1) * 100).rounded()))%"
     }
 
     private static func makeActionButton(title: String) -> UIButton {

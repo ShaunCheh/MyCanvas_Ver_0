@@ -168,6 +168,9 @@ final class iOSHandDrawingEditorViewController: UIViewController {
         paletteView.onSelectColor = { [weak self] color in
             self?.coordinator.selectColor(color)
         }
+        paletteView.onSelectBrushOpacity = { [weak self] opacity in
+            self?.coordinator.selectBrushOpacity(opacity)
+        }
         paletteView.onSelectBrushPreset = { [weak self] presetID in
             self?.coordinator.selectBrushPreset(presetID)
         }

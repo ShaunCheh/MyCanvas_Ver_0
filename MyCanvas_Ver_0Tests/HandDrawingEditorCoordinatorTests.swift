@@ -116,6 +116,7 @@ final class HandDrawingEditorCoordinatorBrushPresetTests: XCTestCase {
         let selectedPreset = try XCTUnwrap(paletteState?.availableBrushPresets.last)
         coordinator.selectColor(selectedColor)
         coordinator.selectBrushPreset(selectedPreset.id)
+        coordinator.selectBrushOpacity(0.37)
         coordinator.handlePencilStrokeBegan(
             HandDrawingInputSample(
                 location: CGPoint(x: 24, y: 30),
@@ -140,8 +141,16 @@ final class HandDrawingEditorCoordinatorBrushPresetTests: XCTestCase {
         let committedStroke = try XCTUnwrap(committedDocument.strokes.last)
 
         XCTAssertEqual(
+            try XCTUnwrap(paletteState?.selectedBrushOpacity),
+            0.37,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(
             committedStroke.brush,
-            selectedPreset.makeBrushStyle(color: selectedColor)
+            selectedPreset.makeBrushStyle(
+                color: selectedColor,
+                opacity: 0.37
+            )
         )
     }
 
@@ -196,6 +205,11 @@ final class HandDrawingEditorCoordinatorBrushPresetTests: XCTestCase {
             paletteState?.availableBrushPresets.first {
                 $0.id == selectedPresetID
             }
+        )
+        XCTAssertEqual(
+            try XCTUnwrap(paletteState?.selectedBrushOpacity),
+            customBrush.opacity,
+            accuracy: 0.001
         )
         coordinator.handlePencilStrokeBegan(
             HandDrawingInputSample(

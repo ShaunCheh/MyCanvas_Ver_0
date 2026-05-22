@@ -252,12 +252,19 @@ struct HandDrawingBrushPreset: Equatable {
         CGFloat(brushTemplate.baseSize)
     }
 
-    func makeBrushStyle(color: HandDrawingColor) -> HandDrawingBrushStyle {
-        brushTemplate.withColor(color)
+    func makeBrushStyle(
+        color: HandDrawingColor,
+        opacity: Double? = nil
+    ) -> HandDrawingBrushStyle {
+        let coloredBrush = brushTemplate.withColor(color)
+        guard let opacity else {
+            return coloredBrush
+        }
+        return coloredBrush.withOpacity(opacity)
     }
 
     func matches(_ brush: HandDrawingBrushStyle) -> Bool {
-        brushTemplate.hasEquivalentPresetSemantics(as: brush)
+        brushTemplate.hasEquivalentPresetSelectionSemantics(as: brush)
     }
 
     static func pen(
@@ -411,10 +418,25 @@ extension HandDrawingBrushStyle {
         )
     }
 
-    func hasEquivalentPresetSemantics(as other: HandDrawingBrushStyle) -> Bool {
+    func withOpacity(_ opacity: Double) -> HandDrawingBrushStyle {
+        HandDrawingBrushStyle(
+            kind: kind,
+            color: color,
+            baseSize: baseSize,
+            opacity: opacity,
+            pressureCurveExponent: pressureCurveExponent,
+            minSizeRatio: minSizeRatio,
+            maxSizeRatio: maxSizeRatio,
+            tiltSizeInfluence: tiltSizeInfluence,
+            tiltOpacityInfluence: tiltOpacityInfluence
+        )
+    }
+
+    func hasEquivalentPresetSelectionSemantics(
+        as other: HandDrawingBrushStyle
+    ) -> Bool {
         kind == other.kind
             && approximatelyEqual(baseSize, other.baseSize)
-            && approximatelyEqual(opacity, other.opacity)
             && approximatelyEqual(
                 pressureCurveExponent,
                 other.pressureCurveExponent
@@ -425,6 +447,14 @@ extension HandDrawingBrushStyle {
             && approximatelyEqual(
                 tiltOpacityInfluence,
                 other.tiltOpacityInfluence
+            )
+    }
+
+    func hasEquivalentPresetSemantics(as other: HandDrawingBrushStyle) -> Bool {
+        hasEquivalentPresetSelectionSemantics(as: other)
+            && approximatelyEqual(
+                opacity,
+                other.opacity
             )
     }
 

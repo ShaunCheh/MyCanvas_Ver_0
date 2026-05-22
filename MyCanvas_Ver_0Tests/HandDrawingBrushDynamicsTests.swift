@@ -278,6 +278,39 @@ final class HandDrawingBrushDynamicsTests: XCTestCase {
         )
     }
 
+    func testHandDrawingBrushPresetCatalogKeepsWidthPresetSelectedWhenOnlyOpacityDiffers() throws {
+        let presets = HandDrawingBrushPresetCatalog.defaultPenPresets(
+            lineWidths: [4, 8, 12, 18],
+            tiltSizeInfluence: 0.85,
+            tiltOpacityInfluence: 0
+        )
+        let reopenedBrush = HandDrawingBrushStyle(
+            kind: .pen,
+            color: HandDrawingColor(red: 0.73, green: 0.22, blue: 0.4, alpha: 1),
+            baseSize: 8,
+            opacity: 0.42,
+            tiltSizeInfluence: 0.85,
+            tiltOpacityInfluence: 0
+        )
+        let selection = HandDrawingBrushPresetCatalog.resolveSelection(
+            for: reopenedBrush,
+            presets: presets
+        )
+        let selectedPreset = try XCTUnwrap(
+            selection.availablePresets.first { $0.id == selection.selectedPresetID }
+        )
+
+        XCTAssertEqual(selection.selectedPresetID, presets[1].id)
+        XCTAssertEqual(selection.availablePresets, presets)
+        XCTAssertEqual(
+            selectedPreset.makeBrushStyle(
+                color: reopenedBrush.color,
+                opacity: reopenedBrush.opacity
+            ),
+            reopenedBrush
+        )
+    }
+
     func testHandDrawingBrushPresetCatalogPreservesDocumentBrushDynamicsAtMatchingWidth() throws {
         let presets = HandDrawingBrushPresetCatalog.defaultPenPresets(
             lineWidths: [4, 8, 12, 18],

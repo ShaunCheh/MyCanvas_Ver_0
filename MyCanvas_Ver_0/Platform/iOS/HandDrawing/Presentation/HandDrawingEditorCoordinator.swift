@@ -58,6 +58,7 @@ struct HandDrawingCanvasSurfaceState {
 struct HandDrawingToolPaletteState {
     var selectedTool: HandDrawingEditorTool
     var selectedColor: HandDrawingColor
+    var selectedBrushOpacity: Double
     var selectedBrushPresetID: String
     var availableColors: [HandDrawingColor]
     var availableBrushPresets: [HandDrawingBrushPreset]
@@ -97,6 +98,7 @@ final class HandDrawingEditorCoordinator {
     private var realtimeDraftHostState: HandDrawingRealtimeDraftHostState
     private var selectedTool: HandDrawingEditorTool = .brush
     private var selectedColor: HandDrawingColor
+    private var selectedBrushOpacity: Double
     private var availableBrushPresets: [HandDrawingBrushPreset]
     private var selectedBrushPresetID: String
     private var activeStrokeID: UUID?
@@ -144,6 +146,7 @@ final class HandDrawingEditorCoordinator {
             presets: Self.defaultBrushPresets
         )
         selectedColor = initialBrush.color
+        selectedBrushOpacity = initialBrush.opacity
         availableBrushPresets = initialPresetSelection.availablePresets
         selectedBrushPresetID = initialPresetSelection.selectedPresetID
         committedCanvas = try resolvedCommittedCanvasBackend.render(
@@ -181,6 +184,11 @@ final class HandDrawingEditorCoordinator {
 
     func selectColor(_ color: HandDrawingColor) {
         selectedColor = color
+        publishPaletteState()
+    }
+
+    func selectBrushOpacity(_ opacity: Double) {
+        selectedBrushOpacity = min(max(opacity, 0), 1)
         publishPaletteState()
     }
 
@@ -470,7 +478,10 @@ final class HandDrawingEditorCoordinator {
     }
 
     private var currentBrushStyle: HandDrawingBrushStyle {
-        selectedBrushPreset.makeBrushStyle(color: selectedColor)
+        selectedBrushPreset.makeBrushStyle(
+            color: selectedColor,
+            opacity: selectedBrushOpacity
+        )
     }
 
     private func publishRealtimeDraftPacket(
@@ -580,6 +591,7 @@ final class HandDrawingEditorCoordinator {
             HandDrawingToolPaletteState(
                 selectedTool: selectedTool,
                 selectedColor: selectedColor,
+                selectedBrushOpacity: selectedBrushOpacity,
                 selectedBrushPresetID: selectedBrushPresetID,
                 availableColors: Self.defaultColors,
                 availableBrushPresets: availableBrushPresets,
