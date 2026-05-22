@@ -576,12 +576,20 @@ private final class HandDrawingGPURealtimeDraftRendererView: MTKView, HandDrawin
             return nil
         }
         do {
-            return try HandDrawingGPURealtimeDraftRendererView(device: device)
+            let renderer = try HandDrawingGPURealtimeDraftRendererView(device: device)
+            #if DEBUG
+            print(
+                "[HandDrawingDraftRender][GPUSetup] " +
+                "initializedRenderer device=\(device.name)"
+            )
+            #endif
+            return renderer
         } catch {
             #if DEBUG
             print(
                 "[HandDrawingDraftRender][GPUSetup] " +
-                "failedToCreateRenderer error=\(error)"
+                "failedToCreateRenderer " +
+                Self.formattedSetupError(error)
             )
             #endif
             return nil
@@ -762,6 +770,24 @@ private final class HandDrawingGPURealtimeDraftRendererView: MTKView, HandDrawin
         return try device.makeRenderPipelineState(descriptor: descriptor)
     }
 
+    private static func formattedSetupError(_ error: Error) -> String {
+        let nsError = error as NSError
+        var components = [
+            "domain=\(nsError.domain)",
+            "code=\(nsError.code)",
+            "description=\(nsError.localizedDescription)"
+        ]
+        if let reason = nsError.userInfo[NSLocalizedFailureReasonErrorKey] as? String,
+           reason.isEmpty == false {
+            components.append("reason=\(reason)")
+        }
+        if let recovery = nsError.userInfo[NSLocalizedRecoverySuggestionErrorKey] as? String,
+           recovery.isEmpty == false {
+            components.append("recovery=\(recovery)")
+        }
+        return components.joined(separator: " ")
+    }
+
     private static let shaderSource = """
     #include <metal_stdlib>
     using namespace metal;
@@ -789,7 +815,8 @@ private final class HandDrawingGPURealtimeDraftRendererView: MTKView, HandDrawin
         constant StampInstance *instances [[buffer(0)]],
         constant float2 &canvasSize [[buffer(1)]]
     ) {
-        constant float2 unitQuad[4] = {
+        // Metal 函数内的局部数组不能带 address-space qualifier。
+        float2 unitQuad[4] = {
             float2(-1.0, -1.0),
             float2( 1.0, -1.0),
             float2(-1.0,  1.0),
