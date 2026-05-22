@@ -76,6 +76,22 @@ struct CanvasCamera {
         center.y -= deltaInViewport.y / zoomScale
     }
 
+    mutating func transform(
+        by scaleDelta: CGFloat,
+        around anchorInViewport: CGPoint,
+        translatingBy translationInViewport: CGPoint
+    ) {
+        if translationInViewport != .zero {
+            pan(by: translationInViewport)
+        }
+
+        let resolvedScaleDelta =
+            scaleDelta.isFinite && scaleDelta > 0 ? scaleDelta : 1
+        if resolvedScaleDelta != 1 {
+            zoom(by: resolvedScaleDelta, around: anchorInViewport)
+        }
+    }
+
     mutating func zoom(to newZoomScale: CGFloat, around anchorInViewport: CGPoint) {
         let worldAnchorBeforeZoom = viewportToWorld(anchorInViewport)
         zoomScale = Self.clampedZoomScale(for: newZoomScale)

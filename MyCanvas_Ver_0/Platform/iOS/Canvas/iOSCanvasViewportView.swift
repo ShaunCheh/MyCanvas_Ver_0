@@ -1,6 +1,12 @@
 #if canImport(UIKit) && !os(watchOS)
 import UIKit
 
+struct CanvasDirectTouchTransformDelta: Equatable {
+    let translationInViewport: CGPoint
+    let scaleDelta: CGFloat
+    let anchorInViewport: CGPoint
+}
+
 final class iOSCanvasViewportView: UIView {
     private static let workspaceBackgroundColor = CanvasWorkspacePalette.backgroundColor
     private static let workspaceMinorGridStrokeColor = CanvasWorkspacePalette.minorGridStrokeColor
@@ -123,6 +129,7 @@ final class iOSCanvasViewportView: UIView {
     var onPointerCancel: (() -> Void)?
     var onLongPress: ((CGPoint) -> Void)?
     var onPan: ((CGPoint, CGPoint) -> Void)?
+    var onDirectTouchTransform: ((CanvasDirectTouchTransformDelta) -> Void)?
     var onZoom: ((CGFloat, CGPoint) -> Void)?
     var onZoomGestureBegan: (() -> Void)?
     var onZoomGestureEnded: (() -> Void)?
@@ -1629,6 +1636,7 @@ final class iOSCanvasViewportView: UIView {
                 return
             }
 
+            let previousAnchor = session.lastAnchor
             let rawScaleDelta = rawScale / max(session.lastRawScale, 0.0001)
             let dt = max(now - session.lastTimestamp, 0)
             session.lastRawScale = rawScale
@@ -1636,15 +1644,35 @@ final class iOSCanvasViewportView: UIView {
             session.lastAnchor = anchor
             pinchGestureSession = session
 
-            guard let scaleDelta = normalizedPinchScaleDelta(
+            let normalizedScaleDelta = normalizedPinchScaleDelta(
                 rawDelta: rawScaleDelta,
                 source: session.source,
                 dt: dt
-            ) else {
-                return
-            }
+            )
 
-            onZoom?(scaleDelta, anchor)
+            switch session.source {
+            case .directTouch:
+                let translation = CGPoint(
+                    x: anchor.x - previousAnchor.x,
+                    y: anchor.y - previousAnchor.y
+                )
+                let scaleDelta = normalizedScaleDelta ?? 1
+                guard translation != .zero || scaleDelta != 1 else {
+                    return
+                }
+                onDirectTouchTransform?(
+                    CanvasDirectTouchTransformDelta(
+                        translationInViewport: translation,
+                        scaleDelta: scaleDelta,
+                        anchorInViewport: anchor
+                    )
+                )
+            case .indirectMirroringLike:
+                guard let scaleDelta = normalizedScaleDelta else {
+                    return
+                }
+                onZoom?(scaleDelta, anchor)
+            }
         case .ended, .cancelled, .failed:
             let hadActiveZoomGesture = pinchGestureSession != nil
             pinchGestureSession = nil

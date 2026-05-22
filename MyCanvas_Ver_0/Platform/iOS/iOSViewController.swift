@@ -341,9 +341,9 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     }
     private var isTransitionInteractionFrozen = false
     private var transitionChromeHidden = false
-    private var lastZoomDispatchTimestamp: TimeInterval?
+    private var lastPinchDispatchTimestamp: TimeInterval?
     private var lastZoomRefreshTimestamp: TimeInterval?
-    private var didMutateCameraDuringZoomGesture = false
+    private var didMutateCameraDuringPinchGesture = false
     private var lastContinuousRawInputObservationByKind: [ContinuousRawInputKind: Date] = [:]
     private var hasObservedCurrentPinchRawInput = false
     private var saveButtonResetWorkItem: DispatchWorkItem?
@@ -1444,6 +1444,12 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             }
             self?.handleIndirectPan(translation, at: location)
         }
+        canvasViewportView.onDirectTouchTransform = { [weak self] delta in
+            guard self?.isTransitionInteractionFrozen == false else {
+                return
+            }
+            self?.handleDirectTouchTransform(delta)
+        }
         canvasViewportView.onZoom = { [weak self] scaleDelta, anchor in
             guard self?.isTransitionInteractionFrozen == false else {
                 return
@@ -1479,19 +1485,19 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     }
 
     private func handleZoomGestureBegan() {
-        didMutateCameraDuringZoomGesture = false
+        didMutateCameraDuringPinchGesture = false
     }
 
     private func handleZoomGestureEnded() {
-        guard didMutateCameraDuringZoomGesture else {
+        guard didMutateCameraDuringPinchGesture else {
             return
         }
 
         scheduleAutosave(
-            reason: "zoom canvas",
+            reason: "pinch canvas",
             updateKind: .viewStateOnly
         )
-        didMutateCameraDuringZoomGesture = false
+        didMutateCameraDuringPinchGesture = false
     }
 
     private func observePinchRawInputIfNeeded() {
@@ -2187,7 +2193,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             return
         }
 
-        didMutateCameraDuringZoomGesture = true
+        didMutateCameraDuringPinchGesture = true
         let refreshReason = "zoom scaleDelta=\(String(format: "%.4f", scaleDelta)) anchor=\(describe(point: anchor))"
         requestCanvasRefresh(reason: refreshReason)
         let afterRefresh = ProcessInfo.processInfo.systemUptime
@@ -2201,6 +2207,65 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             zoomAfter: zoomAfter,
             applyCostMs: (afterZoomApply - eventTime) * 1000,
             refreshCostMs: (afterRefresh - afterZoomApply) * 1000,
+            autosaveCostMs: (afterAutosave - afterRefresh) * 1000,
+            totalCostMs: (afterAutosave - eventTime) * 1000
+        )
+    }
+
+    private func handleDirectTouchTransform(_ delta: CanvasDirectTouchTransformDelta) {
+        let eventTime = ProcessInfo.processInfo.systemUptime
+        syncCameraViewportSizeFromCurrentBoundsIfPossible()
+        guard hasRenderableViewportSize else {
+            logIgnoredCanvasInput(
+                "direct touch transform translation=\(describe(point: delta.translationInViewport)) " +
+                    "scaleDelta=\(String(format: "%.4f", delta.scaleDelta)) " +
+                    "anchor=\(describe(point: delta.anchorInViewport))"
+            )
+            return
+        }
+
+        if contextMenuState != nil {
+            dismissContextMenu()
+            return
+        }
+
+        let cameraCenterBeforeTransform = camera.center
+        let zoomBefore = camera.zoomScale
+        camera.transform(
+            by: delta.scaleDelta,
+            around: delta.anchorInViewport,
+            translatingBy: delta.translationInViewport
+        )
+        let cameraCenterAfterTransform = camera.center
+        let zoomAfter = camera.zoomScale
+        let afterTransformApply = ProcessInfo.processInfo.systemUptime
+        guard
+            cameraCenterAfterTransform != cameraCenterBeforeTransform ||
+                zoomAfter != zoomBefore
+        else {
+            return
+        }
+
+        didMutateCameraDuringPinchGesture = true
+        let refreshReason =
+            "direct touch transform translation=\(describe(point: delta.translationInViewport)) " +
+            "scaleDelta=\(String(format: "%.4f", delta.scaleDelta)) " +
+            "anchor=\(describe(point: delta.anchorInViewport))"
+        requestCanvasRefresh(reason: refreshReason)
+        let afterRefresh = ProcessInfo.processInfo.systemUptime
+        let afterAutosave = afterRefresh
+
+        logDirectTouchTransformDispatch(
+            eventTime: eventTime,
+            translation: delta.translationInViewport,
+            scaleDelta: delta.scaleDelta,
+            anchor: delta.anchorInViewport,
+            cameraCenterBeforeTransform: cameraCenterBeforeTransform,
+            cameraCenterAfterTransform: cameraCenterAfterTransform,
+            zoomBefore: zoomBefore,
+            zoomAfter: zoomAfter,
+            applyCostMs: (afterTransformApply - eventTime) * 1000,
+            refreshCostMs: (afterRefresh - afterTransformApply) * 1000,
             autosaveCostMs: (afterAutosave - afterRefresh) * 1000,
             totalCostMs: (afterAutosave - eventTime) * 1000
         )
@@ -5537,6 +5602,46 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         )
     }
 
+    private func logDirectTouchTransformDispatch(
+        eventTime: TimeInterval,
+        translation: CGPoint,
+        scaleDelta: CGFloat,
+        anchor: CGPoint,
+        cameraCenterBeforeTransform: CGPoint,
+        cameraCenterAfterTransform: CGPoint,
+        zoomBefore: CGFloat,
+        zoomAfter: CGFloat,
+        applyCostMs: TimeInterval,
+        refreshCostMs: TimeInterval,
+        autosaveCostMs: TimeInterval,
+        totalCostMs: TimeInterval
+    ) {
+        guard Self.isPinchZoomDiagnosticLoggingEnabled else {
+            return
+        }
+
+        let deltaSinceLastEventMs =
+            lastPinchDispatchTimestamp.map { (eventTime - $0) * 1000 } ?? 0
+        lastPinchDispatchTimestamp = eventTime
+
+        print(
+            "[Canvas iOS][ControllerPinchTransform] " +
+            "t=\(String(format: "%.6f", eventTime)) " +
+            "dtMs=\(String(format: "%.3f", deltaSinceLastEventMs)) " +
+            "translation=\(describe(point: translation)) " +
+            "scaleDelta=\(String(format: "%.6f", scaleDelta)) " +
+            "anchor=\(describe(point: anchor)) " +
+            "cameraCenterBefore=\(describe(point: cameraCenterBeforeTransform)) " +
+            "cameraCenterAfter=\(describe(point: cameraCenterAfterTransform)) " +
+            "zoomBefore=\(String(format: "%.6f", zoomBefore)) " +
+            "zoomAfter=\(String(format: "%.6f", zoomAfter)) " +
+            "applyMs=\(String(format: "%.3f", applyCostMs)) " +
+            "refreshMs=\(String(format: "%.3f", refreshCostMs)) " +
+            "autosaveMs=\(String(format: "%.3f", autosaveCostMs)) " +
+            "totalMs=\(String(format: "%.3f", totalCostMs))"
+        )
+    }
+
     private func logZoomDispatch(
         eventTime: TimeInterval,
         scaleDelta: CGFloat,
@@ -5552,8 +5657,9 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             return
         }
 
-        let deltaSinceLastEventMs = lastZoomDispatchTimestamp.map { (eventTime - $0) * 1000 } ?? 0
-        lastZoomDispatchTimestamp = eventTime
+        let deltaSinceLastEventMs =
+            lastPinchDispatchTimestamp.map { (eventTime - $0) * 1000 } ?? 0
+        lastPinchDispatchTimestamp = eventTime
 
         print(
             "[Canvas iOS][ControllerZoom] " +
