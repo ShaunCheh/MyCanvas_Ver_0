@@ -1,3 +1,4 @@
+import CoreGraphics
 import XCTest
 @testable import MyCanvas_Ver_0
 
@@ -86,3 +87,159 @@ final class HandDrawingLayerPanelStateTests: XCTestCase {
         XCTAssertEqual(insertedLayerState.layers[0].subtitle, "Current")
     }
 }
+
+#if canImport(UIKit)
+@MainActor
+final class HandDrawingEditorCoordinatorBrushPresetTests: XCTestCase {
+    func testHandDrawingEditorCoordinatorCommitsSelectedBrushPresetWithFullDynamics() throws {
+        let document = HandDrawingDocument(
+            paper: HandDrawingPaper(
+                id: "coordinator-preset-paper",
+                size: CGSize(width: 120, height: 120)
+            )
+        )
+        let coordinator = try HandDrawingEditorCoordinator(
+            editorContext: makeHandDrawingEditorCoordinatorTestContext(
+                document: document
+            )
+        )
+        var paletteState: HandDrawingToolPaletteState?
+        coordinator.onPaletteStateChange = { paletteState = $0 }
+        coordinator.activate()
+
+        let selectedColor = HandDrawingColor(
+            red: 0.84,
+            green: 0.26,
+            blue: 0.19,
+            alpha: 1
+        )
+        let selectedPreset = try XCTUnwrap(paletteState?.availableBrushPresets.last)
+        coordinator.selectColor(selectedColor)
+        coordinator.selectBrushPreset(selectedPreset.id)
+        coordinator.handlePencilStrokeBegan(
+            HandDrawingInputSample(
+                location: CGPoint(x: 24, y: 30),
+                force: 0.4,
+                timestamp: 0
+            )
+        )
+        coordinator.handlePencilStrokeEnded([
+            HandDrawingInputSample(
+                location: CGPoint(x: 88, y: 42),
+                force: 0.9,
+                timestamp: 0.1,
+                azimuthRadians: 0.5,
+                altitudeRadians: .pi / 3
+            )
+        ])
+
+        let submission = try XCTUnwrap(coordinator.makeCommitSubmissionIfNeeded())
+        let committedDocument = try HandDrawingDocumentCodec.decodeDocument(
+            from: submission.documentData
+        )
+        let committedStroke = try XCTUnwrap(committedDocument.strokes.last)
+
+        XCTAssertEqual(
+            committedStroke.brush,
+            selectedPreset.makeBrushStyle(color: selectedColor)
+        )
+    }
+
+    func testHandDrawingEditorCoordinatorRestoresCustomBrushPresetFromDocument() throws {
+        let customBrush = HandDrawingBrushStyle(
+            kind: .pen,
+            color: HandDrawingColor(red: 0.21, green: 0.35, blue: 0.82, alpha: 1),
+            baseSize: 8,
+            opacity: 0.72,
+            pressureCurveExponent: 1.65,
+            minSizeRatio: 0.18,
+            maxSizeRatio: 0.91,
+            tiltSizeInfluence: 0.44,
+            tiltOpacityInfluence: 0.12
+        )
+        let document = HandDrawingDocument(
+            paper: HandDrawingPaper(
+                id: "coordinator-restore-paper",
+                size: CGSize(width: 120, height: 120)
+            ),
+            strokes: [
+                HandDrawingStroke(
+                    brush: customBrush,
+                    samplePoints: [
+                        HandDrawingSamplePoint(
+                            point: CGPoint(x: 22, y: 28),
+                            force: 0.55,
+                            timestamp: 0
+                        ),
+                        HandDrawingSamplePoint(
+                            point: CGPoint(x: 86, y: 44),
+                            force: 0.9,
+                            timestamp: 0.1,
+                            azimuthRadians: 0.8,
+                            altitudeRadians: .pi / 4
+                        )
+                    ]
+                )
+            ]
+        )
+        let coordinator = try HandDrawingEditorCoordinator(
+            editorContext: makeHandDrawingEditorCoordinatorTestContext(
+                document: document
+            )
+        )
+        var paletteState: HandDrawingToolPaletteState?
+        coordinator.onPaletteStateChange = { paletteState = $0 }
+        coordinator.activate()
+
+        let selectedPresetID = try XCTUnwrap(paletteState?.selectedBrushPresetID)
+        let restoredPreset = try XCTUnwrap(
+            paletteState?.availableBrushPresets.first {
+                $0.id == selectedPresetID
+            }
+        )
+        coordinator.handlePencilStrokeBegan(
+            HandDrawingInputSample(
+                location: CGPoint(x: 20, y: 82),
+                force: 0.45,
+                timestamp: 1
+            )
+        )
+        coordinator.handlePencilStrokeEnded([
+            HandDrawingInputSample(
+                location: CGPoint(x: 90, y: 92),
+                force: 1,
+                timestamp: 1.1,
+                azimuthRadians: 0.7,
+                altitudeRadians: .pi / 5
+            )
+        ])
+
+        let submission = try XCTUnwrap(coordinator.makeCommitSubmissionIfNeeded())
+        let committedDocument = try HandDrawingDocumentCodec.decodeDocument(
+            from: submission.documentData
+        )
+        let committedStroke = try XCTUnwrap(committedDocument.strokes.last)
+
+        XCTAssertEqual(restoredPreset.id, HandDrawingEditorCoordinator.defaultBrushPresets[1].id)
+        XCTAssertEqual(
+            restoredPreset.makeBrushStyle(color: customBrush.color),
+            customBrush
+        )
+        XCTAssertEqual(committedStroke.brush, customBrush)
+    }
+}
+
+private func makeHandDrawingEditorCoordinatorTestContext(
+    document: HandDrawingDocument
+) throws -> CanvasHandDrawingEditorContext {
+    CanvasHandDrawingEditorContext(
+        itemID: CanvasItemID(),
+        documentID: UUID(),
+        paper: document.paper.canvasPaperSpec,
+        documentData: try HandDrawingDocumentCodec.makeDocumentData(for: document),
+        isEmpty: document.isEmpty,
+        storage: .bundle,
+        didMigrateLegacyDocument: false
+    )
+}
+#endif

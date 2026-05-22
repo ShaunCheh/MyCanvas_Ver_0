@@ -168,8 +168,8 @@ final class iOSHandDrawingEditorViewController: UIViewController {
         paletteView.onSelectColor = { [weak self] color in
             self?.coordinator.selectColor(color)
         }
-        paletteView.onSelectLineWidth = { [weak self] lineWidth in
-            self?.coordinator.selectLineWidth(lineWidth)
+        paletteView.onSelectBrushPreset = { [weak self] presetID in
+            self?.coordinator.selectBrushPreset(presetID)
         }
         paletteView.onUndo = { [weak self] in
             self?.coordinator.undo()

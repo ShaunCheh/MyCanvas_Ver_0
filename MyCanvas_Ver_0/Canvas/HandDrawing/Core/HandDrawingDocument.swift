@@ -231,6 +231,225 @@ struct HandDrawingBrushStyle: Codable, Equatable {
     }
 }
 
+struct HandDrawingBrushPreset: Equatable {
+    let id: String
+    let title: String
+    let brushTemplate: HandDrawingBrushStyle
+
+    init(
+        id: String,
+        title: String,
+        brushTemplate: HandDrawingBrushStyle
+    ) {
+        self.id = id
+        self.title = title
+        self.brushTemplate = brushTemplate.withColor(.black)
+    }
+
+    var displayLineWidth: CGFloat {
+        CGFloat(brushTemplate.baseSize)
+    }
+
+    func makeBrushStyle(color: HandDrawingColor) -> HandDrawingBrushStyle {
+        brushTemplate.withColor(color)
+    }
+
+    func matches(_ brush: HandDrawingBrushStyle) -> Bool {
+        brushTemplate.hasEquivalentPresetSemantics(as: brush)
+    }
+
+    static func pen(
+        id: String,
+        title: String,
+        baseSize: Double,
+        opacity: Double = 1,
+        pressureCurveExponent: Double? = nil,
+        minSizeRatio: Double? = nil,
+        maxSizeRatio: Double? = nil,
+        tiltSizeInfluence: Double? = nil,
+        tiltOpacityInfluence: Double? = nil
+    ) -> HandDrawingBrushPreset {
+        HandDrawingBrushPreset(
+            id: id,
+            title: title,
+            brushTemplate: HandDrawingBrushStyle(
+                kind: .pen,
+                color: .black,
+                baseSize: baseSize,
+                opacity: opacity,
+                pressureCurveExponent: pressureCurveExponent,
+                minSizeRatio: minSizeRatio,
+                maxSizeRatio: maxSizeRatio,
+                tiltSizeInfluence: tiltSizeInfluence,
+                tiltOpacityInfluence: tiltOpacityInfluence
+            )
+        )
+    }
+}
+
+struct HandDrawingBrushPresetSelection: Equatable {
+    let availablePresets: [HandDrawingBrushPreset]
+    let selectedPresetID: String
+}
+
+enum HandDrawingBrushPresetCatalog {
+    static func defaultPenPresets(
+        lineWidths: [CGFloat],
+        tiltSizeInfluence: Double?,
+        tiltOpacityInfluence: Double?
+    ) -> [HandDrawingBrushPreset] {
+        lineWidths.map { lineWidth in
+            let title = self.title(for: lineWidth)
+            return .pen(
+                id: "pen-\(title)",
+                title: title,
+                baseSize: Double(lineWidth),
+                tiltSizeInfluence: tiltSizeInfluence,
+                tiltOpacityInfluence: tiltOpacityInfluence
+            )
+        }
+    }
+
+    static func resolveSelection(
+        for brush: HandDrawingBrushStyle,
+        presets: [HandDrawingBrushPreset]
+    ) -> HandDrawingBrushPresetSelection {
+        guard presets.isEmpty == false else {
+            let title = self.title(for: CGFloat(brush.baseSize))
+            let fallbackPreset = HandDrawingBrushPreset(
+                id: "custom-\(sanitizedIDComponent(for: title))",
+                title: title,
+                brushTemplate: brush
+            )
+            return HandDrawingBrushPresetSelection(
+                availablePresets: [fallbackPreset],
+                selectedPresetID: fallbackPreset.id
+            )
+        }
+
+        if let matchedPreset = presets.first(where: { $0.matches(brush) }) {
+            return HandDrawingBrushPresetSelection(
+                availablePresets: presets,
+                selectedPresetID: matchedPreset.id
+            )
+        }
+
+        let resolvedLineWidth = CGFloat(brush.baseSize)
+        let customTitle = title(for: resolvedLineWidth)
+        let customPreset: HandDrawingBrushPreset
+        if let sameLineWidthPreset = presets.first(where: {
+            approximatelyEqual($0.displayLineWidth, resolvedLineWidth)
+        }) {
+            customPreset = HandDrawingBrushPreset(
+                id: sameLineWidthPreset.id,
+                title: customTitle,
+                brushTemplate: brush
+            )
+            var resolvedPresets = presets
+            if let sameLineWidthIndex = resolvedPresets.firstIndex(where: {
+                $0.id == sameLineWidthPreset.id
+            }) {
+                resolvedPresets[sameLineWidthIndex] = customPreset
+            }
+            return HandDrawingBrushPresetSelection(
+                availablePresets: resolvedPresets,
+                selectedPresetID: customPreset.id
+            )
+        }
+
+        customPreset = HandDrawingBrushPreset(
+            id: "custom-\(sanitizedIDComponent(for: customTitle))",
+            title: customTitle,
+            brushTemplate: brush
+        )
+        var resolvedPresets = presets
+        let insertionIndex = resolvedPresets.firstIndex(where: {
+            $0.displayLineWidth > customPreset.displayLineWidth
+        }) ?? resolvedPresets.endIndex
+        resolvedPresets.insert(customPreset, at: insertionIndex)
+        return HandDrawingBrushPresetSelection(
+            availablePresets: resolvedPresets,
+            selectedPresetID: customPreset.id
+        )
+    }
+
+    static func title(for lineWidth: CGFloat) -> String {
+        let roundedWidth = lineWidth.rounded()
+        if approximatelyEqual(lineWidth, roundedWidth) {
+            return String(Int(roundedWidth))
+        }
+        return String(format: "%.1f", Double(lineWidth))
+    }
+
+    private static func sanitizedIDComponent(for value: String) -> String {
+        value.replacingOccurrences(of: ".", with: "_")
+    }
+
+    private static func approximatelyEqual(
+        _ lhs: CGFloat,
+        _ rhs: CGFloat,
+        tolerance: CGFloat = 0.001
+    ) -> Bool {
+        abs(lhs - rhs) <= tolerance
+    }
+}
+
+extension HandDrawingBrushStyle {
+    func withColor(_ color: HandDrawingColor) -> HandDrawingBrushStyle {
+        HandDrawingBrushStyle(
+            kind: kind,
+            color: color,
+            baseSize: baseSize,
+            opacity: opacity,
+            pressureCurveExponent: pressureCurveExponent,
+            minSizeRatio: minSizeRatio,
+            maxSizeRatio: maxSizeRatio,
+            tiltSizeInfluence: tiltSizeInfluence,
+            tiltOpacityInfluence: tiltOpacityInfluence
+        )
+    }
+
+    func hasEquivalentPresetSemantics(as other: HandDrawingBrushStyle) -> Bool {
+        kind == other.kind
+            && approximatelyEqual(baseSize, other.baseSize)
+            && approximatelyEqual(opacity, other.opacity)
+            && approximatelyEqual(
+                pressureCurveExponent,
+                other.pressureCurveExponent
+            )
+            && approximatelyEqual(minSizeRatio, other.minSizeRatio)
+            && approximatelyEqual(maxSizeRatio, other.maxSizeRatio)
+            && approximatelyEqual(tiltSizeInfluence, other.tiltSizeInfluence)
+            && approximatelyEqual(
+                tiltOpacityInfluence,
+                other.tiltOpacityInfluence
+            )
+    }
+
+    private func approximatelyEqual(
+        _ lhs: Double?,
+        _ rhs: Double?,
+        tolerance: Double = 0.001
+    ) -> Bool {
+        switch (lhs, rhs) {
+        case (nil, nil):
+            return true
+        case let (lhs?, rhs?):
+            return abs(lhs - rhs) <= tolerance
+        default:
+            return false
+        }
+    }
+
+    private func approximatelyEqual(
+        _ lhs: Double,
+        _ rhs: Double,
+        tolerance: Double = 0.001
+    ) -> Bool {
+        abs(lhs - rhs) <= tolerance
+    }
+}
+
 struct HandDrawingSamplePoint: Codable, Equatable {
     var x: Double
     var y: Double

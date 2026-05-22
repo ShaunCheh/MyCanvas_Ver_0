@@ -19,9 +19,9 @@ struct HandDrawingCanvasSurfaceState {
 struct HandDrawingToolPaletteState {
     var selectedTool: HandDrawingEditorTool
     var selectedColor: HandDrawingColor
-    var selectedLineWidth: CGFloat
+    var selectedBrushPresetID: String
     var availableColors: [HandDrawingColor]
-    var availableLineWidths: [CGFloat]
+    var availableBrushPresets: [HandDrawingBrushPreset]
     var canUndo: Bool
     var canRedo: Bool
     var isBrushEnabled: Bool
@@ -41,6 +41,12 @@ final class HandDrawingEditorCoordinator {
         HandDrawingColor(red: 0.57, green: 0.28, blue: 0.84)
     ]
     static let defaultLineWidths: [CGFloat] = [4, 8, 12, 18]
+    static let defaultBrushPresets: [HandDrawingBrushPreset] =
+        HandDrawingBrushPresetCatalog.defaultPenPresets(
+            lineWidths: defaultLineWidths,
+            tiltSizeInfluence: 0.85,
+            tiltOpacityInfluence: 0
+        )
 
     private let editorContext: CanvasHandDrawingEditorContext
     private let canvasRenderer: HandDrawingCanvasRenderer
@@ -50,7 +56,8 @@ final class HandDrawingEditorCoordinator {
     private var committedImage: CGImage?
     private var selectedTool: HandDrawingEditorTool = .brush
     private var selectedColor: HandDrawingColor
-    private var selectedLineWidth: CGFloat
+    private var availableBrushPresets: [HandDrawingBrushPreset]
+    private var selectedBrushPresetID: String
     private var activeStrokeBrush: HandDrawingBrushStyle?
     private var activeStrokeInputSamples: [HandDrawingInputSample] = []
     private var pixelEraserToolController = HandDrawingPixelEraserToolController()
@@ -71,9 +78,16 @@ final class HandDrawingEditorCoordinator {
         canvasRenderer = try HandDrawingCanvasRenderer(paperSize: document.paper.size)
         initialDocument = document
         engine = HandDrawingEditorEngine(document: document)
-        let initialBrush = document.strokes.last?.brush ?? .defaultPen
+        let initialBrush = document.strokes.last?.brush
+            ?? Self.defaultBrushPresets.first?.makeBrushStyle(color: .black)
+            ?? .defaultPen
+        let initialPresetSelection = HandDrawingBrushPresetCatalog.resolveSelection(
+            for: initialBrush,
+            presets: Self.defaultBrushPresets
+        )
         selectedColor = initialBrush.color
-        selectedLineWidth = CGFloat(initialBrush.baseSize)
+        availableBrushPresets = initialPresetSelection.availablePresets
+        selectedBrushPresetID = initialPresetSelection.selectedPresetID
         committedImage = try canvasRenderer.render(
             document: document,
             dirtyRegion: document.paperBounds
@@ -112,8 +126,11 @@ final class HandDrawingEditorCoordinator {
         publishPaletteState()
     }
 
-    func selectLineWidth(_ lineWidth: CGFloat) {
-        selectedLineWidth = lineWidth
+    func selectBrushPreset(_ presetID: String) {
+        guard availableBrushPresets.contains(where: { $0.id == presetID }) else {
+            return
+        }
+        selectedBrushPresetID = presetID
         publishPaletteState()
     }
 
@@ -217,7 +234,7 @@ final class HandDrawingEditorCoordinator {
             }
             pixelEraserToolController.beginErasing(
                 with: sample,
-                baseSize: selectedLineWidth,
+                baseSize: selectedBrushBaseSize,
                 engine: &engine
             )
             refreshCommittedImageAndPublishState()
@@ -247,7 +264,7 @@ final class HandDrawingEditorCoordinator {
         case .pixelEraser:
             pixelEraserToolController.appendSamples(
                 samples,
-                baseSize: selectedLineWidth,
+                baseSize: selectedBrushBaseSize,
                 engine: &engine
             )
             refreshCommittedImageAndPublishState()
@@ -294,7 +311,7 @@ final class HandDrawingEditorCoordinator {
         case .pixelEraser:
             pixelEraserToolController.appendSamples(
                 samples,
-                baseSize: selectedLineWidth,
+                baseSize: selectedBrushBaseSize,
                 engine: &engine
             )
             pixelEraserToolController.endErasing()
@@ -370,14 +387,7 @@ final class HandDrawingEditorCoordinator {
     }
 
     private var currentBrushStyle: HandDrawingBrushStyle {
-        HandDrawingBrushStyle(
-            kind: .pen,
-            color: selectedColor,
-            baseSize: Double(selectedLineWidth),
-            opacity: 1,
-            tiltSizeInfluence: 0.85,
-            tiltOpacityInfluence: 0
-        )
+        selectedBrushPreset.makeBrushStyle(color: selectedColor)
     }
 
     private var draftStroke: HandDrawingStroke? {
@@ -422,9 +432,9 @@ final class HandDrawingEditorCoordinator {
             HandDrawingToolPaletteState(
                 selectedTool: selectedTool,
                 selectedColor: selectedColor,
-                selectedLineWidth: selectedLineWidth,
+                selectedBrushPresetID: selectedBrushPresetID,
                 availableColors: Self.defaultColors,
-                availableLineWidths: Self.defaultLineWidths,
+                availableBrushPresets: availableBrushPresets,
                 canUndo: engine.canUndo,
                 canRedo: engine.canRedo,
                 isBrushEnabled: engine.canInteractWithActiveLayer,
@@ -483,6 +493,19 @@ final class HandDrawingEditorCoordinator {
             forStrokeIDs: engine.state.selectedStrokeIDs,
             in: engine.state.document.activeLayerStrokes
         )
+    }
+
+    private var selectedBrushPreset: HandDrawingBrushPreset {
+        if let matchedPreset = availableBrushPresets.first(where: {
+            $0.id == selectedBrushPresetID
+        }) {
+            return matchedPreset
+        }
+        return availableBrushPresets[0]
+    }
+
+    private var selectedBrushBaseSize: CGFloat {
+        selectedBrushPreset.displayLineWidth
     }
 
     private func endTransientInteractionState() {

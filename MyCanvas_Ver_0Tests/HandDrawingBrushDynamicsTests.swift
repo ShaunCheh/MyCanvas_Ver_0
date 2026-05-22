@@ -172,4 +172,103 @@ final class HandDrawingBrushDynamicsTests: XCTestCase {
         XCTAssertEqual(bounds.minY, 60 - expectedHalfExtent, accuracy: 0.001)
         XCTAssertEqual(bounds.maxY, 60 + expectedHalfExtent, accuracy: 0.001)
     }
+
+    func testHandDrawingBrushPresetCatalogResolvesDefaultPresetAndBuildsFullBrushStyle() throws {
+        let presets = HandDrawingBrushPresetCatalog.defaultPenPresets(
+            lineWidths: [4, 8, 12, 18],
+            tiltSizeInfluence: 0.85,
+            tiltOpacityInfluence: 0
+        )
+        let selectedColor = HandDrawingColor(
+            red: 0.18,
+            green: 0.46,
+            blue: 0.81,
+            alpha: 1
+        )
+        let selectedBrush = presets[2].makeBrushStyle(color: selectedColor)
+        let selection = HandDrawingBrushPresetCatalog.resolveSelection(
+            for: selectedBrush,
+            presets: presets
+        )
+        let selectedPreset = try XCTUnwrap(
+            selection.availablePresets.first { $0.id == selection.selectedPresetID }
+        )
+
+        XCTAssertEqual(selection.selectedPresetID, presets[2].id)
+        XCTAssertEqual(selection.availablePresets, presets)
+        XCTAssertEqual(
+            selectedPreset.makeBrushStyle(color: selectedColor),
+            selectedBrush
+        )
+        XCTAssertEqual(
+            try XCTUnwrap(selectedPreset.brushTemplate.tiltSizeInfluence),
+            0.85,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(
+            try XCTUnwrap(selectedPreset.brushTemplate.tiltOpacityInfluence),
+            0,
+            accuracy: 0.001
+        )
+    }
+
+    func testHandDrawingBrushPresetCatalogPreservesDocumentBrushDynamicsAtMatchingWidth() throws {
+        let presets = HandDrawingBrushPresetCatalog.defaultPenPresets(
+            lineWidths: [4, 8, 12, 18],
+            tiltSizeInfluence: 0.85,
+            tiltOpacityInfluence: 0
+        )
+        let reopenedBrush = HandDrawingBrushStyle(
+            kind: .pen,
+            color: HandDrawingColor(red: 0.73, green: 0.22, blue: 0.4, alpha: 1),
+            baseSize: 8,
+            opacity: 0.76,
+            pressureCurveExponent: 1.7,
+            minSizeRatio: 0.18,
+            maxSizeRatio: 0.94,
+            tiltSizeInfluence: 0.42,
+            tiltOpacityInfluence: 0.16
+        )
+        let selection = HandDrawingBrushPresetCatalog.resolveSelection(
+            for: reopenedBrush,
+            presets: presets
+        )
+        let selectedPreset = try XCTUnwrap(
+            selection.availablePresets.first { $0.id == selection.selectedPresetID }
+        )
+
+        XCTAssertEqual(selection.availablePresets.count, presets.count)
+        XCTAssertEqual(selection.selectedPresetID, presets[1].id)
+        XCTAssertTrue(selectedPreset.matches(reopenedBrush))
+        XCTAssertEqual(
+            selectedPreset.makeBrushStyle(color: reopenedBrush.color),
+            reopenedBrush
+        )
+    }
+
+    func testHandDrawingBrushPresetCatalogInsertsNonPresetWidthInSortedOrder() {
+        let presets = HandDrawingBrushPresetCatalog.defaultPenPresets(
+            lineWidths: [4, 8, 12, 18],
+            tiltSizeInfluence: 0.85,
+            tiltOpacityInfluence: 0
+        )
+        let reopenedBrush = HandDrawingBrushStyle(
+            kind: .pen,
+            color: .black,
+            baseSize: 10,
+            opacity: 0.9,
+            tiltSizeInfluence: 0.6,
+            tiltOpacityInfluence: 0.05
+        )
+        let selection = HandDrawingBrushPresetCatalog.resolveSelection(
+            for: reopenedBrush,
+            presets: presets
+        )
+
+        XCTAssertEqual(
+            selection.availablePresets.map(\.displayLineWidth),
+            [4, 8, 10, 12, 18]
+        )
+        XCTAssertEqual(selection.selectedPresetID, "custom-10")
+    }
 }

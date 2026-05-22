@@ -11,7 +11,7 @@ final class HandDrawingToolPaletteView: UIView {
 
     var onSelectTool: ((HandDrawingEditorTool) -> Void)?
     var onSelectColor: ((HandDrawingColor) -> Void)?
-    var onSelectLineWidth: ((CGFloat) -> Void)?
+    var onSelectBrushPreset: ((String) -> Void)?
     var onUndo: (() -> Void)?
     var onRedo: (() -> Void)?
     var onDeselectSelection: (() -> Void)?
@@ -25,7 +25,7 @@ final class HandDrawingToolPaletteView: UIView {
     }()
     private let toolStackView = HandDrawingToolPaletteView.makeHorizontalStack()
     private let colorStackView = HandDrawingToolPaletteView.makeHorizontalStack()
-    private let lineWidthStackView = HandDrawingToolPaletteView.makeHorizontalStack()
+    private let brushPresetStackView = HandDrawingToolPaletteView.makeHorizontalStack()
     private let historyStackView = HandDrawingToolPaletteView.makeHorizontalStack()
     private let brushButton = HandDrawingToolPaletteView.makeActionButton(title: "Brush")
     private let eraserButton = HandDrawingToolPaletteView.makeActionButton(title: "Eraser")
@@ -35,9 +35,9 @@ final class HandDrawingToolPaletteView: UIView {
     private let redoButton = HandDrawingToolPaletteView.makeActionButton(title: "Redo")
 
     private var colorButtons: [ColorSwatchButton] = []
-    private var lineWidthButtons: [UIButton] = []
+    private var brushPresetButtons: [UIButton] = []
     private var currentColors: [HandDrawingColor] = []
-    private var currentLineWidths: [CGFloat] = []
+    private var currentBrushPresets: [HandDrawingBrushPreset] = []
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -59,7 +59,7 @@ final class HandDrawingToolPaletteView: UIView {
 
     func apply(state: HandDrawingToolPaletteState) {
         rebuildColorButtonsIfNeeded(colors: state.availableColors)
-        rebuildLineWidthButtonsIfNeeded(lineWidths: state.availableLineWidths)
+        rebuildBrushPresetButtonsIfNeeded(presets: state.availableBrushPresets)
         updateToolButtonSelection(
             brushButton,
             isSelected: state.selectedTool == .brush,
@@ -90,11 +90,11 @@ final class HandDrawingToolPaletteView: UIView {
             colorButton.isSelected = currentColors[index] == state.selectedColor
         }
 
-        for (index, button) in lineWidthButtons.enumerated() {
-            guard currentLineWidths.indices.contains(index) else {
+        for (index, button) in brushPresetButtons.enumerated() {
+            guard currentBrushPresets.indices.contains(index) else {
                 continue
             }
-            button.isSelected = currentLineWidths[index] == state.selectedLineWidth
+            button.isSelected = currentBrushPresets[index].id == state.selectedBrushPresetID
             button.configurationUpdateHandler?(button)
         }
     }
@@ -103,7 +103,7 @@ final class HandDrawingToolPaletteView: UIView {
         addSubview(rootStackView)
         [brushButton, eraserButton, lassoButton].forEach(toolStackView.addArrangedSubview)
         [deselectButton, undoButton, redoButton].forEach(historyStackView.addArrangedSubview)
-        [toolStackView, colorStackView, lineWidthStackView, historyStackView]
+        [toolStackView, colorStackView, brushPresetStackView, historyStackView]
             .forEach(rootStackView.addArrangedSubview)
     }
 
@@ -170,17 +170,19 @@ final class HandDrawingToolPaletteView: UIView {
         }
     }
 
-    private func rebuildLineWidthButtonsIfNeeded(lineWidths: [CGFloat]) {
-        guard lineWidths != currentLineWidths else {
+    private func rebuildBrushPresetButtonsIfNeeded(
+        presets: [HandDrawingBrushPreset]
+    ) {
+        guard presets != currentBrushPresets else {
             return
         }
-        currentLineWidths = lineWidths
-        lineWidthButtons.forEach { button in
-            lineWidthStackView.removeArrangedSubview(button)
+        currentBrushPresets = presets
+        brushPresetButtons.forEach { button in
+            brushPresetStackView.removeArrangedSubview(button)
             button.removeFromSuperview()
         }
-        lineWidthButtons = lineWidths.map { lineWidth in
-            let button = Self.makeActionButton(title: "\(Int(lineWidth.rounded()))")
+        brushPresetButtons = presets.map { preset in
+            let button = Self.makeActionButton(title: preset.title)
             button.configurationUpdateHandler = { button in
                 var configuration = button.configuration ?? UIButton.Configuration.tinted()
                 configuration.baseBackgroundColor = button.isSelected
@@ -193,11 +195,11 @@ final class HandDrawingToolPaletteView: UIView {
             }
             button.addAction(
                 UIAction { [weak self] _ in
-                    self?.onSelectLineWidth?(lineWidth)
+                    self?.onSelectBrushPreset?(preset.id)
                 },
                 for: .touchUpInside
             )
-            lineWidthStackView.addArrangedSubview(button)
+            brushPresetStackView.addArrangedSubview(button)
             return button
         }
     }
