@@ -146,6 +146,55 @@ final class HandDrawingDocumentStoreTests: XCTestCase {
         }
     }
 
+    func testHandDrawingDocumentStoreGeneratesCanonicalPreviewWhenPreviewIsOmitted() throws {
+        try withTemporaryHandDrawingBoardDirectory { boardDirectoryURL in
+            let documentID = UUID()
+            let contentRevision = UUID()
+            let document = HandDrawingDocument(
+                paper: HandDrawingPaper(
+                    id: "canonical-preview-paper",
+                    size: CGSize(width: 96, height: 96)
+                ),
+                strokes: [
+                    makeHandDrawingTestStroke(
+                        samplePoints: [CGPoint(x: 36, y: 36)],
+                        sampleForces: [0.35],
+                        sampleAzimuths: [0.75],
+                        sampleAltitudes: [.pi / 4],
+                        tiltSizeInfluence: HandDrawingBrushStyle.defaultPresetTiltSizeInfluence,
+                        tiltOpacityInfluence: HandDrawingBrushStyle.defaultPresetTiltOpacityInfluence
+                    )
+                ]
+            )
+            let drawingData = try HandDrawingDocumentCodec.makeDocumentData(for: document)
+            let expectedPreviewImage = try HandDrawingPreviewRenderer().renderPreviewImage(
+                for: document,
+                scale: 1
+            )
+
+            try HandDrawingDocumentStore.persistDocument(
+                documentID: documentID,
+                paper: document.paper.canvasPaperSpec,
+                contentRevision: contentRevision,
+                isEmpty: false,
+                drawingData: drawingData,
+                previewImageData: nil,
+                previewCGImage: nil,
+                boardDirectoryURL: boardDirectoryURL
+            )
+
+            let storedPreviewImage = try HandDrawingDocumentStore.loadPreviewImage(
+                documentID: documentID,
+                boardDirectoryURL: boardDirectoryURL
+            )
+
+            XCTAssertEqual(
+                BoardThumbnailImageSignature.describe(storedPreviewImage),
+                BoardThumbnailImageSignature.describe(expectedPreviewImage)
+            )
+        }
+    }
+
     func testHandDrawingDocumentStoreRemovesOrphanedBundles() throws {
         try withTemporaryHandDrawingBoardDirectory { boardDirectoryURL in
             let keptDocumentID = UUID()

@@ -6,7 +6,6 @@ enum HandDrawingDocumentStoreError: LocalizedError {
         documentID: HandDrawingDocumentID,
         component: String
     )
-    case missingPreviewRepresentation(documentID: HandDrawingDocumentID)
     case invalidManifestDocumentID(
         expected: HandDrawingDocumentID,
         actual: HandDrawingDocumentID
@@ -16,8 +15,6 @@ enum HandDrawingDocumentStoreError: LocalizedError {
         switch self {
         case let .missingBundleComponent(documentID, component):
             return "The hand drawing bundle component is missing for document \(documentID.uuidString): \(component)."
-        case let .missingPreviewRepresentation(documentID):
-            return "The hand drawing preview representation is missing for document \(documentID.uuidString)."
         case let .invalidManifestDocumentID(expected, actual):
             return "The hand drawing manifest document id mismatched. Expected \(expected.uuidString), actual \(actual.uuidString)."
         }
@@ -210,7 +207,8 @@ enum HandDrawingDocumentStore {
                 documentID: documentID
             )
         } else {
-            throw HandDrawingDocumentStoreError.missingPreviewRepresentation(
+            resolvedPreviewImageData = try makeCanonicalPreviewImageData(
+                for: normalizedDrawingData,
                 documentID: documentID
             )
         }
@@ -256,6 +254,29 @@ enum HandDrawingDocumentStore {
             boardDirectoryURL: boardDirectoryURL,
             migrationOrigin: migrationOrigin,
             legacyBackupDrawingData: legacyBackupDrawingData
+        )
+    }
+
+    private static func makeCanonicalPreviewImageData(
+        for normalizedDrawingData: Data,
+        documentID: HandDrawingDocumentID
+    ) throws -> Data {
+        let normalizedDocument = try HandDrawingDocumentCodec.decodeDocument(
+            from: normalizedDrawingData
+        )
+        let previewImage: CGImage
+        if normalizedDocument.isEmpty {
+            previewImage = try CanvasHandDrawingPreviewAssetFactory
+                .makeTransparentPreview(for: normalizedDocument.paper.canvasPaperSpec)
+        } else {
+            previewImage = try HandDrawingPreviewRenderer().renderPreviewImage(
+                for: normalizedDocument,
+                scale: 1
+            )
+        }
+        return try HandDrawingDocumentCodec.makePNGData(
+            for: previewImage,
+            documentID: documentID
         )
     }
 

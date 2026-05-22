@@ -8,10 +8,6 @@ enum HandDrawingMigrationServiceError: LocalizedError {
         itemID: CanvasItemID
     )
     case invalidLegacyDrawingData(itemID: CanvasItemID)
-    case missingLegacyPreviewAsset(
-        itemID: CanvasItemID,
-        filename: String
-    )
 
     var errorDescription: String? {
         switch self {
@@ -21,8 +17,6 @@ enum HandDrawingMigrationServiceError: LocalizedError {
             return "The hand drawing record is missing for board \(boardID.uuidString), item \(itemID.uuidString)."
         case let .invalidLegacyDrawingData(itemID):
             return "The legacy hand drawing source could not be decoded for item \(itemID.uuidString)."
-        case let .missingLegacyPreviewAsset(itemID, filename):
-            return "The legacy hand drawing preview asset is missing for item \(itemID.uuidString): \(filename)"
         }
     }
 }
@@ -120,11 +114,6 @@ enum HandDrawingMigrationService {
             legacyDrawingData,
             itemID: itemID
         )
-        let legacyPreviewImageData = try loadLegacyPreviewImageData(
-            for: record,
-            itemID: itemID,
-            assetsDirectoryURL: entry.assetsDirectoryURL
-        )
 
         do {
             try HandDrawingDocumentStore.persistDocument(
@@ -133,7 +122,7 @@ enum HandDrawingMigrationService {
                 contentRevision: record.contentRevision,
                 isEmpty: record.isEmpty,
                 drawingData: legacyDrawingData,
-                previewImageData: legacyPreviewImageData,
+                previewImageData: nil,
                 previewCGImage: nil,
                 boardDirectoryURL: entry.boardDirectoryURL,
                 migrationOrigin: .legacyFlatAssetPair,
@@ -227,10 +216,6 @@ enum HandDrawingMigrationService {
             legacyBackupDrawingData,
             itemID: record.id
         )
-        let previewImageData = try HandDrawingDocumentStore.loadPreviewImageData(
-            documentID: record.documentID,
-            boardDirectoryURL: boardDirectoryURL
-        )
         let resolvedMigrationOrigin = manifest.flatMap(\.migrationOrigin)
 
         try HandDrawingDocumentStore.persistDocument(
@@ -239,7 +224,7 @@ enum HandDrawingMigrationService {
             contentRevision: manifest?.contentRevision ?? record.contentRevision,
             isEmpty: manifest?.isEmpty ?? record.isEmpty,
             drawingData: legacyBackupDrawingData,
-            previewImageData: previewImageData,
+            previewImageData: nil,
             previewCGImage: nil,
             boardDirectoryURL: boardDirectoryURL,
             migrationOrigin: resolvedMigrationOrigin,
@@ -288,23 +273,6 @@ enum HandDrawingMigrationService {
         try CoordinatedFileIO.readData(
             at: record.legacyAssetLocator.sourceDrawingURL(in: assetsDirectoryURL)
         )
-    }
-
-    private static func loadLegacyPreviewImageData(
-        for record: BoardHandDrawingItemRecord,
-        itemID: CanvasItemID,
-        assetsDirectoryURL: URL
-    ) throws -> Data {
-        let previewURL = record.legacyAssetLocator.previewImageURL(
-            in: assetsDirectoryURL
-        )
-        guard try CoordinatedFileIO.modificationDate(at: previewURL) != nil else {
-            throw HandDrawingMigrationServiceError.missingLegacyPreviewAsset(
-                itemID: itemID,
-                filename: record.legacyAssetLocator.previewImageFilename
-            )
-        }
-        return try CoordinatedFileIO.readData(at: previewURL)
     }
 
     private static func validateLegacyDrawingData(

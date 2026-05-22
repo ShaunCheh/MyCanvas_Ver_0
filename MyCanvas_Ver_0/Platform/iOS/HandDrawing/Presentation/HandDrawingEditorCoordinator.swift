@@ -44,8 +44,8 @@ final class HandDrawingEditorCoordinator {
     static let defaultBrushPresets: [HandDrawingBrushPreset] =
         HandDrawingBrushPresetCatalog.defaultPenPresets(
             lineWidths: defaultLineWidths,
-            tiltSizeInfluence: 0.85,
-            tiltOpacityInfluence: 0
+            tiltSizeInfluence: HandDrawingBrushStyle.defaultPresetTiltSizeInfluence,
+            tiltOpacityInfluence: HandDrawingBrushStyle.defaultPresetTiltOpacityInfluence
         )
 
     private let editorContext: CanvasHandDrawingEditorContext

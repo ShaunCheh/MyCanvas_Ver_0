@@ -94,6 +94,50 @@ final class HandDrawingDocumentCodecTests: XCTestCase {
         XCTAssertEqual(tiltOpacityInfluence, 0.25, accuracy: 0.001)
     }
 
+    func testHandDrawingDocumentCodecDecodesLayeredDocumentWithoutBrushDynamicsFields() throws {
+        let stroke = HandDrawingStroke(
+            brush: HandDrawingBrushStyle(
+                kind: .pen,
+                color: HandDrawingColor(red: 0.28, green: 0.36, blue: 0.88, alpha: 1),
+                baseSize: 14,
+                opacity: 0.72
+            ),
+            samplePoints: [
+                HandDrawingSamplePoint(
+                    point: CGPoint(x: 24, y: 38),
+                    force: 0.35,
+                    timestamp: 0,
+                    azimuthRadians: 0.7,
+                    altitudeRadians: .pi / 4
+                )
+            ]
+        )
+        let document = HandDrawingDocument(
+            paper: HandDrawingPaper(
+                id: "legacy-layered-paper",
+                size: CGSize(width: 120, height: 90)
+            ),
+            strokes: [stroke]
+        )
+
+        let data = try HandDrawingDocumentCodec.makeDocumentData(for: document)
+        let decodedDocument = try HandDrawingDocumentCodec.decodeDocument(from: data)
+        let decodedStroke = try XCTUnwrap(decodedDocument.strokes.first)
+        let decodedSample = try XCTUnwrap(decodedStroke.samplePoints.first)
+        let azimuthRadians = try XCTUnwrap(decodedSample.azimuthRadians)
+        let altitudeRadians = try XCTUnwrap(decodedSample.altitudeRadians)
+
+        XCTAssertEqual(decodedDocument, document)
+        XCTAssertNil(decodedStroke.brush.pressureCurveExponent)
+        XCTAssertNil(decodedStroke.brush.minSizeRatio)
+        XCTAssertNil(decodedStroke.brush.maxSizeRatio)
+        XCTAssertNil(decodedStroke.brush.tiltSizeInfluence)
+        XCTAssertNil(decodedStroke.brush.tiltOpacityInfluence)
+        XCTAssertEqual(decodedSample.force, 0.35, accuracy: 0.001)
+        XCTAssertEqual(azimuthRadians, 0.7, accuracy: 0.001)
+        XCTAssertEqual(altitudeRadians, .pi / 4, accuracy: 0.001)
+    }
+
     func testHandDrawingDocumentCodecDecodesLegacyFlatDocumentAsDefaultLayeredDocument() throws {
         let legacyDocument = makeHandDrawingTestDocument(includeEraseMask: true)
         let legacyData = try makeLegacyFlatDocumentData(

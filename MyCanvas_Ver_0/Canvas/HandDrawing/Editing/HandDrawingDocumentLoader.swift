@@ -124,7 +124,9 @@ enum HandDrawingLegacyPencilKitBridge {
             kind: .pen,
             color: color,
             baseSize: resolvedBaseSize,
-            opacity: averageOpacity
+            opacity: averageOpacity,
+            tiltSizeInfluence: HandDrawingBrushStyle.defaultPresetTiltSizeInfluence,
+            tiltOpacityInfluence: HandDrawingBrushStyle.defaultPresetTiltOpacityInfluence
         )
     }
 

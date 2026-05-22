@@ -96,6 +96,8 @@ struct HandDrawingBrushStyle: Codable, Equatable {
         case tiltOpacityInfluence
     }
 
+    static let defaultPresetTiltSizeInfluence = 0.85
+    static let defaultPresetTiltOpacityInfluence = 0.0
     static let defaultPen = HandDrawingBrushStyle(
         kind: .pen,
         color: .black,

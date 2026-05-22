@@ -78,6 +78,49 @@ final class HandDrawingDocumentLoaderTests: XCTestCase {
         XCTAssertGreaterThan(sampledPixel.alpha, 0)
     }
 
+    func testHandDrawingDocumentLoaderNormalizesLegacyPencilKitDrawingPreservingRawInputs() throws {
+        let legacyDrawing = makeLegacyTiltDrawing()
+
+        let normalizedData = try HandDrawingDocumentLoader.normalizeDocumentData(
+            from: legacyDrawing.dataRepresentation(),
+            paper: .square
+        )
+        let normalizedDocument = try HandDrawingDocumentCodec.decodeDocument(
+            from: normalizedData
+        )
+        let normalizedStroke = try XCTUnwrap(normalizedDocument.strokes.first)
+        let normalizedSample = try XCTUnwrap(normalizedStroke.samplePoints.first)
+        let tiltSizeInfluence = try XCTUnwrap(normalizedStroke.brush.tiltSizeInfluence)
+        let tiltOpacityInfluence = try XCTUnwrap(
+            normalizedStroke.brush.tiltOpacityInfluence
+        )
+        let azimuthRadians = try XCTUnwrap(normalizedSample.azimuthRadians)
+        let altitudeRadians = try XCTUnwrap(normalizedSample.altitudeRadians)
+
+        XCTAssertEqual(normalizedDocument.paper, HandDrawingPaper(.square))
+        XCTAssertEqual(normalizedDocument.strokes.count, 1)
+        XCTAssertEqual(
+            tiltSizeInfluence,
+            HandDrawingBrushStyle.defaultPresetTiltSizeInfluence,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(
+            tiltOpacityInfluence,
+            HandDrawingBrushStyle.defaultPresetTiltOpacityInfluence,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(normalizedSample.force, 0.35, accuracy: 0.001)
+        XCTAssertEqual(azimuthRadians, 0.75, accuracy: 0.001)
+        XCTAssertEqual(altitudeRadians, .pi / 4, accuracy: 0.001)
+
+        let previewImage = try HandDrawingPreviewRenderer().renderPreviewImage(
+            for: normalizedDocument,
+            scale: 1
+        )
+        let sampledPixel = sampleDisplayedRGBA(from: previewImage, x: 36, y: 36)
+        XCTAssertGreaterThan(sampledPixel.alpha, 0)
+    }
+
     private func makeLegacyDrawing() -> PKDrawing {
         let points = [
             PKStrokePoint(
@@ -114,6 +157,27 @@ final class HandDrawingDocumentLoaderTests: XCTestCase {
         )
         let stroke = PKStroke(
             ink: PKInk(.pen, color: HandDrawingPlatformColor.red),
+            path: path
+        )
+        return PKDrawing(strokes: [stroke])
+    }
+
+    private func makeLegacyTiltDrawing() -> PKDrawing {
+        let point = PKStrokePoint(
+            location: CGPoint(x: 36, y: 36),
+            timeOffset: 0.12,
+            size: CGSize(width: 10, height: 10),
+            opacity: 0.7,
+            force: 0.35,
+            azimuth: 0.75,
+            altitude: .pi / 4
+        )
+        let path = PKStrokePath(
+            controlPoints: [point],
+            creationDate: Date()
+        )
+        let stroke = PKStroke(
+            ink: PKInk(.marker, color: HandDrawingPlatformColor.blue),
             path: path
         )
         return PKDrawing(strokes: [stroke])

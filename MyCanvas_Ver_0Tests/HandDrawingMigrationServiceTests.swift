@@ -59,6 +59,64 @@ final class HandDrawingMigrationServiceTests: XCTestCase {
         }
     }
 
+    func testHandDrawingMigrationServiceMigratesLegacyDrawingWithoutPreviewAssetAndRebuildsCanonicalPreview() throws {
+        try withTemporaryHandDrawingMigrationWorkspace { selectedFolderURL, userDefaults in
+            let legacyDrawing = makeTiltedLegacyMigrationDrawing()
+            let fixture = try makeLegacyHandDrawingFixture(
+                selectedFolderURL: selectedFolderURL,
+                drawingData: legacyDrawing.dataRepresentation()
+            )
+            let legacyPreviewURL = BoardHandDrawingAssetLocator(
+                documentID: fixture.documentID
+            ).previewImageURL(in: fixture.assetsDirectoryURL)
+            try CoordinatedFileIO.removeItemIfExists(at: legacyPreviewURL)
+
+            let preparedDocument = try HandDrawingMigrationService.prepareDocumentForEditing(
+                boardID: fixture.boardID,
+                itemID: fixture.itemID,
+                userDefaults: userDefaults
+            )
+            let migratedDocument = try HandDrawingDocumentCodec.decodeDocument(
+                from: preparedDocument.documentData
+            )
+            let migratedStroke = try XCTUnwrap(migratedDocument.strokes.first)
+            let migratedSample = try XCTUnwrap(migratedStroke.samplePoints.first)
+            let tiltSizeInfluence = try XCTUnwrap(migratedStroke.brush.tiltSizeInfluence)
+            let tiltOpacityInfluence = try XCTUnwrap(
+                migratedStroke.brush.tiltOpacityInfluence
+            )
+            let azimuthRadians = try XCTUnwrap(migratedSample.azimuthRadians)
+            let altitudeRadians = try XCTUnwrap(migratedSample.altitudeRadians)
+            let storedPreviewImage = try HandDrawingDocumentStore.loadPreviewImage(
+                documentID: fixture.documentID,
+                boardDirectoryURL: fixture.boardDirectoryURL
+            )
+            let expectedPreviewImage = try HandDrawingPreviewRenderer()
+                .renderPreviewImage(for: migratedDocument, scale: 1)
+
+            XCTAssertEqual(preparedDocument.record.storage, .bundle)
+            XCTAssertTrue(preparedDocument.didMigrateLegacyDocument)
+            XCTAssertFalse(migratedDocument.isEmpty)
+            XCTAssertEqual(
+                tiltSizeInfluence,
+                HandDrawingBrushStyle.defaultPresetTiltSizeInfluence,
+                accuracy: 0.001
+            )
+            XCTAssertEqual(
+                tiltOpacityInfluence,
+                HandDrawingBrushStyle.defaultPresetTiltOpacityInfluence,
+                accuracy: 0.001
+            )
+            XCTAssertEqual(migratedSample.force, 0.35, accuracy: 0.001)
+            XCTAssertEqual(azimuthRadians, 0.75, accuracy: 0.001)
+            XCTAssertEqual(altitudeRadians, .pi / 4, accuracy: 0.001)
+            XCTAssertEqual(
+                BoardThumbnailImageSignature.describe(storedPreviewImage),
+                BoardThumbnailImageSignature.describe(expectedPreviewImage)
+            )
+        }
+    }
+
     func testHandDrawingMigrationServiceRollsBackWhenLegacyDrawingIsInvalid() throws {
         try withTemporaryHandDrawingMigrationWorkspace { selectedFolderURL, userDefaults in
             let fixture = try makeLegacyHandDrawingFixture(
@@ -153,12 +211,23 @@ final class HandDrawingMigrationServiceTests: XCTestCase {
                     in: boardDirectoryURL
                 )
             )
+            try CoordinatedFileIO.removeItemIfExists(
+                at: HandDrawingBundleLocator(documentID: documentID).previewImageURL(
+                    in: boardDirectoryURL
+                )
+            )
 
             let preparedDocument = try HandDrawingMigrationService.prepareDocumentForEditing(
                 boardID: boardID,
                 itemID: itemID,
                 userDefaults: userDefaults
             )
+            let restoredPreviewImage = try HandDrawingDocumentStore.loadPreviewImage(
+                documentID: documentID,
+                boardDirectoryURL: boardDirectoryURL
+            )
+            let expectedPreviewImage = try CanvasHandDrawingPreviewAssetFactory
+                .makeTransparentPreview(for: .square)
 
             XCTAssertFalse(preparedDocument.didMigrateLegacyDocument)
             XCTAssertEqual(preparedDocument.record.storage, .bundle)
@@ -168,6 +237,10 @@ final class HandDrawingMigrationServiceTests: XCTestCase {
                     documentID: documentID,
                     boardDirectoryURL: boardDirectoryURL
                 )
+            )
+            XCTAssertEqual(
+                BoardThumbnailImageSignature.describe(restoredPreviewImage),
+                BoardThumbnailImageSignature.describe(expectedPreviewImage)
             )
         }
     }
@@ -509,4 +582,25 @@ private func makeHandDrawingMigrationTestImage(
         throw HandDrawingMigrationServiceTestError.invalidBitmapContext
     }
     return image
+}
+
+private func makeTiltedLegacyMigrationDrawing() -> PKDrawing {
+    let point = PKStrokePoint(
+        location: CGPoint(x: 42, y: 42),
+        timeOffset: 0.08,
+        size: CGSize(width: 12, height: 12),
+        opacity: 0.8,
+        force: 0.35,
+        azimuth: 0.75,
+        altitude: .pi / 4
+    )
+    let path = PKStrokePath(
+        controlPoints: [point],
+        creationDate: Date()
+    )
+    let stroke = PKStroke(
+        ink: PKInk(.pen, color: HandDrawingPlatformColor.blue),
+        path: path
+    )
+    return PKDrawing(strokes: [stroke])
 }
