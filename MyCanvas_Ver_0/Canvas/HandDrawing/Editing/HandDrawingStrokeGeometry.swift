@@ -24,33 +24,34 @@ enum HandDrawingStrokeGeometry {
             return false
         }
 
-        let transformedPoints = stroke.transformedSamplePoints
-        if transformedPoints.isEmpty {
+        let resolvedSamples = HandDrawingBrushDynamics.resolvedSamples(
+            for: stroke
+        )
+        if resolvedSamples.isEmpty {
             return false
         }
 
-        for (index, point) in transformedPoints.enumerated() {
-            let strokeRadius = stroke.radiusForSample(at: index)
-            if distanceBetween(point, center) <= strokeRadius + resolvedRadius {
+        for sample in resolvedSamples {
+            if distanceBetween(sample.point, center) <= sample.radius + resolvedRadius {
                 return true
             }
         }
 
-        guard transformedPoints.count > 1 else {
+        guard resolvedSamples.count > 1 else {
             return false
         }
 
-        for index in 1..<transformedPoints.count {
-            let startPoint = transformedPoints[index - 1]
-            let endPoint = transformedPoints[index]
+        for index in 1..<resolvedSamples.count {
+            let previousSample = resolvedSamples[index - 1]
+            let sample = resolvedSamples[index]
             let strokeRadius = max(
-                stroke.radiusForSample(at: index - 1),
-                stroke.radiusForSample(at: index)
+                previousSample.radius,
+                sample.radius
             )
             let distanceToSegment = distanceFromPoint(
                 center,
-                toSegmentFrom: startPoint,
-                to: endPoint
+                toSegmentFrom: previousSample.point,
+                to: sample.point
             )
             if distanceToSegment <= strokeRadius + resolvedRadius {
                 return true
@@ -89,36 +90,37 @@ enum HandDrawingStrokeGeometry {
             return false
         }
 
-        let transformedPoints = stroke.transformedSamplePoints
-        guard transformedPoints.isEmpty == false else {
+        let resolvedSamples = HandDrawingBrushDynamics.resolvedSamples(
+            for: stroke
+        )
+        guard resolvedSamples.isEmpty == false else {
             return false
         }
 
-        for (index, point) in transformedPoints.enumerated() {
-            let radius = stroke.radiusForSample(at: index)
-            guard probePoints(around: point, radius: radius).allSatisfy({
+        for sample in resolvedSamples {
+            guard probePoints(around: sample.point, radius: sample.radius).allSatisfy({
                 contains($0, inPolygon: resolvedPolygonPoints)
             }) else {
                 return false
             }
         }
 
-        guard transformedPoints.count > 1 else {
+        guard resolvedSamples.count > 1 else {
             return true
         }
 
         let segmentFractions: [CGFloat] = [0.25, 0.5, 0.75]
-        for index in 1..<transformedPoints.count {
-            let startPoint = transformedPoints[index - 1]
-            let endPoint = transformedPoints[index]
+        for index in 1..<resolvedSamples.count {
+            let previousSample = resolvedSamples[index - 1]
+            let sample = resolvedSamples[index]
             let segmentRadius = max(
-                stroke.radiusForSample(at: index - 1),
-                stroke.radiusForSample(at: index)
+                previousSample.radius,
+                sample.radius
             )
             for fraction in segmentFractions {
                 let sampledPoint = interpolatedPoint(
-                    from: startPoint,
-                    to: endPoint,
+                    from: previousSample.point,
+                    to: sample.point,
                     fraction: fraction
                 )
                 guard probePoints(around: sampledPoint, radius: segmentRadius).allSatisfy({

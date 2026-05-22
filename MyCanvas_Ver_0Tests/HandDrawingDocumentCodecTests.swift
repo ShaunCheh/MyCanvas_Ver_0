@@ -35,6 +35,65 @@ final class HandDrawingDocumentCodecTests: XCTestCase {
         XCTAssertEqual(decodedDocument, document)
     }
 
+    func testHandDrawingDocumentCodecRoundTripsBrushDynamicsParameters() throws {
+        let stroke = HandDrawingStroke(
+            brush: HandDrawingBrushStyle(
+                kind: .pen,
+                color: HandDrawingColor(red: 0.26, green: 0.31, blue: 0.84, alpha: 1),
+                baseSize: 18,
+                opacity: 0.9,
+                pressureCurveExponent: 1.8,
+                minSizeRatio: 0.16,
+                maxSizeRatio: 0.92,
+                tiltSizeInfluence: 0.55,
+                tiltOpacityInfluence: 0.25
+            ),
+            samplePoints: [
+                HandDrawingSamplePoint(
+                    point: CGPoint(x: 24, y: 24),
+                    force: 0.35,
+                    timestamp: 0,
+                    azimuthRadians: 0.8,
+                    altitudeRadians: .pi / 4
+                ),
+                HandDrawingSamplePoint(
+                    point: CGPoint(x: 96, y: 96),
+                    force: 1,
+                    timestamp: 0.2,
+                    azimuthRadians: 0.8,
+                    altitudeRadians: .pi / 4
+                )
+            ]
+        )
+        let document = HandDrawingDocument(
+            paper: HandDrawingPaper(
+                id: "brush-dynamics-paper",
+                size: CGSize(width: 140, height: 140)
+            ),
+            strokes: [stroke]
+        )
+
+        let data = try HandDrawingDocumentCodec.makeDocumentData(for: document)
+        let decodedDocument = try HandDrawingDocumentCodec.decodeDocument(from: data)
+        let decodedStroke = try XCTUnwrap(decodedDocument.strokes.first)
+        let pressureCurveExponent = try XCTUnwrap(
+            decodedStroke.brush.pressureCurveExponent
+        )
+        let minSizeRatio = try XCTUnwrap(decodedStroke.brush.minSizeRatio)
+        let maxSizeRatio = try XCTUnwrap(decodedStroke.brush.maxSizeRatio)
+        let tiltSizeInfluence = try XCTUnwrap(decodedStroke.brush.tiltSizeInfluence)
+        let tiltOpacityInfluence = try XCTUnwrap(
+            decodedStroke.brush.tiltOpacityInfluence
+        )
+
+        XCTAssertEqual(decodedDocument, document)
+        XCTAssertEqual(pressureCurveExponent, 1.8, accuracy: 0.001)
+        XCTAssertEqual(minSizeRatio, 0.16, accuracy: 0.001)
+        XCTAssertEqual(maxSizeRatio, 0.92, accuracy: 0.001)
+        XCTAssertEqual(tiltSizeInfluence, 0.55, accuracy: 0.001)
+        XCTAssertEqual(tiltOpacityInfluence, 0.25, accuracy: 0.001)
+    }
+
     func testHandDrawingDocumentCodecDecodesLegacyFlatDocumentAsDefaultLayeredDocument() throws {
         let legacyDocument = makeHandDrawingTestDocument(includeEraseMask: true)
         let legacyData = try makeLegacyFlatDocumentData(

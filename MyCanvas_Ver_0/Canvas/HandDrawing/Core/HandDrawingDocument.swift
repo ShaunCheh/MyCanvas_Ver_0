@@ -84,6 +84,18 @@ struct HandDrawingBrushStyle: Codable, Equatable {
         case pen
     }
 
+    private enum CodingKeys: String, CodingKey {
+        case kind
+        case color
+        case baseSize
+        case opacity
+        case pressureCurveExponent
+        case minSizeRatio
+        case maxSizeRatio
+        case tiltSizeInfluence
+        case tiltOpacityInfluence
+    }
+
     static let defaultPen = HandDrawingBrushStyle(
         kind: .pen,
         color: .black,
@@ -95,17 +107,127 @@ struct HandDrawingBrushStyle: Codable, Equatable {
     var color: HandDrawingColor
     var baseSize: Double
     var opacity: Double
+    var pressureCurveExponent: Double?
+    var minSizeRatio: Double?
+    var maxSizeRatio: Double?
+    var tiltSizeInfluence: Double?
+    var tiltOpacityInfluence: Double?
 
     init(
         kind: Kind = .pen,
         color: HandDrawingColor = .black,
         baseSize: Double = 6,
-        opacity: Double = 1
+        opacity: Double = 1,
+        pressureCurveExponent: Double? = nil,
+        minSizeRatio: Double? = nil,
+        maxSizeRatio: Double? = nil,
+        tiltSizeInfluence: Double? = nil,
+        tiltOpacityInfluence: Double? = nil
     ) {
         self.kind = kind
         self.color = color
-        self.baseSize = max(baseSize, 0.25)
-        self.opacity = min(max(opacity, 0), 1)
+        let resolvedBaseSize = baseSize.isFinite ? baseSize : 6
+        let resolvedOpacity = opacity.isFinite ? opacity : 1
+        let resolvedMinSizeRatio = Self.normalizedNonNegativeOptional(minSizeRatio)
+        self.baseSize = max(resolvedBaseSize, 0.25)
+        self.opacity = min(max(resolvedOpacity, 0), 1)
+        self.pressureCurveExponent = Self.normalizedPositiveOptional(
+            pressureCurveExponent
+        )
+        self.minSizeRatio = resolvedMinSizeRatio
+        self.maxSizeRatio = Self.normalizedMaximumOptional(
+            maxSizeRatio,
+            minimum: resolvedMinSizeRatio
+        )
+        self.tiltSizeInfluence = Self.normalizedNonNegativeOptional(
+            tiltSizeInfluence
+        )
+        self.tiltOpacityInfluence = Self.normalizedNonNegativeOptional(
+            tiltOpacityInfluence
+        )
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            kind: try container.decodeIfPresent(Kind.self, forKey: .kind) ?? .pen,
+            color: try container.decodeIfPresent(
+                HandDrawingColor.self,
+                forKey: .color
+            ) ?? .black,
+            baseSize: try container.decodeIfPresent(Double.self, forKey: .baseSize)
+                ?? 6,
+            opacity: try container.decodeIfPresent(Double.self, forKey: .opacity)
+                ?? 1,
+            pressureCurveExponent: try container.decodeIfPresent(
+                Double.self,
+                forKey: .pressureCurveExponent
+            ),
+            minSizeRatio: try container.decodeIfPresent(
+                Double.self,
+                forKey: .minSizeRatio
+            ),
+            maxSizeRatio: try container.decodeIfPresent(
+                Double.self,
+                forKey: .maxSizeRatio
+            ),
+            tiltSizeInfluence: try container.decodeIfPresent(
+                Double.self,
+                forKey: .tiltSizeInfluence
+            ),
+            tiltOpacityInfluence: try container.decodeIfPresent(
+                Double.self,
+                forKey: .tiltOpacityInfluence
+            )
+        )
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(kind, forKey: .kind)
+        try container.encode(color, forKey: .color)
+        try container.encode(baseSize, forKey: .baseSize)
+        try container.encode(opacity, forKey: .opacity)
+        try container.encodeIfPresent(
+            pressureCurveExponent,
+            forKey: .pressureCurveExponent
+        )
+        try container.encodeIfPresent(minSizeRatio, forKey: .minSizeRatio)
+        try container.encodeIfPresent(maxSizeRatio, forKey: .maxSizeRatio)
+        try container.encodeIfPresent(tiltSizeInfluence, forKey: .tiltSizeInfluence)
+        try container.encodeIfPresent(
+            tiltOpacityInfluence,
+            forKey: .tiltOpacityInfluence
+        )
+    }
+
+    private static func normalizedPositiveOptional(
+        _ value: Double?
+    ) -> Double? {
+        guard let value, value.isFinite else {
+            return nil
+        }
+        return max(value, 0.01)
+    }
+
+    private static func normalizedNonNegativeOptional(
+        _ value: Double?
+    ) -> Double? {
+        guard let value, value.isFinite else {
+            return nil
+        }
+        return max(value, 0)
+    }
+
+    private static func normalizedMaximumOptional(
+        _ value: Double?,
+        minimum: Double?
+    ) -> Double? {
+        guard let value, value.isFinite else {
+            return nil
+        }
+        let resolvedMinimum = minimum ?? 0
+        return max(value, resolvedMinimum)
     }
 }
 
@@ -136,9 +258,6 @@ struct HandDrawingSamplePoint: Codable, Equatable {
         CGPoint(x: x, y: y)
     }
 
-    var resolvedForce: CGFloat {
-        CGFloat(max(force, 0.05))
-    }
 }
 
 struct HandDrawingEraseSamplePoint: Codable, Equatable {
@@ -248,39 +367,14 @@ struct HandDrawingStroke: Codable, Equatable {
     }
 
     func radiusForSample(at index: Int) -> CGFloat {
-        guard samplePoints.indices.contains(index) else {
-            return CGFloat(brush.baseSize) / 2
-        }
-        return CGFloat(brush.baseSize) * samplePoints[index].resolvedForce / 2
+        HandDrawingBrushDynamics.radius(
+            forSampleAt: index,
+            in: self
+        )
     }
 
     var bounds: CGRect? {
-        var accumulatedBounds: CGRect?
-        let transformedPoints = transformedSamplePoints
-        for (index, point) in transformedPoints.enumerated() {
-            let radius = radiusForSample(at: index)
-            let pointBounds = CGRect(
-                x: point.x - radius,
-                y: point.y - radius,
-                width: radius * 2,
-                height: radius * 2
-            )
-            accumulatedBounds = accumulatedBounds?.union(pointBounds) ?? pointBounds
-        }
-        for erasePath in eraseMask {
-            for erasePoint in erasePath.samplePoints {
-                let transformedPoint = transform.apply(to: erasePoint.cgPoint)
-                let radius = erasePoint.resolvedRadius
-                let eraseBounds = CGRect(
-                    x: transformedPoint.x - radius,
-                    y: transformedPoint.y - radius,
-                    width: radius * 2,
-                    height: radius * 2
-                )
-                accumulatedBounds = accumulatedBounds?.union(eraseBounds) ?? eraseBounds
-            }
-        }
-        return accumulatedBounds
+        HandDrawingBrushDynamics.bounds(for: self)
     }
 }
 

@@ -14,8 +14,10 @@ enum HandDrawingStrokeRasterizer {
         _ stroke: HandDrawingStroke,
         in context: CGContext
     ) {
-        let points = stroke.transformedSamplePoints
-        guard let firstPoint = points.first else {
+        let resolvedSamples = HandDrawingBrushDynamics.resolvedSamples(
+            for: stroke
+        )
+        guard let firstSample = resolvedSamples.first else {
             return
         }
 
@@ -27,32 +29,31 @@ enum HandDrawingStrokeRasterizer {
         context.setLineCap(.round)
         context.setLineJoin(.round)
 
-        if points.count == 1 {
+        if resolvedSamples.count == 1 {
             drawDisk(
-                at: firstPoint,
-                radius: stroke.radiusForSample(at: 0),
+                at: firstSample.point,
+                radius: firstSample.radius,
                 in: context
             )
             return
         }
 
-        for index in 0..<points.count {
+        for sample in resolvedSamples {
             drawDisk(
-                at: points[index],
-                radius: stroke.radiusForSample(at: index),
+                at: sample.point,
+                radius: sample.radius,
                 in: context
             )
         }
 
-        for index in 1..<points.count {
-            let previousPoint = points[index - 1]
-            let point = points[index]
-            let lineWidth = stroke.radiusForSample(at: index - 1)
-                + stroke.radiusForSample(at: index)
+        for index in 1..<resolvedSamples.count {
+            let previousSample = resolvedSamples[index - 1]
+            let sample = resolvedSamples[index]
+            let lineWidth = previousSample.radius + sample.radius
             context.setLineWidth(max(lineWidth, 0.5))
             context.beginPath()
-            context.move(to: previousPoint)
-            context.addLine(to: point)
+            context.move(to: previousSample.point)
+            context.addLine(to: sample.point)
             context.strokePath()
         }
     }
