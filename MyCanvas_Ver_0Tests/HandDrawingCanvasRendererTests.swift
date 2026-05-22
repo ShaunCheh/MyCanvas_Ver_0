@@ -277,6 +277,69 @@ final class HandDrawingCanvasRendererTests: XCTestCase {
         XCTAssertGreaterThan(verticalCanvasDown.alpha, 48)
     }
 
+    func testHandDrawingDraftRasterizationMatchesCommittedCanvasAndPreviewAtResolvedStampProbePoints() throws {
+        let stroke = makeHandDrawingTestStroke(
+            baseSize: 18,
+            samplePoints: [
+                CGPoint(x: 20, y: 34),
+                CGPoint(x: 60, y: 60),
+                CGPoint(x: 100, y: 74)
+            ],
+            sampleForces: [0.32, 0.78, 0.94],
+            sampleAzimuths: [0.18, 0.52, 0.84],
+            sampleAltitudes: [.pi / 3, .pi / 5, .pi / 4],
+            tiltSizeInfluence: 0.85,
+            tiltOpacityInfluence: 0.12
+        )
+        let document = HandDrawingDocument(
+            paper: HandDrawingPaper(
+                id: "draft-parity-paper",
+                size: CGSize(width: 120, height: 120)
+            ),
+            strokes: [stroke]
+        )
+        let draftImage = renderHandDrawingStrokeImage(
+            stroke,
+            paperSize: document.paper.size
+        )
+        let renderer = try HandDrawingCanvasRenderer(
+            paperSize: document.paper.size
+        )
+        let canvasImage = try renderer.render(
+            document: document,
+            dirtyRegion: document.paperBounds
+        )
+        let previewImage = try HandDrawingPreviewRenderer().renderPreviewImage(
+            for: document,
+            scale: 1
+        )
+        let resolvedStamps = HandDrawingBrushDynamics.resolvedStamps(for: stroke)
+        let sampledIndexes = Set([
+            0,
+            resolvedStamps.count / 2,
+            max(resolvedStamps.count - 1, 0)
+        ])
+        let sampledPoints = sampledIndexes
+            .sorted()
+            .flatMap { index in
+                let resolvedStamp = resolvedStamps[index]
+                return [resolvedStamp.point] + resolvedStamp.probePoints(
+                    sampleCount: 4
+                )
+            }
+
+        assertImagesEqual(
+            draftImage,
+            canvasImage,
+            at: sampledPoints
+        )
+        assertImagesEqual(
+            draftImage,
+            previewImage,
+            at: sampledPoints
+        )
+    }
+
     private func assertPixelsEqual(
         _ lhs: (red: UInt8, green: UInt8, blue: UInt8, alpha: UInt8),
         _ rhs: (red: UInt8, green: UInt8, blue: UInt8, alpha: UInt8),
@@ -287,6 +350,25 @@ final class HandDrawingCanvasRendererTests: XCTestCase {
         XCTAssertEqual(lhs.green, rhs.green, file: file, line: line)
         XCTAssertEqual(lhs.blue, rhs.blue, file: file, line: line)
         XCTAssertEqual(lhs.alpha, rhs.alpha, file: file, line: line)
+    }
+
+    private func assertImagesEqual(
+        _ lhs: CGImage,
+        _ rhs: CGImage,
+        at points: [CGPoint],
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        for point in points {
+            let x = min(max(Int(point.x.rounded()), 0), lhs.width - 1)
+            let y = min(max(Int(point.y.rounded()), 0), lhs.height - 1)
+            assertPixelsEqual(
+                sampleDisplayedRGBA(from: lhs, x: x, y: y),
+                sampleDisplayedRGBA(from: rhs, x: x, y: y),
+                file: file,
+                line: line
+            )
+        }
     }
 }
 

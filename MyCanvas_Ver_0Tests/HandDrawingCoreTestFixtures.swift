@@ -176,6 +176,45 @@ func sampleRGBA(
     )
 }
 
+func renderHandDrawingStrokeImage(
+    _ stroke: HandDrawingStroke,
+    paperSize: CGSize,
+    backgroundColor: HandDrawingColor? = nil
+) -> CGImage {
+    let width = max(Int(ceil(paperSize.width)), 1)
+    let height = max(Int(ceil(paperSize.height)), 1)
+    let bitmapInfo =
+        CGImageAlphaInfo.premultipliedLast.rawValue
+        | CGBitmapInfo.byteOrder32Big.rawValue
+    guard
+        let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: bitmapInfo
+        )
+    else {
+        fatalError("Expected hand drawing test bitmap context.")
+    }
+    context.interpolationQuality = .high
+    context.setAllowsAntialiasing(true)
+    context.setShouldAntialias(true)
+    context.translateBy(x: 0, y: CGFloat(height))
+    context.scaleBy(x: 1, y: -1)
+    if let backgroundColor {
+        context.setFillColor(backgroundColor.cgColor)
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+    }
+    HandDrawingStrokeRasterizer.draw(stroke, in: context)
+    guard let image = context.makeImage() else {
+        fatalError("Expected rasterized hand drawing test image.")
+    }
+    return image
+}
+
 #if canImport(AppKit)
 func sampleDisplayedRGBA(
     from image: CGImage,

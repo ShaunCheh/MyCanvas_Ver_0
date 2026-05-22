@@ -109,6 +109,80 @@ final class HandDrawingStrokeBuilderTests: XCTestCase {
         XCTAssertEqual(draftStroke.samplePoints, committedStroke.samplePoints)
     }
 
+    func testHandDrawingStrokeBuilderDraftAndCommittedStrokeStayResolvedStampEquivalent() throws {
+        let brush = HandDrawingBrushStyle(
+            kind: .pen,
+            color: HandDrawingColor(red: 0.27, green: 0.41, blue: 0.86, alpha: 1),
+            baseSize: 14,
+            opacity: 0.92,
+            pressureCurveExponent: 1.35,
+            minSizeRatio: 0.14,
+            maxSizeRatio: 0.96,
+            tiltSizeInfluence: 0.72,
+            tiltOpacityInfluence: 0.18
+        )
+        let rawSamples = [
+            HandDrawingInputSample(
+                location: CGPoint(x: 20, y: 26),
+                force: 0.28,
+                timestamp: 1
+            ),
+            HandDrawingInputSample(
+                location: CGPoint(x: 20.4, y: 26.2),
+                force: 0.31,
+                timestamp: 0.95
+            ),
+            HandDrawingInputSample(
+                location: CGPoint(x: 56, y: 48),
+                force: 0.76,
+                timestamp: 1.1,
+                azimuthRadians: 0.35,
+                altitudeRadians: .pi / 3
+            ),
+            HandDrawingInputSample(
+                location: CGPoint(x: 92, y: 54),
+                force: 0.92,
+                timestamp: 1.2,
+                azimuthRadians: 0.72,
+                altitudeRadians: .pi / 5
+            )
+        ]
+        let normalization = HandDrawingStrokePerformanceProfile
+            .brushStroke(for: brush)
+            .inputNormalization
+        let normalizedSamples = HandDrawingInputNormalizer.normalized(
+            rawSamples,
+            configuration: normalization
+        )
+        let draftStroke = try XCTUnwrap(
+            HandDrawingStrokeBuilder.makeStroke(
+                brush: brush,
+                normalizedSamples: normalizedSamples
+            )
+        )
+        var engine = HandDrawingEditorEngine(
+            document: HandDrawingDocument(
+                paper: HandDrawingPaper(
+                    id: "phase2-stamp-paper",
+                    size: CGSize(width: 120, height: 120)
+                )
+            )
+        )
+
+        let committedStroke = try XCTUnwrap(
+            engine.appendStroke(
+                brush: brush,
+                samples: rawSamples
+            )
+        )
+
+        XCTAssertEqual(
+            HandDrawingBrushDynamics.resolvedStamps(for: draftStroke),
+            HandDrawingBrushDynamics.resolvedStamps(for: committedStroke)
+        )
+        XCTAssertEqual(draftStroke.bounds, committedStroke.bounds)
+    }
+
     func testHandDrawingStrokeBuilderUsesBrushAwareSamplingForLargeBrushes() throws {
         let brush = HandDrawingBrushStyle(
             kind: .pen,
