@@ -10,8 +10,8 @@ enum HandDrawingEditorTool: Equatable {
 
 struct HandDrawingCanvasSurfaceState {
     var paperSize: CGSize
-    var committedImage: CGImage?
-    var draftStroke: HandDrawingStroke?
+    var committedCanvas: HandDrawingCommittedCanvasRenderOutput
+    var realtimeDraft: HandDrawingRealtimeDraftRenderOutput
     var lassoPathPoints: [CGPoint]
     var selectedStrokeBounds: CGRect?
 }
@@ -49,11 +49,12 @@ final class HandDrawingEditorCoordinator {
         )
 
     private let editorContext: CanvasHandDrawingEditorContext
-    private let canvasRenderer: HandDrawingCanvasRenderer
+    private let committedCanvasBackend: HandDrawingCommittedCanvasBackend
+    private let realtimeBrushRenderer: HandDrawingRealtimeBrushRenderer
     private let previewRenderer = HandDrawingPreviewRenderer()
     private let initialDocument: HandDrawingDocument
     private var engine: HandDrawingEditorEngine
-    private var committedImage: CGImage?
+    private var committedCanvas: HandDrawingCommittedCanvasRenderOutput = .none
     private var selectedTool: HandDrawingEditorTool = .brush
     private var selectedColor: HandDrawingColor
     private var availableBrushPresets: [HandDrawingBrushPreset]
@@ -70,13 +71,20 @@ final class HandDrawingEditorCoordinator {
     var onLayerPanelStateChange: ((HandDrawingLayerPanelState) -> Void)?
     var onErrorMessage: ((String) -> Void)?
 
-    init(editorContext: CanvasHandDrawingEditorContext) throws {
+    init(
+        editorContext: CanvasHandDrawingEditorContext,
+        committedCanvasBackend: HandDrawingCommittedCanvasBackend? = nil,
+        realtimeBrushRenderer: HandDrawingRealtimeBrushRenderer = HandDrawingCPURealtimeBrushRenderer()
+    ) throws {
         self.editorContext = editorContext
         let document = try HandDrawingDocumentLoader.loadDocument(
             from: editorContext.documentData,
             paper: editorContext.paper
         )
-        canvasRenderer = try HandDrawingCanvasRenderer(paperSize: document.paper.size)
+        let resolvedCommittedCanvasBackend = try committedCanvasBackend
+            ?? HandDrawingCPUCommittedCanvasBackend(paperSize: document.paper.size)
+        self.committedCanvasBackend = resolvedCommittedCanvasBackend
+        self.realtimeBrushRenderer = realtimeBrushRenderer
         initialDocument = document
         engine = HandDrawingEditorEngine(document: document)
         let initialBrush = document.strokes.last?.brush
@@ -89,7 +97,7 @@ final class HandDrawingEditorCoordinator {
         selectedColor = initialBrush.color
         availableBrushPresets = initialPresetSelection.availablePresets
         selectedBrushPresetID = initialPresetSelection.selectedPresetID
-        committedImage = try canvasRenderer.render(
+        committedCanvas = try resolvedCommittedCanvasBackend.render(
             document: document,
             dirtyRegion: document.paperBounds
         )
@@ -395,16 +403,29 @@ final class HandDrawingEditorCoordinator {
         selectedBrushPreset.makeBrushStyle(color: selectedColor)
     }
 
-    private var draftStroke: HandDrawingStroke? {
+    private var currentRealtimeDraftPacket: HandDrawingRealtimeDraftPacket? {
         guard
             let activeStrokeBrush,
+            let activeStrokePerformanceProfile,
             activeStrokeInputSamples.isEmpty == false
         else {
             return nil
         }
-        return HandDrawingStrokeBuilder.makeStroke(
+        guard let draftStroke = HandDrawingStrokeBuilder.makeStroke(
             brush: activeStrokeBrush,
             normalizedSamples: activeStrokeInputSamples
+        ) else {
+            return nil
+        }
+        return HandDrawingRealtimeDraftPacket(
+            brush: activeStrokeBrush,
+            performanceProfile: activeStrokePerformanceProfile,
+            normalizedSamples: activeStrokeInputSamples,
+            draftStroke: draftStroke,
+            resolvedStamps: HandDrawingBrushDynamics.resolvedStamps(
+                for: draftStroke,
+                layout: activeStrokePerformanceProfile.stampLayout
+            )
         )
     }
 
@@ -431,8 +452,10 @@ final class HandDrawingEditorCoordinator {
         onSurfaceStateChange?(
             HandDrawingCanvasSurfaceState(
                 paperSize: editorContext.paper.size,
-                committedImage: committedImage,
-                draftStroke: draftStroke,
+                committedCanvas: committedCanvas,
+                realtimeDraft: realtimeBrushRenderer.render(
+                    packet: currentRealtimeDraftPacket
+                ),
                 lassoPathPoints: lassoToolController.points,
                 selectedStrokeBounds: selectedStrokeBounds
             )
@@ -475,7 +498,7 @@ final class HandDrawingEditorCoordinator {
             guard forceFullRender || dirtyRegion != nil else {
                 return
             }
-            committedImage = try canvasRenderer.render(
+            committedCanvas = try committedCanvasBackend.render(
                 document: engine.state.document,
                 dirtyRegion: dirtyRegion
             )

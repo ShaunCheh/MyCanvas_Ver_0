@@ -212,12 +212,12 @@ private final class HandDrawingCanvasPageView: UIView {
     }
 
     func apply(state: HandDrawingCanvasSurfaceState) {
-        if let committedImage = state.committedImage {
+        if let committedImage = state.committedCanvas.image {
             committedImageView.image = UIImage(cgImage: committedImage)
         } else {
             committedImageView.image = nil
         }
-        draftOverlayView.draftStroke = state.draftStroke
+        draftOverlayView.draftStroke = state.realtimeDraft.stroke
         draftOverlayView.lassoPathPoints = state.lassoPathPoints
         draftOverlayView.selectedStrokeBounds = state.selectedStrokeBounds
     }
