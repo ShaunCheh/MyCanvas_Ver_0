@@ -110,6 +110,87 @@ final class HandDrawingLassoSelectionTests: XCTestCase {
         )
     }
 
+    func testHandDrawingLassoToolControllerUsesCurrentPressureRadiusForEnclosure() {
+        func applyNarrowLasso(
+            to engine: inout HandDrawingEditorEngine,
+            y: CGFloat
+        ) -> Bool {
+            var controller = HandDrawingLassoToolController()
+            XCTAssertTrue(
+                controller.beginLasso(
+                    with: HandDrawingInputSample(
+                        location: CGPoint(x: 18, y: y - 6),
+                        timestamp: 0
+                    ),
+                    engine: engine
+                )
+            )
+            controller.appendSamples(
+                [
+                    HandDrawingInputSample(
+                        location: CGPoint(x: 102, y: y - 6),
+                        timestamp: 0.1
+                    ),
+                    HandDrawingInputSample(
+                        location: CGPoint(x: 102, y: y + 6),
+                        timestamp: 0.2
+                    ),
+                    HandDrawingInputSample(
+                        location: CGPoint(x: 18, y: y + 6),
+                        timestamp: 0.3
+                    )
+                ]
+            )
+            return controller.endLasso(engine: &engine)
+        }
+
+        let thinStroke = makeHandDrawingTestStroke(
+            id: UUID(),
+            baseSize: 20,
+            samplePoints: [
+                CGPoint(x: 25, y: 42),
+                CGPoint(x: 60, y: 42),
+                CGPoint(x: 95, y: 42)
+            ],
+            sampleForces: [0.35, 0.35, 0.35]
+        )
+        var thinEngine = HandDrawingEditorEngine(
+            document: HandDrawingDocument(
+                paper: HandDrawingPaper(
+                    id: "lasso-pressure-thin-paper",
+                    size: CGSize(width: 140, height: 140)
+                ),
+                strokes: [thinStroke]
+            )
+        )
+
+        XCTAssertTrue(applyNarrowLasso(to: &thinEngine, y: 42))
+        XCTAssertEqual(thinEngine.state.selectedStrokeIDs, [thinStroke.id])
+
+        let thickStroke = makeHandDrawingTestStroke(
+            id: UUID(),
+            baseSize: 20,
+            samplePoints: [
+                CGPoint(x: 25, y: 92),
+                CGPoint(x: 60, y: 92),
+                CGPoint(x: 95, y: 92)
+            ],
+            sampleForces: [1, 1, 1]
+        )
+        var thickEngine = HandDrawingEditorEngine(
+            document: HandDrawingDocument(
+                paper: HandDrawingPaper(
+                    id: "lasso-pressure-thick-paper",
+                    size: CGSize(width: 140, height: 140)
+                ),
+                strokes: [thickStroke]
+            )
+        )
+
+        XCTAssertFalse(applyNarrowLasso(to: &thickEngine, y: 92))
+        XCTAssertTrue(thickEngine.state.selectedStrokeIDs.isEmpty)
+    }
+
     func testHandDrawingLassoToolControllerOnlySelectsActiveLayerStroke() {
         let inactiveStroke = makeHandDrawingTestStroke(id: UUID())
         let activeStroke = makeHandDrawingTestStroke(id: UUID())

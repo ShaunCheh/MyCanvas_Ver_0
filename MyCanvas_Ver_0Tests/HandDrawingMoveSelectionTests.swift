@@ -52,6 +52,63 @@ final class HandDrawingMoveSelectionTests: XCTestCase {
         XCTAssertEqual(engine.state.selectedStrokeIDs, [stroke.id])
     }
 
+    func testHandDrawingMoveSelectionControllerHitTestingUsesCurrentStrokeRadiusWithPadding() {
+        let hitSample = HandDrawingInputSample(
+            location: CGPoint(x: 60, y: 77),
+            timestamp: 0
+        )
+
+        let thinStroke = makeHandDrawingTestStroke(
+            id: UUID(),
+            baseSize: 20,
+            sampleForces: [0.35, 0.35, 0.35]
+        )
+        var thinEngine = HandDrawingEditorEngine(
+            document: HandDrawingDocument(
+                paper: HandDrawingPaper(
+                    id: "move-pressure-thin-paper",
+                    size: CGSize(width: 140, height: 140)
+                ),
+                strokes: [thinStroke]
+            )
+        )
+        XCTAssertTrue(thinEngine.selectStrokes(withIDs: [thinStroke.id]))
+
+        var thinController = HandDrawingMoveSelectionController()
+        XCTAssertFalse(
+            thinController.beginMoving(
+                with: hitSample,
+                engine: thinEngine
+            )
+        )
+        XCTAssertFalse(thinController.isActive)
+
+        let thickStroke = makeHandDrawingTestStroke(
+            id: UUID(),
+            baseSize: 20,
+            sampleForces: [1, 1, 1]
+        )
+        var thickEngine = HandDrawingEditorEngine(
+            document: HandDrawingDocument(
+                paper: HandDrawingPaper(
+                    id: "move-pressure-thick-paper",
+                    size: CGSize(width: 140, height: 140)
+                ),
+                strokes: [thickStroke]
+            )
+        )
+        XCTAssertTrue(thickEngine.selectStrokes(withIDs: [thickStroke.id]))
+
+        var thickController = HandDrawingMoveSelectionController()
+        XCTAssertTrue(
+            thickController.beginMoving(
+                with: hitSample,
+                engine: thickEngine
+            )
+        )
+        XCTAssertTrue(thickController.isActive)
+    }
+
     func testHandDrawingMoveSelectionControllerCancelRestoresPosition() {
         let stroke = makeHandDrawingTestStroke(id: UUID())
         var engine = HandDrawingEditorEngine(

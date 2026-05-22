@@ -59,9 +59,20 @@ func makeHandDrawingTestStroke(
         blue: 0.82,
         alpha: 1
     ),
+    baseSize: Double = 14,
+    samplePoints: [CGPoint] = [
+        CGPoint(x: 25, y: 60),
+        CGPoint(x: 60, y: 60),
+        CGPoint(x: 95, y: 60)
+    ],
+    sampleForces: [Double] = [1, 1, 0.9],
     includeEraseMask: Bool = false,
     transform: HandDrawingStrokeTransform = .identity
 ) -> HandDrawingStroke {
+    precondition(
+        samplePoints.count == sampleForces.count,
+        "Hand drawing test samples and forces must align."
+    )
     let eraseMask: [HandDrawingErasePath]
     if includeEraseMask {
         eraseMask = [
@@ -82,26 +93,18 @@ func makeHandDrawingTestStroke(
         brush: HandDrawingBrushStyle(
             kind: .pen,
             color: color,
-            baseSize: 14,
+            baseSize: baseSize,
             opacity: 1
         ),
-        samplePoints: [
+        samplePoints: zip(samplePoints, sampleForces).enumerated().map {
+            index,
+            element in
             HandDrawingSamplePoint(
-                point: CGPoint(x: 25, y: 60),
-                force: 1,
-                timestamp: 0
-            ),
-            HandDrawingSamplePoint(
-                point: CGPoint(x: 60, y: 60),
-                force: 1,
-                timestamp: 0.1
-            ),
-            HandDrawingSamplePoint(
-                point: CGPoint(x: 95, y: 60),
-                force: 0.9,
-                timestamp: 0.2
+                point: element.0,
+                force: element.1,
+                timestamp: Double(index) * 0.1
             )
-        ],
+        },
         transform: transform,
         eraseMask: eraseMask
     )

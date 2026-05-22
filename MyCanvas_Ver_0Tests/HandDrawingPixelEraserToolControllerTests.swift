@@ -48,6 +48,72 @@ final class HandDrawingPixelEraserToolControllerTests: XCTestCase {
         XCTAssertTrue(engine.state.document.strokes[1].eraseMask.isEmpty)
     }
 
+    func testHandDrawingPixelEraserToolControllerHitTestingUsesCurrentStrokeRadius() {
+        let eraseSample = HandDrawingInputSample(
+            location: CGPoint(x: 60, y: 66),
+            force: 0.05,
+            timestamp: 0
+        )
+
+        let thinStroke = makeHandDrawingTestStroke(
+            id: UUID(),
+            baseSize: 20,
+            sampleForces: [0.35, 0.35, 0.35]
+        )
+        var thinEngine = HandDrawingEditorEngine(
+            document: HandDrawingDocument(
+                paper: HandDrawingPaper(
+                    id: "eraser-pressure-thin-paper",
+                    size: CGSize(width: 120, height: 120)
+                ),
+                strokes: [thinStroke]
+            )
+        )
+        var thinController = HandDrawingPixelEraserToolController()
+
+        thinController.beginErasing(
+            with: eraseSample,
+            baseSize: 1,
+            engine: &thinEngine
+        )
+        thinController.endErasing()
+
+        XCTAssertTrue(thinEngine.state.document.strokes[0].eraseMask.isEmpty)
+        XCTAssertFalse(thinEngine.canUndo)
+        XCTAssertNil(thinEngine.consumeDirtyRegion())
+
+        let thickStroke = makeHandDrawingTestStroke(
+            id: UUID(),
+            baseSize: 20,
+            sampleForces: [1, 1, 1]
+        )
+        var thickEngine = HandDrawingEditorEngine(
+            document: HandDrawingDocument(
+                paper: HandDrawingPaper(
+                    id: "eraser-pressure-thick-paper",
+                    size: CGSize(width: 120, height: 120)
+                ),
+                strokes: [thickStroke]
+            )
+        )
+        var thickController = HandDrawingPixelEraserToolController()
+
+        thickController.beginErasing(
+            with: eraseSample,
+            baseSize: 1,
+            engine: &thickEngine
+        )
+        thickController.endErasing()
+
+        XCTAssertEqual(thickEngine.state.document.strokes[0].eraseMask.count, 1)
+        XCTAssertEqual(
+            thickEngine.state.document.strokes[0].eraseMask[0].samplePoints.count,
+            1
+        )
+        XCTAssertTrue(thickEngine.canUndo)
+        XCTAssertNotNil(thickEngine.consumeDirtyRegion())
+    }
+
     func testHandDrawingPixelEraserToolControllerSplitsDisjointHitSequencesIntoSeparateErasePaths() {
         let stroke = makeHandDrawingTestStroke(id: UUID())
         var engine = HandDrawingEditorEngine(

@@ -169,6 +169,54 @@ final class HandDrawingCanvasRendererTests: XCTestCase {
         XCTAssertGreaterThan(hiddenCanvasPixel.red, hiddenCanvasPixel.green)
     }
 
+    func testHandDrawingCanvasRendererMatchesPreviewRendererForPressureDrivenStrokeWidths() throws {
+        let lowPressureStroke = makeCanvasRendererLayeredTestStroke(
+            y: 34,
+            baseSize: 20,
+            force: 0.35,
+            color: HandDrawingColor(red: 0.88, green: 0.16, blue: 0.12, alpha: 1)
+        )
+        let highPressureStroke = makeCanvasRendererLayeredTestStroke(
+            y: 86,
+            baseSize: 20,
+            force: 1,
+            color: HandDrawingColor(red: 0.12, green: 0.72, blue: 0.21, alpha: 1)
+        )
+        let document = HandDrawingDocument(
+            paper: HandDrawingPaper(
+                id: "canvas-pressure-paper",
+                size: CGSize(width: 120, height: 120)
+            ),
+            strokes: [lowPressureStroke, highPressureStroke]
+        )
+        let renderer = try HandDrawingCanvasRenderer(
+            paperSize: document.paper.size
+        )
+
+        let canvasImage = try renderer.render(
+            document: document,
+            dirtyRegion: document.paperBounds
+        )
+        let previewImage = try HandDrawingPreviewRenderer().renderPreviewImage(
+            for: document,
+            scale: 1
+        )
+        let lowCanvasCenterPixel = sampleDisplayedRGBA(from: canvasImage, x: 60, y: 34)
+        let lowPreviewCenterPixel = sampleDisplayedRGBA(from: previewImage, x: 60, y: 34)
+        let lowCanvasEdgePixel = sampleDisplayedRGBA(from: canvasImage, x: 60, y: 40)
+        let lowPreviewEdgePixel = sampleDisplayedRGBA(from: previewImage, x: 60, y: 40)
+        let highCanvasCenterPixel = sampleDisplayedRGBA(from: canvasImage, x: 60, y: 86)
+        let highPreviewCenterPixel = sampleDisplayedRGBA(from: previewImage, x: 60, y: 86)
+        let highCanvasEdgePixel = sampleDisplayedRGBA(from: canvasImage, x: 60, y: 92)
+        let highPreviewEdgePixel = sampleDisplayedRGBA(from: previewImage, x: 60, y: 92)
+
+        assertPixelsEqual(lowCanvasCenterPixel, lowPreviewCenterPixel)
+        assertPixelsEqual(lowCanvasEdgePixel, lowPreviewEdgePixel)
+        assertPixelsEqual(highCanvasCenterPixel, highPreviewCenterPixel)
+        assertPixelsEqual(highCanvasEdgePixel, highPreviewEdgePixel)
+        XCTAssertLessThan(lowCanvasEdgePixel.alpha, highCanvasEdgePixel.alpha)
+    }
+
     private func assertPixelsEqual(
         _ lhs: (red: UInt8, green: UInt8, blue: UInt8, alpha: UInt8),
         _ rhs: (red: UInt8, green: UInt8, blue: UInt8, alpha: UInt8),
@@ -184,29 +232,31 @@ final class HandDrawingCanvasRendererTests: XCTestCase {
 
 private func makeCanvasRendererLayeredTestStroke(
     y: CGFloat,
+    baseSize: Double = 18,
+    force: Double = 1,
     color: HandDrawingColor
 ) -> HandDrawingStroke {
     HandDrawingStroke(
         brush: HandDrawingBrushStyle(
             kind: .pen,
             color: color,
-            baseSize: 18,
+            baseSize: baseSize,
             opacity: 1
         ),
         samplePoints: [
             HandDrawingSamplePoint(
                 point: CGPoint(x: 24, y: y),
-                force: 1,
+                force: force,
                 timestamp: 0
             ),
             HandDrawingSamplePoint(
                 point: CGPoint(x: 60, y: y),
-                force: 1,
+                force: force,
                 timestamp: 0.1
             ),
             HandDrawingSamplePoint(
                 point: CGPoint(x: 96, y: y),
-                force: 1,
+                force: force,
                 timestamp: 0.2
             )
         ]

@@ -55,6 +55,37 @@ final class HandDrawingPreviewRendererTests: XCTestCase {
         XCTAssertGreaterThan(thickEdgePixel.alpha, 64)
     }
 
+    func testHandDrawingPreviewRendererReflectsPressureDrivenWidthDifferences() throws {
+        let renderer = HandDrawingPreviewRenderer()
+        let lowPressureStroke = makePreviewRendererTestStroke(
+            y: 34,
+            baseSize: 20,
+            force: 0.35,
+            color: HandDrawingColor(red: 0.88, green: 0.16, blue: 0.12, alpha: 1)
+        )
+        let highPressureStroke = makePreviewRendererTestStroke(
+            y: 86,
+            baseSize: 20,
+            force: 1,
+            color: HandDrawingColor(red: 0.12, green: 0.72, blue: 0.21, alpha: 1)
+        )
+        let document = HandDrawingDocument(
+            paper: HandDrawingPaper(id: "pressure-paper", size: CGSize(width: 120, height: 120)),
+            strokes: [lowPressureStroke, highPressureStroke]
+        )
+
+        let image = try renderer.renderPreviewImage(for: document, scale: 1)
+        let lowCenterPixel = sampleDisplayedRGBA(from: image, x: 60, y: 34)
+        let highCenterPixel = sampleDisplayedRGBA(from: image, x: 60, y: 86)
+        let lowEdgePixel = sampleDisplayedRGBA(from: image, x: 60, y: 40)
+        let highEdgePixel = sampleDisplayedRGBA(from: image, x: 60, y: 92)
+
+        XCTAssertGreaterThan(lowCenterPixel.red, lowCenterPixel.green)
+        XCTAssertGreaterThan(highCenterPixel.green, highCenterPixel.red)
+        XCTAssertLessThan(lowEdgePixel.alpha, 16)
+        XCTAssertGreaterThan(highEdgePixel.alpha, 64)
+    }
+
     func testHandDrawingPreviewRendererRespectsVisibleLayerOrder() throws {
         let renderer = HandDrawingPreviewRenderer()
         let baseLayer = makeHandDrawingTestLayer(
@@ -106,6 +137,7 @@ final class HandDrawingPreviewRendererTests: XCTestCase {
 private func makePreviewRendererTestStroke(
     y: CGFloat,
     baseSize: Double,
+    force: Double = 1,
     color: HandDrawingColor
 ) -> HandDrawingStroke {
     HandDrawingStroke(
@@ -118,17 +150,17 @@ private func makePreviewRendererTestStroke(
         samplePoints: [
             HandDrawingSamplePoint(
                 point: CGPoint(x: 24, y: y),
-                force: 1,
+                force: force,
                 timestamp: 0
             ),
             HandDrawingSamplePoint(
                 point: CGPoint(x: 60, y: y),
-                force: 1,
+                force: force,
                 timestamp: 0.1
             ),
             HandDrawingSamplePoint(
                 point: CGPoint(x: 96, y: y),
-                force: 1,
+                force: force,
                 timestamp: 0.2
             )
         ]

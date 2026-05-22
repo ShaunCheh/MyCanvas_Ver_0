@@ -4,6 +4,24 @@ import XCTest
 
 @MainActor
 final class HandDrawingEditorEngineTests: XCTestCase {
+    func testHandDrawingStrokeRadiusAndBoundsFollowCurrentPressureOnlyMapping() throws {
+        let stroke = makeHandDrawingTestStroke(
+            baseSize: 20,
+            sampleForces: [0.25, 1, 0.05]
+        )
+
+        XCTAssertEqual(stroke.radiusForSample(at: 0), 2.5, accuracy: 0.001)
+        XCTAssertEqual(stroke.radiusForSample(at: 1), 10, accuracy: 0.001)
+        XCTAssertEqual(stroke.radiusForSample(at: 2), 0.5, accuracy: 0.001)
+        XCTAssertEqual(stroke.radiusForSample(at: 99), 10, accuracy: 0.001)
+
+        let bounds = try XCTUnwrap(stroke.bounds)
+        XCTAssertEqual(bounds.minX, 22.5, accuracy: 0.001)
+        XCTAssertEqual(bounds.maxX, 95.5, accuracy: 0.001)
+        XCTAssertEqual(bounds.minY, 50, accuracy: 0.001)
+        XCTAssertEqual(bounds.maxY, 70, accuracy: 0.001)
+    }
+
     func testHandDrawingEditorEngineAppendsStrokeExportsAndReloadsDocument() throws {
         var engine = HandDrawingEditorEngine(
             document: HandDrawingDocument(
