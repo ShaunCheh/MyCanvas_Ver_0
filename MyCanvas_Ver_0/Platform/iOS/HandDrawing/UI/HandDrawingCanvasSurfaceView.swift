@@ -170,6 +170,8 @@ private final class HandDrawingCanvasPageView: UIView {
     var onPencilStrokeEnded: (([HandDrawingInputSample]) -> Void)?
     var onPencilStrokeCancelled: (() -> Void)?
 
+    private let liveInputConfiguration = HandDrawingLiveInputConfiguration
+        .interactiveDraft
     private let committedImageView: UIImageView = {
         let imageView = UIImageView()
         imageView.translatesAutoresizingMaskIntoConstraints = false
@@ -278,7 +280,17 @@ private final class HandDrawingCanvasPageView: UIView {
         from touch: UITouch,
         event: UIEvent?
     ) -> [HandDrawingInputSample] {
-        let touches = event?.coalescedTouches(for: touch) ?? [touch]
+        var touches = event?.coalescedTouches(for: touch) ?? [touch]
+        if
+            liveInputConfiguration.includesPredictedTouches,
+            let predictedTouches = event?.predictedTouches(for: touch)
+        {
+            touches.append(
+                contentsOf: predictedTouches.prefix(
+                    liveInputConfiguration.maximumPredictedSampleCount
+                )
+            )
+        }
         return touches.compactMap(makeSample(from:))
     }
 

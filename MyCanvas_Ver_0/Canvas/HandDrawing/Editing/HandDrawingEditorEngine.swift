@@ -99,7 +99,11 @@ struct HandDrawingEditorEngine {
         }
         recordSnapshotForUndo()
         state.document.appendStroke(stroke)
-        dirtyRegionTracker.markDirty(stroke.bounds ?? state.document.paperBounds)
+        dirtyRegionTracker.markDirty(
+            stroke.bounds ?? state.document.paperBounds,
+            padding: HandDrawingStrokePerformanceProfile.brushStroke(for: stroke.brush)
+                .dirtyRegionPadding
+        )
         return stroke
     }
 
@@ -233,7 +237,10 @@ struct HandDrawingEditorEngine {
             }
             let newBounds = activeLayerStrokes[index].bounds
             dirtyRegionTracker.markDirty(
-                resolvedDirtyRegion(oldBounds: oldBounds, newBounds: newBounds)
+                resolvedDirtyRegion(oldBounds: oldBounds, newBounds: newBounds),
+                padding: HandDrawingStrokePerformanceProfile
+                    .brushStroke(for: activeLayerStrokes[index].brush)
+                    .dirtyRegionPadding
             )
             mutatedStrokeIDs.insert(strokeID)
         }
@@ -344,7 +351,10 @@ struct HandDrawingEditorEngine {
             activeLayerStrokes[index].transform.translationY += Double(delta.y)
             let newBounds = activeLayerStrokes[index].bounds
             dirtyRegionTracker.markDirty(
-                resolvedDirtyRegion(oldBounds: oldBounds, newBounds: newBounds)
+                resolvedDirtyRegion(oldBounds: oldBounds, newBounds: newBounds),
+                padding: HandDrawingStrokePerformanceProfile
+                    .brushStroke(for: activeLayerStrokes[index].brush)
+                    .dirtyRegionPadding
             )
             translatedStrokeIDs.insert(activeLayerStrokes[index].id)
         }

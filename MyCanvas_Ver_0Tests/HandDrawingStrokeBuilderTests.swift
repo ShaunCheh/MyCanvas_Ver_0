@@ -76,7 +76,12 @@ final class HandDrawingStrokeBuilderTests: XCTestCase {
                 altitudeRadians: 0.5
             )
         ]
-        let normalizedSamples = HandDrawingInputNormalizer.normalized(rawSamples)
+        let normalizedSamples = HandDrawingInputNormalizer.normalized(
+            rawSamples,
+            configuration: HandDrawingStrokePerformanceProfile
+                .brushStroke(for: brush)
+                .inputNormalization
+        )
         let draftStroke = try XCTUnwrap(
             HandDrawingStrokeBuilder.makeStroke(
                 brush: brush,
@@ -102,5 +107,45 @@ final class HandDrawingStrokeBuilderTests: XCTestCase {
         XCTAssertEqual(draftStroke.brush, committedStroke.brush)
         XCTAssertEqual(draftStroke.transform, committedStroke.transform)
         XCTAssertEqual(draftStroke.samplePoints, committedStroke.samplePoints)
+    }
+
+    func testHandDrawingStrokeBuilderUsesBrushAwareSamplingForLargeBrushes() throws {
+        let brush = HandDrawingBrushStyle(
+            kind: .pen,
+            color: .black,
+            baseSize: 18,
+            opacity: 1
+        )
+        let stroke = try XCTUnwrap(
+            HandDrawingStrokeBuilder.makeStroke(
+                brush: brush,
+                samples: [
+                    HandDrawingInputSample(
+                        location: CGPoint(x: 10, y: 20),
+                        force: 1,
+                        timestamp: 0
+                    ),
+                    HandDrawingInputSample(
+                        location: CGPoint(x: 10.7, y: 20),
+                        force: 0.9,
+                        timestamp: 0.01
+                    ),
+                    HandDrawingInputSample(
+                        location: CGPoint(x: 11.4, y: 20),
+                        force: 0.85,
+                        timestamp: 0.02
+                    ),
+                    HandDrawingInputSample(
+                        location: CGPoint(x: 16, y: 20),
+                        force: 0.8,
+                        timestamp: 0.03
+                    )
+                ]
+            )
+        )
+
+        XCTAssertEqual(stroke.samplePoints.count, 2)
+        XCTAssertEqual(stroke.samplePoints[0].cgPoint.x, 11.4, accuracy: 0.001)
+        XCTAssertEqual(stroke.samplePoints[1].cgPoint.x, 16, accuracy: 0.001)
     }
 }

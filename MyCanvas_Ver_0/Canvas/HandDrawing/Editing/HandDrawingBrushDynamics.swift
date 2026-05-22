@@ -1,6 +1,19 @@
 import CoreGraphics
 import Foundation
 
+struct HandDrawingResolvedStampLayout: Equatable {
+    let relativeSpacingFactor: CGFloat
+    let minimumSpacing: CGFloat
+
+    init(
+        relativeSpacingFactor: CGFloat = 0.5,
+        minimumSpacing: CGFloat = 0.5
+    ) {
+        self.relativeSpacingFactor = max(relativeSpacingFactor, 0.05)
+        self.minimumSpacing = max(minimumSpacing, 0.05)
+    }
+}
+
 struct HandDrawingResolvedBrushSample: Equatable {
     let point: CGPoint
     let radius: CGFloat
@@ -91,7 +104,6 @@ struct HandDrawingResolvedBrushSample: Equatable {
 enum HandDrawingBrushDynamics {
     private static let defaultMinimumSizeRatio: CGFloat = 0.05
     private static let defaultPressureCurveExponent: CGFloat = 1
-    private static let minimumStampSpacing: CGFloat = 0.5
 
     struct Configuration: Equatable {
         let baseSize: CGFloat
@@ -157,12 +169,16 @@ enum HandDrawingBrushDynamics {
     }
 
     static func resolvedStamps(
-        for stroke: HandDrawingStroke
+        for stroke: HandDrawingStroke,
+        layout: HandDrawingResolvedStampLayout? = nil
     ) -> [HandDrawingResolvedBrushSample] {
         let anchorSamples = resolvedSamples(for: stroke)
         guard anchorSamples.count > 1 else {
             return anchorSamples
         }
+        let resolvedLayout = layout
+            ?? HandDrawingStrokePerformanceProfile.brushStroke(for: stroke.brush)
+                .stampLayout
 
         var resolvedStamps: [HandDrawingResolvedBrushSample] = [
             anchorSamples[0]
@@ -173,7 +189,8 @@ enum HandDrawingBrushDynamics {
             resolvedStamps.append(
                 contentsOf: interpolatedStamps(
                     from: anchorSamples[index - 1],
-                    to: anchorSamples[index]
+                    to: anchorSamples[index],
+                    layout: resolvedLayout
                 )
             )
         }
@@ -243,13 +260,18 @@ enum HandDrawingBrushDynamics {
 
     private static func interpolatedStamps(
         from start: HandDrawingResolvedBrushSample,
-        to end: HandDrawingResolvedBrushSample
+        to end: HandDrawingResolvedBrushSample,
+        layout: HandDrawingResolvedStampLayout
     ) -> [HandDrawingResolvedBrushSample] {
         let distance = hypot(
             end.point.x - start.point.x,
             end.point.y - start.point.y
         )
-        let stepDistance = interpolationStepDistance(from: start, to: end)
+        let stepDistance = interpolationStepDistance(
+            from: start,
+            to: end,
+            layout: layout
+        )
         let stepCount = max(Int(ceil(distance / stepDistance)), 1)
         return (1...stepCount).map { index in
             let fraction = CGFloat(index) / CGFloat(stepCount)
@@ -263,11 +285,12 @@ enum HandDrawingBrushDynamics {
 
     private static func interpolationStepDistance(
         from start: HandDrawingResolvedBrushSample,
-        to end: HandDrawingResolvedBrushSample
+        to end: HandDrawingResolvedBrushSample,
+        layout: HandDrawingResolvedStampLayout
     ) -> CGFloat {
         max(
-            min(start.minorRadius, end.minorRadius) * 0.5,
-            minimumStampSpacing
+            min(start.minorRadius, end.minorRadius) * layout.relativeSpacingFactor,
+            layout.minimumSpacing
         )
     }
 

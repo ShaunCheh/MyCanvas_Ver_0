@@ -60,6 +60,54 @@ final class HandDrawingEditorEngineTests: XCTestCase {
         XCTAssertEqual(restoredEngine.state.document, engine.state.document)
     }
 
+    func testHandDrawingEditorEngineInflatesDirtyRegionForPartialRerender() throws {
+        var engine = HandDrawingEditorEngine(
+            document: HandDrawingDocument(
+                paper: HandDrawingPaper(
+                    id: "dirty-region-paper",
+                    size: CGSize(width: 200, height: 200)
+                )
+            )
+        )
+        let brush = HandDrawingBrushStyle(
+            kind: .pen,
+            color: .black,
+            baseSize: 18,
+            opacity: 1
+        )
+        let stroke = try XCTUnwrap(
+            engine.appendStroke(
+                brush: brush,
+                samples: [
+                    HandDrawingInputSample(
+                        location: CGPoint(x: 40, y: 50),
+                        force: 1,
+                        timestamp: 0
+                    ),
+                    HandDrawingInputSample(
+                        location: CGPoint(x: 80, y: 50),
+                        force: 1,
+                        timestamp: 0.1
+                    )
+                ]
+            )
+        )
+
+        let strokeBounds = try XCTUnwrap(stroke.bounds)
+        let dirtyRegion = try XCTUnwrap(engine.consumeDirtyRegion())
+        let expectedDirtyRegion = strokeBounds
+            .insetBy(
+                dx: -HandDrawingStrokePerformanceProfile.brushStroke(for: brush)
+                    .dirtyRegionPadding,
+                dy: -HandDrawingStrokePerformanceProfile.brushStroke(for: brush)
+                    .dirtyRegionPadding
+            )
+            .standardized
+            .integral
+
+        XCTAssertEqual(dirtyRegion, expectedDirtyRegion)
+    }
+
     func testHandDrawingEditorEngineUndoRedoAndDeselect() {
         let firstStroke = makeHandDrawingTestStroke(id: UUID())
         let secondStroke = makeHandDrawingTestStroke(

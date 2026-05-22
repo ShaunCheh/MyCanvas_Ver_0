@@ -59,6 +59,7 @@ final class HandDrawingEditorCoordinator {
     private var availableBrushPresets: [HandDrawingBrushPreset]
     private var selectedBrushPresetID: String
     private var activeStrokeBrush: HandDrawingBrushStyle?
+    private var activeStrokePerformanceProfile: HandDrawingStrokePerformanceProfile?
     private var activeStrokeInputSamples: [HandDrawingInputSample] = []
     private var pixelEraserToolController = HandDrawingPixelEraserToolController()
     private var lassoToolController = HandDrawingLassoToolController()
@@ -224,8 +225,12 @@ final class HandDrawingEditorCoordinator {
                 return
             }
             activeStrokeBrush = currentBrushStyle
+            let performanceProfile = HandDrawingStrokePerformanceProfile
+                .brushStroke(for: currentBrushStyle)
+            activeStrokePerformanceProfile = performanceProfile
             activeStrokeInputSamples = HandDrawingInputNormalizer.normalized(
-                [sample]
+                [sample],
+                configuration: performanceProfile.inputNormalization
             )
             publishSurfaceState()
         case .pixelEraser:
@@ -404,14 +409,21 @@ final class HandDrawingEditorCoordinator {
     }
 
     private func appendStrokeSamples(_ samples: [HandDrawingInputSample]) {
+        let normalizationConfiguration =
+            activeStrokePerformanceProfile?.inputNormalization
+            ?? HandDrawingStrokePerformanceProfile
+                .brushStroke(for: activeStrokeBrush ?? currentBrushStyle)
+                .inputNormalization
         activeStrokeInputSamples = HandDrawingInputNormalizer.normalized(
             samples,
-            appendingTo: activeStrokeInputSamples
+            appendingTo: activeStrokeInputSamples,
+            configuration: normalizationConfiguration
         )
     }
 
     private func clearActiveStroke() {
         activeStrokeBrush = nil
+        activeStrokePerformanceProfile = nil
         activeStrokeInputSamples.removeAll()
     }
 

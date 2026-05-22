@@ -5,11 +5,14 @@ enum HandDrawingStrokeBuilder {
         brush: HandDrawingBrushStyle,
         samples: [HandDrawingInputSample],
         transform: HandDrawingStrokeTransform = .identity,
-        normalization: HandDrawingInputNormalizer.Configuration = .brushStroke
+        normalization: HandDrawingInputNormalizer.Configuration? = nil
     ) -> HandDrawingStroke? {
+        let resolvedNormalization = normalization
+            ?? HandDrawingStrokePerformanceProfile.brushStroke(for: brush)
+                .inputNormalization
         let normalizedSamples = HandDrawingInputNormalizer.normalized(
             samples,
-            configuration: normalization
+            configuration: resolvedNormalization
         )
         return makeStroke(
             brush: brush,

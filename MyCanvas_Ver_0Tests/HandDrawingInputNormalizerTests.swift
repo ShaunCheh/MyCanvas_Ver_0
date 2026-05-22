@@ -66,4 +66,38 @@ final class HandDrawingInputNormalizerTests: XCTestCase {
 
         XCTAssertTrue(normalizedSamples.isEmpty)
     }
+
+    func testHandDrawingStrokePerformanceProfileUsesBrushAwareNormalizationDistance() {
+        let thinBrushProfile = HandDrawingStrokePerformanceProfile.brushStroke(
+            for: HandDrawingBrushStyle(
+                kind: .pen,
+                color: .black,
+                baseSize: 4,
+                opacity: 1
+            )
+        )
+        let thickBrushProfile = HandDrawingStrokePerformanceProfile.brushStroke(
+            for: HandDrawingBrushStyle(
+                kind: .pen,
+                color: .black,
+                baseSize: 18,
+                opacity: 1
+            )
+        )
+
+        XCTAssertEqual(
+            thinBrushProfile.inputNormalization.minimumSampleDistance,
+            0.5,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(
+            thickBrushProfile.inputNormalization.minimumSampleDistance,
+            1.8,
+            accuracy: 0.001
+        )
+        XCTAssertGreaterThan(
+            thickBrushProfile.inputNormalization.minimumSampleDistance,
+            thinBrushProfile.inputNormalization.minimumSampleDistance
+        )
+    }
 }
