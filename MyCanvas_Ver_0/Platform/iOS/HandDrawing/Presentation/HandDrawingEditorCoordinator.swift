@@ -116,6 +116,7 @@ final class HandDrawingEditorCoordinator {
     init(
         editorContext: CanvasHandDrawingEditorContext,
         committedCanvasBackend: HandDrawingCommittedCanvasBackend? = nil,
+        committedCanvasBackendPreference: HandDrawingCommittedCanvasBackendPreference = .cpu,
         realtimeDraftBackendPreference: HandDrawingRealtimeDraftBackendPreference = .gpuPreferred
     ) throws {
         self.editorContext = editorContext
@@ -128,7 +129,10 @@ final class HandDrawingEditorCoordinator {
             paper: editorContext.paper
         )
         let resolvedCommittedCanvasBackend = try committedCanvasBackend
-            ?? HandDrawingCPUCommittedCanvasBackend(paperSize: document.paper.size)
+            ?? Self.makeCommittedCanvasBackend(
+                preference: committedCanvasBackendPreference,
+                paperSize: document.paper.size
+            )
         self.committedCanvasBackend = resolvedCommittedCanvasBackend
         initialDocument = document
         engine = HandDrawingEditorEngine(document: document)
@@ -608,8 +612,10 @@ final class HandDrawingEditorCoordinator {
                 return
             }
             committedCanvas = try committedCanvasBackend.render(
-                document: engine.state.document,
-                dirtyRegion: dirtyRegion
+                request: HandDrawingCommittedCanvasRenderRequest(
+                    document: engine.state.document,
+                    dirtyRegion: dirtyRegion
+                )
             )
             publishSurfaceState()
             publishPaletteState()
@@ -627,6 +633,25 @@ final class HandDrawingEditorCoordinator {
                 .makeTransparentPreview(for: editorContext.paper)
         }
         return try previewRenderer.renderPreviewImage(for: document, scale: 1)
+    }
+
+    private static func makeCommittedCanvasBackend(
+        preference: HandDrawingCommittedCanvasBackendPreference,
+        paperSize: CGSize
+    ) throws -> HandDrawingCommittedCanvasBackend {
+        switch preference {
+        case .cpu:
+            return try HandDrawingCPUCommittedCanvasBackend(paperSize: paperSize)
+        case .gpuPrototype:
+            #if canImport(Metal)
+            if let backend = try? HandDrawingGPUCommittedCanvasBackend(
+                paperSize: paperSize
+            ) {
+                return backend
+            }
+            #endif
+            return try HandDrawingCPUCommittedCanvasBackend(paperSize: paperSize)
+        }
     }
 
     private var selectedStrokeBounds: CGRect? {

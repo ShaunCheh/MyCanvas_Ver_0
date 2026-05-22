@@ -6,6 +6,11 @@ enum HandDrawingRealtimeDraftBackendPreference: Equatable {
     case gpuPreferred
 }
 
+enum HandDrawingCommittedCanvasBackendPreference: Equatable {
+    case cpu
+    case gpuPrototype
+}
+
 struct HandDrawingRealtimeNormalizedSampleUpdate: Equatable {
     let stablePrefixCount: Int
     let tailSamples: [HandDrawingInputSample]
@@ -153,11 +158,59 @@ enum HandDrawingCommittedCanvasRenderOutput {
     }
 }
 
+struct HandDrawingCommittedCanvasRenderRequest: Equatable {
+    let document: HandDrawingDocument
+    let dirtyRegion: CGRect?
+
+    init(
+        document: HandDrawingDocument,
+        dirtyRegion: CGRect?
+    ) {
+        self.document = document
+        self.dirtyRegion = dirtyRegion
+    }
+
+    var paperBounds: CGRect {
+        document.paperBounds
+    }
+
+    var renderRegion: CGRect {
+        let rawRegion = dirtyRegion ?? paperBounds
+        let intersectedRegion = rawRegion
+            .standardized
+            .intersection(paperBounds)
+        guard
+            intersectedRegion.isNull == false,
+            intersectedRegion.isEmpty == false
+        else {
+            return paperBounds.integral
+        }
+        return intersectedRegion.integral
+    }
+
+    var isFullRedraw: Bool {
+        renderRegion.equalTo(paperBounds.integral)
+    }
+}
+
 protocol HandDrawingCommittedCanvasBackend {
+    func render(
+        request: HandDrawingCommittedCanvasRenderRequest
+    ) throws -> HandDrawingCommittedCanvasRenderOutput
+}
+
+extension HandDrawingCommittedCanvasBackend {
     func render(
         document: HandDrawingDocument,
         dirtyRegion: CGRect?
-    ) throws -> HandDrawingCommittedCanvasRenderOutput
+    ) throws -> HandDrawingCommittedCanvasRenderOutput {
+        try render(
+            request: HandDrawingCommittedCanvasRenderRequest(
+                document: document,
+                dirtyRegion: dirtyRegion
+            )
+        )
+    }
 }
 
 final class HandDrawingCPUCommittedCanvasBackend: HandDrawingCommittedCanvasBackend {
@@ -174,14 +227,10 @@ final class HandDrawingCPUCommittedCanvasBackend: HandDrawingCommittedCanvasBack
     }
 
     func render(
-        document: HandDrawingDocument,
-        dirtyRegion: CGRect?
+        request: HandDrawingCommittedCanvasRenderRequest
     ) throws -> HandDrawingCommittedCanvasRenderOutput {
         .bitmap(
-            try canvasRenderer.render(
-                document: document,
-                dirtyRegion: dirtyRegion
-            )
+            try canvasRenderer.render(request: request)
         )
     }
 }

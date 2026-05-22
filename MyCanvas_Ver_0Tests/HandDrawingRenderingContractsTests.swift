@@ -84,4 +84,41 @@ final class HandDrawingRenderingContractsTests: XCTestCase {
         XCTAssertEqual(packet.predictedTail.normalizedSamples.count, 1)
         XCTAssertFalse(packet.predictedTail.resolvedStamps.isEmpty)
     }
+
+    func testHandDrawingCommittedCanvasRenderRequestTreatsNilDirtyRegionAsFullRedraw() {
+        let document = HandDrawingDocument(
+            paper: HandDrawingPaper(
+                id: "committed-request-full-redraw-paper",
+                size: CGSize(width: 120, height: 80)
+            ),
+            strokes: []
+        )
+        let request = HandDrawingCommittedCanvasRenderRequest(
+            document: document,
+            dirtyRegion: nil
+        )
+
+        XCTAssertEqual(request.renderRegion, document.paperBounds.integral)
+        XCTAssertTrue(request.isFullRedraw)
+    }
+
+    func testHandDrawingCommittedCanvasRenderRequestClipsDirtyRegionToIntegralPaperBounds() {
+        let document = HandDrawingDocument(
+            paper: HandDrawingPaper(
+                id: "committed-request-clipped-paper",
+                size: CGSize(width: 120, height: 80)
+            ),
+            strokes: []
+        )
+        let request = HandDrawingCommittedCanvasRenderRequest(
+            document: document,
+            dirtyRegion: CGRect(x: -6.4, y: 18.2, width: 28.3, height: 16.1)
+        )
+
+        XCTAssertEqual(
+            request.renderRegion,
+            CGRect(x: 0, y: 18, width: 22, height: 17)
+        )
+        XCTAssertFalse(request.isFullRedraw)
+    }
 }

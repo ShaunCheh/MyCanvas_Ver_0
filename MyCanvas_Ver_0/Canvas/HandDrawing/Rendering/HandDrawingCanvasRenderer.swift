@@ -53,6 +53,18 @@ final class HandDrawingCanvasRenderer {
         document: HandDrawingDocument,
         dirtyRegion: CGRect? = nil
     ) throws -> CGImage {
+        try render(
+            request: HandDrawingCommittedCanvasRenderRequest(
+                document: document,
+                dirtyRegion: dirtyRegion
+            )
+        )
+    }
+
+    func render(
+        request: HandDrawingCommittedCanvasRenderRequest
+    ) throws -> CGImage {
+        let document = request.document
         if paperSize != document.paper.size {
             let oldBuffer = bitmapBuffer
             paperSize = document.paper.size
@@ -65,10 +77,7 @@ final class HandDrawingCanvasRenderer {
             clear(region: document.paperBounds)
         }
 
-        let renderRegion = resolvedRenderRegion(
-            dirtyRegion,
-            paperBounds: document.paperBounds
-        )
+        let renderRegion = request.renderRegion
         clear(region: renderRegion)
         bitmapContext.saveGState()
         bitmapContext.addRect(renderRegion)
@@ -101,23 +110,6 @@ final class HandDrawingCanvasRenderer {
             bitmapContext.fill(region)
         }
         bitmapContext.restoreGState()
-    }
-
-    private func resolvedRenderRegion(
-        _ dirtyRegion: CGRect?,
-        paperBounds: CGRect
-    ) -> CGRect {
-        let rawRegion = dirtyRegion ?? paperBounds
-        let intersectedRegion = rawRegion
-            .standardized
-            .intersection(paperBounds)
-        guard
-            intersectedRegion.isNull == false,
-            intersectedRegion.isEmpty == false
-        else {
-            return paperBounds
-        }
-        return intersectedRegion.integral
     }
 
     private static func makeBitmapStorage(
