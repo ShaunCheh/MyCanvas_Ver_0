@@ -173,6 +173,72 @@ final class HandDrawingBrushDynamicsTests: XCTestCase {
         XCTAssertEqual(bounds.maxY, 60 + expectedHalfExtent, accuracy: 0.001)
     }
 
+    func testHandDrawingBrushDynamicsResolvedStampUpdateProducesTailAgainstCommittedPrefix() {
+        let brush = HandDrawingBrushStyle(
+            kind: .pen,
+            color: .black,
+            baseSize: 12,
+            opacity: 0.9,
+            tiltSizeInfluence: 0.65,
+            tiltOpacityInfluence: 0.14
+        )
+        let performanceProfile = HandDrawingStrokePerformanceProfile
+            .brushStroke(for: brush)
+        let committedSamples = HandDrawingInputNormalizer.normalized(
+            [
+                HandDrawingInputSample(
+                    location: CGPoint(x: 20, y: 24),
+                    force: 0.4,
+                    timestamp: 0
+                ),
+                HandDrawingInputSample(
+                    location: CGPoint(x: 58, y: 42),
+                    force: 0.72,
+                    timestamp: 0.1,
+                    azimuthRadians: 0.42,
+                    altitudeRadians: .pi / 4
+                )
+            ],
+            configuration: performanceProfile.inputNormalization
+        )
+        let committedResolvedStamps = HandDrawingBrushDynamics.resolvedStamps(
+            brush: brush,
+            normalizedSamples: committedSamples,
+            layout: performanceProfile.stampLayout
+        )
+        let predictedTailSamples = HandDrawingInputNormalizer.normalizedPredictedTail(
+            [
+                HandDrawingInputSample(
+                    location: CGPoint(x: 96, y: 60),
+                    force: 0.95,
+                    timestamp: 0.2,
+                    azimuthRadians: 0.75,
+                    altitudeRadians: .pi / 5
+                )
+            ],
+            onto: committedSamples,
+            configuration: performanceProfile.inputNormalization
+        )
+
+        let predictedTailUpdate = HandDrawingBrushDynamics.resolvedStampUpdate(
+            brush: brush,
+            normalizedSamples: committedSamples + predictedTailSamples,
+            previousResolvedStamps: committedResolvedStamps,
+            layout: performanceProfile.stampLayout
+        )
+
+        XCTAssertEqual(predictedTailSamples.count, 1)
+        XCTAssertEqual(
+            predictedTailUpdate.resolvedStamps.count,
+            committedResolvedStamps.count + predictedTailUpdate.tailStamps.count
+        )
+        XCTAssertEqual(
+            predictedTailUpdate.stablePrefixCount,
+            committedResolvedStamps.count
+        )
+        XCTAssertFalse(predictedTailUpdate.tailStamps.isEmpty)
+    }
+
     func testHandDrawingBrushPresetCatalogResolvesDefaultPresetAndBuildsFullBrushStyle() throws {
         let presets = HandDrawingBrushPresetCatalog.defaultPenPresets(
             lineWidths: [4, 8, 12, 18],

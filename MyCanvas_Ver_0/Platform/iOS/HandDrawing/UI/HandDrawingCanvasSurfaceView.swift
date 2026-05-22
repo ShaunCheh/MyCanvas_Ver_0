@@ -7,8 +7,8 @@ final class HandDrawingCanvasSurfaceView: UIView, UIScrollViewDelegate {
     }
 
     var onPencilStrokeBegan: ((HandDrawingInputSample) -> Void)?
-    var onPencilStrokeMoved: (([HandDrawingInputSample]) -> Void)?
-    var onPencilStrokeEnded: (([HandDrawingInputSample]) -> Void)?
+    var onPencilStrokeMoved: ((HandDrawingLiveInputBatch) -> Void)?
+    var onPencilStrokeEnded: ((HandDrawingLiveInputBatch) -> Void)?
     var onPencilStrokeCancelled: (() -> Void)?
 
     private let scrollView: UIScrollView = {
@@ -107,11 +107,11 @@ final class HandDrawingCanvasSurfaceView: UIView, UIScrollViewDelegate {
         pageView.onPencilStrokeBegan = { [weak self] sample in
             self?.onPencilStrokeBegan?(sample)
         }
-        pageView.onPencilStrokeMoved = { [weak self] samples in
-            self?.onPencilStrokeMoved?(samples)
+        pageView.onPencilStrokeMoved = { [weak self] batch in
+            self?.onPencilStrokeMoved?(batch)
         }
-        pageView.onPencilStrokeEnded = { [weak self] samples in
-            self?.onPencilStrokeEnded?(samples)
+        pageView.onPencilStrokeEnded = { [weak self] batch in
+            self?.onPencilStrokeEnded?(batch)
         }
         pageView.onPencilStrokeCancelled = { [weak self] in
             self?.onPencilStrokeCancelled?()
@@ -166,8 +166,8 @@ final class HandDrawingCanvasSurfaceView: UIView, UIScrollViewDelegate {
 
 private final class HandDrawingCanvasPageView: UIView {
     var onPencilStrokeBegan: ((HandDrawingInputSample) -> Void)?
-    var onPencilStrokeMoved: (([HandDrawingInputSample]) -> Void)?
-    var onPencilStrokeEnded: (([HandDrawingInputSample]) -> Void)?
+    var onPencilStrokeMoved: ((HandDrawingLiveInputBatch) -> Void)?
+    var onPencilStrokeEnded: ((HandDrawingLiveInputBatch) -> Void)?
     var onPencilStrokeCancelled: (() -> Void)?
 
     private let liveInputConfiguration = HandDrawingLiveInputConfiguration
@@ -236,11 +236,18 @@ private final class HandDrawingCanvasPageView: UIView {
         guard let touch = matchingActivePencilTouch(in: touches) else {
             return
         }
-        let samples = makeSamples(from: touch, event: event)
-        guard samples.isEmpty == false else {
+        let inputBatch = makeInputBatch(
+            from: touch,
+            event: event,
+            includePredictedTouches: liveInputConfiguration.includesPredictedTouches
+        )
+        guard
+            inputBatch.committedSamples.isEmpty == false
+                || inputBatch.predictedSamples.isEmpty == false
+        else {
             return
         }
-        onPencilStrokeMoved?(samples)
+        onPencilStrokeMoved?(inputBatch)
     }
 
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -249,7 +256,13 @@ private final class HandDrawingCanvasPageView: UIView {
             return
         }
         activePencilTouchID = nil
-        onPencilStrokeEnded?(makeSamples(from: touch, event: event))
+        onPencilStrokeEnded?(
+            makeInputBatch(
+                from: touch,
+                event: event,
+                includePredictedTouches: false
+            )
+        )
     }
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -271,22 +284,28 @@ private final class HandDrawingCanvasPageView: UIView {
         return touches.first { ObjectIdentifier($0) == activePencilTouchID }
     }
 
-    private func makeSamples(
+    private func makeInputBatch(
         from touch: UITouch,
-        event: UIEvent?
-    ) -> [HandDrawingInputSample] {
-        var touches = event?.coalescedTouches(for: touch) ?? [touch]
+        event: UIEvent?,
+        includePredictedTouches: Bool
+    ) -> HandDrawingLiveInputBatch {
+        let committedSamples = (event?.coalescedTouches(for: touch) ?? [touch])
+            .compactMap(makeSample(from:))
+        let predictedSamples: [HandDrawingInputSample]
         if
-            liveInputConfiguration.includesPredictedTouches,
+            includePredictedTouches,
             let predictedTouches = event?.predictedTouches(for: touch)
         {
-            touches.append(
-                contentsOf: predictedTouches.prefix(
-                    liveInputConfiguration.maximumPredictedSampleCount
-                )
-            )
+            predictedSamples = predictedTouches
+                .prefix(liveInputConfiguration.maximumPredictedSampleCount)
+                .compactMap(makeSample(from:))
+        } else {
+            predictedSamples = []
         }
-        return touches.compactMap(makeSample(from:))
+        return HandDrawingLiveInputBatch(
+            committedSamples: committedSamples,
+            predictedSamples: predictedSamples
+        )
     }
 
     private func makeSample(from touch: UITouch) -> HandDrawingInputSample? {
@@ -397,7 +416,9 @@ private final class HandDrawingRealtimeDraftHostView: UIView {
 private final class HandDrawingCPURealtimeDraftRendererView: UIView, HandDrawingRealtimeDraftRendererHosting {
     var view: UIView { self }
 
-    var draftStroke: HandDrawingStroke? {
+    private let renderer = HandDrawingCPURealtimeBrushRenderer()
+    private var lastAppliedRevision: UInt64?
+    private var renderOutput: HandDrawingRealtimeDraftRenderOutput = .none {
         didSet {
             setNeedsDisplay()
         }
@@ -418,7 +439,11 @@ private final class HandDrawingCPURealtimeDraftRendererView: UIView, HandDrawing
     }
 
     func apply(state: HandDrawingRealtimeDraftHostState) {
-        draftStroke = state.output.stroke
+        guard lastAppliedRevision != state.revision else {
+            return
+        }
+        lastAppliedRevision = state.revision
+        renderOutput = renderer.apply(packet: state.packet)
     }
 
     override func draw(_ rect: CGRect) {
@@ -427,8 +452,17 @@ private final class HandDrawingCPURealtimeDraftRendererView: UIView, HandDrawing
             return
         }
         context.saveGState()
-        if let draftStroke {
-            HandDrawingStrokeRasterizer.draw(draftStroke, in: context)
+        if let resolvedState = renderOutput.resolvedState {
+            HandDrawingStrokeRasterizer.draw(
+                resolvedState.committedResolvedStamps,
+                color: resolvedState.brush.color,
+                in: context
+            )
+            HandDrawingStrokeRasterizer.draw(
+                resolvedState.predictedResolvedStamps,
+                color: resolvedState.brush.color,
+                in: context
+            )
         }
         context.restoreGState()
     }

@@ -2,6 +2,15 @@ import CoreGraphics
 import Foundation
 
 enum HandDrawingInputNormalizer {
+    struct IncrementalUpdate: Equatable {
+        let normalizedSamples: [HandDrawingInputSample]
+        let stablePrefixCount: Int
+
+        var tailSamples: [HandDrawingInputSample] {
+            Array(normalizedSamples.dropFirst(stablePrefixCount))
+        }
+    }
+
     struct Configuration: Equatable {
         static let brushStroke = Configuration()
 
@@ -63,6 +72,41 @@ enum HandDrawingInputNormalizer {
         return normalizedSamples
     }
 
+    static func normalizedUpdate(
+        _ rawSamples: [HandDrawingInputSample],
+        appendingTo existingSamples: [HandDrawingInputSample] = [],
+        configuration: Configuration = .brushStroke
+    ) -> IncrementalUpdate {
+        let normalizedSamples = normalized(
+            rawSamples,
+            appendingTo: existingSamples,
+            configuration: configuration
+        )
+        return IncrementalUpdate(
+            normalizedSamples: normalizedSamples,
+            stablePrefixCount: commonPrefixCount(
+                between: existingSamples,
+                and: normalizedSamples
+            )
+        )
+    }
+
+    static func normalizedPredictedTail(
+        _ rawSamples: [HandDrawingInputSample],
+        onto committedSamples: [HandDrawingInputSample],
+        configuration: Configuration = .brushStroke
+    ) -> [HandDrawingInputSample] {
+        let combinedSamples = normalized(
+            rawSamples,
+            appendingTo: committedSamples,
+            configuration: configuration
+        )
+        guard combinedSamples.count >= committedSamples.count else {
+            return []
+        }
+        return Array(combinedSamples.dropFirst(committedSamples.count))
+    }
+
     private static func sanitized(
         _ rawSample: HandDrawingInputSample,
         previousSample: HandDrawingInputSample?,
@@ -111,5 +155,16 @@ enum HandDrawingInputNormalizer {
             return nil
         }
         return angle
+    }
+
+    private static func commonPrefixCount<T: Equatable>(
+        between lhs: [T],
+        and rhs: [T]
+    ) -> Int {
+        let maximumSharedCount = min(lhs.count, rhs.count)
+        for index in 0..<maximumSharedCount where lhs[index] != rhs[index] {
+            return index
+        }
+        return maximumSharedCount
     }
 }

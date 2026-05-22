@@ -1,42 +1,121 @@
 import CoreGraphics
 import Foundation
 
+struct HandDrawingRealtimeNormalizedSampleUpdate: Equatable {
+    let stablePrefixCount: Int
+    let tailSamples: [HandDrawingInputSample]
+}
+
+struct HandDrawingRealtimeResolvedStampUpdate: Equatable {
+    let stablePrefixCount: Int
+    let tailStamps: [HandDrawingResolvedBrushSample]
+}
+
+struct HandDrawingRealtimePredictedTail: Equatable {
+    static let empty = HandDrawingRealtimePredictedTail(
+        normalizedSamples: [],
+        resolvedStamps: []
+    )
+
+    let normalizedSamples: [HandDrawingInputSample]
+    let resolvedStamps: [HandDrawingResolvedBrushSample]
+
+    var isEmpty: Bool {
+        normalizedSamples.isEmpty && resolvedStamps.isEmpty
+    }
+}
+
 struct HandDrawingRealtimeDraftPacket: Equatable {
+    let strokeID: UUID
     let brush: HandDrawingBrushStyle
     let performanceProfile: HandDrawingStrokePerformanceProfile
-    let normalizedSamples: [HandDrawingInputSample]
-    let draftStroke: HandDrawingStroke
-    let resolvedStamps: [HandDrawingResolvedBrushSample]
+    let committedSamples: HandDrawingRealtimeNormalizedSampleUpdate
+    let committedResolvedStamps: HandDrawingRealtimeResolvedStampUpdate
+    let predictedTail: HandDrawingRealtimePredictedTail
+}
+
+struct HandDrawingRealtimeDraftRenderState: Equatable {
+    let brush: HandDrawingBrushStyle
+    let committedResolvedStamps: [HandDrawingResolvedBrushSample]
+    let predictedResolvedStamps: [HandDrawingResolvedBrushSample]
+
+    var allResolvedStamps: [HandDrawingResolvedBrushSample] {
+        committedResolvedStamps + predictedResolvedStamps
+    }
 }
 
 enum HandDrawingRealtimeDraftRenderOutput {
     case none
-    case stroke(HandDrawingStroke)
+    case resolved(HandDrawingRealtimeDraftRenderState)
 
-    var stroke: HandDrawingStroke? {
+    var resolvedState: HandDrawingRealtimeDraftRenderState? {
         switch self {
         case .none:
             return nil
-        case let .stroke(stroke):
-            return stroke
+        case let .resolved(state):
+            return state
         }
     }
 }
 
-protocol HandDrawingRealtimeBrushRenderer {
-    func render(
+protocol HandDrawingRealtimeBrushRenderer: AnyObject {
+    func apply(
         packet: HandDrawingRealtimeDraftPacket?
     ) -> HandDrawingRealtimeDraftRenderOutput
 }
 
-struct HandDrawingCPURealtimeBrushRenderer: HandDrawingRealtimeBrushRenderer {
-    func render(
+final class HandDrawingCPURealtimeBrushRenderer: HandDrawingRealtimeBrushRenderer {
+    private var activeStrokeID: UUID?
+    private var activeBrush: HandDrawingBrushStyle?
+    private var committedResolvedStamps: [HandDrawingResolvedBrushSample] = []
+    private var predictedResolvedStamps: [HandDrawingResolvedBrushSample] = []
+
+    func apply(
         packet: HandDrawingRealtimeDraftPacket?
     ) -> HandDrawingRealtimeDraftRenderOutput {
         guard let packet else {
+            activeStrokeID = nil
+            activeBrush = nil
+            committedResolvedStamps.removeAll()
+            predictedResolvedStamps.removeAll()
             return .none
         }
-        return .stroke(packet.draftStroke)
+
+        if activeStrokeID != packet.strokeID {
+            committedResolvedStamps.removeAll()
+            predictedResolvedStamps.removeAll()
+        }
+        activeStrokeID = packet.strokeID
+        activeBrush = packet.brush
+        committedResolvedStamps = replaceTail(
+            in: committedResolvedStamps,
+            stablePrefixCount: packet.committedResolvedStamps.stablePrefixCount,
+            tail: packet.committedResolvedStamps.tailStamps
+        )
+        predictedResolvedStamps = packet.predictedTail.resolvedStamps
+
+        guard let activeBrush else {
+            return .none
+        }
+        return .resolved(
+            HandDrawingRealtimeDraftRenderState(
+                brush: activeBrush,
+                committedResolvedStamps: committedResolvedStamps,
+                predictedResolvedStamps: predictedResolvedStamps
+            )
+        )
+    }
+
+    private func replaceTail<T>(
+        in existingValues: [T],
+        stablePrefixCount: Int,
+        tail: [T]
+    ) -> [T] {
+        let resolvedPrefixCount = min(
+            max(stablePrefixCount, 0),
+            existingValues.count
+        )
+        return Array(existingValues.prefix(resolvedPrefixCount)) + tail
     }
 }
 

@@ -100,4 +100,52 @@ final class HandDrawingInputNormalizerTests: XCTestCase {
             thinBrushProfile.inputNormalization.minimumSampleDistance
         )
     }
+
+    func testHandDrawingInputNormalizerProducesStablePrefixAndTailSamplesForIncrementalUpdates() {
+        let configuration = HandDrawingInputNormalizer.Configuration(
+            minimumSampleDistance: 0.5,
+            minimumTimestampDelta: 0.0001,
+            minimumForce: 0.05,
+            maximumForce: 1
+        )
+        let existingSamples = HandDrawingInputNormalizer.normalized(
+            [
+                HandDrawingInputSample(
+                    location: CGPoint(x: 10, y: 10),
+                    force: 0.4,
+                    timestamp: 0
+                ),
+                HandDrawingInputSample(
+                    location: CGPoint(x: 20, y: 20),
+                    force: 0.6,
+                    timestamp: 0.1
+                )
+            ],
+            configuration: configuration
+        )
+
+        let update = HandDrawingInputNormalizer.normalizedUpdate(
+            [
+                HandDrawingInputSample(
+                    location: CGPoint(x: 20.2, y: 20.2),
+                    force: 0.7,
+                    timestamp: 0.11
+                ),
+                HandDrawingInputSample(
+                    location: CGPoint(x: 30, y: 30),
+                    force: 0.9,
+                    timestamp: 0.2
+                )
+            ],
+            appendingTo: existingSamples,
+            configuration: configuration
+        )
+
+        XCTAssertEqual(update.stablePrefixCount, 1)
+        XCTAssertEqual(update.tailSamples.count, 2)
+        XCTAssertEqual(update.tailSamples[0].location.x, 20.2, accuracy: 0.001)
+        XCTAssertEqual(update.tailSamples[0].location.y, 20.2, accuracy: 0.001)
+        XCTAssertEqual(update.tailSamples[1].location.x, 30, accuracy: 0.001)
+        XCTAssertEqual(update.tailSamples[1].location.y, 30, accuracy: 0.001)
+    }
 }

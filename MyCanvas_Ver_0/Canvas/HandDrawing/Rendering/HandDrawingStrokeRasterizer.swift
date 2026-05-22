@@ -10,6 +10,20 @@ enum HandDrawingStrokeRasterizer {
         applyEraseMask(stroke.eraseMask, transform: stroke.transform, in: context)
     }
 
+    static func draw(
+        _ resolvedSamples: [HandDrawingResolvedBrushSample],
+        color: HandDrawingColor,
+        in context: CGContext
+    ) {
+        guard resolvedSamples.isEmpty == false else {
+            return
+        }
+        context.setFillColor(color.cgColor)
+        for sample in resolvedSamples {
+            drawStamp(sample, in: context)
+        }
+    }
+
     private static func drawStrokeInk(
         _ stroke: HandDrawingStroke,
         in context: CGContext
@@ -20,16 +34,11 @@ enum HandDrawingStrokeRasterizer {
         guard resolvedSamples.isEmpty == false else {
             return
         }
-
-        let resolvedColor = stroke.brush.color.cgColor
-        context.setFillColor(resolvedColor)
-
-        for sample in resolvedSamples {
-            drawStamp(
-                sample,
-                in: context
-            )
-        }
+        draw(
+            resolvedSamples,
+            color: stroke.brush.color,
+            in: context
+        )
     }
 
     private static func applyEraseMask(

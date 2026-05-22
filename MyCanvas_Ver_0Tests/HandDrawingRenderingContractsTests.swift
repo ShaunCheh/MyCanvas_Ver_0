@@ -3,7 +3,7 @@ import XCTest
 @testable import MyCanvas_Ver_0
 
 final class HandDrawingRenderingContractsTests: XCTestCase {
-    func testHandDrawingCPURealtimeBrushRendererReturnsDraftStrokeFromPacket() throws {
+    func testHandDrawingRealtimeDraftPacketCarriesCommittedTailAndPredictedTailSeparately() {
         let brush = HandDrawingBrushStyle(
             kind: .pen,
             color: .black,
@@ -14,7 +14,9 @@ final class HandDrawingRenderingContractsTests: XCTestCase {
         )
         let performanceProfile = HandDrawingStrokePerformanceProfile
             .brushStroke(for: brush)
-        let normalizedSamples = HandDrawingInputNormalizer.normalized(
+        let strokeID = UUID()
+
+        let committedSamples = HandDrawingInputNormalizer.normalized(
             [
                 HandDrawingInputSample(
                     location: CGPoint(x: 20, y: 24),
@@ -27,7 +29,17 @@ final class HandDrawingRenderingContractsTests: XCTestCase {
                     timestamp: 0.1,
                     azimuthRadians: 0.42,
                     altitudeRadians: .pi / 4
-                ),
+                )
+            ],
+            configuration: performanceProfile.inputNormalization
+        )
+        let committedResolvedStamps = HandDrawingBrushDynamics.resolvedStamps(
+            brush: brush,
+            normalizedSamples: committedSamples,
+            layout: performanceProfile.stampLayout
+        )
+        let predictedTailSamples = HandDrawingInputNormalizer.normalizedPredictedTail(
+            [
                 HandDrawingInputSample(
                     location: CGPoint(x: 96, y: 60),
                     force: 0.95,
@@ -36,27 +48,40 @@ final class HandDrawingRenderingContractsTests: XCTestCase {
                     altitudeRadians: .pi / 5
                 )
             ],
+            onto: committedSamples,
             configuration: performanceProfile.inputNormalization
         )
-        let draftStroke = try XCTUnwrap(
-            HandDrawingStrokeBuilder.makeStroke(
-                brush: brush,
-                normalizedSamples: normalizedSamples
-            )
+        let predictedTailUpdate = HandDrawingBrushDynamics.resolvedStampUpdate(
+            brush: brush,
+            normalizedSamples: committedSamples + predictedTailSamples,
+            previousResolvedStamps: committedResolvedStamps,
+            layout: performanceProfile.stampLayout
         )
+
         let packet = HandDrawingRealtimeDraftPacket(
+            strokeID: strokeID,
             brush: brush,
             performanceProfile: performanceProfile,
-            normalizedSamples: normalizedSamples,
-            draftStroke: draftStroke,
-            resolvedStamps: HandDrawingBrushDynamics.resolvedStamps(
-                for: draftStroke,
-                layout: performanceProfile.stampLayout
+            committedSamples: HandDrawingRealtimeNormalizedSampleUpdate(
+                stablePrefixCount: 1,
+                tailSamples: Array(committedSamples.dropFirst())
+            ),
+            committedResolvedStamps: HandDrawingRealtimeResolvedStampUpdate(
+                stablePrefixCount: committedResolvedStamps.count,
+                tailStamps: []
+            ),
+            predictedTail: HandDrawingRealtimePredictedTail(
+                normalizedSamples: predictedTailSamples,
+                resolvedStamps: predictedTailUpdate.tailStamps
             )
         )
-        let renderer = HandDrawingCPURealtimeBrushRenderer()
 
-        XCTAssertNil(renderer.render(packet: nil).stroke)
-        XCTAssertEqual(renderer.render(packet: packet).stroke, draftStroke)
+        XCTAssertEqual(packet.strokeID, strokeID)
+        XCTAssertEqual(packet.brush, brush)
+        XCTAssertEqual(packet.performanceProfile, performanceProfile)
+        XCTAssertEqual(packet.committedSamples.stablePrefixCount, 1)
+        XCTAssertEqual(packet.committedSamples.tailSamples.count, 1)
+        XCTAssertEqual(packet.predictedTail.normalizedSamples.count, 1)
+        XCTAssertFalse(packet.predictedTail.resolvedStamps.isEmpty)
     }
 }

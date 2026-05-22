@@ -215,11 +215,11 @@ final class iOSHandDrawingEditorViewController: UIViewController {
         surfaceView.onPencilStrokeBegan = { [weak self] sample in
             self?.coordinator.handlePencilStrokeBegan(sample)
         }
-        surfaceView.onPencilStrokeMoved = { [weak self] samples in
-            self?.coordinator.handlePencilStrokeMoved(samples)
+        surfaceView.onPencilStrokeMoved = { [weak self] batch in
+            self?.coordinator.handlePencilStrokeMoved(batch)
         }
-        surfaceView.onPencilStrokeEnded = { [weak self] samples in
-            self?.coordinator.handlePencilStrokeEnded(samples)
+        surfaceView.onPencilStrokeEnded = { [weak self] batch in
+            self?.coordinator.handlePencilStrokeEnded(batch)
         }
         surfaceView.onPencilStrokeCancelled = { [weak self] in
             self?.coordinator.handlePencilStrokeCancelled()

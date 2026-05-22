@@ -250,7 +250,8 @@ final class HandDrawingEditorCoordinatorSurfaceStateTests: XCTestCase {
 
         let initialSurfaceState = try XCTUnwrap(latestSurfaceState)
         XCTAssertNotNil(initialSurfaceState.committedHost.output.image)
-        XCTAssertNil(initialSurfaceState.realtimeDraftHost.output.stroke)
+        XCTAssertNil(initialSurfaceState.realtimeDraftHost.packet)
+        XCTAssertEqual(initialSurfaceState.realtimeDraftHost.revision, 0)
         XCTAssertTrue(initialSurfaceState.interactionOverlay.lassoPathPoints.isEmpty)
         XCTAssertNil(initialSurfaceState.interactionOverlay.selectedStrokeBounds)
 
@@ -264,7 +265,10 @@ final class HandDrawingEditorCoordinatorSurfaceStateTests: XCTestCase {
 
         let activeDraftSurfaceState = try XCTUnwrap(latestSurfaceState)
         XCTAssertNotNil(activeDraftSurfaceState.committedHost.output.image)
-        XCTAssertNotNil(activeDraftSurfaceState.realtimeDraftHost.output.stroke)
+        let realtimePacket = try XCTUnwrap(activeDraftSurfaceState.realtimeDraftHost.packet)
+        XCTAssertGreaterThan(activeDraftSurfaceState.realtimeDraftHost.revision, 0)
+        XCTAssertFalse(realtimePacket.committedResolvedStamps.tailStamps.isEmpty)
+        XCTAssertTrue(realtimePacket.predictedTail.isEmpty)
         XCTAssertTrue(activeDraftSurfaceState.interactionOverlay.lassoPathPoints.isEmpty)
         XCTAssertNil(activeDraftSurfaceState.interactionOverlay.selectedStrokeBounds)
     }
@@ -306,7 +310,7 @@ final class HandDrawingEditorCoordinatorSurfaceStateTests: XCTestCase {
         ])
 
         let activeLassoSurfaceState = try XCTUnwrap(latestSurfaceState)
-        XCTAssertNil(activeLassoSurfaceState.realtimeDraftHost.output.stroke)
+        XCTAssertNil(activeLassoSurfaceState.realtimeDraftHost.packet)
         XCTAssertEqual(activeLassoSurfaceState.interactionOverlay.lassoPathPoints.count, 4)
         XCTAssertNil(activeLassoSurfaceState.interactionOverlay.selectedStrokeBounds)
 
@@ -319,9 +323,57 @@ final class HandDrawingEditorCoordinatorSurfaceStateTests: XCTestCase {
         ])
 
         let selectedSurfaceState = try XCTUnwrap(latestSurfaceState)
-        XCTAssertNil(selectedSurfaceState.realtimeDraftHost.output.stroke)
+        XCTAssertNil(selectedSurfaceState.realtimeDraftHost.packet)
         XCTAssertTrue(selectedSurfaceState.interactionOverlay.lassoPathPoints.isEmpty)
         XCTAssertNotNil(selectedSurfaceState.interactionOverlay.selectedStrokeBounds)
+    }
+
+    func testHandDrawingEditorCoordinatorPublishesPredictedTailSeparatelyFromCommittedRealtimePacket() throws {
+        let coordinator = try HandDrawingEditorCoordinator(
+            editorContext: makeHandDrawingEditorCoordinatorTestContext(
+                document: HandDrawingDocument(
+                    paper: HandDrawingPaper(
+                        id: "coordinator-predicted-tail-paper",
+                        size: CGSize(width: 120, height: 120)
+                    )
+                )
+            )
+        )
+        var latestSurfaceState: HandDrawingCanvasSurfaceState?
+        coordinator.onSurfaceStateChange = { latestSurfaceState = $0 }
+        coordinator.activate()
+
+        coordinator.handlePencilStrokeBegan(
+            makeHandDrawingCoordinatorInputSample(
+                x: 18,
+                y: 24,
+                timestamp: 0
+            )
+        )
+        coordinator.handlePencilStrokeMoved(
+            HandDrawingLiveInputBatch(
+                committedSamples: [
+                    makeHandDrawingCoordinatorInputSample(
+                        x: 52,
+                        y: 40,
+                        timestamp: 0.1
+                    )
+                ],
+                predictedSamples: [
+                    makeHandDrawingCoordinatorInputSample(
+                        x: 86,
+                        y: 56,
+                        timestamp: 0.2
+                    )
+                ]
+            )
+        )
+
+        let realtimePacket = try XCTUnwrap(latestSurfaceState?.realtimeDraftHost.packet)
+        XCTAssertEqual(realtimePacket.committedSamples.stablePrefixCount, 1)
+        XCTAssertEqual(realtimePacket.committedSamples.tailSamples.count, 1)
+        XCTAssertEqual(realtimePacket.predictedTail.normalizedSamples.count, 1)
+        XCTAssertFalse(realtimePacket.predictedTail.resolvedStamps.isEmpty)
     }
 }
 

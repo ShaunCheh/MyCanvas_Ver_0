@@ -8,12 +8,33 @@ enum HandDrawingEditorTool: Equatable {
     case lasso
 }
 
+struct HandDrawingLiveInputBatch: Equatable {
+    static let empty = HandDrawingLiveInputBatch()
+
+    let committedSamples: [HandDrawingInputSample]
+    let predictedSamples: [HandDrawingInputSample]
+
+    init(
+        committedSamples: [HandDrawingInputSample] = [],
+        predictedSamples: [HandDrawingInputSample] = []
+    ) {
+        self.committedSamples = committedSamples
+        self.predictedSamples = predictedSamples
+    }
+}
+
 struct HandDrawingCommittedCanvasHostState {
     var output: HandDrawingCommittedCanvasRenderOutput
 }
 
 struct HandDrawingRealtimeDraftHostState {
-    var output: HandDrawingRealtimeDraftRenderOutput
+    static let idle = HandDrawingRealtimeDraftHostState(
+        revision: 0,
+        packet: nil
+    )
+
+    var revision: UInt64
+    var packet: HandDrawingRealtimeDraftPacket?
 }
 
 struct HandDrawingCanvasInteractionOverlayState {
@@ -62,18 +83,20 @@ final class HandDrawingEditorCoordinator {
 
     private let editorContext: CanvasHandDrawingEditorContext
     private let committedCanvasBackend: HandDrawingCommittedCanvasBackend
-    private let realtimeBrushRenderer: HandDrawingRealtimeBrushRenderer
     private let previewRenderer = HandDrawingPreviewRenderer()
     private let initialDocument: HandDrawingDocument
     private var engine: HandDrawingEditorEngine
     private var committedCanvas: HandDrawingCommittedCanvasRenderOutput = .none
+    private var realtimeDraftHostState = HandDrawingRealtimeDraftHostState.idle
     private var selectedTool: HandDrawingEditorTool = .brush
     private var selectedColor: HandDrawingColor
     private var availableBrushPresets: [HandDrawingBrushPreset]
     private var selectedBrushPresetID: String
+    private var activeStrokeID: UUID?
     private var activeStrokeBrush: HandDrawingBrushStyle?
     private var activeStrokePerformanceProfile: HandDrawingStrokePerformanceProfile?
     private var activeStrokeInputSamples: [HandDrawingInputSample] = []
+    private var activeStrokeResolvedStamps: [HandDrawingResolvedBrushSample] = []
     private var pixelEraserToolController = HandDrawingPixelEraserToolController()
     private var lassoToolController = HandDrawingLassoToolController()
     private var moveSelectionController = HandDrawingMoveSelectionController()
@@ -85,8 +108,7 @@ final class HandDrawingEditorCoordinator {
 
     init(
         editorContext: CanvasHandDrawingEditorContext,
-        committedCanvasBackend: HandDrawingCommittedCanvasBackend? = nil,
-        realtimeBrushRenderer: HandDrawingRealtimeBrushRenderer = HandDrawingCPURealtimeBrushRenderer()
+        committedCanvasBackend: HandDrawingCommittedCanvasBackend? = nil
     ) throws {
         self.editorContext = editorContext
         let document = try HandDrawingDocumentLoader.loadDocument(
@@ -96,7 +118,6 @@ final class HandDrawingEditorCoordinator {
         let resolvedCommittedCanvasBackend = try committedCanvasBackend
             ?? HandDrawingCPUCommittedCanvasBackend(paperSize: document.paper.size)
         self.committedCanvasBackend = resolvedCommittedCanvasBackend
-        self.realtimeBrushRenderer = realtimeBrushRenderer
         initialDocument = document
         engine = HandDrawingEditorEngine(document: document)
         let initialBrush = document.strokes.last?.brush
@@ -244,13 +265,16 @@ final class HandDrawingEditorCoordinator {
             guard engine.canInteractWithActiveLayer else {
                 return
             }
+            activeStrokeID = UUID()
             activeStrokeBrush = currentBrushStyle
             let performanceProfile = HandDrawingStrokePerformanceProfile
                 .brushStroke(for: currentBrushStyle)
             activeStrokePerformanceProfile = performanceProfile
-            activeStrokeInputSamples = HandDrawingInputNormalizer.normalized(
-                [sample],
-                configuration: performanceProfile.inputNormalization
+            activeStrokeInputSamples.removeAll()
+            activeStrokeResolvedStamps.removeAll()
+            publishRealtimeDraftPacket(
+                committedSamples: [sample],
+                predictedSamples: []
             )
             publishSurfaceState()
         case .pixelEraser:
@@ -278,17 +302,20 @@ final class HandDrawingEditorCoordinator {
         }
     }
 
-    func handlePencilStrokeMoved(_ samples: [HandDrawingInputSample]) {
+    func handlePencilStrokeMoved(_ batch: HandDrawingLiveInputBatch) {
         switch selectedTool {
         case .brush:
             guard activeStrokeBrush != nil else {
                 return
             }
-            appendStrokeSamples(samples)
+            publishRealtimeDraftPacket(
+                committedSamples: batch.committedSamples,
+                predictedSamples: batch.predictedSamples
+            )
             publishSurfaceState()
         case .pixelEraser:
             pixelEraserToolController.appendSamples(
-                samples,
+                batch.committedSamples,
                 baseSize: selectedBrushBaseSize,
                 engine: &engine
             )
@@ -296,24 +323,33 @@ final class HandDrawingEditorCoordinator {
         case .lasso:
             if moveSelectionController.isActive {
                 moveSelectionController.appendSamples(
-                    samples,
+                    batch.committedSamples,
                     engine: &engine
                 )
                 refreshCommittedCanvasAndPublishState()
                 return
             }
-            lassoToolController.appendSamples(samples)
+            lassoToolController.appendSamples(batch.committedSamples)
             publishSurfaceState()
         }
     }
 
-    func handlePencilStrokeEnded(_ samples: [HandDrawingInputSample]) {
+    func handlePencilStrokeMoved(_ samples: [HandDrawingInputSample]) {
+        handlePencilStrokeMoved(
+            HandDrawingLiveInputBatch(committedSamples: samples)
+        )
+    }
+
+    func handlePencilStrokeEnded(_ batch: HandDrawingLiveInputBatch) {
         switch selectedTool {
         case .brush:
             guard let activeStrokeBrush else {
                 return
             }
-            appendStrokeSamples(samples)
+            publishRealtimeDraftPacket(
+                committedSamples: batch.committedSamples,
+                predictedSamples: []
+            )
             guard activeStrokeInputSamples.isEmpty == false else {
                 clearActiveStroke()
                 publishSurfaceState()
@@ -335,7 +371,7 @@ final class HandDrawingEditorCoordinator {
             refreshCommittedCanvasAndPublishState()
         case .pixelEraser:
             pixelEraserToolController.appendSamples(
-                samples,
+                batch.committedSamples,
                 baseSize: selectedBrushBaseSize,
                 engine: &engine
             )
@@ -344,18 +380,24 @@ final class HandDrawingEditorCoordinator {
         case .lasso:
             if moveSelectionController.isActive {
                 moveSelectionController.appendSamples(
-                    samples,
+                    batch.committedSamples,
                     engine: &engine
                 )
                 moveSelectionController.endMoving()
                 refreshCommittedCanvasAndPublishState()
                 return
             }
-            lassoToolController.appendSamples(samples)
+            lassoToolController.appendSamples(batch.committedSamples)
             _ = lassoToolController.endLasso(engine: &engine)
             publishSurfaceState()
             publishPaletteState()
         }
+    }
+
+    func handlePencilStrokeEnded(_ samples: [HandDrawingInputSample]) {
+        handlePencilStrokeEnded(
+            HandDrawingLiveInputBatch(committedSamples: samples)
+        )
     }
 
     func handlePencilStrokeCancelled() {
@@ -382,7 +424,7 @@ final class HandDrawingEditorCoordinator {
 
     func makeCommitSubmissionIfNeeded() throws -> CanvasHandDrawingEditSubmission? {
         if activeStrokeBrush != nil {
-            handlePencilStrokeEnded([])
+            handlePencilStrokeEnded(.empty)
         }
         if pixelEraserToolController.isActive {
             pixelEraserToolController.endErasing()
@@ -415,64 +457,99 @@ final class HandDrawingEditorCoordinator {
         selectedBrushPreset.makeBrushStyle(color: selectedColor)
     }
 
-    private var currentRealtimeDraftPacket: HandDrawingRealtimeDraftPacket? {
+    private func publishRealtimeDraftPacket(
+        committedSamples rawCommittedSamples: [HandDrawingInputSample],
+        predictedSamples rawPredictedSamples: [HandDrawingInputSample]
+    ) {
         guard
+            let activeStrokeID,
             let activeStrokeBrush,
             let activeStrokePerformanceProfile,
-            activeStrokeInputSamples.isEmpty == false
+            activeStrokeInputSamples.isEmpty == false || rawCommittedSamples.isEmpty == false
         else {
-            return nil
+            return
         }
-        guard let draftStroke = HandDrawingStrokeBuilder.makeStroke(
-            brush: activeStrokeBrush,
-            normalizedSamples: activeStrokeInputSamples
-        ) else {
-            return nil
-        }
-        return HandDrawingRealtimeDraftPacket(
-            brush: activeStrokeBrush,
-            performanceProfile: activeStrokePerformanceProfile,
-            normalizedSamples: activeStrokeInputSamples,
-            draftStroke: draftStroke,
-            resolvedStamps: HandDrawingBrushDynamics.resolvedStamps(
-                for: draftStroke,
+        let committedSamplesUpdate = HandDrawingInputNormalizer.normalizedUpdate(
+            rawCommittedSamples,
+            appendingTo: activeStrokeInputSamples,
+            configuration: activeStrokePerformanceProfile.inputNormalization
+        )
+        let committedResolvedStampsUpdate = HandDrawingBrushDynamics
+            .resolvedStampUpdate(
+                brush: activeStrokeBrush,
+                normalizedSamples: committedSamplesUpdate.normalizedSamples,
+                previousResolvedStamps: activeStrokeResolvedStamps,
                 layout: activeStrokePerformanceProfile.stampLayout
+            )
+        activeStrokeInputSamples = committedSamplesUpdate.normalizedSamples
+        activeStrokeResolvedStamps = committedResolvedStampsUpdate.resolvedStamps
+
+        let predictedTailSamples = HandDrawingInputNormalizer
+            .normalizedPredictedTail(
+                rawPredictedSamples,
+                onto: activeStrokeInputSamples,
+                configuration: activeStrokePerformanceProfile.inputNormalization
+            )
+        let predictedTailResolvedStamps = HandDrawingBrushDynamics
+            .resolvedStampUpdate(
+                brush: activeStrokeBrush,
+                normalizedSamples: activeStrokeInputSamples + predictedTailSamples,
+                previousResolvedStamps: activeStrokeResolvedStamps,
+                layout: activeStrokePerformanceProfile.stampLayout
+            )
+
+        advanceRealtimeDraftHostState(
+            with: HandDrawingRealtimeDraftPacket(
+                strokeID: activeStrokeID,
+                brush: activeStrokeBrush,
+                performanceProfile: activeStrokePerformanceProfile,
+                committedSamples: HandDrawingRealtimeNormalizedSampleUpdate(
+                    stablePrefixCount: committedSamplesUpdate.stablePrefixCount,
+                    tailSamples: committedSamplesUpdate.tailSamples
+                ),
+                committedResolvedStamps: HandDrawingRealtimeResolvedStampUpdate(
+                    stablePrefixCount: committedResolvedStampsUpdate.stablePrefixCount,
+                    tailStamps: committedResolvedStampsUpdate.tailStamps
+                ),
+                predictedTail: HandDrawingRealtimePredictedTail(
+                    normalizedSamples: predictedTailSamples,
+                    resolvedStamps: predictedTailResolvedStamps.tailStamps
+                )
             )
         )
     }
 
-    private func appendStrokeSamples(_ samples: [HandDrawingInputSample]) {
-        let normalizationConfiguration =
-            activeStrokePerformanceProfile?.inputNormalization
-            ?? HandDrawingStrokePerformanceProfile
-                .brushStroke(for: activeStrokeBrush ?? currentBrushStyle)
-                .inputNormalization
-        activeStrokeInputSamples = HandDrawingInputNormalizer.normalized(
-            samples,
-            appendingTo: activeStrokeInputSamples,
-            configuration: normalizationConfiguration
+    private func advanceRealtimeDraftHostState(
+        with packet: HandDrawingRealtimeDraftPacket?
+    ) {
+        realtimeDraftHostState = HandDrawingRealtimeDraftHostState(
+            revision: realtimeDraftHostState.revision + 1,
+            packet: packet
         )
     }
 
     private func clearActiveStroke() {
+        let hadRealtimeDraftState =
+            activeStrokeID != nil
+            || realtimeDraftHostState.packet != nil
+        activeStrokeID = nil
         activeStrokeBrush = nil
         activeStrokePerformanceProfile = nil
         activeStrokeInputSamples.removeAll()
+        activeStrokeResolvedStamps.removeAll()
+        if hadRealtimeDraftState {
+            advanceRealtimeDraftHostState(with: nil)
+        }
     }
 
     private func publishSurfaceState() {
-        let realtimeDraftOutput = realtimeBrushRenderer.render(
-            packet: currentRealtimeDraftPacket
-        )
         onSurfaceStateChange?(
             HandDrawingCanvasSurfaceState(
                 paperSize: editorContext.paper.size,
                 committedHost: HandDrawingCommittedCanvasHostState(
                     output: committedCanvas
                 ),
-                realtimeDraftHost: HandDrawingRealtimeDraftHostState(
-                    output: realtimeDraftOutput
-                ),
+                realtimeDraftHost: realtimeDraftHostState,
                 interactionOverlay: HandDrawingCanvasInteractionOverlayState(
                     lassoPathPoints: lassoToolController.points,
                     selectedStrokeBounds: selectedStrokeBounds

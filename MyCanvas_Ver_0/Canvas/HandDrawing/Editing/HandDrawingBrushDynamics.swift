@@ -105,6 +105,15 @@ enum HandDrawingBrushDynamics {
     private static let defaultMinimumSizeRatio: CGFloat = 0.05
     private static let defaultPressureCurveExponent: CGFloat = 1
 
+    struct ResolvedStampUpdate: Equatable {
+        let resolvedStamps: [HandDrawingResolvedBrushSample]
+        let stablePrefixCount: Int
+
+        var tailStamps: [HandDrawingResolvedBrushSample] {
+            Array(resolvedStamps.dropFirst(stablePrefixCount))
+        }
+    }
+
     struct Configuration: Equatable {
         let baseSize: CGFloat
         let baseOpacity: CGFloat
@@ -166,6 +175,44 @@ enum HandDrawingBrushDynamics {
                 configuration: configuration
             )
         }
+    }
+
+    static func resolvedStamps(
+        brush: HandDrawingBrushStyle,
+        normalizedSamples: [HandDrawingInputSample],
+        transform: HandDrawingStrokeTransform = .identity,
+        layout: HandDrawingResolvedStampLayout? = nil
+    ) -> [HandDrawingResolvedBrushSample] {
+        guard let stroke = HandDrawingStrokeBuilder.makeStroke(
+            brush: brush,
+            normalizedSamples: normalizedSamples,
+            transform: transform
+        ) else {
+            return []
+        }
+        return resolvedStamps(for: stroke, layout: layout)
+    }
+
+    static func resolvedStampUpdate(
+        brush: HandDrawingBrushStyle,
+        normalizedSamples: [HandDrawingInputSample],
+        previousResolvedStamps: [HandDrawingResolvedBrushSample] = [],
+        transform: HandDrawingStrokeTransform = .identity,
+        layout: HandDrawingResolvedStampLayout? = nil
+    ) -> ResolvedStampUpdate {
+        let resolvedStamps = resolvedStamps(
+            brush: brush,
+            normalizedSamples: normalizedSamples,
+            transform: transform,
+            layout: layout
+        )
+        return ResolvedStampUpdate(
+            resolvedStamps: resolvedStamps,
+            stablePrefixCount: commonPrefixCount(
+                between: previousResolvedStamps,
+                and: resolvedStamps
+            )
+        )
     }
 
     static func resolvedStamps(
@@ -460,5 +507,16 @@ enum HandDrawingBrushDynamics {
             maximumAltitude
         )
         return 1 - (clampedAltitude / maximumAltitude)
+    }
+
+    private static func commonPrefixCount<T: Equatable>(
+        between lhs: [T],
+        and rhs: [T]
+    ) -> Int {
+        let maximumSharedCount = min(lhs.count, rhs.count)
+        for index in 0..<maximumSharedCount where lhs[index] != rhs[index] {
+            return index
+        }
+        return maximumSharedCount
     }
 }
