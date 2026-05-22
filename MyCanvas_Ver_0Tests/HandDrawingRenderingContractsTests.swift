@@ -139,4 +139,41 @@ final class HandDrawingRenderingContractsTests: XCTestCase {
             state.renderSnapshots.flatMap(\.resolvedStamps)
         )
     }
+
+    func testHandDrawingRealtimeDraftHostRoutingStateMakesCPUFallbackStickyAfterGPUFailure() {
+        var routingState = HandDrawingRealtimeDraftHostRoutingState()
+
+        let firstAttempt = routingState.resolveSwitchAction(
+            for: .gpuPreferred,
+            gpuRendererCreationSucceeded: false
+        )
+        let secondAttempt = routingState.resolveSwitchAction(
+            for: .gpuPreferred,
+            gpuRendererCreationSucceeded: true
+        )
+
+        XCTAssertEqual(firstAttempt, .none)
+        XCTAssertEqual(secondAttempt, .none)
+        XCTAssertEqual(routingState.installedRendererBackend, .cpu)
+        XCTAssertEqual(routingState.satisfiedResolvedBackend, .gpuPreferred)
+    }
+
+    func testHandDrawingRealtimeDraftHostRoutingStateAllowsExplicitRetryAfterCPUReset() {
+        var routingState = HandDrawingRealtimeDraftHostRoutingState()
+        _ = routingState.resolveSwitchAction(
+            for: .gpuPreferred,
+            gpuRendererCreationSucceeded: false
+        )
+
+        let resetToCPU = routingState.resolveSwitchAction(for: .cpu)
+        let retryGPU = routingState.resolveSwitchAction(
+            for: .gpuPreferred,
+            gpuRendererCreationSucceeded: true
+        )
+
+        XCTAssertEqual(resetToCPU, .none)
+        XCTAssertEqual(retryGPU, .installGPU)
+        XCTAssertEqual(routingState.installedRendererBackend, .gpuPreferred)
+        XCTAssertEqual(routingState.satisfiedResolvedBackend, .gpuPreferred)
+    }
 }

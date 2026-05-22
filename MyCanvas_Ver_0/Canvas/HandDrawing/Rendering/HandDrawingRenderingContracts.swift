@@ -6,6 +6,51 @@ enum HandDrawingRealtimeDraftBackendPreference: Equatable {
     case gpuPreferred
 }
 
+enum HandDrawingRealtimeDraftHostSwitchAction: Equatable {
+    case none
+    case installCPU
+    case installGPU
+}
+
+struct HandDrawingRealtimeDraftHostRoutingState: Equatable {
+    private(set) var installedRendererBackend: HandDrawingRealtimeDraftBackendPreference = .cpu
+    private(set) var satisfiedResolvedBackend: HandDrawingRealtimeDraftBackendPreference = .cpu
+
+    mutating func resolveSwitchAction(
+        for resolvedBackend: HandDrawingRealtimeDraftBackendPreference,
+        gpuRendererCreationSucceeded: Bool? = nil
+    ) -> HandDrawingRealtimeDraftHostSwitchAction {
+        guard resolvedBackend != satisfiedResolvedBackend else {
+            return .none
+        }
+
+        switch resolvedBackend {
+        case .cpu:
+            satisfiedResolvedBackend = .cpu
+            guard installedRendererBackend != .cpu else {
+                return .none
+            }
+            installedRendererBackend = .cpu
+            return .installCPU
+        case .gpuPreferred:
+            satisfiedResolvedBackend = .gpuPreferred
+            let didCreateGPUHost = gpuRendererCreationSucceeded ?? false
+            if didCreateGPUHost {
+                guard installedRendererBackend != .gpuPreferred else {
+                    return .none
+                }
+                installedRendererBackend = .gpuPreferred
+                return .installGPU
+            }
+            guard installedRendererBackend != .cpu else {
+                return .none
+            }
+            installedRendererBackend = .cpu
+            return .installCPU
+        }
+    }
+}
+
 enum HandDrawingCommittedCanvasBackendPreference: Equatable {
     case cpu
     case gpuPrototype

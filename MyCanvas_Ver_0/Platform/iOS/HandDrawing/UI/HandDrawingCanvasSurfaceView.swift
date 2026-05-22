@@ -259,13 +259,12 @@ private final class HandDrawingCanvasPageView: UIView {
             return
         }
         activePencilTouchID = nil
-        onPencilStrokeEnded?(
-            makeInputBatch(
-                from: touch,
-                event: event,
-                includePredictedTouches: false
-            )
+        let inputBatch = makeInputBatch(
+            from: touch,
+            event: event,
+            includePredictedTouches: false
         )
+        onPencilStrokeEnded?(inputBatch)
     }
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -324,6 +323,7 @@ private final class HandDrawingCanvasPageView: UIView {
             altitudeRadians: touch.altitudeAngle
         )
     }
+
 }
 
 private final class HandDrawingCommittedCanvasHostView: UIView {
@@ -371,12 +371,17 @@ private protocol HandDrawingRealtimeDraftRendererHosting: AnyObject {
 
 private final class HandDrawingRealtimeDraftHostView: UIView {
     private var rendererHost: HandDrawingRealtimeDraftRendererHosting
-    private var activeBackend: HandDrawingRealtimeDraftBackendPreference = .cpu
+    private var routingState: HandDrawingRealtimeDraftHostRoutingState
 
     init(
         rendererHost: HandDrawingRealtimeDraftRendererHosting = HandDrawingCPURealtimeDraftRendererView()
     ) {
         self.rendererHost = rendererHost
+        let initialBackend = Self.installedBackend(for: rendererHost)
+        routingState = HandDrawingRealtimeDraftHostRoutingState(
+            installedRendererBackend: initialBackend,
+            satisfiedResolvedBackend: initialBackend
+        )
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
         backgroundColor = .clear
@@ -407,30 +412,41 @@ private final class HandDrawingRealtimeDraftHostView: UIView {
         for preferredBackend: HandDrawingRealtimeDraftBackendPreference
     ) {
         let resolvedBackend = Self.resolveBackend(from: preferredBackend)
-        guard resolvedBackend != activeBackend else {
-            return
-        }
-
-        let installedBackend: HandDrawingRealtimeDraftBackendPreference
         switch resolvedBackend {
         case .cpu:
-            setRendererHost(HandDrawingCPURealtimeDraftRendererView())
-            installedBackend = .cpu
+            let switchAction = routingState.resolveSwitchAction(for: .cpu)
+            if switchAction == .installCPU {
+                setRendererHost(HandDrawingCPURealtimeDraftRendererView())
+            }
         case .gpuPreferred:
             #if canImport(MetalKit)
-            if let gpuRendererHost = HandDrawingGPURealtimeDraftRendererView.makeIfSupported() {
-                setRendererHost(gpuRendererHost)
-                installedBackend = .gpuPreferred
-            } else {
+            guard routingState.satisfiedResolvedBackend != .gpuPreferred else {
+                return
+            }
+            let gpuRendererHost = HandDrawingGPURealtimeDraftRendererView
+                .makeIfSupported()
+            let switchAction = routingState.resolveSwitchAction(
+                for: .gpuPreferred,
+                gpuRendererCreationSucceeded: gpuRendererHost != nil
+            )
+            switch switchAction {
+            case .none:
+                break
+            case .installCPU:
                 setRendererHost(HandDrawingCPURealtimeDraftRendererView())
-                installedBackend = .cpu
+            case .installGPU:
+                guard let gpuRendererHost else {
+                    return
+                }
+                setRendererHost(gpuRendererHost)
             }
             #else
-            setRendererHost(HandDrawingCPURealtimeDraftRendererView())
-            installedBackend = .cpu
+            let switchAction = routingState.resolveSwitchAction(for: .cpu)
+            if switchAction == .installCPU {
+                setRendererHost(HandDrawingCPURealtimeDraftRendererView())
+            }
             #endif
         }
-        activeBackend = installedBackend
     }
 
     private static func resolveBackend(
@@ -448,6 +464,17 @@ private final class HandDrawingRealtimeDraftHostView: UIView {
             return .cpu
             #endif
         }
+    }
+
+    private static func installedBackend(
+        for rendererHost: HandDrawingRealtimeDraftRendererHosting
+    ) -> HandDrawingRealtimeDraftBackendPreference {
+        #if canImport(MetalKit)
+        if rendererHost is HandDrawingGPURealtimeDraftRendererView {
+            return .gpuPreferred
+        }
+        #endif
+        return .cpu
     }
 
     private func installRendererHost(
@@ -548,7 +575,17 @@ private final class HandDrawingGPURealtimeDraftRendererView: MTKView, HandDrawin
         guard let device = MTLCreateSystemDefaultDevice() else {
             return nil
         }
-        return try? HandDrawingGPURealtimeDraftRendererView(device: device)
+        do {
+            return try HandDrawingGPURealtimeDraftRendererView(device: device)
+        } catch {
+            #if DEBUG
+            print(
+                "[HandDrawingDraftRender][GPUSetup] " +
+                "failedToCreateRenderer error=\(error)"
+            )
+            #endif
+            return nil
+        }
     }
 
     private init(device: MTLDevice) throws {
