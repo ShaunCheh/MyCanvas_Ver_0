@@ -29,6 +29,7 @@ enum HandDrawingCanvasRendererError: LocalizedError {
 
 final class HandDrawingCanvasRenderer {
     private let backgroundColor: HandDrawingColor?
+    private let graphRenderer = HandDrawingCPURenderGraphRenderer()
     private var paperSize: CGSize
     private var bitmapBuffer: UnsafeMutableRawPointer
     private var bitmapContext: CGContext
@@ -82,16 +83,15 @@ final class HandDrawingCanvasRenderer {
         bitmapContext.saveGState()
         bitmapContext.addRect(renderRegion)
         bitmapContext.clip()
-
-        for stroke in document.renderedStrokesInOrder where stroke.isEmpty == false {
-            guard
-                let strokeBounds = stroke.bounds,
-                strokeBounds.intersects(renderRegion)
-            else {
-                continue
-            }
-            HandDrawingStrokeRasterizer.draw(stroke, in: bitmapContext)
-        }
+        let renderGraph = HandDrawingRenderGraphBuilder.graph(
+            for: document,
+            renderRegion: renderRegion
+        )
+        try graphRenderer.draw(
+            renderGraph,
+            in: bitmapContext,
+            canvasPixelSize: document.paper.size
+        )
         bitmapContext.restoreGState()
 
         return try Self.makeOwnedImage(from: bitmapContext)

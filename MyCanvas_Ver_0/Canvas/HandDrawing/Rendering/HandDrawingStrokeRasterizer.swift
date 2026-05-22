@@ -6,8 +6,25 @@ enum HandDrawingStrokeRasterizer {
         _ stroke: HandDrawingStroke,
         in context: CGContext
     ) {
-        drawStrokeInk(stroke, in: context)
-        applyEraseMask(stroke.eraseMask, transform: stroke.transform, in: context)
+        draw(
+            HandDrawingRenderGraphBuilder.strokeSnapshot(for: stroke),
+            in: context
+        )
+    }
+
+    static func draw(
+        _ snapshot: HandDrawingStrokeRenderSnapshot,
+        in context: CGContext
+    ) {
+        guard snapshot.isEmpty == false else {
+            return
+        }
+        draw(
+            snapshot.resolvedStamps,
+            color: snapshot.color,
+            in: context
+        )
+        applyEraseMask(snapshot.resolvedErasePaths, in: context)
     }
 
     static func draw(
@@ -24,26 +41,8 @@ enum HandDrawingStrokeRasterizer {
         }
     }
 
-    private static func drawStrokeInk(
-        _ stroke: HandDrawingStroke,
-        in context: CGContext
-    ) {
-        let resolvedSamples = HandDrawingBrushDynamics.resolvedStamps(
-            for: stroke
-        )
-        guard resolvedSamples.isEmpty == false else {
-            return
-        }
-        draw(
-            resolvedSamples,
-            color: stroke.brush.color,
-            in: context
-        )
-    }
-
     private static func applyEraseMask(
-        _ eraseMask: [HandDrawingErasePath],
-        transform: HandDrawingStrokeTransform,
+        _ eraseMask: [HandDrawingResolvedErasePath],
         in context: CGContext
     ) {
         guard eraseMask.isEmpty == false else {
@@ -56,13 +55,7 @@ enum HandDrawingStrokeRasterizer {
         context.setLineJoin(.round)
 
         for erasePath in eraseMask {
-            let transformedSamples = erasePath.samplePoints.map { sample in
-                (
-                    point: transform.apply(to: sample.cgPoint),
-                    radius: sample.resolvedRadius,
-                    opacity: CGFloat(sample.opacity)
-                )
-            }
+            let transformedSamples = erasePath.samples
             guard let firstSample = transformedSamples.first else {
                 continue
             }

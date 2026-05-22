@@ -49,8 +49,32 @@ struct HandDrawingRealtimeDraftRenderState: Equatable {
     let committedResolvedStamps: [HandDrawingResolvedBrushSample]
     let predictedResolvedStamps: [HandDrawingResolvedBrushSample]
 
+    var committedRenderSnapshot: HandDrawingStrokeRenderSnapshot? {
+        guard committedResolvedStamps.isEmpty == false else {
+            return nil
+        }
+        return HandDrawingRenderGraphBuilder.strokeSnapshot(
+            brush: brush,
+            resolvedStamps: committedResolvedStamps
+        )
+    }
+
+    var predictedRenderSnapshot: HandDrawingStrokeRenderSnapshot? {
+        guard predictedResolvedStamps.isEmpty == false else {
+            return nil
+        }
+        return HandDrawingRenderGraphBuilder.strokeSnapshot(
+            brush: brush,
+            resolvedStamps: predictedResolvedStamps
+        )
+    }
+
+    var renderSnapshots: [HandDrawingStrokeRenderSnapshot] {
+        [committedRenderSnapshot, predictedRenderSnapshot].compactMap { $0 }
+    }
+
     var allResolvedStamps: [HandDrawingResolvedBrushSample] {
-        committedResolvedStamps + predictedResolvedStamps
+        renderSnapshots.flatMap(\.resolvedStamps)
     }
 }
 

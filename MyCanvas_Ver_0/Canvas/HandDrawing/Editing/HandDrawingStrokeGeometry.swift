@@ -9,7 +9,10 @@ enum HandDrawingStrokeGeometry {
         center: CGPoint,
         radius: CGFloat
     ) -> Bool {
-        guard let strokeBounds = stroke.bounds else {
+        let renderSnapshot = HandDrawingRenderGraphBuilder.strokeSnapshot(
+            for: stroke
+        )
+        guard let strokeBounds = renderSnapshot.bounds else {
             return false
         }
 
@@ -24,9 +27,7 @@ enum HandDrawingStrokeGeometry {
             return false
         }
 
-        let resolvedSamples = HandDrawingBrushDynamics.resolvedStamps(
-            for: stroke
-        )
+        let resolvedSamples = renderSnapshot.resolvedStamps
         if resolvedSamples.isEmpty {
             return false
         }
@@ -57,9 +58,12 @@ enum HandDrawingStrokeGeometry {
         enclosedBy polygonPoints: [CGPoint]
     ) -> Bool {
         let resolvedPolygonPoints = normalizedPolygonPoints(polygonPoints)
+        let renderSnapshot = HandDrawingRenderGraphBuilder.strokeSnapshot(
+            for: stroke
+        )
         guard
             resolvedPolygonPoints.count >= 3,
-            let strokeBounds = stroke.bounds
+            let strokeBounds = renderSnapshot.bounds
         else {
             return false
         }
@@ -69,9 +73,7 @@ enum HandDrawingStrokeGeometry {
             return false
         }
 
-        let resolvedSamples = HandDrawingBrushDynamics.resolvedStamps(
-            for: stroke
-        )
+        let resolvedSamples = renderSnapshot.resolvedStamps
         guard resolvedSamples.isEmpty == false else {
             return false
         }

@@ -121,4 +121,22 @@ final class HandDrawingRenderingContractsTests: XCTestCase {
         )
         XCTAssertFalse(request.isFullRedraw)
     }
+
+    func testHandDrawingRealtimeDraftRenderStateExposesRenderSnapshotsForCommittedAndPredictedSegments() {
+        let stroke = makeHandDrawingTestStroke()
+        let resolvedStamps = HandDrawingBrushDynamics.resolvedStamps(for: stroke)
+        let state = HandDrawingRealtimeDraftRenderState(
+            brush: stroke.brush,
+            committedResolvedStamps: Array(resolvedStamps.prefix(2)),
+            predictedResolvedStamps: Array(resolvedStamps.suffix(2))
+        )
+
+        XCTAssertEqual(state.renderSnapshots.count, 2)
+        XCTAssertEqual(state.committedRenderSnapshot?.color, stroke.brush.color)
+        XCTAssertEqual(state.predictedRenderSnapshot?.color, stroke.brush.color)
+        XCTAssertEqual(
+            state.allResolvedStamps,
+            state.renderSnapshots.flatMap(\.resolvedStamps)
+        )
+    }
 }

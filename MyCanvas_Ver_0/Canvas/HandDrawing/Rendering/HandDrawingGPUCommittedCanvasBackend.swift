@@ -54,6 +54,7 @@ final class HandDrawingGPUCommittedCanvasBackend: HandDrawingCommittedCanvasBack
     }
 
     private let backgroundColor: HandDrawingColor?
+    private let cpuGraphRenderer = HandDrawingCPURenderGraphRenderer()
     private let device: MTLDevice
     private let commandQueue: MTLCommandQueue
     private let clearPipelineState: MTLRenderPipelineState
@@ -130,6 +131,10 @@ final class HandDrawingGPUCommittedCanvasBackend: HandDrawingCommittedCanvasBack
         }
 
         let renderRegion = request.renderRegion
+        let renderGraph = HandDrawingRenderGraphBuilder.graph(
+            for: request.document,
+            renderRegion: renderRegion
+        )
         renderEncoder.setScissorRect(
             Self.makeScissorRect(
                 for: renderRegion,
@@ -140,15 +145,10 @@ final class HandDrawingGPUCommittedCanvasBackend: HandDrawingCommittedCanvasBack
 
         drawClearQuad(with: renderEncoder)
 
-        for stroke in request.document.renderedStrokesInOrder where stroke.isEmpty == false {
-            guard
-                let strokeBounds = stroke.bounds,
-                strokeBounds.intersects(renderRegion)
-            else {
-                continue
-            }
+        for snapshot in renderGraph.renderedStrokeSnapshotsInOrder {
             try drawStrokeTexture(
-                for: stroke,
+                snapshot,
+                paperTransform: renderGraph.paperTransform,
                 canvasSize: request.document.paper.size,
                 using: renderEncoder
             )
@@ -181,13 +181,15 @@ final class HandDrawingGPUCommittedCanvasBackend: HandDrawingCommittedCanvasBack
     // Keep stroke pixels canonical on CPU while GPU owns the committed
     // canvas texture lifetime, partial clear, and layer compositing.
     private func drawStrokeTexture(
-        for stroke: HandDrawingStroke,
+        _ snapshot: HandDrawingStrokeRenderSnapshot,
+        paperTransform: CGAffineTransform,
         canvasSize: CGSize,
         using renderEncoder: MTLRenderCommandEncoder
     ) throws {
-        let strokeImage = try Self.makeStrokeImage(
-            for: stroke,
-            canvasSize: canvasSize
+        let strokeImage = try cpuGraphRenderer.makeImage(
+            for: snapshot,
+            paperTransform: paperTransform,
+            canvasPixelSize: canvasSize
         )
         let strokeTexture = try textureLoader.newTexture(
             cgImage: strokeImage,
@@ -200,60 +202,6 @@ final class HandDrawingGPUCommittedCanvasBackend: HandDrawingCommittedCanvasBack
             vertexStart: 0,
             vertexCount: 4
         )
-    }
-
-    private static func makeStrokeImage(
-        for stroke: HandDrawingStroke,
-        canvasSize: CGSize
-    ) throws -> CGImage {
-        let width = max(Int(ceil(canvasSize.width)), 1)
-        let height = max(Int(ceil(canvasSize.height)), 1)
-        let context = try makeBitmapContext(width: width, height: height)
-        configureDisplayCoordinateSpace(
-            for: context,
-            height: CGFloat(height)
-        )
-        HandDrawingStrokeRasterizer.draw(stroke, in: context)
-        guard let image = context.makeImage() else {
-            throw HandDrawingGPUCommittedCanvasBackendError.failedToCreateStrokeImage
-        }
-        return image
-    }
-
-    private static func makeBitmapContext(
-        width: Int,
-        height: Int
-    ) throws -> CGContext {
-        let bitmapInfo = CGBitmapInfo(
-            rawValue: CGImageAlphaInfo.premultipliedLast.rawValue
-                | CGBitmapInfo.byteOrder32Big.rawValue
-        )
-        guard
-            let context = CGContext(
-                data: nil,
-                width: width,
-                height: height,
-                bitsPerComponent: 8,
-                bytesPerRow: width * 4,
-                space: CGColorSpaceCreateDeviceRGB(),
-                bitmapInfo: bitmapInfo.rawValue
-            )
-        else {
-            throw HandDrawingGPUCommittedCanvasBackendError
-                .failedToCreateBitmapContext(width: width, height: height)
-        }
-        context.interpolationQuality = .high
-        context.setAllowsAntialiasing(true)
-        context.setShouldAntialias(true)
-        return context
-    }
-
-    private static func configureDisplayCoordinateSpace(
-        for context: CGContext,
-        height: CGFloat
-    ) {
-        context.translateBy(x: 0, y: height)
-        context.scaleBy(x: 1, y: -1)
     }
 
     private static func premultipliedColorVector(

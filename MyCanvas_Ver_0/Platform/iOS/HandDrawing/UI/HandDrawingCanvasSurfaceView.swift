@@ -505,16 +505,9 @@ private final class HandDrawingCPURealtimeDraftRendererView: UIView, HandDrawing
         }
         context.saveGState()
         if let resolvedState = renderOutput.resolvedState {
-            HandDrawingStrokeRasterizer.draw(
-                resolvedState.committedResolvedStamps,
-                color: resolvedState.brush.color,
-                in: context
-            )
-            HandDrawingStrokeRasterizer.draw(
-                resolvedState.predictedResolvedStamps,
-                color: resolvedState.brush.color,
-                in: context
-            )
+            for snapshot in resolvedState.renderSnapshots {
+                HandDrawingStrokeRasterizer.draw(snapshot, in: context)
+            }
         }
         context.restoreGState()
     }
@@ -675,28 +668,30 @@ private final class HandDrawingGPURealtimeDraftRendererView: MTKView, HandDrawin
         guard let renderState else {
             return []
         }
-        return renderState.allResolvedStamps.map { stamp in
-            HandDrawingRealtimeDraftMetalStampInstance(
-                center: SIMD2<Float>(
-                    Float(stamp.point.x),
-                    Float(stamp.point.y)
-                ),
-                radii: SIMD2<Float>(
-                    Float(stamp.majorRadius),
-                    Float(stamp.minorRadius)
-                ),
-                rotationSinCos: SIMD2<Float>(
-                    Float(sin(stamp.rotationRadians)),
-                    Float(cos(stamp.rotationRadians))
-                ),
-                color: SIMD4<Float>(
-                    Float(renderState.brush.color.red),
-                    Float(renderState.brush.color.green),
-                    Float(renderState.brush.color.blue),
-                    Float(renderState.brush.color.alpha)
-                ),
-                opacity: Float(stamp.opacity)
-            )
+        return renderState.renderSnapshots.flatMap { snapshot in
+            snapshot.resolvedStamps.map { stamp in
+                HandDrawingRealtimeDraftMetalStampInstance(
+                    center: SIMD2<Float>(
+                        Float(stamp.point.x),
+                        Float(stamp.point.y)
+                    ),
+                    radii: SIMD2<Float>(
+                        Float(stamp.majorRadius),
+                        Float(stamp.minorRadius)
+                    ),
+                    rotationSinCos: SIMD2<Float>(
+                        Float(sin(stamp.rotationRadians)),
+                        Float(cos(stamp.rotationRadians))
+                    ),
+                    color: SIMD4<Float>(
+                        Float(snapshot.color.red),
+                        Float(snapshot.color.green),
+                        Float(snapshot.color.blue),
+                        Float(snapshot.color.alpha)
+                    ),
+                    opacity: Float(stamp.opacity)
+                )
+            }
         }
     }
 

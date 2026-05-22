@@ -16,6 +16,8 @@ enum HandDrawingPreviewRendererError: LocalizedError {
 }
 
 struct HandDrawingPreviewRenderer {
+    private let graphRenderer = HandDrawingCPURenderGraphRenderer()
+
     func renderPreviewImage(
         for document: HandDrawingDocument,
         scale: CGFloat = 1,
@@ -39,42 +41,26 @@ struct HandDrawingPreviewRenderer {
             compositeContext.fill(pixelRect)
         }
 
-        for stroke in document.renderedStrokesInOrder where stroke.isEmpty == false {
-            try drawStroke(
-                stroke,
-                into: compositeContext,
-                pixelWidth: pixelWidth,
-                pixelHeight: pixelHeight,
-                scale: resolvedScale
+        let renderGraph = HandDrawingRenderGraphBuilder.graph(
+            for: document,
+            paperTransform: CGAffineTransform(
+                scaleX: resolvedScale,
+                y: resolvedScale
             )
-        }
+        )
+        try graphRenderer.draw(
+            renderGraph,
+            in: compositeContext,
+            canvasPixelSize: CGSize(
+                width: pixelWidth,
+                height: pixelHeight
+            )
+        )
 
         guard let image = compositeContext.makeImage() else {
             throw HandDrawingPreviewRendererError.failedToCreatePreviewImage
         }
         return image
-    }
-
-    private func drawStroke(
-        _ stroke: HandDrawingStroke,
-        into compositeContext: CGContext,
-        pixelWidth: Int,
-        pixelHeight: Int,
-        scale: CGFloat
-    ) throws {
-        let strokeContext = try makeBitmapContext(
-            width: pixelWidth,
-            height: pixelHeight
-        )
-        strokeContext.scaleBy(x: scale, y: scale)
-        HandDrawingStrokeRasterizer.draw(stroke, in: strokeContext)
-        guard let strokeImage = strokeContext.makeImage() else {
-            throw HandDrawingPreviewRendererError.failedToCreatePreviewImage
-        }
-        compositeContext.draw(
-            strokeImage,
-            in: CGRect(x: 0, y: 0, width: pixelWidth, height: pixelHeight)
-        )
     }
 
     private func makeBitmapContext(
