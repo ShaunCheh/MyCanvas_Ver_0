@@ -114,6 +114,71 @@ final class HandDrawingPixelEraserToolControllerTests: XCTestCase {
         XCTAssertNotNil(thickEngine.consumeDirtyRegion())
     }
 
+    func testHandDrawingPixelEraserToolControllerHitTestingUsesTiltedStampFootprint() {
+        let eraseSample = HandDrawingInputSample(
+            location: CGPoint(x: 68, y: 60),
+            force: 0.05,
+            timestamp: 0
+        )
+
+        let circularStroke = makeHandDrawingTestStroke(
+            id: UUID(),
+            baseSize: 20,
+            samplePoints: [CGPoint(x: 60, y: 60)],
+            sampleForces: [0.5]
+        )
+        var circularEngine = HandDrawingEditorEngine(
+            document: HandDrawingDocument(
+                paper: HandDrawingPaper(
+                    id: "eraser-circle-paper",
+                    size: CGSize(width: 120, height: 120)
+                ),
+                strokes: [circularStroke]
+            )
+        )
+        var circularController = HandDrawingPixelEraserToolController()
+
+        circularController.beginErasing(
+            with: eraseSample,
+            baseSize: 1,
+            engine: &circularEngine
+        )
+        circularController.endErasing()
+
+        XCTAssertTrue(circularEngine.state.document.strokes[0].eraseMask.isEmpty)
+        XCTAssertFalse(circularEngine.canUndo)
+
+        let tiltedStroke = makeHandDrawingTestStroke(
+            id: UUID(),
+            baseSize: 20,
+            samplePoints: [CGPoint(x: 60, y: 60)],
+            sampleForces: [0.5],
+            sampleAzimuths: [0],
+            sampleAltitudes: [0],
+            tiltSizeInfluence: 1
+        )
+        var tiltedEngine = HandDrawingEditorEngine(
+            document: HandDrawingDocument(
+                paper: HandDrawingPaper(
+                    id: "eraser-tilt-paper",
+                    size: CGSize(width: 120, height: 120)
+                ),
+                strokes: [tiltedStroke]
+            )
+        )
+        var tiltedController = HandDrawingPixelEraserToolController()
+
+        tiltedController.beginErasing(
+            with: eraseSample,
+            baseSize: 1,
+            engine: &tiltedEngine
+        )
+        tiltedController.endErasing()
+
+        XCTAssertEqual(tiltedEngine.state.document.strokes[0].eraseMask.count, 1)
+        XCTAssertTrue(tiltedEngine.canUndo)
+    }
+
     func testHandDrawingPixelEraserToolControllerSplitsDisjointHitSequencesIntoSeparateErasePaths() {
         let stroke = makeHandDrawingTestStroke(id: UUID())
         var engine = HandDrawingEditorEngine(

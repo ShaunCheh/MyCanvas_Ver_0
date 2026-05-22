@@ -24,7 +24,7 @@ enum HandDrawingStrokeGeometry {
             return false
         }
 
-        let resolvedSamples = HandDrawingBrushDynamics.resolvedSamples(
+        let resolvedSamples = HandDrawingBrushDynamics.resolvedStamps(
             for: stroke
         )
         if resolvedSamples.isEmpty {
@@ -32,28 +32,7 @@ enum HandDrawingStrokeGeometry {
         }
 
         for sample in resolvedSamples {
-            if distanceBetween(sample.point, center) <= sample.radius + resolvedRadius {
-                return true
-            }
-        }
-
-        guard resolvedSamples.count > 1 else {
-            return false
-        }
-
-        for index in 1..<resolvedSamples.count {
-            let previousSample = resolvedSamples[index - 1]
-            let sample = resolvedSamples[index]
-            let strokeRadius = max(
-                previousSample.radius,
-                sample.radius
-            )
-            let distanceToSegment = distanceFromPoint(
-                center,
-                toSegmentFrom: previousSample.point,
-                to: sample.point
-            )
-            if distanceToSegment <= strokeRadius + resolvedRadius {
+            if sample.contains(center, padding: resolvedRadius) {
                 return true
             }
         }
@@ -90,7 +69,7 @@ enum HandDrawingStrokeGeometry {
             return false
         }
 
-        let resolvedSamples = HandDrawingBrushDynamics.resolvedSamples(
+        let resolvedSamples = HandDrawingBrushDynamics.resolvedStamps(
             for: stroke
         )
         guard resolvedSamples.isEmpty == false else {
@@ -98,36 +77,10 @@ enum HandDrawingStrokeGeometry {
         }
 
         for sample in resolvedSamples {
-            guard probePoints(around: sample.point, radius: sample.radius).allSatisfy({
+            guard sample.probePoints().allSatisfy({
                 contains($0, inPolygon: resolvedPolygonPoints)
             }) else {
                 return false
-            }
-        }
-
-        guard resolvedSamples.count > 1 else {
-            return true
-        }
-
-        let segmentFractions: [CGFloat] = [0.25, 0.5, 0.75]
-        for index in 1..<resolvedSamples.count {
-            let previousSample = resolvedSamples[index - 1]
-            let sample = resolvedSamples[index]
-            let segmentRadius = max(
-                previousSample.radius,
-                sample.radius
-            )
-            for fraction in segmentFractions {
-                let sampledPoint = interpolatedPoint(
-                    from: previousSample.point,
-                    to: sample.point,
-                    fraction: fraction
-                )
-                guard probePoints(around: sampledPoint, radius: segmentRadius).allSatisfy({
-                    contains($0, inPolygon: resolvedPolygonPoints)
-                }) else {
-                    return false
-                }
             }
         }
 
@@ -174,20 +127,6 @@ enum HandDrawingStrokeGeometry {
         return resolvedPoints
     }
 
-    private static func probePoints(
-        around point: CGPoint,
-        radius: CGFloat
-    ) -> [CGPoint] {
-        let resolvedRadius = max(radius, 0.5)
-        return [
-            point,
-            CGPoint(x: point.x + resolvedRadius, y: point.y),
-            CGPoint(x: point.x - resolvedRadius, y: point.y),
-            CGPoint(x: point.x, y: point.y + resolvedRadius),
-            CGPoint(x: point.x, y: point.y - resolvedRadius)
-        ]
-    }
-
     private static func contains(
         _ point: CGPoint,
         inPolygon polygonPoints: [CGPoint]
@@ -212,17 +151,6 @@ enum HandDrawingStrokeGeometry {
                 CGRect(x: point.x, y: point.y, width: 0, height: 0)
             )
         }
-    }
-
-    private static func interpolatedPoint(
-        from start: CGPoint,
-        to end: CGPoint,
-        fraction: CGFloat
-    ) -> CGPoint {
-        CGPoint(
-            x: start.x + ((end.x - start.x) * fraction),
-            y: start.y + ((end.y - start.y) * fraction)
-        )
     }
 
     private static func distanceToPolygonBoundary(

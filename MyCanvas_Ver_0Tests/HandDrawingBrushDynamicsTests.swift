@@ -134,6 +134,8 @@ final class HandDrawingBrushDynamicsTests: XCTestCase {
             resolvedSample.tiltAdjustedRadius,
             resolvedSample.radius
         )
+        XCTAssertEqual(resolvedSample.rotationRadians, 1.1, accuracy: 0.001)
+        XCTAssertGreaterThan(resolvedSample.majorRadius, resolvedSample.minorRadius)
         XCTAssertGreaterThan(resolvedSample.opacity, 0.8)
         XCTAssertGreaterThan(resolvedSample.tiltSizeFactor, 1)
         XCTAssertGreaterThan(resolvedSample.tiltOpacityFactor, 1)
@@ -145,5 +147,29 @@ final class HandDrawingBrushDynamicsTests: XCTestCase {
             .pi / 6,
             accuracy: 0.001
         )
+    }
+
+    func testHandDrawingBrushDynamicsRotatedTiltedStampBoundsCoverAxisAlignedExtent() throws {
+        let stroke = makeHandDrawingTestStroke(
+            baseSize: 20,
+            samplePoints: [CGPoint(x: 60, y: 60)],
+            sampleForces: [0.5],
+            sampleAzimuths: [.pi / 4],
+            sampleAltitudes: [0],
+            tiltSizeInfluence: 1
+        )
+
+        let resolvedStamp = try XCTUnwrap(
+            HandDrawingBrushDynamics.resolvedStamps(for: stroke).first
+        )
+        let bounds = try XCTUnwrap(stroke.bounds)
+        let expectedHalfExtent = sqrt(62.5)
+
+        XCTAssertEqual(resolvedStamp.minorRadius, 5, accuracy: 0.001)
+        XCTAssertEqual(resolvedStamp.majorRadius, 10, accuracy: 0.001)
+        XCTAssertEqual(bounds.minX, 60 - expectedHalfExtent, accuracy: 0.001)
+        XCTAssertEqual(bounds.maxX, 60 + expectedHalfExtent, accuracy: 0.001)
+        XCTAssertEqual(bounds.minY, 60 - expectedHalfExtent, accuracy: 0.001)
+        XCTAssertEqual(bounds.maxY, 60 + expectedHalfExtent, accuracy: 0.001)
     }
 }

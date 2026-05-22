@@ -11,11 +11,87 @@ struct HandDrawingResolvedBrushSample: Equatable {
     let tiltOpacityFactor: CGFloat
     let azimuthRadians: CGFloat?
     let altitudeRadians: CGFloat?
+    let rotationRadians: CGFloat
+
+    var minorRadius: CGFloat {
+        max(radius, 0.25)
+    }
+
+    var majorRadius: CGFloat {
+        max(tiltAdjustedRadius, minorRadius)
+    }
+
+    var axisAlignedBounds: CGRect {
+        let cosTheta = cos(rotationRadians)
+        let sinTheta = sin(rotationRadians)
+        let halfWidth = sqrt(
+            pow(majorRadius * cosTheta, 2)
+                + pow(minorRadius * sinTheta, 2)
+        )
+        let halfHeight = sqrt(
+            pow(majorRadius * sinTheta, 2)
+                + pow(minorRadius * cosTheta, 2)
+        )
+        return CGRect(
+            x: point.x - halfWidth,
+            y: point.y - halfHeight,
+            width: halfWidth * 2,
+            height: halfHeight * 2
+        )
+    }
+
+    func contains(
+        _ candidatePoint: CGPoint,
+        padding: CGFloat = 0
+    ) -> Bool {
+        let resolvedMajorRadius = max(majorRadius + padding, 0.25)
+        let resolvedMinorRadius = max(minorRadius + padding, 0.25)
+        let translatedX = candidatePoint.x - point.x
+        let translatedY = candidatePoint.y - point.y
+        let cosTheta = cos(rotationRadians)
+        let sinTheta = sin(rotationRadians)
+        let localX = (translatedX * cosTheta) + (translatedY * sinTheta)
+        let localY = (-translatedX * sinTheta) + (translatedY * cosTheta)
+        let normalizedDistance = (
+            pow(localX / resolvedMajorRadius, 2)
+                + pow(localY / resolvedMinorRadius, 2)
+        )
+        return normalizedDistance <= 1
+    }
+
+    func probePoints(
+        sampleCount: Int = 8,
+        padding: CGFloat = 0
+    ) -> [CGPoint] {
+        let resolvedMajorRadius = max(majorRadius + padding, 0.5)
+        let resolvedMinorRadius = max(minorRadius + padding, 0.5)
+        let resolvedSampleCount = max(sampleCount, 4)
+        let step = (CGFloat.pi * 2) / CGFloat(resolvedSampleCount)
+        var points: [CGPoint] = [point]
+        points.reserveCapacity(resolvedSampleCount + 1)
+
+        for index in 0..<resolvedSampleCount {
+            let angle = CGFloat(index) * step
+            let localX = cos(angle) * resolvedMajorRadius
+            let localY = sin(angle) * resolvedMinorRadius
+            let cosTheta = cos(rotationRadians)
+            let sinTheta = sin(rotationRadians)
+            points.append(
+                CGPoint(
+                    x: point.x + (localX * cosTheta) - (localY * sinTheta),
+                    y: point.y + (localX * sinTheta) + (localY * cosTheta)
+                )
+            )
+        }
+
+        return points
+    }
 }
 
 enum HandDrawingBrushDynamics {
     private static let defaultMinimumSizeRatio: CGFloat = 0.05
     private static let defaultPressureCurveExponent: CGFloat = 1
+    private static let minimumStampSpacing: CGFloat = 0.5
 
     struct Configuration: Equatable {
         let baseSize: CGFloat
@@ -80,18 +156,37 @@ enum HandDrawingBrushDynamics {
         }
     }
 
+    static func resolvedStamps(
+        for stroke: HandDrawingStroke
+    ) -> [HandDrawingResolvedBrushSample] {
+        let anchorSamples = resolvedSamples(for: stroke)
+        guard anchorSamples.count > 1 else {
+            return anchorSamples
+        }
+
+        var resolvedStamps: [HandDrawingResolvedBrushSample] = [
+            anchorSamples[0]
+        ]
+        resolvedStamps.reserveCapacity(anchorSamples.count * 4)
+
+        for index in 1..<anchorSamples.count {
+            resolvedStamps.append(
+                contentsOf: interpolatedStamps(
+                    from: anchorSamples[index - 1],
+                    to: anchorSamples[index]
+                )
+            )
+        }
+
+        return resolvedStamps
+    }
+
     static func bounds(
         for stroke: HandDrawingStroke
     ) -> CGRect? {
         var accumulatedBounds: CGRect?
-        for sample in resolvedSamples(for: stroke) {
-            // Phase 1 keeps bounds on the current pressure-only radius.
-            let pointBounds = CGRect(
-                x: sample.point.x - sample.radius,
-                y: sample.point.y - sample.radius,
-                width: sample.radius * 2,
-                height: sample.radius * 2
-            )
+        for sample in resolvedStamps(for: stroke) {
+            let pointBounds = sample.axisAlignedBounds
             accumulatedBounds = accumulatedBounds?.union(pointBounds) ?? pointBounds
         }
         for erasePath in stroke.eraseMask {
@@ -135,14 +230,150 @@ enum HandDrawingBrushDynamics {
         return HandDrawingResolvedBrushSample(
             point: point,
             radius: radius,
-            tiltAdjustedRadius: radius * tiltSizeFactor,
+            tiltAdjustedRadius: max(radius * tiltSizeFactor, radius),
             opacity: resolvedOpacity,
             pressureSizeRatio: pressureSizeRatio,
             tiltSizeFactor: tiltSizeFactor,
             tiltOpacityFactor: tiltOpacityFactor,
             azimuthRadians: sample.azimuthRadians.map { CGFloat($0) },
-            altitudeRadians: sample.altitudeRadians.map { CGFloat($0) }
+            altitudeRadians: sample.altitudeRadians.map { CGFloat($0) },
+            rotationRadians: sample.azimuthRadians.map { CGFloat($0) } ?? 0
         )
+    }
+
+    private static func interpolatedStamps(
+        from start: HandDrawingResolvedBrushSample,
+        to end: HandDrawingResolvedBrushSample
+    ) -> [HandDrawingResolvedBrushSample] {
+        let distance = hypot(
+            end.point.x - start.point.x,
+            end.point.y - start.point.y
+        )
+        let stepDistance = interpolationStepDistance(from: start, to: end)
+        let stepCount = max(Int(ceil(distance / stepDistance)), 1)
+        return (1...stepCount).map { index in
+            let fraction = CGFloat(index) / CGFloat(stepCount)
+            return interpolatedStamp(
+                from: start,
+                to: end,
+                fraction: fraction
+            )
+        }
+    }
+
+    private static func interpolationStepDistance(
+        from start: HandDrawingResolvedBrushSample,
+        to end: HandDrawingResolvedBrushSample
+    ) -> CGFloat {
+        max(
+            min(start.minorRadius, end.minorRadius) * 0.5,
+            minimumStampSpacing
+        )
+    }
+
+    private static func interpolatedStamp(
+        from start: HandDrawingResolvedBrushSample,
+        to end: HandDrawingResolvedBrushSample,
+        fraction: CGFloat
+    ) -> HandDrawingResolvedBrushSample {
+        let interpolatedPoint = CGPoint(
+            x: start.point.x + ((end.point.x - start.point.x) * fraction),
+            y: start.point.y + ((end.point.y - start.point.y) * fraction)
+        )
+        let rotationRadians = interpolatedAngle(
+            from: start.rotationRadians,
+            to: end.rotationRadians,
+            fraction: fraction
+        )
+        return HandDrawingResolvedBrushSample(
+            point: interpolatedPoint,
+            radius: interpolatedValue(
+                from: start.radius,
+                to: end.radius,
+                fraction: fraction
+            ),
+            tiltAdjustedRadius: interpolatedValue(
+                from: start.tiltAdjustedRadius,
+                to: end.tiltAdjustedRadius,
+                fraction: fraction
+            ),
+            opacity: interpolatedValue(
+                from: start.opacity,
+                to: end.opacity,
+                fraction: fraction
+            ),
+            pressureSizeRatio: interpolatedValue(
+                from: start.pressureSizeRatio,
+                to: end.pressureSizeRatio,
+                fraction: fraction
+            ),
+            tiltSizeFactor: interpolatedValue(
+                from: start.tiltSizeFactor,
+                to: end.tiltSizeFactor,
+                fraction: fraction
+            ),
+            tiltOpacityFactor: interpolatedValue(
+                from: start.tiltOpacityFactor,
+                to: end.tiltOpacityFactor,
+                fraction: fraction
+            ),
+            azimuthRadians: interpolatedOptionalValue(
+                from: start.azimuthRadians,
+                to: end.azimuthRadians,
+                fraction: fraction
+            ) ?? rotationRadians,
+            altitudeRadians: interpolatedOptionalValue(
+                from: start.altitudeRadians,
+                to: end.altitudeRadians,
+                fraction: fraction
+            ),
+            rotationRadians: rotationRadians
+        )
+    }
+
+    private static func interpolatedValue(
+        from start: CGFloat,
+        to end: CGFloat,
+        fraction: CGFloat
+    ) -> CGFloat {
+        start + ((end - start) * fraction)
+    }
+
+    private static func interpolatedOptionalValue(
+        from start: CGFloat?,
+        to end: CGFloat?,
+        fraction: CGFloat
+    ) -> CGFloat? {
+        switch (start, end) {
+        case let (start?, end?):
+            return interpolatedValue(from: start, to: end, fraction: fraction)
+        case let (start?, nil):
+            return start
+        case let (nil, end?):
+            return end
+        case (nil, nil):
+            return nil
+        }
+    }
+
+    private static func interpolatedAngle(
+        from start: CGFloat,
+        to end: CGFloat,
+        fraction: CGFloat
+    ) -> CGFloat {
+        let delta = normalizedAngle(end - start)
+        return normalizedAngle(start + (delta * fraction))
+    }
+
+    private static func normalizedAngle(_ angle: CGFloat) -> CGFloat {
+        let twoPi = CGFloat.pi * 2
+        var resolvedAngle = angle.truncatingRemainder(dividingBy: twoPi)
+        if resolvedAngle <= -.pi {
+            resolvedAngle += twoPi
+        } else if resolvedAngle > .pi {
+            resolvedAngle -= twoPi
+        }
+        return resolvedAngle
     }
 
     private static func resolveRadius(

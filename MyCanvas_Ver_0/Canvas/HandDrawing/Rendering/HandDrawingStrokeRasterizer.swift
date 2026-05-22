@@ -14,47 +14,21 @@ enum HandDrawingStrokeRasterizer {
         _ stroke: HandDrawingStroke,
         in context: CGContext
     ) {
-        let resolvedSamples = HandDrawingBrushDynamics.resolvedSamples(
+        let resolvedSamples = HandDrawingBrushDynamics.resolvedStamps(
             for: stroke
         )
-        guard let firstSample = resolvedSamples.first else {
+        guard resolvedSamples.isEmpty == false else {
             return
         }
 
-        let resolvedColor = stroke.brush.color
-            .withMultipliedAlpha(stroke.brush.opacity)
-            .cgColor
-        context.setStrokeColor(resolvedColor)
+        let resolvedColor = stroke.brush.color.cgColor
         context.setFillColor(resolvedColor)
-        context.setLineCap(.round)
-        context.setLineJoin(.round)
-
-        if resolvedSamples.count == 1 {
-            drawDisk(
-                at: firstSample.point,
-                radius: firstSample.radius,
-                in: context
-            )
-            return
-        }
 
         for sample in resolvedSamples {
-            drawDisk(
-                at: sample.point,
-                radius: sample.radius,
+            drawStamp(
+                sample,
                 in: context
             )
-        }
-
-        for index in 1..<resolvedSamples.count {
-            let previousSample = resolvedSamples[index - 1]
-            let sample = resolvedSamples[index]
-            let lineWidth = previousSample.radius + sample.radius
-            context.setLineWidth(max(lineWidth, 0.5))
-            context.beginPath()
-            context.move(to: previousSample.point)
-            context.addLine(to: sample.point)
-            context.strokePath()
         }
     }
 
@@ -121,18 +95,22 @@ enum HandDrawingStrokeRasterizer {
         context.restoreGState()
     }
 
-    private static func drawDisk(
-        at point: CGPoint,
-        radius: CGFloat,
+    private static func drawStamp(
+        _ sample: HandDrawingResolvedBrushSample,
         in context: CGContext
     ) {
         let rect = CGRect(
-            x: point.x - radius,
-            y: point.y - radius,
-            width: radius * 2,
-            height: radius * 2
+            x: -sample.majorRadius,
+            y: -sample.minorRadius,
+            width: sample.majorRadius * 2,
+            height: sample.minorRadius * 2
         )
+        context.saveGState()
+        context.setAlpha(sample.opacity)
+        context.translateBy(x: sample.point.x, y: sample.point.y)
+        context.rotate(by: sample.rotationRadians)
         context.fillEllipse(in: rect)
+        context.restoreGState()
     }
 
     private static func clearDisk(

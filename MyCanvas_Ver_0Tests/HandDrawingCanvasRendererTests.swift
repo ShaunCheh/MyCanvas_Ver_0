@@ -217,6 +217,66 @@ final class HandDrawingCanvasRendererTests: XCTestCase {
         XCTAssertLessThan(lowCanvasEdgePixel.alpha, highCanvasEdgePixel.alpha)
     }
 
+    func testHandDrawingCanvasRendererMatchesPreviewRendererForTiltAwareStampOrientation() throws {
+        let horizontalTiltStroke = makeCanvasRendererLayeredTestStroke(
+            y: 60,
+            baseSize: 20,
+            force: 0.5,
+            samplePoints: [CGPoint(x: 36, y: 60)],
+            azimuthRadians: [0],
+            altitudeRadians: [0],
+            tiltSizeInfluence: 1,
+            color: HandDrawingColor(red: 0.88, green: 0.16, blue: 0.12, alpha: 1)
+        )
+        let verticalTiltStroke = makeCanvasRendererLayeredTestStroke(
+            y: 60,
+            baseSize: 20,
+            force: 0.5,
+            samplePoints: [CGPoint(x: 84, y: 60)],
+            azimuthRadians: [.pi / 2],
+            altitudeRadians: [0],
+            tiltSizeInfluence: 1,
+            color: HandDrawingColor(red: 0.12, green: 0.72, blue: 0.21, alpha: 1)
+        )
+        let document = HandDrawingDocument(
+            paper: HandDrawingPaper(
+                id: "canvas-tilt-paper",
+                size: CGSize(width: 120, height: 120)
+            ),
+            strokes: [horizontalTiltStroke, verticalTiltStroke]
+        )
+        let renderer = try HandDrawingCanvasRenderer(
+            paperSize: document.paper.size
+        )
+
+        let canvasImage = try renderer.render(
+            document: document,
+            dirtyRegion: document.paperBounds
+        )
+        let previewImage = try HandDrawingPreviewRenderer().renderPreviewImage(
+            for: document,
+            scale: 1
+        )
+
+        let horizontalCanvasRight = sampleDisplayedRGBA(from: canvasImage, x: 44, y: 60)
+        let horizontalPreviewRight = sampleDisplayedRGBA(from: previewImage, x: 44, y: 60)
+        let horizontalCanvasDown = sampleDisplayedRGBA(from: canvasImage, x: 36, y: 68)
+        let horizontalPreviewDown = sampleDisplayedRGBA(from: previewImage, x: 36, y: 68)
+        let verticalCanvasRight = sampleDisplayedRGBA(from: canvasImage, x: 92, y: 60)
+        let verticalPreviewRight = sampleDisplayedRGBA(from: previewImage, x: 92, y: 60)
+        let verticalCanvasDown = sampleDisplayedRGBA(from: canvasImage, x: 84, y: 68)
+        let verticalPreviewDown = sampleDisplayedRGBA(from: previewImage, x: 84, y: 68)
+
+        assertPixelsEqual(horizontalCanvasRight, horizontalPreviewRight)
+        assertPixelsEqual(horizontalCanvasDown, horizontalPreviewDown)
+        assertPixelsEqual(verticalCanvasRight, verticalPreviewRight)
+        assertPixelsEqual(verticalCanvasDown, verticalPreviewDown)
+        XCTAssertGreaterThan(horizontalCanvasRight.alpha, 48)
+        XCTAssertLessThan(horizontalCanvasDown.alpha, 16)
+        XCTAssertLessThan(verticalCanvasRight.alpha, 16)
+        XCTAssertGreaterThan(verticalCanvasDown.alpha, 48)
+    }
+
     private func assertPixelsEqual(
         _ lhs: (red: UInt8, green: UInt8, blue: UInt8, alpha: UInt8),
         _ rhs: (red: UInt8, green: UInt8, blue: UInt8, alpha: UInt8),
@@ -234,31 +294,47 @@ private func makeCanvasRendererLayeredTestStroke(
     y: CGFloat,
     baseSize: Double = 18,
     force: Double = 1,
+    samplePoints: [CGPoint]? = nil,
+    azimuthRadians: [Double?]? = nil,
+    altitudeRadians: [Double?]? = nil,
+    tiltSizeInfluence: Double? = nil,
+    tiltOpacityInfluence: Double? = nil,
     color: HandDrawingColor
 ) -> HandDrawingStroke {
-    HandDrawingStroke(
+    let resolvedSamplePoints = samplePoints ?? [
+        CGPoint(x: 24, y: y),
+        CGPoint(x: 60, y: y),
+        CGPoint(x: 96, y: y)
+    ]
+    if let azimuthRadians {
+        precondition(
+            azimuthRadians.count == resolvedSamplePoints.count,
+            "Canvas renderer test azimuth samples must align with sample points."
+        )
+    }
+    if let altitudeRadians {
+        precondition(
+            altitudeRadians.count == resolvedSamplePoints.count,
+            "Canvas renderer test altitude samples must align with sample points."
+        )
+    }
+    return HandDrawingStroke(
         brush: HandDrawingBrushStyle(
             kind: .pen,
             color: color,
             baseSize: baseSize,
-            opacity: 1
+            opacity: 1,
+            tiltSizeInfluence: tiltSizeInfluence,
+            tiltOpacityInfluence: tiltOpacityInfluence
         ),
-        samplePoints: [
+        samplePoints: resolvedSamplePoints.enumerated().map { index, point in
             HandDrawingSamplePoint(
-                point: CGPoint(x: 24, y: y),
+                point: point,
                 force: force,
-                timestamp: 0
-            ),
-            HandDrawingSamplePoint(
-                point: CGPoint(x: 60, y: y),
-                force: force,
-                timestamp: 0.1
-            ),
-            HandDrawingSamplePoint(
-                point: CGPoint(x: 96, y: y),
-                force: force,
-                timestamp: 0.2
+                timestamp: Double(index) * 0.1,
+                azimuthRadians: azimuthRadians?[index],
+                altitudeRadians: altitudeRadians?[index]
             )
-        ]
+        }
     )
 }

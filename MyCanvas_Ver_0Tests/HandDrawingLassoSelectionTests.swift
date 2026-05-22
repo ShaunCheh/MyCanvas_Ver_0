@@ -191,6 +191,81 @@ final class HandDrawingLassoSelectionTests: XCTestCase {
         XCTAssertTrue(thickEngine.state.selectedStrokeIDs.isEmpty)
     }
 
+    func testHandDrawingLassoToolControllerUsesTiltedStampFootprintForEnclosure() {
+        func applyCompactLasso(
+            to engine: inout HandDrawingEditorEngine
+        ) -> Bool {
+            var controller = HandDrawingLassoToolController()
+            XCTAssertTrue(
+                controller.beginLasso(
+                    with: HandDrawingInputSample(
+                        location: CGPoint(x: 55, y: 50),
+                        timestamp: 0
+                    ),
+                    engine: engine
+                )
+            )
+            controller.appendSamples(
+                [
+                    HandDrawingInputSample(
+                        location: CGPoint(x: 65, y: 50),
+                        timestamp: 0.1
+                    ),
+                    HandDrawingInputSample(
+                        location: CGPoint(x: 65, y: 70),
+                        timestamp: 0.2
+                    ),
+                    HandDrawingInputSample(
+                        location: CGPoint(x: 55, y: 70),
+                        timestamp: 0.3
+                    )
+                ]
+            )
+            return controller.endLasso(engine: &engine)
+        }
+
+        let circularStroke = makeHandDrawingTestStroke(
+            id: UUID(),
+            baseSize: 20,
+            samplePoints: [CGPoint(x: 60, y: 60)],
+            sampleForces: [0.5]
+        )
+        var circularEngine = HandDrawingEditorEngine(
+            document: HandDrawingDocument(
+                paper: HandDrawingPaper(
+                    id: "lasso-circle-paper",
+                    size: CGSize(width: 140, height: 140)
+                ),
+                strokes: [circularStroke]
+            )
+        )
+
+        XCTAssertTrue(applyCompactLasso(to: &circularEngine))
+        XCTAssertEqual(circularEngine.state.selectedStrokeIDs, [circularStroke.id])
+
+        let tiltedStroke = makeHandDrawingTestStroke(
+            id: UUID(),
+            baseSize: 20,
+            samplePoints: [CGPoint(x: 60, y: 60)],
+            sampleForces: [0.5],
+            sampleAzimuths: [0],
+            sampleAltitudes: [0],
+            tiltSizeInfluence: 1
+        )
+        var tiltedEngine = HandDrawingEditorEngine(
+            document: HandDrawingDocument(
+                paper: HandDrawingPaper(
+                    id: "lasso-tilt-paper",
+                    size: CGSize(width: 140, height: 140)
+                ),
+                strokes: [tiltedStroke]
+            )
+        )
+
+        XCTAssertFalse(applyCompactLasso(to: &tiltedEngine))
+        XCTAssertTrue(tiltedEngine.state.selectedStrokeIDs.isEmpty)
+    }
+
     func testHandDrawingLassoToolControllerOnlySelectsActiveLayerStroke() {
         let inactiveStroke = makeHandDrawingTestStroke(id: UUID())
         let activeStroke = makeHandDrawingTestStroke(id: UUID())

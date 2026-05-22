@@ -86,6 +86,48 @@ final class HandDrawingPreviewRendererTests: XCTestCase {
         XCTAssertGreaterThan(highEdgePixel.alpha, 64)
     }
 
+    func testHandDrawingPreviewRendererRendersTiltAwareStampOrientation() throws {
+        let renderer = HandDrawingPreviewRenderer()
+        let horizontalTiltStroke = makePreviewRendererTestStroke(
+            y: 60,
+            baseSize: 20,
+            force: 0.5,
+            samplePoints: [CGPoint(x: 36, y: 60)],
+            azimuthRadians: [0],
+            altitudeRadians: [0],
+            tiltSizeInfluence: 1,
+            color: HandDrawingColor(red: 0.88, green: 0.16, blue: 0.12, alpha: 1)
+        )
+        let verticalTiltStroke = makePreviewRendererTestStroke(
+            y: 60,
+            baseSize: 20,
+            force: 0.5,
+            samplePoints: [CGPoint(x: 84, y: 60)],
+            azimuthRadians: [.pi / 2],
+            altitudeRadians: [0],
+            tiltSizeInfluence: 1,
+            color: HandDrawingColor(red: 0.12, green: 0.72, blue: 0.21, alpha: 1)
+        )
+        let document = HandDrawingDocument(
+            paper: HandDrawingPaper(
+                id: "tilt-preview-paper",
+                size: CGSize(width: 120, height: 120)
+            ),
+            strokes: [horizontalTiltStroke, verticalTiltStroke]
+        )
+
+        let image = try renderer.renderPreviewImage(for: document, scale: 1)
+        let horizontalRightPixel = sampleDisplayedRGBA(from: image, x: 44, y: 60)
+        let horizontalDownPixel = sampleDisplayedRGBA(from: image, x: 36, y: 68)
+        let verticalRightPixel = sampleDisplayedRGBA(from: image, x: 92, y: 60)
+        let verticalDownPixel = sampleDisplayedRGBA(from: image, x: 84, y: 68)
+
+        XCTAssertGreaterThan(horizontalRightPixel.alpha, 48)
+        XCTAssertLessThan(horizontalDownPixel.alpha, 16)
+        XCTAssertLessThan(verticalRightPixel.alpha, 16)
+        XCTAssertGreaterThan(verticalDownPixel.alpha, 48)
+    }
+
     func testHandDrawingPreviewRendererRespectsVisibleLayerOrder() throws {
         let renderer = HandDrawingPreviewRenderer()
         let baseLayer = makeHandDrawingTestLayer(
@@ -138,31 +180,47 @@ private func makePreviewRendererTestStroke(
     y: CGFloat,
     baseSize: Double,
     force: Double = 1,
+    samplePoints: [CGPoint]? = nil,
+    azimuthRadians: [Double?]? = nil,
+    altitudeRadians: [Double?]? = nil,
+    tiltSizeInfluence: Double? = nil,
+    tiltOpacityInfluence: Double? = nil,
     color: HandDrawingColor
 ) -> HandDrawingStroke {
-    HandDrawingStroke(
+    let resolvedSamplePoints = samplePoints ?? [
+        CGPoint(x: 24, y: y),
+        CGPoint(x: 60, y: y),
+        CGPoint(x: 96, y: y)
+    ]
+    if let azimuthRadians {
+        precondition(
+            azimuthRadians.count == resolvedSamplePoints.count,
+            "Preview renderer test azimuth samples must align with sample points."
+        )
+    }
+    if let altitudeRadians {
+        precondition(
+            altitudeRadians.count == resolvedSamplePoints.count,
+            "Preview renderer test altitude samples must align with sample points."
+        )
+    }
+    return HandDrawingStroke(
         brush: HandDrawingBrushStyle(
             kind: .pen,
             color: color,
             baseSize: baseSize,
-            opacity: 1
+            opacity: 1,
+            tiltSizeInfluence: tiltSizeInfluence,
+            tiltOpacityInfluence: tiltOpacityInfluence
         ),
-        samplePoints: [
+        samplePoints: resolvedSamplePoints.enumerated().map { index, point in
             HandDrawingSamplePoint(
-                point: CGPoint(x: 24, y: y),
+                point: point,
                 force: force,
-                timestamp: 0
-            ),
-            HandDrawingSamplePoint(
-                point: CGPoint(x: 60, y: y),
-                force: force,
-                timestamp: 0.1
-            ),
-            HandDrawingSamplePoint(
-                point: CGPoint(x: 96, y: y),
-                force: force,
-                timestamp: 0.2
+                timestamp: Double(index) * 0.1,
+                azimuthRadians: azimuthRadians?[index],
+                altitudeRadians: altitudeRadians?[index]
             )
-        ]
+        }
     )
 }

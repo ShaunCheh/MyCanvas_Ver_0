@@ -66,6 +66,10 @@ func makeHandDrawingTestStroke(
         CGPoint(x: 95, y: 60)
     ],
     sampleForces: [Double] = [1, 1, 0.9],
+    sampleAzimuths: [Double?]? = nil,
+    sampleAltitudes: [Double?]? = nil,
+    tiltSizeInfluence: Double? = nil,
+    tiltOpacityInfluence: Double? = nil,
     includeEraseMask: Bool = false,
     transform: HandDrawingStrokeTransform = .identity
 ) -> HandDrawingStroke {
@@ -73,6 +77,18 @@ func makeHandDrawingTestStroke(
         samplePoints.count == sampleForces.count,
         "Hand drawing test samples and forces must align."
     )
+    if let sampleAzimuths {
+        precondition(
+            samplePoints.count == sampleAzimuths.count,
+            "Hand drawing test azimuth samples must align with sample points."
+        )
+    }
+    if let sampleAltitudes {
+        precondition(
+            samplePoints.count == sampleAltitudes.count,
+            "Hand drawing test altitude samples must align with sample points."
+        )
+    }
     let eraseMask: [HandDrawingErasePath]
     if includeEraseMask {
         eraseMask = [
@@ -94,7 +110,9 @@ func makeHandDrawingTestStroke(
             kind: .pen,
             color: color,
             baseSize: baseSize,
-            opacity: 1
+            opacity: 1,
+            tiltSizeInfluence: tiltSizeInfluence,
+            tiltOpacityInfluence: tiltOpacityInfluence
         ),
         samplePoints: zip(samplePoints, sampleForces).enumerated().map {
             index,
@@ -102,7 +120,9 @@ func makeHandDrawingTestStroke(
             HandDrawingSamplePoint(
                 point: element.0,
                 force: element.1,
-                timestamp: Double(index) * 0.1
+                timestamp: Double(index) * 0.1,
+                azimuthRadians: sampleAzimuths?[index],
+                altitudeRadians: sampleAltitudes?[index]
             )
         },
         transform: transform,

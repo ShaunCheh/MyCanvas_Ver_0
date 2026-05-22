@@ -374,7 +374,9 @@ final class HandDrawingEditorCoordinator {
             kind: .pen,
             color: selectedColor,
             baseSize: Double(selectedLineWidth),
-            opacity: 1
+            opacity: 1,
+            tiltSizeInfluence: 0.85,
+            tiltOpacityInfluence: 0
         )
     }
 

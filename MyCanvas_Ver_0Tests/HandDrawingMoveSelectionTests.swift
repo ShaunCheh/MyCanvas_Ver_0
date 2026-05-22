@@ -109,6 +109,67 @@ final class HandDrawingMoveSelectionTests: XCTestCase {
         XCTAssertTrue(thickController.isActive)
     }
 
+    func testHandDrawingMoveSelectionControllerHitTestingUsesTiltedStampFootprintWithPadding() {
+        let hitSample = HandDrawingInputSample(
+            location: CGPoint(x: 78, y: 60),
+            timestamp: 0
+        )
+
+        let circularStroke = makeHandDrawingTestStroke(
+            id: UUID(),
+            baseSize: 20,
+            samplePoints: [CGPoint(x: 60, y: 60)],
+            sampleForces: [0.5]
+        )
+        var circularEngine = HandDrawingEditorEngine(
+            document: HandDrawingDocument(
+                paper: HandDrawingPaper(
+                    id: "move-circle-paper",
+                    size: CGSize(width: 140, height: 140)
+                ),
+                strokes: [circularStroke]
+            )
+        )
+        XCTAssertTrue(circularEngine.selectStrokes(withIDs: [circularStroke.id]))
+
+        var circularController = HandDrawingMoveSelectionController()
+        XCTAssertFalse(
+            circularController.beginMoving(
+                with: hitSample,
+                engine: circularEngine
+            )
+        )
+
+        let tiltedStroke = makeHandDrawingTestStroke(
+            id: UUID(),
+            baseSize: 20,
+            samplePoints: [CGPoint(x: 60, y: 60)],
+            sampleForces: [0.5],
+            sampleAzimuths: [0],
+            sampleAltitudes: [0],
+            tiltSizeInfluence: 1
+        )
+        var tiltedEngine = HandDrawingEditorEngine(
+            document: HandDrawingDocument(
+                paper: HandDrawingPaper(
+                    id: "move-tilt-paper",
+                    size: CGSize(width: 140, height: 140)
+                ),
+                strokes: [tiltedStroke]
+            )
+        )
+        XCTAssertTrue(tiltedEngine.selectStrokes(withIDs: [tiltedStroke.id]))
+
+        var tiltedController = HandDrawingMoveSelectionController()
+        XCTAssertTrue(
+            tiltedController.beginMoving(
+                with: hitSample,
+                engine: tiltedEngine
+            )
+        )
+        XCTAssertTrue(tiltedController.isActive)
+    }
+
     func testHandDrawingMoveSelectionControllerCancelRestoresPosition() {
         let stroke = makeHandDrawingTestStroke(id: UUID())
         var engine = HandDrawingEditorEngine(
