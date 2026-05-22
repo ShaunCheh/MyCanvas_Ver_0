@@ -52,7 +52,7 @@ final class HandDrawingEditorCoordinator {
     private var selectedColor: HandDrawingColor
     private var selectedLineWidth: CGFloat
     private var activeStrokeBrush: HandDrawingBrushStyle?
-    private var activeStrokeSamples: [HandDrawingInputSample] = []
+    private var activeStrokeInputSamples: [HandDrawingInputSample] = []
     private var pixelEraserToolController = HandDrawingPixelEraserToolController()
     private var lassoToolController = HandDrawingLassoToolController()
     private var moveSelectionController = HandDrawingMoveSelectionController()
@@ -207,7 +207,9 @@ final class HandDrawingEditorCoordinator {
                 return
             }
             activeStrokeBrush = currentBrushStyle
-            activeStrokeSamples = [sample]
+            activeStrokeInputSamples = HandDrawingInputNormalizer.normalized(
+                [sample]
+            )
             publishSurfaceState()
         case .pixelEraser:
             guard engine.canInteractWithActiveLayer else {
@@ -270,17 +272,20 @@ final class HandDrawingEditorCoordinator {
                 return
             }
             appendStrokeSamples(samples)
-            guard activeStrokeSamples.isEmpty == false else {
+            guard activeStrokeInputSamples.isEmpty == false else {
                 clearActiveStroke()
                 publishSurfaceState()
                 return
             }
-            let committedStrokeSamples = activeStrokeSamples
-            clearActiveStroke()
-            guard engine.appendStroke(
+            let committedStroke = HandDrawingStrokeBuilder.makeStroke(
                 brush: activeStrokeBrush,
-                samples: committedStrokeSamples
-            ) != nil else {
+                normalizedSamples: activeStrokeInputSamples
+            )
+            clearActiveStroke()
+            guard
+                let committedStroke,
+                engine.appendStroke(committedStroke) != nil
+            else {
                 publishSurfaceState()
                 publishPaletteState()
                 return
@@ -376,36 +381,26 @@ final class HandDrawingEditorCoordinator {
     private var draftStroke: HandDrawingStroke? {
         guard
             let activeStrokeBrush,
-            activeStrokeSamples.isEmpty == false
+            activeStrokeInputSamples.isEmpty == false
         else {
             return nil
         }
-        return HandDrawingStroke(
+        return HandDrawingStrokeBuilder.makeStroke(
             brush: activeStrokeBrush,
-            samplePoints: activeStrokeSamples.map {
-                HandDrawingSamplePoint(
-                    point: $0.location,
-                    force: Double($0.force),
-                    timestamp: $0.timestamp,
-                    azimuthRadians: $0.azimuthRadians.map(Double.init),
-                    altitudeRadians: $0.altitudeRadians.map(Double.init)
-                )
-            }
+            normalizedSamples: activeStrokeInputSamples
         )
     }
 
     private func appendStrokeSamples(_ samples: [HandDrawingInputSample]) {
-        for sample in samples {
-            if activeStrokeSamples.last == sample {
-                continue
-            }
-            activeStrokeSamples.append(sample)
-        }
+        activeStrokeInputSamples = HandDrawingInputNormalizer.normalized(
+            samples,
+            appendingTo: activeStrokeInputSamples
+        )
     }
 
     private func clearActiveStroke() {
         activeStrokeBrush = nil
-        activeStrokeSamples.removeAll()
+        activeStrokeInputSamples.removeAll()
     }
 
     private func publishSurfaceState() {

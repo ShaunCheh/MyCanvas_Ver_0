@@ -109,22 +109,14 @@ struct HandDrawingEditorEngine {
         samples: [HandDrawingInputSample],
         transform: HandDrawingStrokeTransform = .identity
     ) -> HandDrawingStroke? {
-        guard samples.isEmpty == false else {
-            return nil
-        }
-        let stroke = HandDrawingStroke(
+        guard let stroke = HandDrawingStrokeBuilder.makeStroke(
             brush: brush,
-            samplePoints: samples.map {
-                HandDrawingSamplePoint(
-                    point: $0.location,
-                    force: Double($0.force),
-                    timestamp: $0.timestamp,
-                    azimuthRadians: $0.azimuthRadians.map(Double.init),
-                    altitudeRadians: $0.altitudeRadians.map(Double.init)
-                )
-            },
+            samples: samples,
             transform: transform
         )
+        else {
+            return nil
+        }
         return appendStroke(stroke)
     }
 

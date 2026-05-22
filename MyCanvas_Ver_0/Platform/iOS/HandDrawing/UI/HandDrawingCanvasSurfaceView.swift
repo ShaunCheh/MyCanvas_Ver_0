@@ -289,7 +289,7 @@ private final class HandDrawingCanvasPageView: UIView {
         let maximumPossibleForce = max(touch.maximumPossibleForce, 1)
         return HandDrawingInputSample(
             location: touch.location(in: self),
-            force: max(touch.force / maximumPossibleForce, 0.05),
+            force: touch.force / maximumPossibleForce,
             timestamp: touch.timestamp,
             azimuthRadians: touch.azimuthAngle(in: self),
             altitudeRadians: touch.altitudeAngle
