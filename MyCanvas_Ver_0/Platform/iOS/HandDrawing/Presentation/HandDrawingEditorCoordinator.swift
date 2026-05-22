@@ -28,11 +28,17 @@ struct HandDrawingCommittedCanvasHostState {
 }
 
 struct HandDrawingRealtimeDraftHostState {
-    static let idle = HandDrawingRealtimeDraftHostState(
-        revision: 0,
-        packet: nil
-    )
+    static func idle(
+        preferredBackend: HandDrawingRealtimeDraftBackendPreference
+    ) -> HandDrawingRealtimeDraftHostState {
+        HandDrawingRealtimeDraftHostState(
+            preferredBackend: preferredBackend,
+            revision: 0,
+            packet: nil
+        )
+    }
 
+    var preferredBackend: HandDrawingRealtimeDraftBackendPreference
     var revision: UInt64
     var packet: HandDrawingRealtimeDraftPacket?
 }
@@ -83,11 +89,12 @@ final class HandDrawingEditorCoordinator {
 
     private let editorContext: CanvasHandDrawingEditorContext
     private let committedCanvasBackend: HandDrawingCommittedCanvasBackend
+    private let realtimeDraftBackendPreference: HandDrawingRealtimeDraftBackendPreference
     private let previewRenderer = HandDrawingPreviewRenderer()
     private let initialDocument: HandDrawingDocument
     private var engine: HandDrawingEditorEngine
     private var committedCanvas: HandDrawingCommittedCanvasRenderOutput = .none
-    private var realtimeDraftHostState = HandDrawingRealtimeDraftHostState.idle
+    private var realtimeDraftHostState: HandDrawingRealtimeDraftHostState
     private var selectedTool: HandDrawingEditorTool = .brush
     private var selectedColor: HandDrawingColor
     private var availableBrushPresets: [HandDrawingBrushPreset]
@@ -108,9 +115,14 @@ final class HandDrawingEditorCoordinator {
 
     init(
         editorContext: CanvasHandDrawingEditorContext,
-        committedCanvasBackend: HandDrawingCommittedCanvasBackend? = nil
+        committedCanvasBackend: HandDrawingCommittedCanvasBackend? = nil,
+        realtimeDraftBackendPreference: HandDrawingRealtimeDraftBackendPreference = .gpuPreferred
     ) throws {
         self.editorContext = editorContext
+        self.realtimeDraftBackendPreference = realtimeDraftBackendPreference
+        realtimeDraftHostState = .idle(
+            preferredBackend: realtimeDraftBackendPreference
+        )
         let document = try HandDrawingDocumentLoader.loadDocument(
             from: editorContext.documentData,
             paper: editorContext.paper
@@ -523,6 +535,7 @@ final class HandDrawingEditorCoordinator {
         with packet: HandDrawingRealtimeDraftPacket?
     ) {
         realtimeDraftHostState = HandDrawingRealtimeDraftHostState(
+            preferredBackend: realtimeDraftBackendPreference,
             revision: realtimeDraftHostState.revision + 1,
             packet: packet
         )

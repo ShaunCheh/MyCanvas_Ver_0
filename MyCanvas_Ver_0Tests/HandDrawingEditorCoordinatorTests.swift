@@ -251,6 +251,7 @@ final class HandDrawingEditorCoordinatorSurfaceStateTests: XCTestCase {
         let initialSurfaceState = try XCTUnwrap(latestSurfaceState)
         XCTAssertNotNil(initialSurfaceState.committedHost.output.image)
         XCTAssertNil(initialSurfaceState.realtimeDraftHost.packet)
+        XCTAssertEqual(initialSurfaceState.realtimeDraftHost.preferredBackend, .gpuPreferred)
         XCTAssertEqual(initialSurfaceState.realtimeDraftHost.revision, 0)
         XCTAssertTrue(initialSurfaceState.interactionOverlay.lassoPathPoints.isEmpty)
         XCTAssertNil(initialSurfaceState.interactionOverlay.selectedStrokeBounds)
@@ -266,6 +267,7 @@ final class HandDrawingEditorCoordinatorSurfaceStateTests: XCTestCase {
         let activeDraftSurfaceState = try XCTUnwrap(latestSurfaceState)
         XCTAssertNotNil(activeDraftSurfaceState.committedHost.output.image)
         let realtimePacket = try XCTUnwrap(activeDraftSurfaceState.realtimeDraftHost.packet)
+        XCTAssertEqual(activeDraftSurfaceState.realtimeDraftHost.preferredBackend, .gpuPreferred)
         XCTAssertGreaterThan(activeDraftSurfaceState.realtimeDraftHost.revision, 0)
         XCTAssertFalse(realtimePacket.committedResolvedStamps.tailStamps.isEmpty)
         XCTAssertTrue(realtimePacket.predictedTail.isEmpty)
@@ -370,6 +372,7 @@ final class HandDrawingEditorCoordinatorSurfaceStateTests: XCTestCase {
         )
 
         let realtimePacket = try XCTUnwrap(latestSurfaceState?.realtimeDraftHost.packet)
+        XCTAssertEqual(latestSurfaceState?.realtimeDraftHost.preferredBackend, .gpuPreferred)
         XCTAssertEqual(realtimePacket.committedSamples.stablePrefixCount, 1)
         XCTAssertEqual(realtimePacket.committedSamples.tailSamples.count, 1)
         XCTAssertEqual(realtimePacket.predictedTail.normalizedSamples.count, 1)

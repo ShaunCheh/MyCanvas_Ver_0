@@ -1,6 +1,11 @@
 import CoreGraphics
 import Foundation
 
+enum HandDrawingRealtimeDraftBackendPreference: Equatable {
+    case cpu
+    case gpuPreferred
+}
+
 struct HandDrawingRealtimeNormalizedSampleUpdate: Equatable {
     let stablePrefixCount: Int
     let tailSamples: [HandDrawingInputSample]
@@ -44,6 +49,63 @@ struct HandDrawingRealtimeDraftRenderState: Equatable {
     }
 }
 
+final class HandDrawingRealtimeDraftPacketAccumulator {
+    private var activeStrokeID: UUID?
+    private var activeBrush: HandDrawingBrushStyle?
+    private var committedResolvedStamps: [HandDrawingResolvedBrushSample] = []
+    private var predictedResolvedStamps: [HandDrawingResolvedBrushSample] = []
+
+    func apply(
+        packet: HandDrawingRealtimeDraftPacket?
+    ) -> HandDrawingRealtimeDraftRenderState? {
+        guard let packet else {
+            reset()
+            return nil
+        }
+
+        if activeStrokeID != packet.strokeID {
+            committedResolvedStamps.removeAll()
+            predictedResolvedStamps.removeAll()
+        }
+        activeStrokeID = packet.strokeID
+        activeBrush = packet.brush
+        committedResolvedStamps = replaceTail(
+            in: committedResolvedStamps,
+            stablePrefixCount: packet.committedResolvedStamps.stablePrefixCount,
+            tail: packet.committedResolvedStamps.tailStamps
+        )
+        predictedResolvedStamps = packet.predictedTail.resolvedStamps
+
+        guard let activeBrush else {
+            return nil
+        }
+        return HandDrawingRealtimeDraftRenderState(
+            brush: activeBrush,
+            committedResolvedStamps: committedResolvedStamps,
+            predictedResolvedStamps: predictedResolvedStamps
+        )
+    }
+
+    func reset() {
+        activeStrokeID = nil
+        activeBrush = nil
+        committedResolvedStamps.removeAll()
+        predictedResolvedStamps.removeAll()
+    }
+
+    private func replaceTail<T>(
+        in existingValues: [T],
+        stablePrefixCount: Int,
+        tail: [T]
+    ) -> [T] {
+        let resolvedPrefixCount = min(
+            max(stablePrefixCount, 0),
+            existingValues.count
+        )
+        return Array(existingValues.prefix(resolvedPrefixCount)) + tail
+    }
+}
+
 enum HandDrawingRealtimeDraftRenderOutput {
     case none
     case resolved(HandDrawingRealtimeDraftRenderState)
@@ -65,57 +127,15 @@ protocol HandDrawingRealtimeBrushRenderer: AnyObject {
 }
 
 final class HandDrawingCPURealtimeBrushRenderer: HandDrawingRealtimeBrushRenderer {
-    private var activeStrokeID: UUID?
-    private var activeBrush: HandDrawingBrushStyle?
-    private var committedResolvedStamps: [HandDrawingResolvedBrushSample] = []
-    private var predictedResolvedStamps: [HandDrawingResolvedBrushSample] = []
+    private let accumulator = HandDrawingRealtimeDraftPacketAccumulator()
 
     func apply(
         packet: HandDrawingRealtimeDraftPacket?
     ) -> HandDrawingRealtimeDraftRenderOutput {
-        guard let packet else {
-            activeStrokeID = nil
-            activeBrush = nil
-            committedResolvedStamps.removeAll()
-            predictedResolvedStamps.removeAll()
+        guard let renderState = accumulator.apply(packet: packet) else {
             return .none
         }
-
-        if activeStrokeID != packet.strokeID {
-            committedResolvedStamps.removeAll()
-            predictedResolvedStamps.removeAll()
-        }
-        activeStrokeID = packet.strokeID
-        activeBrush = packet.brush
-        committedResolvedStamps = replaceTail(
-            in: committedResolvedStamps,
-            stablePrefixCount: packet.committedResolvedStamps.stablePrefixCount,
-            tail: packet.committedResolvedStamps.tailStamps
-        )
-        predictedResolvedStamps = packet.predictedTail.resolvedStamps
-
-        guard let activeBrush else {
-            return .none
-        }
-        return .resolved(
-            HandDrawingRealtimeDraftRenderState(
-                brush: activeBrush,
-                committedResolvedStamps: committedResolvedStamps,
-                predictedResolvedStamps: predictedResolvedStamps
-            )
-        )
-    }
-
-    private func replaceTail<T>(
-        in existingValues: [T],
-        stablePrefixCount: Int,
-        tail: [T]
-    ) -> [T] {
-        let resolvedPrefixCount = min(
-            max(stablePrefixCount, 0),
-            existingValues.count
-        )
-        return Array(existingValues.prefix(resolvedPrefixCount)) + tail
+        return .resolved(renderState)
     }
 }
 
