@@ -172,14 +172,9 @@ private final class HandDrawingCanvasPageView: UIView {
 
     private let liveInputConfiguration = HandDrawingLiveInputConfiguration
         .interactiveDraft
-    private let committedImageView: UIImageView = {
-        let imageView = UIImageView()
-        imageView.translatesAutoresizingMaskIntoConstraints = false
-        imageView.contentMode = .scaleToFill
-        imageView.isUserInteractionEnabled = false
-        return imageView
-    }()
-    private let draftOverlayView = HandDrawingCanvasDraftOverlayView()
+    private let committedCanvasHostView = HandDrawingCommittedCanvasHostView()
+    private let realtimeDraftHostView = HandDrawingRealtimeDraftHostView()
+    private let interactionOverlayView = HandDrawingCanvasInteractionOverlayView()
     private var activePencilTouchID: ObjectIdentifier?
 
     override init(frame: CGRect) {
@@ -192,17 +187,22 @@ private final class HandDrawingCanvasPageView: UIView {
         layer.borderColor = UIColor.separator.withAlphaComponent(0.24).cgColor
         clipsToBounds = true
         isMultipleTouchEnabled = true
-        addSubview(committedImageView)
-        addSubview(draftOverlayView)
+        addSubview(committedCanvasHostView)
+        addSubview(realtimeDraftHostView)
+        addSubview(interactionOverlayView)
         NSLayoutConstraint.activate([
-            committedImageView.topAnchor.constraint(equalTo: topAnchor),
-            committedImageView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            committedImageView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            committedImageView.bottomAnchor.constraint(equalTo: bottomAnchor),
-            draftOverlayView.topAnchor.constraint(equalTo: topAnchor),
-            draftOverlayView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            draftOverlayView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            draftOverlayView.bottomAnchor.constraint(equalTo: bottomAnchor)
+            committedCanvasHostView.topAnchor.constraint(equalTo: topAnchor),
+            committedCanvasHostView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            committedCanvasHostView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            committedCanvasHostView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            realtimeDraftHostView.topAnchor.constraint(equalTo: topAnchor),
+            realtimeDraftHostView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            realtimeDraftHostView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            realtimeDraftHostView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            interactionOverlayView.topAnchor.constraint(equalTo: topAnchor),
+            interactionOverlayView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            interactionOverlayView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            interactionOverlayView.bottomAnchor.constraint(equalTo: bottomAnchor)
         ])
     }
 
@@ -212,14 +212,9 @@ private final class HandDrawingCanvasPageView: UIView {
     }
 
     func apply(state: HandDrawingCanvasSurfaceState) {
-        if let committedImage = state.committedCanvas.image {
-            committedImageView.image = UIImage(cgImage: committedImage)
-        } else {
-            committedImageView.image = nil
-        }
-        draftOverlayView.draftStroke = state.realtimeDraft.stroke
-        draftOverlayView.lassoPathPoints = state.lassoPathPoints
-        draftOverlayView.selectedStrokeBounds = state.selectedStrokeBounds
+        committedCanvasHostView.apply(state: state.committedHost)
+        realtimeDraftHostView.apply(state: state.realtimeDraftHost)
+        interactionOverlayView.apply(state: state.interactionOverlay)
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
@@ -309,12 +304,137 @@ private final class HandDrawingCanvasPageView: UIView {
     }
 }
 
-private final class HandDrawingCanvasDraftOverlayView: UIView {
+private final class HandDrawingCommittedCanvasHostView: UIView {
+    private let imageView: UIImageView = {
+        let imageView = UIImageView()
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        imageView.contentMode = .scaleToFill
+        imageView.isUserInteractionEnabled = false
+        return imageView
+    }()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        translatesAutoresizingMaskIntoConstraints = false
+        backgroundColor = .clear
+        isUserInteractionEnabled = false
+        addSubview(imageView)
+        NSLayoutConstraint.activate([
+            imageView.topAnchor.constraint(equalTo: topAnchor),
+            imageView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            imageView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            imageView.bottomAnchor.constraint(equalTo: bottomAnchor)
+        ])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func apply(state: HandDrawingCommittedCanvasHostState) {
+        if let committedImage = state.output.image {
+            imageView.image = UIImage(cgImage: committedImage)
+        } else {
+            imageView.image = nil
+        }
+    }
+}
+
+private protocol HandDrawingRealtimeDraftRendererHosting: AnyObject {
+    var view: UIView { get }
+
+    func apply(state: HandDrawingRealtimeDraftHostState)
+}
+
+private final class HandDrawingRealtimeDraftHostView: UIView {
+    private var rendererHost: HandDrawingRealtimeDraftRendererHosting
+
+    init(
+        rendererHost: HandDrawingRealtimeDraftRendererHosting = HandDrawingCPURealtimeDraftRendererView()
+    ) {
+        self.rendererHost = rendererHost
+        super.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
+        backgroundColor = .clear
+        isUserInteractionEnabled = false
+        installRendererHost(rendererHost)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func setRendererHost(_ rendererHost: HandDrawingRealtimeDraftRendererHosting) {
+        guard rendererHost !== self.rendererHost else {
+            return
+        }
+        self.rendererHost.view.removeFromSuperview()
+        self.rendererHost = rendererHost
+        installRendererHost(rendererHost)
+    }
+
+    func apply(state: HandDrawingRealtimeDraftHostState) {
+        rendererHost.apply(state: state)
+    }
+
+    private func installRendererHost(
+        _ rendererHost: HandDrawingRealtimeDraftRendererHosting
+    ) {
+        let hostedView = rendererHost.view
+        hostedView.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(hostedView)
+        NSLayoutConstraint.activate([
+            hostedView.topAnchor.constraint(equalTo: topAnchor),
+            hostedView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            hostedView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            hostedView.bottomAnchor.constraint(equalTo: bottomAnchor)
+        ])
+    }
+}
+
+private final class HandDrawingCPURealtimeDraftRendererView: UIView, HandDrawingRealtimeDraftRendererHosting {
+    var view: UIView { self }
+
     var draftStroke: HandDrawingStroke? {
         didSet {
             setNeedsDisplay()
         }
     }
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        translatesAutoresizingMaskIntoConstraints = false
+        backgroundColor = .clear
+        isOpaque = false
+        isUserInteractionEnabled = false
+        contentMode = .redraw
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func apply(state: HandDrawingRealtimeDraftHostState) {
+        draftStroke = state.output.stroke
+    }
+
+    override func draw(_ rect: CGRect) {
+        super.draw(rect)
+        guard let context = UIGraphicsGetCurrentContext() else {
+            return
+        }
+        context.saveGState()
+        if let draftStroke {
+            HandDrawingStrokeRasterizer.draw(draftStroke, in: context)
+        }
+        context.restoreGState()
+    }
+}
+
+private final class HandDrawingCanvasInteractionOverlayView: UIView {
     var lassoPathPoints: [CGPoint] = [] {
         didSet {
             setNeedsDisplay()
@@ -340,15 +460,17 @@ private final class HandDrawingCanvasDraftOverlayView: UIView {
         fatalError("init(coder:) has not been implemented")
     }
 
+    func apply(state: HandDrawingCanvasInteractionOverlayState) {
+        lassoPathPoints = state.lassoPathPoints
+        selectedStrokeBounds = state.selectedStrokeBounds
+    }
+
     override func draw(_ rect: CGRect) {
         super.draw(rect)
         guard let context = UIGraphicsGetCurrentContext() else {
             return
         }
         context.saveGState()
-        if let draftStroke {
-            HandDrawingStrokeRasterizer.draw(draftStroke, in: context)
-        }
         drawSelectedStrokeBoundsIfNeeded(in: context)
         drawLassoPathIfNeeded(in: context)
         context.restoreGState()

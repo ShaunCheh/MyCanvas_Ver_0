@@ -229,6 +229,102 @@ final class HandDrawingEditorCoordinatorBrushPresetTests: XCTestCase {
     }
 }
 
+@MainActor
+final class HandDrawingEditorCoordinatorSurfaceStateTests: XCTestCase {
+    func testHandDrawingEditorCoordinatorPublishesSeparatedCommittedAndRealtimeHostState() throws {
+        let document = HandDrawingDocument(
+            paper: HandDrawingPaper(
+                id: "coordinator-surface-paper",
+                size: CGSize(width: 120, height: 120)
+            )
+        )
+        let coordinator = try HandDrawingEditorCoordinator(
+            editorContext: makeHandDrawingEditorCoordinatorTestContext(
+                document: document
+            )
+        )
+        var latestSurfaceState: HandDrawingCanvasSurfaceState?
+        coordinator.onSurfaceStateChange = { latestSurfaceState = $0 }
+
+        coordinator.activate()
+
+        let initialSurfaceState = try XCTUnwrap(latestSurfaceState)
+        XCTAssertNotNil(initialSurfaceState.committedHost.output.image)
+        XCTAssertNil(initialSurfaceState.realtimeDraftHost.output.stroke)
+        XCTAssertTrue(initialSurfaceState.interactionOverlay.lassoPathPoints.isEmpty)
+        XCTAssertNil(initialSurfaceState.interactionOverlay.selectedStrokeBounds)
+
+        coordinator.handlePencilStrokeBegan(
+            makeHandDrawingCoordinatorInputSample(
+                x: 24,
+                y: 30,
+                timestamp: 0
+            )
+        )
+
+        let activeDraftSurfaceState = try XCTUnwrap(latestSurfaceState)
+        XCTAssertNotNil(activeDraftSurfaceState.committedHost.output.image)
+        XCTAssertNotNil(activeDraftSurfaceState.realtimeDraftHost.output.stroke)
+        XCTAssertTrue(activeDraftSurfaceState.interactionOverlay.lassoPathPoints.isEmpty)
+        XCTAssertNil(activeDraftSurfaceState.interactionOverlay.selectedStrokeBounds)
+    }
+
+    func testHandDrawingEditorCoordinatorKeepsInteractionOverlaySeparateFromRealtimeDraftHost() throws {
+        let coordinator = try HandDrawingEditorCoordinator(
+            editorContext: makeHandDrawingEditorCoordinatorTestContext(
+                document: makeHandDrawingTestDocument()
+            )
+        )
+        var latestSurfaceState: HandDrawingCanvasSurfaceState?
+        coordinator.onSurfaceStateChange = { latestSurfaceState = $0 }
+        coordinator.activate()
+        coordinator.selectTool(.lasso)
+
+        coordinator.handlePencilStrokeBegan(
+            makeHandDrawingCoordinatorInputSample(
+                x: 10,
+                y: 40,
+                timestamp: 0
+            )
+        )
+        coordinator.handlePencilStrokeMoved([
+            makeHandDrawingCoordinatorInputSample(
+                x: 110,
+                y: 40,
+                timestamp: 0.1
+            ),
+            makeHandDrawingCoordinatorInputSample(
+                x: 110,
+                y: 80,
+                timestamp: 0.2
+            ),
+            makeHandDrawingCoordinatorInputSample(
+                x: 10,
+                y: 80,
+                timestamp: 0.3
+            )
+        ])
+
+        let activeLassoSurfaceState = try XCTUnwrap(latestSurfaceState)
+        XCTAssertNil(activeLassoSurfaceState.realtimeDraftHost.output.stroke)
+        XCTAssertEqual(activeLassoSurfaceState.interactionOverlay.lassoPathPoints.count, 4)
+        XCTAssertNil(activeLassoSurfaceState.interactionOverlay.selectedStrokeBounds)
+
+        coordinator.handlePencilStrokeEnded([
+            makeHandDrawingCoordinatorInputSample(
+                x: 10,
+                y: 40,
+                timestamp: 0.4
+            )
+        ])
+
+        let selectedSurfaceState = try XCTUnwrap(latestSurfaceState)
+        XCTAssertNil(selectedSurfaceState.realtimeDraftHost.output.stroke)
+        XCTAssertTrue(selectedSurfaceState.interactionOverlay.lassoPathPoints.isEmpty)
+        XCTAssertNotNil(selectedSurfaceState.interactionOverlay.selectedStrokeBounds)
+    }
+}
+
 private func makeHandDrawingEditorCoordinatorTestContext(
     document: HandDrawingDocument
 ) throws -> CanvasHandDrawingEditorContext {
@@ -240,6 +336,18 @@ private func makeHandDrawingEditorCoordinatorTestContext(
         isEmpty: document.isEmpty,
         storage: .bundle,
         didMigrateLegacyDocument: false
+    )
+}
+
+private func makeHandDrawingCoordinatorInputSample(
+    x: CGFloat,
+    y: CGFloat,
+    timestamp: TimeInterval
+) -> HandDrawingInputSample {
+    HandDrawingInputSample(
+        location: CGPoint(x: x, y: y),
+        force: 0.8,
+        timestamp: timestamp
     )
 }
 #endif

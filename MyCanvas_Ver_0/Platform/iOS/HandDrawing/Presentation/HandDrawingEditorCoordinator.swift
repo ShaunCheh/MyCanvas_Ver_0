@@ -8,12 +8,24 @@ enum HandDrawingEditorTool: Equatable {
     case lasso
 }
 
-struct HandDrawingCanvasSurfaceState {
-    var paperSize: CGSize
-    var committedCanvas: HandDrawingCommittedCanvasRenderOutput
-    var realtimeDraft: HandDrawingRealtimeDraftRenderOutput
+struct HandDrawingCommittedCanvasHostState {
+    var output: HandDrawingCommittedCanvasRenderOutput
+}
+
+struct HandDrawingRealtimeDraftHostState {
+    var output: HandDrawingRealtimeDraftRenderOutput
+}
+
+struct HandDrawingCanvasInteractionOverlayState {
     var lassoPathPoints: [CGPoint]
     var selectedStrokeBounds: CGRect?
+}
+
+struct HandDrawingCanvasSurfaceState {
+    var paperSize: CGSize
+    var committedHost: HandDrawingCommittedCanvasHostState
+    var realtimeDraftHost: HandDrawingRealtimeDraftHostState
+    var interactionOverlay: HandDrawingCanvasInteractionOverlayState
 }
 
 struct HandDrawingToolPaletteState {
@@ -148,7 +160,7 @@ final class HandDrawingEditorCoordinator {
         guard engine.undo() else {
             return
         }
-        refreshCommittedImageAndPublishState(forceFullRender: true)
+        refreshCommittedCanvasAndPublishState(forceFullRender: true)
     }
 
     func redo() {
@@ -156,7 +168,7 @@ final class HandDrawingEditorCoordinator {
         guard engine.redo() else {
             return
         }
-        refreshCommittedImageAndPublishState(forceFullRender: true)
+        refreshCommittedCanvasAndPublishState(forceFullRender: true)
     }
 
     func applyLayerCommand(_ command: HandDrawingLayerCommand) {
@@ -167,7 +179,7 @@ final class HandDrawingEditorCoordinator {
             publishLayerPanelState()
             return
         }
-        refreshCommittedImageAndPublishState(forceFullRender: true)
+        refreshCommittedCanvasAndPublishState(forceFullRender: true)
     }
 
     func addLayer() {
@@ -250,7 +262,7 @@ final class HandDrawingEditorCoordinator {
                 baseSize: selectedBrushBaseSize,
                 engine: &engine
             )
-            refreshCommittedImageAndPublishState()
+            refreshCommittedCanvasAndPublishState()
         case .lasso:
             guard engine.canInteractWithActiveLayer else {
                 return
@@ -280,14 +292,14 @@ final class HandDrawingEditorCoordinator {
                 baseSize: selectedBrushBaseSize,
                 engine: &engine
             )
-            refreshCommittedImageAndPublishState()
+            refreshCommittedCanvasAndPublishState()
         case .lasso:
             if moveSelectionController.isActive {
                 moveSelectionController.appendSamples(
                     samples,
                     engine: &engine
                 )
-                refreshCommittedImageAndPublishState()
+                refreshCommittedCanvasAndPublishState()
                 return
             }
             lassoToolController.appendSamples(samples)
@@ -320,7 +332,7 @@ final class HandDrawingEditorCoordinator {
                 publishPaletteState()
                 return
             }
-            refreshCommittedImageAndPublishState()
+            refreshCommittedCanvasAndPublishState()
         case .pixelEraser:
             pixelEraserToolController.appendSamples(
                 samples,
@@ -328,7 +340,7 @@ final class HandDrawingEditorCoordinator {
                 engine: &engine
             )
             pixelEraserToolController.endErasing()
-            refreshCommittedImageAndPublishState()
+            refreshCommittedCanvasAndPublishState()
         case .lasso:
             if moveSelectionController.isActive {
                 moveSelectionController.appendSamples(
@@ -336,7 +348,7 @@ final class HandDrawingEditorCoordinator {
                     engine: &engine
                 )
                 moveSelectionController.endMoving()
-                refreshCommittedImageAndPublishState()
+                refreshCommittedCanvasAndPublishState()
                 return
             }
             lassoToolController.appendSamples(samples)
@@ -350,13 +362,13 @@ final class HandDrawingEditorCoordinator {
         clearActiveStroke()
         if selectedTool == .pixelEraser {
             pixelEraserToolController.cancelErasing(engine: &engine)
-            refreshCommittedImageAndPublishState(forceFullRender: true)
+            refreshCommittedCanvasAndPublishState(forceFullRender: true)
             return
         }
         if selectedTool == .lasso {
             if moveSelectionController.isActive {
                 moveSelectionController.cancelMoving(engine: &engine)
-                refreshCommittedImageAndPublishState(forceFullRender: true)
+                refreshCommittedCanvasAndPublishState(forceFullRender: true)
                 return
             }
             if lassoToolController.isActive {
@@ -449,15 +461,22 @@ final class HandDrawingEditorCoordinator {
     }
 
     private func publishSurfaceState() {
+        let realtimeDraftOutput = realtimeBrushRenderer.render(
+            packet: currentRealtimeDraftPacket
+        )
         onSurfaceStateChange?(
             HandDrawingCanvasSurfaceState(
                 paperSize: editorContext.paper.size,
-                committedCanvas: committedCanvas,
-                realtimeDraft: realtimeBrushRenderer.render(
-                    packet: currentRealtimeDraftPacket
+                committedHost: HandDrawingCommittedCanvasHostState(
+                    output: committedCanvas
                 ),
-                lassoPathPoints: lassoToolController.points,
-                selectedStrokeBounds: selectedStrokeBounds
+                realtimeDraftHost: HandDrawingRealtimeDraftHostState(
+                    output: realtimeDraftOutput
+                ),
+                interactionOverlay: HandDrawingCanvasInteractionOverlayState(
+                    lassoPathPoints: lassoToolController.points,
+                    selectedStrokeBounds: selectedStrokeBounds
+                ),
             )
         )
     }
@@ -488,7 +507,7 @@ final class HandDrawingEditorCoordinator {
         HandDrawingLayerPanelStateBuilder.makeState(from: engine.state.document)
     }
 
-    private func refreshCommittedImageAndPublishState(
+    private func refreshCommittedCanvasAndPublishState(
         forceFullRender: Bool = false
     ) {
         do {
