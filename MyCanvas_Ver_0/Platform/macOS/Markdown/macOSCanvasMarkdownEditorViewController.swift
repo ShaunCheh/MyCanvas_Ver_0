@@ -4,6 +4,8 @@ import AppKit
 final class macOSCanvasMarkdownEditorViewController: NSViewController {
     private let initialMarkdownSource: String
     private let onCommitMarkdownSource: (String) -> Bool
+    private let onDidDismiss: (() -> Void)?
+    private let onDismissAfterSuccessfulCommit: (() -> Void)?
     private let titleLabel: NSTextField = {
         let label = NSTextField(labelWithString: "Edit Markdown")
         label.translatesAutoresizingMaskIntoConstraints = false
@@ -72,13 +74,18 @@ final class macOSCanvasMarkdownEditorViewController: NSViewController {
             updateDoneButtonAppearance()
         }
     }
+    private var shouldNotifyDismissAfterSuccessfulCommit = false
 
     init(
         markdownSource: String,
-        onCommitMarkdownSource: @escaping (String) -> Bool
+        onCommitMarkdownSource: @escaping (String) -> Bool,
+        onDidDismiss: (() -> Void)? = nil,
+        onDismissAfterSuccessfulCommit: (() -> Void)? = nil
     ) {
         self.initialMarkdownSource = markdownSource
         self.onCommitMarkdownSource = onCommitMarkdownSource
+        self.onDidDismiss = onDidDismiss
+        self.onDismissAfterSuccessfulCommit = onDismissAfterSuccessfulCommit
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -107,6 +114,16 @@ final class macOSCanvasMarkdownEditorViewController: NSViewController {
         if view.window?.firstResponder !== textView {
             view.window?.makeFirstResponder(textView)
         }
+    }
+
+    override func viewDidDisappear() {
+        super.viewDidDisappear()
+        onDidDismiss?()
+        guard shouldNotifyDismissAfterSuccessfulCommit else {
+            return
+        }
+        shouldNotifyDismissAfterSuccessfulCommit = false
+        onDismissAfterSuccessfulCommit?()
     }
 
     override func cancelOperation(_ sender: Any?) {
@@ -174,6 +191,9 @@ final class macOSCanvasMarkdownEditorViewController: NSViewController {
             return
         }
 
+        // Delay accessory restoration until the sheet is fully dismissed, so the
+        // parent no longer reports an active presented overlay editor.
+        shouldNotifyDismissAfterSuccessfulCommit = true
         dismiss(self)
     }
 }

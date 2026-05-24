@@ -6,6 +6,7 @@ final class macOSVideoDisplayFrameEditorViewController: NSViewController {
     private let editorContext: CanvasVideoEditorContext
     private let loadTimelineStrip: (CanvasVideoTimelineStripRequest) throws -> CanvasVideoTimelineStrip
     private let onCommitFrameImage: (CanvasVideoFrameImage) throws -> Void
+    private let onDidDismiss: (() -> Void)?
     private let workerQueue = DispatchQueue(
         label: "MyCanvas.macOS.VideoDisplayFrameEditor",
         qos: .userInitiated
@@ -94,10 +95,12 @@ final class macOSVideoDisplayFrameEditorViewController: NSViewController {
     init(
         editorContext: CanvasVideoEditorContext,
         loadTimelineStrip: @escaping (CanvasVideoTimelineStripRequest) throws -> CanvasVideoTimelineStrip,
+        onDidDismiss: (() -> Void)? = nil,
         onCommitFrameImage: @escaping (CanvasVideoFrameImage) throws -> Void
     ) {
         self.editorContext = editorContext
         self.loadTimelineStrip = loadTimelineStrip
+        self.onDidDismiss = onDidDismiss
         self.onCommitFrameImage = onCommitFrameImage
         previewState = CanvasVideoEditorPreviewState(
             currentTimeSeconds: editorContext.currentPosterTimeSeconds,
@@ -159,6 +162,11 @@ final class macOSVideoDisplayFrameEditorViewController: NSViewController {
         super.viewWillDisappear()
         timelineLoadWorkItem?.cancel()
         pausePlayback()
+    }
+
+    override func viewDidDisappear() {
+        super.viewDidDisappear()
+        onDidDismiss?()
     }
 
     override func cancelOperation(_ sender: Any?) {

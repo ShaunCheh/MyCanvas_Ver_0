@@ -20,6 +20,7 @@ final class iOSHandDrawingEditorViewController: UIViewController {
     }
 
     private let onCommitSubmission: (CanvasHandDrawingEditSubmission) throws -> Void
+    private let onDidDismiss: (() -> Void)?
     private let coordinator: HandDrawingEditorCoordinator
     private let titleLabel: UILabel = {
         let label = UILabel()
@@ -89,9 +90,11 @@ final class iOSHandDrawingEditorViewController: UIViewController {
 
     init(
         editorContext: CanvasHandDrawingEditorContext,
+        onDidDismiss: (() -> Void)? = nil,
         onCommitSubmission: @escaping (CanvasHandDrawingEditSubmission) throws -> Void
     ) throws {
         self.onCommitSubmission = onCommitSubmission
+        self.onDidDismiss = onDidDismiss
         do {
             coordinator = try HandDrawingEditorCoordinator(editorContext: editorContext)
         } catch {
@@ -121,6 +124,11 @@ final class iOSHandDrawingEditorViewController: UIViewController {
         setupConstraints()
         updateChromeConfiguration()
         coordinator.activate()
+    }
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        onDidDismiss?()
     }
 
     private func configureButtons() {

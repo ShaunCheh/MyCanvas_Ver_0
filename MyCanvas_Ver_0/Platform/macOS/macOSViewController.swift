@@ -115,6 +115,13 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         case zoom
     }
 
+    private enum OverlayEditorPresentationState: Equatable {
+        case none
+        case videoDisplayFrame
+        case gifFrameImport
+        case markdown
+    }
+
     private struct ObservedKeyboardShortcut {
         let rawInput: CanvasRawInputIntent
         let observedAt: Date
@@ -130,7 +137,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     private static let rotateHandleHitTargetSize: CGFloat = 22
     private static let geometryComparisonEpsilon: CGFloat = 0.0001
     private static let markdownScrollHistoryCommitDelay: TimeInterval = 0.25
-    private static let isMarkdownSelectionAccessoryTraceLoggingEnabled = false
+    private static let isMarkdownSelectionAccessoryTraceLoggingEnabled = true
     private static let isPointerHitTraceLoggingEnabled = true
     private static let observedKeyboardShortcutReuseWindow: TimeInterval = 0.45
     private static let continuousRawInputObservationInterval: TimeInterval = 0.32
@@ -146,6 +153,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     )
     private var isMarkdownScrollHistoryTransactionActive = false
     private var markdownScrollHistoryCommitWorkItem: DispatchWorkItem?
+    private var activeOverlayEditorPresentationState: OverlayEditorPresentationState = .none
     private let commandCatalog = CanvasCommandCatalog()
     private let markdownSelectionAccessoryResolver =
         CanvasMarkdownSelectionAccessoryResolver()
@@ -685,7 +693,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     }
 
     private func presentVideoDisplayFrameEditor(for itemID: CanvasItemID) {
-        guard presentedViewControllers?.isEmpty != false else {
+        guard activeOverlayEditorPresentationState == .none else {
             return
         }
 
@@ -702,6 +710,9 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
                         for: itemID,
                         request: request
                     )
+                },
+                onDidDismiss: { [weak self] in
+                    self?.activeOverlayEditorPresentationState = .none
                 }
             ) { [weak self] frameImage in
                 guard let self else {
@@ -714,6 +725,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
                 )
                 self.refreshCanvas(reason: updateResult.refreshReason)
             }
+            activeOverlayEditorPresentationState = .videoDisplayFrame
             presentAsSheet(editorViewController)
         } catch {
             presentVideoEditorError(message: error.localizedDescription)
@@ -721,7 +733,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     }
 
     private func presentGIFFrameImportEditor(for itemID: CanvasItemID) {
-        guard presentedViewControllers?.isEmpty != false else {
+        guard activeOverlayEditorPresentationState == .none else {
             return
         }
 
@@ -730,7 +742,10 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
                 for: itemID
             )
             let editorViewController = macOSGIFFrameImportViewController(
-                editorContext: editorContext
+                editorContext: editorContext,
+                onDidDismiss: { [weak self] in
+                    self?.activeOverlayEditorPresentationState = .none
+                }
             ) { [weak self] frameIndices in
                 guard let self else {
                     throw macOSGIFFrameImportFlowError.presenterUnavailable
@@ -741,6 +756,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
                     frameIndices: frameIndices
                 )
             }
+            activeOverlayEditorPresentationState = .gifFrameImport
             presentAsSheet(editorViewController)
         } catch {
             presentGIFFrameImportEditorError(
@@ -750,7 +766,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     }
 
     private func presentMarkdownEditor(for itemID: CanvasItemID) {
-        guard presentedViewControllers?.isEmpty ?? true else {
+        guard activeOverlayEditorPresentationState == .none else {
             return
         }
 
@@ -765,29 +781,39 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         selectionAccessoryHostView.dismiss()
 
         let editorViewController = macOSCanvasMarkdownEditorViewController(
-            markdownSource: item.markdownSource
-        ) { [weak self] markdownSource in
-            guard let self else {
-                return false
-            }
+            markdownSource: item.markdownSource,
+            onCommitMarkdownSource: { [weak self] markdownSource in
+                guard let self else {
+                    return false
+                }
 
-            guard let commitResult = self.editorSession.commitMarkdownEdit(
-                withID: itemID,
-                markdownSource: markdownSource
-            ) else {
-                self.presentMarkdownEditorError(
-                    message: "Markdown item is no longer available."
-                )
-                return false
-            }
+                guard let commitResult = self.editorSession.commitMarkdownEdit(
+                    withID: itemID,
+                    markdownSource: markdownSource
+                ) else {
+                    self.presentMarkdownEditorError(
+                        message: "Markdown item is no longer available."
+                    )
+                    return false
+                }
 
-            if commitResult.didChangeDocument {
-                self.refreshCanvas(
-                    reason: "commit markdown edit \(itemID.uuidString)"
+                if commitResult.didChangeDocument {
+                    self.refreshCanvas(
+                        reason: "commit markdown edit \(itemID.uuidString)"
+                    )
+                }
+                return true
+            },
+            onDidDismiss: { [weak self] in
+                self?.activeOverlayEditorPresentationState = .none
+            },
+            onDismissAfterSuccessfulCommit: { [weak self] in
+                self?.restoreMarkdownSelectionAccessoryAfterEditorDismiss(
+                    reason: "markdown editor dismiss"
                 )
             }
-            return true
-        }
+        )
+        activeOverlayEditorPresentationState = .markdown
         presentAsSheet(editorViewController)
     }
 
@@ -3722,6 +3748,26 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         return ("selection_unchanged", false)
     }
 
+    private func restoreMarkdownSelectionAccessoryAfterEditorDismiss(
+        reason: String
+    ) {
+        logMarkdownAccessoryDismissRestore(reason: reason, step: "requested")
+        DispatchQueue.main.async { [weak self] in
+            guard let self else {
+                return
+            }
+            self.logMarkdownAccessoryDismissRestore(reason: reason, step: "async-1")
+            self.syncSelectionAccessoryPresentation()
+            DispatchQueue.main.async { [weak self] in
+                guard let self else {
+                    return
+                }
+                self.logMarkdownAccessoryDismissRestore(reason: reason, step: "async-2")
+                self.syncSelectionAccessoryPresentation()
+            }
+        }
+    }
+
     private func logClickResult(
         target: String,
         result: String,
@@ -5398,7 +5444,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         let resolvedIsTransitionInteractionFrozen = isTransitionInteractionFrozen
         let resolvedHasContextMenu = contextMenuState != nil
         let resolvedHasPresentedOverlayEditor =
-            !(presentedViewControllers?.isEmpty ?? true)
+            activeOverlayEditorPresentationState != .none
         let resolvedHasInlineEditPresentation = presentationInlineEditState != nil
         let resolvedSelectedItemID = editorSession.singleSelectedItemID
         let resolvedAnchorRect = resolvedSelectedItemID.flatMap {
@@ -5873,6 +5919,26 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             "hostBounds=\(describe(rect: selectionAccessoryHostView.bounds)) " +
             "viewportBounds=\(describe(rect: canvasViewportView.bounds)) " +
             "snapshotViewportBounds=\(describe(rect: lastRenderSnapshot.viewportBounds))"
+        )
+    }
+
+    private func logMarkdownAccessoryDismissRestore(
+        reason: String,
+        step: String
+    ) {
+        guard Self.isMarkdownSelectionAccessoryTraceLoggingEnabled else {
+            return
+        }
+        print(
+            "[Canvas macOS][MarkdownAccessory] " +
+            "event=restoreAfterDismiss " +
+            "reason=\(reason) " +
+            "step=\(step) " +
+            "selectedItemID=\(describe(itemID: editorSession.singleSelectedItemID)) " +
+            "selectedMarkdownItemID=\(describe(itemID: editorSession.selectedMarkdownItem?.id)) " +
+            "presentedOverlayEditor=\(activeOverlayEditorPresentationState != .none) " +
+            "inlineEditPresentation=\(presentationInlineEditState != nil) " +
+            "hostHidden=\(selectionAccessoryHostView.isHidden)"
         )
     }
 

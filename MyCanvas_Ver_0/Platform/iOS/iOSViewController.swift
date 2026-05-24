@@ -143,6 +143,14 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         case scroll
     }
 
+    private enum OverlayEditorPresentationState: Equatable {
+        case none
+        case videoDisplayFrame
+        case handDrawing
+        case markdown
+        case gifFrameImport
+    }
+
     private static let isDiagnosticLoggingEnabled = false
     private static let isPinchZoomDiagnosticLoggingEnabled = true
     private static let pointerDragActivationDistance: CGFloat = 4
@@ -168,6 +176,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     private var isMarkdownScrollHistoryTransactionActive = false
     private var markdownScrollHistoryCommitWorkItem: DispatchWorkItem?
     private var transientMarkdownScrollState: TransientMarkdownScrollState?
+    private var activeOverlayEditorPresentationState: OverlayEditorPresentationState = .none
     private let commandCatalog = CanvasCommandCatalog()
     private let markdownSelectionAccessoryResolver =
         CanvasMarkdownSelectionAccessoryResolver()
@@ -730,7 +739,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     }
 
     private func presentVideoDisplayFrameEditor(for itemID: CanvasItemID) {
-        guard presentedViewController == nil else {
+        guard activeOverlayEditorPresentationState == .none else {
             return
         }
 
@@ -747,6 +756,9 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
                         for: itemID,
                         request: request
                     )
+                },
+                onDidDismiss: { [weak self] in
+                    self?.activeOverlayEditorPresentationState = .none
                 }
             ) { [weak self] frameImage in
                 guard let self else {
@@ -759,6 +771,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
                 )
                 self.requestCanvasRefresh(reason: updateResult.refreshReason)
             }
+            activeOverlayEditorPresentationState = .videoDisplayFrame
             present(editorViewController, animated: true)
         } catch {
             presentVideoEditorError(message: error.localizedDescription)
@@ -766,7 +779,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     }
 
     private func presentHandDrawingEditor(for itemID: CanvasItemID) {
-        guard presentedViewController == nil else {
+        guard activeOverlayEditorPresentationState == .none else {
             return
         }
 
@@ -777,7 +790,10 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
                 for: itemID
             )
             let editorViewController = try iOSHandDrawingEditorViewController(
-                editorContext: editorContext
+                editorContext: editorContext,
+                onDidDismiss: { [weak self] in
+                    self?.activeOverlayEditorPresentationState = .none
+                }
             ) { [weak self] submission in
                 guard let self else { return }
 
@@ -788,6 +804,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
                     self.requestCanvasRefresh(reason: updateResult.refreshReason)
                 }
             }
+            activeOverlayEditorPresentationState = .handDrawing
             present(editorViewController, animated: true)
         } catch {
             presentHandDrawingEditorError(message: error.localizedDescription)
@@ -795,7 +812,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     }
 
     private func presentMarkdownEditor(for itemID: CanvasItemID) {
-        guard presentedViewController == nil else {
+        guard activeOverlayEditorPresentationState == .none else {
             return
         }
 
@@ -808,34 +825,44 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         selectionAccessoryHostView.dismiss()
 
         let editorViewController = iOSCanvasMarkdownEditorViewController(
-            markdownSource: item.markdownSource
-        ) { [weak self] markdownSource in
-            guard let self else {
-                return false
-            }
+            markdownSource: item.markdownSource,
+            onCommitMarkdownSource: { [weak self] markdownSource in
+                guard let self else {
+                    return false
+                }
 
-            guard let commitResult = self.editorSession.commitMarkdownEdit(
-                withID: itemID,
-                markdownSource: markdownSource
-            ) else {
-                self.presentMarkdownEditorError(
-                    message: "Markdown item is no longer available."
-                )
-                return false
-            }
+                guard let commitResult = self.editorSession.commitMarkdownEdit(
+                    withID: itemID,
+                    markdownSource: markdownSource
+                ) else {
+                    self.presentMarkdownEditorError(
+                        message: "Markdown item is no longer available."
+                    )
+                    return false
+                }
 
-            if commitResult.didChangeDocument {
-                self.requestCanvasRefresh(
-                    reason: "commit markdown edit \(itemID.uuidString)"
+                if commitResult.didChangeDocument {
+                    self.requestCanvasRefresh(
+                        reason: "commit markdown edit \(itemID.uuidString)"
+                    )
+                }
+                return true
+            },
+            onDidDismiss: { [weak self] in
+                self?.activeOverlayEditorPresentationState = .none
+            },
+            onDismissAfterSuccessfulCommit: { [weak self] in
+                self?.restoreMarkdownSelectionAccessoryAfterEditorDismiss(
+                    reason: "markdown editor dismiss"
                 )
             }
-            return true
-        }
+        )
+        activeOverlayEditorPresentationState = .markdown
         present(editorViewController, animated: true)
     }
 
     private func presentGIFFrameImportEditor(for itemID: CanvasItemID) {
-        guard presentedViewController == nil else {
+        guard activeOverlayEditorPresentationState == .none else {
             return
         }
 
@@ -844,7 +871,10 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
                 for: itemID
             )
             let editorViewController = iOSGIFFrameImportViewController(
-                editorContext: editorContext
+                editorContext: editorContext,
+                onDidDismiss: { [weak self] in
+                    self?.activeOverlayEditorPresentationState = .none
+                }
             ) { [weak self] frameIndices in
                 guard let self else {
                     throw iOSGIFFrameImportFlowError.presenterUnavailable
@@ -855,6 +885,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
                     frameIndices: frameIndices
                 )
             }
+            activeOverlayEditorPresentationState = .gifFrameImport
             present(editorViewController, animated: true)
         } catch {
             presentGIFFrameImportEditorError(
@@ -3716,6 +3747,20 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         return ("selection_unchanged", false)
     }
 
+    private func restoreMarkdownSelectionAccessoryAfterEditorDismiss(
+        reason: String
+    ) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else {
+                return
+            }
+            self.syncSelectionAccessoryPresentation()
+            DispatchQueue.main.async { [weak self] in
+                self?.syncSelectionAccessoryPresentation()
+            }
+        }
+    }
+
     private func logClickResult(
         target: String,
         result: String,
@@ -5356,7 +5401,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
                 workspaceMode: workspaceMode,
                 isTransitionInteractionFrozen: isTransitionInteractionFrozen,
                 hasContextMenu: contextMenuState != nil,
-                hasPresentedOverlayEditor: presentedViewController != nil,
+                hasPresentedOverlayEditor:
+                    activeOverlayEditorPresentationState != .none,
                 hasInlineEditPresentation: presentationInlineEditState != nil
             ),
             anchorRect: editorSession.singleSelectedItemID.flatMap {

@@ -4,6 +4,8 @@ import UIKit
 final class iOSCanvasMarkdownEditorViewController: UIViewController {
     private let initialMarkdownSource: String
     private let onCommitMarkdownSource: (String) -> Bool
+    private let onDidDismiss: (() -> Void)?
+    private let onDismissAfterSuccessfulCommit: (() -> Void)?
     private let titleLabel: UILabel = {
         let label = UILabel()
         label.translatesAutoresizingMaskIntoConstraints = false
@@ -57,13 +59,18 @@ final class iOSCanvasMarkdownEditorViewController: UIViewController {
             updateDoneButtonConfiguration()
         }
     }
+    private var shouldNotifyDismissAfterSuccessfulCommit = false
 
     init(
         markdownSource: String,
-        onCommitMarkdownSource: @escaping (String) -> Bool
+        onCommitMarkdownSource: @escaping (String) -> Bool,
+        onDidDismiss: (() -> Void)? = nil,
+        onDismissAfterSuccessfulCommit: (() -> Void)? = nil
     ) {
         self.initialMarkdownSource = markdownSource
         self.onCommitMarkdownSource = onCommitMarkdownSource
+        self.onDidDismiss = onDidDismiss
+        self.onDismissAfterSuccessfulCommit = onDismissAfterSuccessfulCommit
         super.init(nibName: nil, bundle: nil)
         modalPresentationStyle = .formSheet
         modalTransitionStyle = .coverVertical
@@ -89,6 +96,16 @@ final class iOSCanvasMarkdownEditorViewController: UIViewController {
         if textView.isFirstResponder == false {
             textView.becomeFirstResponder()
         }
+    }
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        onDidDismiss?()
+        guard shouldNotifyDismissAfterSuccessfulCommit else {
+            return
+        }
+        shouldNotifyDismissAfterSuccessfulCommit = false
+        onDismissAfterSuccessfulCommit?()
     }
 
     private func configureButtons() {
@@ -205,6 +222,9 @@ final class iOSCanvasMarkdownEditorViewController: UIViewController {
             return
         }
 
+        // Restore markdown accessory only after the editor is fully dismissed,
+        // so the parent no longer treats the overlay editor as presented.
+        shouldNotifyDismissAfterSuccessfulCommit = true
         dismiss(animated: true)
     }
 }

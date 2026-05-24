@@ -20,6 +20,7 @@ final class iOSGIFFrameImportViewController: UIViewController, UICollectionViewD
     }
 
     private let editorContext: CanvasGIFFrameImportEditorContext
+    private let onDidDismiss: (() -> Void)?
     private let onImportSelectedFrames: ([Int]) throws -> Void
     private let workerQueue = DispatchQueue(
         label: "MyCanvas.iOS.GIFFrameImportEditor",
@@ -96,9 +97,11 @@ final class iOSGIFFrameImportViewController: UIViewController, UICollectionViewD
 
     init(
         editorContext: CanvasGIFFrameImportEditorContext,
+        onDidDismiss: (() -> Void)? = nil,
         onImportSelectedFrames: @escaping ([Int]) throws -> Void
     ) {
         self.editorContext = editorContext
+        self.onDidDismiss = onDidDismiss
         self.onImportSelectedFrames = onImportSelectedFrames
         super.init(nibName: nil, bundle: nil)
         modalPresentationStyle = .fullScreen
@@ -131,6 +134,11 @@ final class iOSGIFFrameImportViewController: UIViewController, UICollectionViewD
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         cancelAllThumbnailLoads()
+    }
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        onDidDismiss?()
     }
 
     private func setupViewHierarchy() {

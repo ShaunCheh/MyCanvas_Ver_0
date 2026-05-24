@@ -20,6 +20,7 @@ final class macOSGIFFrameImportViewController: NSViewController, NSCollectionVie
     }
 
     private let editorContext: CanvasGIFFrameImportEditorContext
+    private let onDidDismiss: (() -> Void)?
     private let onImportSelectedFrames: ([Int]) throws -> Void
     private let workerQueue = DispatchQueue(
         label: "MyCanvas.macOS.GIFFrameImportEditor",
@@ -101,9 +102,11 @@ final class macOSGIFFrameImportViewController: NSViewController, NSCollectionVie
 
     init(
         editorContext: CanvasGIFFrameImportEditorContext,
+        onDidDismiss: (() -> Void)? = nil,
         onImportSelectedFrames: @escaping ([Int]) throws -> Void
     ) {
         self.editorContext = editorContext
+        self.onDidDismiss = onDidDismiss
         self.onImportSelectedFrames = onImportSelectedFrames
         super.init(nibName: nil, bundle: nil)
     }
@@ -140,6 +143,11 @@ final class macOSGIFFrameImportViewController: NSViewController, NSCollectionVie
     override func viewWillDisappear() {
         super.viewWillDisappear()
         cancelAllThumbnailLoads()
+    }
+
+    override func viewDidDisappear() {
+        super.viewDidDisappear()
+        onDidDismiss?()
     }
 
     override func cancelOperation(_ sender: Any?) {
