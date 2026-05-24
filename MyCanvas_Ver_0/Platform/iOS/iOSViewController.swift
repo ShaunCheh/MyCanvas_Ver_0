@@ -3698,12 +3698,22 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
                 didChangeSelection ? "selection_cleared" : "selection_unchanged",
                 didChangeSelection
             )
-        case let .attemptTextEdit(itemID):
-            if beginTextEditIfPossible(for: itemID) {
-                return ("text_edit_began", true)
-            }
-            return ("selection_unchanged", false)
+        case let .reenterSelectedItem(itemID):
+            return handleSelectedItemReentry(for: itemID)
         }
+    }
+
+    private func handleSelectedItemReentry(
+        for itemID: CanvasItemID
+    ) -> (result: String, didTriggerPressedRefresh: Bool) {
+        if beginTextEditIfPossible(for: itemID) {
+            return ("text_edit_began", true)
+        }
+        if scene.markdownItem(withID: itemID) != nil {
+            syncSelectionAccessoryPresentation()
+            return ("markdown_accessory_presented", false)
+        }
+        return ("selection_unchanged", false)
     }
 
     private func logClickResult(

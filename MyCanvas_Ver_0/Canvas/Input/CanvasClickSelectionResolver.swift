@@ -24,7 +24,7 @@ enum CanvasClickSelectionAction: Equatable {
     case selectSingle(itemID: CanvasItemID)
     case toggleMembership(itemID: CanvasItemID)
     case clearSelection
-    case attemptTextEdit(itemID: CanvasItemID)
+    case reenterSelectedItem(itemID: CanvasItemID)
 }
 
 struct CanvasClickSelectionDecision: Equatable {
@@ -116,7 +116,7 @@ struct CanvasClickSelectionResolver: Sendable {
                 return CanvasClickSelectionDecision(
                     target: "item",
                     affectedItemID: itemID,
-                    action: .attemptTextEdit(itemID: itemID)
+                    action: .reenterSelectedItem(itemID: itemID)
                 )
             }
 

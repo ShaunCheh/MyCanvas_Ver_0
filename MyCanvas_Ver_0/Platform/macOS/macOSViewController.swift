@@ -131,6 +131,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     private static let geometryComparisonEpsilon: CGFloat = 0.0001
     private static let markdownScrollHistoryCommitDelay: TimeInterval = 0.25
     private static let isMarkdownSelectionAccessoryTraceLoggingEnabled = false
+    private static let isPointerHitTraceLoggingEnabled = true
     private static let observedKeyboardShortcutReuseWindow: TimeInterval = 0.45
     private static let continuousRawInputObservationInterval: TimeInterval = 0.32
 
@@ -1811,6 +1812,11 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         }
 
         let pressContext = resolvePointerPressContext(at: location)
+        logPointerHitResolution(
+            phase: "down",
+            location: location,
+            context: pressContext
+        )
         pointerDragState = .pressed(
             pressedLocation: location,
             pressContext: pressContext,
@@ -2087,6 +2093,11 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
                 clearAlignmentInteractionStateIfNeeded()
             let pressedItemID = pressContext.targetItemID
             let releasedContext = resolvePointerPressContext(at: location)
+            logPointerHitResolution(
+                phase: "up",
+                location: location,
+                context: releasedContext
+            )
             let releasedItemID = releasedContext.targetItemID
             let previousInteractionState = interactionState
             let clickDecision = clickSelectionResolver.resolve(
@@ -3693,12 +3704,22 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
                 didChangeSelection ? "selection_cleared" : "selection_unchanged",
                 didChangeSelection
             )
-        case let .attemptTextEdit(itemID):
-            if beginTextEditIfPossible(for: itemID) {
-                return ("text_edit_began", true)
-            }
-            return ("selection_unchanged", false)
+        case let .reenterSelectedItem(itemID):
+            return handleSelectedItemReentry(for: itemID)
         }
+    }
+
+    private func handleSelectedItemReentry(
+        for itemID: CanvasItemID
+    ) -> (result: String, didTriggerPressedRefresh: Bool) {
+        if beginTextEditIfPossible(for: itemID) {
+            return ("text_edit_began", true)
+        }
+        if scene.markdownItem(withID: itemID) != nil {
+            syncSelectionAccessoryPresentation()
+            return ("markdown_accessory_presented", false)
+        }
+        return ("selection_unchanged", false)
     }
 
     private func logClickResult(
@@ -5669,6 +5690,105 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
 
     private func describe(itemID: CanvasItemID?) -> String {
         itemID?.uuidString ?? "nil"
+    }
+
+    private func logPointerHitResolution(
+        phase: String,
+        location: CGPoint,
+        context: CanvasPointerPressContext
+    ) {
+        guard Self.isPointerHitTraceLoggingEnabled else {
+            return
+        }
+
+        let worldPoint = camera.viewportToWorld(location)
+        let hitCandidates = scene
+            .orderedBoardItems()
+            .filter { $0.contains(worldPoint: worldPoint) }
+            .reversed()
+            .map { item in
+                describePointerHitCandidate(
+                    item,
+                    viewportLocation: location
+                )
+            }
+        let hitCandidateDescriptions = hitCandidates.joined(separator: ", ")
+        let resolvedItemDescription = context.targetItemID.flatMap { itemID in
+            scene.boardItem(withID: itemID).map {
+                describePointerHitCandidate(
+                    $0,
+                    viewportLocation: location
+                )
+            }
+        } ?? "nil"
+        print(
+            "[Canvas macOS][PointerHitResolve] " +
+            "phase=\(phase) " +
+            "viewportPoint=\(describe(point: location)) " +
+            "worldPoint=\(describe(point: worldPoint)) " +
+            "targetKind=\(describe(pointerTargetKind: context.targetKind)) " +
+            "targetItemID=\(describe(itemID: context.targetItemID)) " +
+            "targetAnchorRect=\(context.anchorRect.map { describe(rect: $0) } ?? "nil") " +
+            "resolvedItem=\(resolvedItemDescription) " +
+            "candidateCount=\(hitCandidates.count) " +
+            "candidates=[\(hitCandidateDescriptions)]"
+        )
+    }
+
+    private func describePointerHitCandidate(
+        _ item: CanvasBoardItem,
+        viewportLocation: CGPoint
+    ) -> String {
+        let renderItem = lastRenderSnapshot.items.first(where: { $0.id == item.id })
+        let renderScreenRect = renderItem.map { describe(rect: $0.screenQuad.boundingRect.standardized) } ?? "nil"
+        let renderZIndex = renderItem.map { formatCoordinate($0.zIndex) } ?? "nil"
+        let screenContains = renderItem.map { $0.screenQuad.contains(viewportLocation) } ?? false
+        return
+            "id=\(item.id.uuidString)" +
+            "|kind=\(describe(boardItemKind: item.kind))" +
+            "|z=\(formatCoordinate(item.zIndex))" +
+            "|worldBounds=\(describe(rect: item.worldBounds.standardized))" +
+            "|screenBounds=\(renderScreenRect)" +
+            "|screenContains=\(screenContains)" +
+            "|renderZ=\(renderZIndex)"
+    }
+
+    private func describe(boardItemKind: CanvasBoardItemKind) -> String {
+        switch boardItemKind {
+        case .image:
+            return "image"
+        case .text:
+            return "text"
+        case .markdown:
+            return "markdown"
+        case .handDrawing:
+            return "handDrawing"
+        }
+    }
+
+    private func describe(pointerTargetKind: CanvasPointerTargetKind) -> String {
+        switch pointerTargetKind {
+        case .rotateHandle:
+            return "rotateHandle"
+        case .groupRotateHandle:
+            return "groupRotateHandle"
+        case let .cropHandle(role):
+            return "cropHandle(\(String(describing: role)))"
+        case .cropTranslationArea:
+            return "cropTranslationArea"
+        case let .selectionHandle(role):
+            return "selectionHandle(\(String(describing: role)))"
+        case let .groupSelectionHandle(role):
+            return "groupSelectionHandle(\(String(describing: role)))"
+        case .selectionTranslationArea:
+            return "selectionTranslationArea"
+        case .selectedItemBody:
+            return "selectedItemBody"
+        case .unselectedItemBody:
+            return "unselectedItemBody"
+        case .blank:
+            return "blank"
+        }
     }
 
     private func logMarkdownSelectionAccessoryResolution(

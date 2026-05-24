@@ -99,7 +99,7 @@ final class CanvasClickSelectionResolverTests: XCTestCase {
         )
     }
 
-    func testResolvePrefersTextEditOnlyForSoleSelectedItem() {
+    func testResolveReentersSoleSelectedItem() {
         let tappedItemID = CanvasItemID()
 
         let decision = resolver.resolve(
@@ -117,7 +117,7 @@ final class CanvasClickSelectionResolverTests: XCTestCase {
 
         XCTAssertEqual(
             decision.action,
-            .attemptTextEdit(itemID: tappedItemID)
+            .reenterSelectedItem(itemID: tappedItemID)
         )
     }
 
