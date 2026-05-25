@@ -844,7 +844,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         case .addTextItem:
             performCommand(.addTextItem)
         case .addMarkdownItem:
-            performCommand(.addMarkdownItem)
+            performCommand(.addMarkdownItem(markdownSource: nil))
         case .addHandDrawingItem:
             if supportsHandDrawingEditing {
                 performCommand(.addHandDrawingItem(paper: .square))
@@ -896,7 +896,13 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         case #selector(macOSViewController.redo(_:)):
             return canPerformCommand(.redo)
         case #selector(macOSViewController.paste(_:)):
-            return canTransferContent(
+            if let editableTextResponder = currentEditableTextResponder {
+                return NSPasteboard.general.availableType(
+                    from: editableTextResponder.readablePasteboardTypes
+                ) != nil
+            }
+
+            return canPasteContent(
                 from: .general,
                 entry: resolvedPasteTransferEntryIntent()
             )
@@ -971,6 +977,11 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
 
     @objc
     func paste(_ sender: Any?) {
+        if let editableTextResponder = currentEditableTextResponder {
+            editableTextResponder.paste(sender)
+            return
+        }
+
         let rawInput = CanvasRawInputIntent.pasteKeyboardShortcut
         if consumeObservedKeyboardShortcut(rawInput) {
             handlePasteRequest()
@@ -2459,7 +2470,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
 
     @objc
     private func handleMarkdownButtonClick() {
-        performCommand(.addMarkdownItem)
+        performCommand(.addMarkdownItem(markdownSource: nil))
     }
 
     @objc
@@ -3560,15 +3571,28 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             macOSCanvasImportAdapter.canResolveTransfer(from: pasteboard)
     }
 
+    private func canPasteContent(
+        from pasteboard: NSPasteboard,
+        entry: CanvasTransferEntryIntent
+    ) -> Bool {
+        isTransferEntryAllowed(entry) &&
+            macOSCanvasPasteboardPayloadResolver.canResolvePayload(from: pasteboard)
+    }
+
     private func handlePasteRequest() {
-        guard let transferRequest = macOSCanvasImportAdapter.transferRequest(
+        guard let pastePayload = macOSCanvasPasteboardPayloadResolver.resolvedPayload(
             from: .general,
             sourceDescription: "pasteboard"
         ) else {
             return
         }
 
-        _ = performTransferRequest(transferRequest)
+        switch pastePayload {
+        case let .media(transferRequest):
+            _ = performTransferRequest(transferRequest)
+        case let .markdownText(markdownSource):
+            performCommand(.addMarkdownItem(markdownSource: markdownSource))
+        }
     }
 
     private func dragOperation(for pasteboard: NSPasteboard) -> NSDragOperation {
@@ -3591,6 +3615,17 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         }
 
         return didImport
+    }
+
+    private var currentEditableTextResponder: NSTextView? {
+        guard
+            let textView = NSApp.keyWindow?.firstResponder as? NSTextView,
+            textView.isEditable
+        else {
+            return nil
+        }
+
+        return textView
     }
 
     @discardableResult

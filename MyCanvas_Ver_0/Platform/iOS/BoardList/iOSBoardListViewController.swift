@@ -107,6 +107,7 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
             )
         }
     }
+    private var shouldClearSelectionAfterNextRefresh = false
     private var pendingTransitionTargetResolution: PendingTransitionTargetResolution?
     private var closingTransitionTimingState: ClosingTransitionTimingState?
     private var previewWorkPolicy: BoardListPreviewWorkPolicy = .normal
@@ -888,6 +889,10 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
 
     private func refreshBookmarkStatus() {
         logRenameTrace("refreshBookmarkStatusBegin")
+        let shouldClearSelectionAfterNextRefresh = shouldClearSelectionAfterNextRefresh
+        defer {
+            self.shouldClearSelectionAfterNextRefresh = false
+        }
         var refreshInvocationCount: Int?
         updateClosingTransitionTimingState { state in
             state.refreshInvocationCount += 1
@@ -917,7 +922,11 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
             replaceAvailableBoards(with: boards)
             hasSelectedFolder = true
             storageErrorMessage = nil
-            ensureValidSelection()
+            if shouldClearSelectionAfterNextRefresh {
+                selectedEntryID = nil
+            } else {
+                ensureValidSelection()
+            }
             applyHeaderState(
                 BoardListHeaderStateBuilder.make(
                     bookmarkStatus: bookmarkStatus,
@@ -1630,6 +1639,65 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
             pendingRevealBoardID = nil
             editingBoardID = boardID
             reloadBoardList()
+        case .delete:
+            guard let boardID else {
+                return
+            }
+
+            presentDeleteConfirmation(for: boardID)
+        }
+    }
+
+    private func presentDeleteConfirmation(for boardID: UUID) {
+        let boardTitle = boardTitle(for: boardID) ?? "Untitled Board"
+        logRenameTrace(
+            "presentDeleteConfirmation",
+            extra:
+                "boardID=\(boardID.uuidString) " +
+                "title=\"\(boardTitle)\""
+        )
+
+        let alertController = UIAlertController(
+            title: "Delete Board?",
+            message: "\"\(boardTitle)\" will be deleted permanently.",
+            preferredStyle: .alert
+        )
+        alertController.addAction(UIAlertAction(title: "Cancel", style: .cancel) { [weak self] _ in
+            self?.logRenameTrace(
+                "deleteBoardCancelled",
+                extra: "boardID=\(boardID.uuidString)"
+            )
+        })
+        alertController.addAction(UIAlertAction(title: "Delete", style: .destructive) { [weak self] _ in
+            self?.deleteBoard(boardID: boardID)
+        })
+        present(alertController, animated: true)
+    }
+
+    private func deleteBoard(boardID: UUID) {
+        logRenameTrace("deleteBoardBegin", extra: "boardID=\(boardID.uuidString)")
+
+        do {
+            try BoardStore.deleteBoard(id: boardID)
+            editingBoardID = nil
+            pendingRevealBoardID = nil
+            shouldClearSelectionAfterNextRefresh = true
+            selectedEntryID = nil
+            if pendingTransitionTargetResolution?.boardID == boardID {
+                pendingTransitionTargetResolution = nil
+                closingTransitionTimingState = nil
+                restoreNormalPreviewWorkPolicy()
+            }
+            refreshBookmarkStatus()
+            logRenameTrace("deleteBoardSucceeded", extra: "boardID=\(boardID.uuidString)")
+        } catch {
+            logRenameTrace(
+                "deleteBoardFailed",
+                extra:
+                    "boardID=\(boardID.uuidString) " +
+                    "error=\"\(error.localizedDescription)\""
+            )
+            presentDeleteError(error)
         }
     }
 
@@ -1928,6 +1996,16 @@ final class iOSBoardListViewController: UIViewController, UICollectionViewDataSo
                 self?.focusTitleEditorIfNeeded()
             }
         )
+        present(alertController, animated: true)
+    }
+
+    private func presentDeleteError(_ error: Error) {
+        let alertController = UIAlertController(
+            title: "Unable to Delete Board",
+            message: error.localizedDescription,
+            preferredStyle: .alert
+        )
+        alertController.addAction(UIAlertAction(title: "OK", style: .default))
         present(alertController, animated: true)
     }
 

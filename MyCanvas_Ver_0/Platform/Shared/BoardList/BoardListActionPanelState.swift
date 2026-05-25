@@ -3,6 +3,7 @@ import Foundation
 
 enum BoardListActionID: String, Hashable, Sendable {
     case rename
+    case delete
 }
 
 enum BoardListActionRole: Hashable, Sendable {
@@ -28,6 +29,18 @@ struct BoardListActionState: Hashable, Sendable {
             isEnabled: isEnabled
         )
     }
+
+    static func delete(
+        isEnabled: Bool = true
+    ) -> BoardListActionState {
+        BoardListActionState(
+            id: .delete,
+            title: "Delete",
+            systemImageName: "trash",
+            role: .destructive,
+            isEnabled: isEnabled
+        )
+    }
 }
 
 struct BoardListActionPanelState: Hashable, Sendable {
@@ -42,13 +55,15 @@ struct BoardListActionPanelState: Hashable, Sendable {
     static func renameMenu(
         boardID: UUID,
         anchorPoint: CGPoint,
-        isRenameEnabled: Bool = true
+        isRenameEnabled: Bool = true,
+        isDeleteEnabled: Bool = true
     ) -> BoardListActionPanelState {
         BoardListActionPanelState(
             boardID: boardID,
             layoutAnchorPoint: anchorPoint,
             actionStates: [
-                .rename(isEnabled: isRenameEnabled)
+                .rename(isEnabled: isRenameEnabled),
+                .delete(isEnabled: isDeleteEnabled)
             ]
         )
     }

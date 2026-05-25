@@ -922,7 +922,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             modifierFlags: [.command],
             action: #selector(handlePasteKeyCommand(_:))
         )
-        pasteCommand.discoverabilityTitle = "Paste Image"
+        pasteCommand.discoverabilityTitle = "Paste"
 
         let undoCommand = UIKeyCommand(
             input: "z",
@@ -2444,7 +2444,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
 
     @objc
     private func handleMarkdownButtonTap() {
-        performCommand(.addMarkdownItem)
+        performCommand(.addMarkdownItem(markdownSource: nil))
     }
 
     @objc
@@ -3228,6 +3228,11 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
 
     @objc
     private func handlePasteKeyCommand(_ sender: UIKeyCommand) {
+        if textEditorOverlayView.textView.isFirstResponder {
+            textEditorOverlayView.textView.paste(sender)
+            return
+        }
+
         handleCapturedInput(
             .pasteKeyboardShortcut,
             sourceDescription: RawInputDeliverySource.pasteKeyCommand.debugName
@@ -3593,14 +3598,19 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
                 return
             }
 
-            guard let transferRequest = await iOSCanvasImportAdapter.transferRequest(
+            guard let pastePayload = await iOSCanvasPasteboardPayloadResolver.resolvedPayload(
                 from: .general,
                 sourceDescription: "pasteboard"
             ) else {
                 return
             }
 
-            _ = self.performTransferRequest(transferRequest)
+            switch pastePayload {
+            case let .media(transferRequest):
+                _ = self.performTransferRequest(transferRequest)
+            case let .markdownText(markdownSource):
+                self.performCommand(.addMarkdownItem(markdownSource: markdownSource))
+            }
             self.becomeFirstResponder()
         }
     }

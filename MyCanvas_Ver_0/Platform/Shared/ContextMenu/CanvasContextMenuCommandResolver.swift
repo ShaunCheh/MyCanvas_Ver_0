@@ -80,7 +80,7 @@ struct CanvasContextMenuActionResolver {
         case .addTextItem:
             return .addTextItem
         case .addMarkdownItem:
-            return .addMarkdownItem
+            return .addMarkdownItem(markdownSource: nil)
         case .addHandDrawingItem:
             return .addHandDrawingItem(paper: .square)
         case .beginTextEdit:

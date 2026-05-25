@@ -111,8 +111,15 @@ final class CanvasCommandExecutor {
             return CanvasCommandExecutionResult(
                 refreshReason: "add text item \(addedTextItem.id.uuidString)"
             )
-        case .addMarkdownItem:
-            guard let addedMarkdownItem = session.addMarkdownItem() else {
+        case let .addMarkdownItem(markdownSource):
+            let addedMarkdownItem: CanvasMarkdownItem?
+            if let markdownSource {
+                addedMarkdownItem = session.addMarkdownItem(markdownSource: markdownSource)
+            } else {
+                addedMarkdownItem = session.addMarkdownItem()
+            }
+
+            guard let addedMarkdownItem else {
                 return nil
             }
 

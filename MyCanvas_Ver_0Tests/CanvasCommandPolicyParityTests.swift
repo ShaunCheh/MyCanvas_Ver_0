@@ -58,7 +58,7 @@ final class CanvasCommandPolicyParityTests: XCTestCase {
         XCTAssertEqual(decision, .allow)
         XCTAssertTrue(descriptor.isEnabled)
         XCTAssertFalse(descriptor.isActive)
-        XCTAssertTrue(executor.canExecute(.addMarkdownItem))
+        XCTAssertTrue(executor.canExecute(.addMarkdownItem(markdownSource: nil)))
     }
 
     func testAddMarkdownDescriptorAndExecutorMatchPolicyInReadingMode() {
@@ -78,7 +78,29 @@ final class CanvasCommandPolicyParityTests: XCTestCase {
         XCTAssertEqual(decision, .block(reason: .readingMode, feedback: nil))
         XCTAssertFalse(descriptor.isEnabled)
         XCTAssertFalse(descriptor.isActive)
-        XCTAssertFalse(executor.canExecute(.addMarkdownItem))
+        XCTAssertFalse(executor.canExecute(.addMarkdownItem(markdownSource: nil)))
+    }
+
+    func testAddMarkdownCommandUsesProvidedSourceWhenPresent() throws {
+        let session = makeCommandPolicyParityTestSession(workspaceMode: .editing)
+        let executor = CanvasCommandExecutor(session: session)
+        CanvasCommandPolicyParityTestRetainer.executors.append(executor)
+        let source = """
+        # Pasted
+
+        Body from clipboard.
+        """
+
+        let result = try XCTUnwrap(
+            executor.execute(.addMarkdownItem(markdownSource: source))
+        )
+        let item = try XCTUnwrap(session.selectedMarkdownItem)
+
+        XCTAssertEqual(item.markdownSource, source)
+        XCTAssertEqual(
+            result.refreshReason,
+            "add markdown item \(item.id.uuidString)"
+        )
     }
 
     func testAddMarkdownItemUsesMeasuredHeightAtDefaultWidth() throws {

@@ -63,7 +63,7 @@ enum CanvasCommand {
     // intentionally consumes CanvasImportRequest instead of raw capture input.
     case importMedia(CanvasImportRequest)
     case addTextItem
-    case addMarkdownItem
+    case addMarkdownItem(markdownSource: String?)
     case addHandDrawingItem(paper: CanvasHandDrawingPaperSpec)
     case beginTextEdit(itemID: CanvasItemID)
     case commitTextEdit
