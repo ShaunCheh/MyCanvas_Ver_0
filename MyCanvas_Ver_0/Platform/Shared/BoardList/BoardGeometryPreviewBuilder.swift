@@ -108,15 +108,22 @@ struct BoardGeometryPreviewBuilder {
                 rotationRadians: handDrawingRecord.rotationRadians
             )
         case let .arrow(arrowRecord):
+            let arrowItem = CanvasArrowItem(
+                id: arrowRecord.id,
+                startPoint: arrowRecord.startPoint.cgPoint,
+                endPoint: arrowRecord.endPoint.cgPoint,
+                shaftThickness: CGFloat(arrowRecord.shaftThickness),
+                zIndex: CGFloat(arrowRecord.zIndex)
+            )
             return makeNode(
                 boardID: boardID,
                 documentOrder: documentOrder,
                 id: arrowRecord.id,
                 kind: .shape,
-                center: arrowRecord.center,
-                size: arrowRecord.size,
+                center: BoardPointRecord(arrowItem.center),
+                size: BoardSizeRecord(arrowItem.size),
                 zIndex: arrowRecord.zIndex,
-                rotationRadians: arrowRecord.rotationRadians
+                rotationRadians: Double(arrowItem.rotationRadians)
             )
         }
     }

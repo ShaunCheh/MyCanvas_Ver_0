@@ -703,35 +703,36 @@ final class BoardThumbnailRenderer {
         documentOrder _: Int?,
         renderOrder _: Int
     ) {
-        let visibleSize = itemRecord.size.cgSize
+        let item = CanvasArrowItem(
+            id: itemRecord.id,
+            startPoint: itemRecord.startPoint.cgPoint,
+            endPoint: itemRecord.endPoint.cgPoint,
+            shaftThickness: CGFloat(itemRecord.shaftThickness),
+            zIndex: CGFloat(itemRecord.zIndex)
+        )
+        let visibleSize = CGSize(
+            width: item.size.width * geometry.scale,
+            height: item.size.height * geometry.scale
+        )
         guard visibleSize.width > 0, visibleSize.height > 0 else {
             return
         }
-
-        let mappedSize = CGSize(
-            width: visibleSize.width * geometry.scale,
-            height: visibleSize.height * geometry.scale
-        )
-        guard mappedSize.width > 0, mappedSize.height > 0 else {
-            return
-        }
-
-        let mappedCenter = geometry.worldToMiniMap(itemRecord.center.cgPoint)
-        let rotationRadians = normalizedCanvasAngle(
-            CGFloat(itemRecord.rotationRadians ?? 0)
-        )
+        let mappedCenter = geometry.worldToMiniMap(item.center)
         let path = canvasArrowPath(
             in: CGRect(
-                x: -mappedSize.width / 2,
-                y: -mappedSize.height / 2,
-                width: mappedSize.width,
-                height: mappedSize.height
+                x: -visibleSize.width / 2,
+                y: -visibleSize.height / 2,
+                width: visibleSize.width,
+                height: visibleSize.height
             )
         )
 
         context.saveGState()
-        context.translateBy(x: mappedCenter.x, y: mappedCenter.y)
-        context.rotate(by: rotationRadians)
+        context.translateBy(
+            x: mappedCenter.x,
+            y: mappedCenter.y
+        )
+        context.rotate(by: item.rotationRadians)
         context.setFillColor(
             CGColor(
                 red: 0.12,

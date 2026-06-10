@@ -226,6 +226,119 @@ final class BoardSelectionStateMigrationTests: XCTestCase {
         )
     }
 
+    func testBoardDocumentMapperRoundTripsArrowItem() throws {
+        let item = CanvasArrowItem(
+            id: UUID(),
+            startPoint: CGPoint(x: 40, y: 20),
+            endPoint: CGPoint(x: 260, y: 120),
+            shaftThickness: 28,
+            zIndex: 4
+        )
+        let runtimeState = BoardRuntimeState(
+            boardID: UUID(),
+            title: "Arrow Mapper",
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+            contentUpdatedAt: Date(timeIntervalSince1970: 1_700_000_100),
+            viewStateUpdatedAt: Date(timeIntervalSince1970: 1_700_000_100),
+            items: [.arrow(item)],
+            boardState: nil,
+            camera: CanvasCamera(),
+            interactionState: CanvasInteractionState(
+                selectedItemIDs: [item.id],
+                primarySelectedItemID: item.id
+            ),
+            workspaceMode: .editing
+        )
+
+        let document = BoardDocumentMapper.makeDocument(from: runtimeState)
+        XCTAssertEqual(document.formatVersion, BoardDocument.currentFormatVersion)
+        let arrowRecord = try XCTUnwrap(document.arrowItemRecords.first)
+        XCTAssertEqual(arrowRecord.id, item.id)
+        XCTAssertEqual(arrowRecord.startPoint.cgPoint, item.startPoint)
+        XCTAssertEqual(arrowRecord.endPoint.cgPoint, item.endPoint)
+        XCTAssertEqual(arrowRecord.shaftThickness, Double(item.shaftThickness))
+        XCTAssertEqual(arrowRecord.zIndex, Double(item.zIndex))
+
+        let roundTrippedState = try BoardDocumentMapper.makeRuntimeState(
+            from: document,
+            imageLoader: { _ in
+                throw BoardSelectionStateMigrationTestError.unexpectedImageDecode
+            }
+        )
+        let roundTrippedItem = try XCTUnwrap(roundTrippedState.arrowItems.first)
+
+        XCTAssertEqual(roundTrippedItem.id, item.id)
+        XCTAssertEqual(roundTrippedItem.startPoint, item.startPoint)
+        XCTAssertEqual(roundTrippedItem.endPoint, item.endPoint)
+        XCTAssertEqual(roundTrippedItem.shaftThickness, item.shaftThickness)
+        XCTAssertEqual(roundTrippedItem.zIndex, item.zIndex)
+    }
+
+    func testBoardDocumentDecodesLegacyArrowGeometryIntoEndpointModel() throws {
+        let arrowID = UUID()
+        let currentRecord = BoardArrowItemRecord(
+            id: arrowID,
+            startPoint: BoardPointRecord(CGPoint(x: 20, y: 20)),
+            endPoint: BoardPointRecord(CGPoint(x: 60, y: 20)),
+            shaftThickness: 16,
+            zIndex: 2
+        )
+        let document = makeBoardDocument(
+            selectedItemIDs: [arrowID],
+            primarySelectedItemID: arrowID,
+            items: [.arrow(currentRecord)]
+        )
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let encodedDocument = try encoder.encode(document)
+        var payload = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: encodedDocument) as? [String: Any]
+        )
+        var itemPayloads = try XCTUnwrap(payload["items"] as? [[String: Any]])
+        var firstItemPayload = try XCTUnwrap(itemPayloads.first)
+        var legacyArrowPayload = try XCTUnwrap(
+            firstItemPayload["arrow"] as? [String: Any]
+        )
+        legacyArrowPayload.removeValue(forKey: "startPoint")
+        legacyArrowPayload.removeValue(forKey: "endPoint")
+        legacyArrowPayload.removeValue(forKey: "shaftThickness")
+        legacyArrowPayload["center"] = ["x": 120.0, "y": 90.0]
+        legacyArrowPayload["size"] = ["width": 220.0, "height": 80.0]
+        legacyArrowPayload["rotationRadians"] = Double.pi / 8
+        firstItemPayload["arrow"] = legacyArrowPayload
+        itemPayloads[0] = firstItemPayload
+        payload["items"] = itemPayloads
+        payload["formatVersion"] = 10
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let legacyDocument = try decoder.decode(
+            BoardDocument.self,
+            from: JSONSerialization.data(withJSONObject: payload)
+        )
+        let runtimeState = try BoardDocumentMapper.makeRuntimeState(
+            from: legacyDocument,
+            imageLoader: { _ in
+                throw BoardSelectionStateMigrationTestError.unexpectedImageDecode
+            }
+        )
+        let arrowItem = try XCTUnwrap(runtimeState.arrowItems.first)
+        let expectedItem = CanvasArrowItem(
+            id: arrowID,
+            center: CGPoint(x: 120, y: 90),
+            size: CGSize(width: 220, height: 80),
+            zIndex: 2,
+            rotationRadians: .pi / 8
+        )
+
+        XCTAssertEqual(arrowItem.startPoint.x, expectedItem.startPoint.x, accuracy: 0.0001)
+        XCTAssertEqual(arrowItem.startPoint.y, expectedItem.startPoint.y, accuracy: 0.0001)
+        XCTAssertEqual(arrowItem.endPoint.x, expectedItem.endPoint.x, accuracy: 0.0001)
+        XCTAssertEqual(arrowItem.endPoint.y, expectedItem.endPoint.y, accuracy: 0.0001)
+        XCTAssertEqual(arrowItem.shaftThickness, expectedItem.shaftThickness, accuracy: 0.0001)
+        XCTAssertEqual(legacyDocument.formatVersion, 10)
+    }
+
     func testBoardDocumentMapperRoundTripsMarkdownItemPreservingExplicitContainerSize() throws {
         let item = CanvasMarkdownItem(
             id: UUID(),

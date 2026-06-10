@@ -178,10 +178,10 @@ enum BoardDocumentMapper {
     ) -> CanvasArrowItem {
         CanvasArrowItem(
             id: arrowRecord.id,
-            center: arrowRecord.center.cgPoint,
-            size: arrowRecord.size.cgSize,
-            zIndex: CGFloat(arrowRecord.zIndex),
-            rotationRadians: CGFloat(arrowRecord.rotationRadians ?? 0)
+            startPoint: arrowRecord.startPoint.cgPoint,
+            endPoint: arrowRecord.endPoint.cgPoint,
+            shaftThickness: CGFloat(arrowRecord.shaftThickness),
+            zIndex: CGFloat(arrowRecord.zIndex)
         )
     }
 
@@ -250,10 +250,10 @@ enum BoardDocumentMapper {
     ) -> BoardArrowItemRecord {
         BoardArrowItemRecord(
             id: item.id,
-            center: BoardPointRecord(item.center),
-            size: BoardSizeRecord(item.size),
-            zIndex: Double(item.zIndex),
-            rotationRadians: Double(item.rotationRadians)
+            startPoint: BoardPointRecord(item.startPoint),
+            endPoint: BoardPointRecord(item.endPoint),
+            shaftThickness: Double(item.shaftThickness),
+            zIndex: Double(item.zIndex)
         )
     }
 

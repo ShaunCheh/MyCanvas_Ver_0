@@ -396,6 +396,41 @@ final class CanvasCommandPolicyParityTests: XCTestCase {
         )
     }
 
+    func testArrowEndpointDragPreservesArrowProfile() throws {
+        let item = CanvasArrowItem(
+            center: CGPoint(x: 120, y: 80),
+            size: CGSize(width: 220, height: 80)
+        )
+        let dragState = CanvasArrowEndpointDragState(
+            item: item,
+            draggedEndpointRole: .end,
+            minimumLength: 1
+        )
+        let draggedEndPoint = CGPoint(x: 420, y: 180)
+        let geometry = dragState.updatedGeometry(
+            draggedWorldPoint: draggedEndPoint
+        )
+        let updatedItem = try XCTUnwrap(
+            CanvasBoardItem
+                .arrow(item)
+                .applyingGeometry(geometry)?
+                .arrowItem
+        )
+
+        let originalHeadLength = item.localFrame.maxX -
+            canvasArrowPolygonPoints(in: item.localFrame)[1].x
+        let updatedHeadLength = updatedItem.localFrame.maxX -
+            canvasArrowPolygonPoints(in: updatedItem.localFrame)[1].x
+
+        XCTAssertEqual(updatedItem.startPoint.x, item.startPoint.x, accuracy: 0.0001)
+        XCTAssertEqual(updatedItem.startPoint.y, item.startPoint.y, accuracy: 0.0001)
+        XCTAssertEqual(updatedItem.endPoint.x, draggedEndPoint.x, accuracy: 0.0001)
+        XCTAssertEqual(updatedItem.endPoint.y, draggedEndPoint.y, accuracy: 0.0001)
+        XCTAssertEqual(updatedItem.size.height, item.size.height, accuracy: 0.0001)
+        XCTAssertEqual(updatedItem.shaftThickness, item.shaftThickness, accuracy: 0.0001)
+        XCTAssertEqual(originalHeadLength, updatedHeadLength, accuracy: 0.0001)
+    }
+
     func testCommitTextDescriptorResetsActiveStateWhenPolicyBlocksInReadingMode() {
         let session = makeCommandPolicyParityTestSession(workspaceMode: .editing)
         let executor = CanvasCommandExecutor(session: session)

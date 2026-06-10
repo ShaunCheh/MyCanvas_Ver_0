@@ -83,10 +83,10 @@ struct BoardRuntimeState {
 
 struct BoardDocument: Codable {
     // Board schema now evolves independently from image asset internals.
-    // Format version 10 adds `type: "arrow"` records. Older clients that do
-    // not understand arrow items cannot forward-decode documents once such
-    // records have been saved.
-    static let currentFormatVersion = 10
+    // Format version 11 migrates arrow geometry from box-based sizing to
+    // explicit start/end points plus shaft thickness so endpoint drags preserve
+    // arrow proportions instead of re-scaling the full silhouette.
+    static let currentFormatVersion = 11
     static let defaultTitle = "Untitled Board"
 
     let formatVersion: Int
@@ -1006,10 +1006,102 @@ struct BoardHandDrawingItemRecord: Codable, Equatable {
 
 struct BoardArrowItemRecord: Codable, Equatable {
     let id: UUID
-    var center: BoardPointRecord
-    var size: BoardSizeRecord
+    var startPoint: BoardPointRecord
+    var endPoint: BoardPointRecord
+    var shaftThickness: Double
     var zIndex: Double
-    var rotationRadians: Double?
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case startPoint
+        case endPoint
+        case shaftThickness
+        case zIndex
+        case center
+        case size
+        case rotationRadians
+    }
+
+    init(
+        id: UUID,
+        startPoint: BoardPointRecord,
+        endPoint: BoardPointRecord,
+        shaftThickness: Double,
+        zIndex: Double
+    ) {
+        self.id = id
+        self.startPoint = startPoint
+        self.endPoint = endPoint
+        self.shaftThickness = shaftThickness
+        self.zIndex = zIndex
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let id = try container.decode(UUID.self, forKey: .id)
+        let zIndex = try container.decode(Double.self, forKey: .zIndex)
+
+        let item: CanvasArrowItem
+        if
+            let startPoint = try container.decodeIfPresent(
+                BoardPointRecord.self,
+                forKey: .startPoint
+            ),
+            let endPoint = try container.decodeIfPresent(
+                BoardPointRecord.self,
+                forKey: .endPoint
+            )
+        {
+            item = CanvasArrowItem(
+                id: id,
+                startPoint: startPoint.cgPoint,
+                endPoint: endPoint.cgPoint,
+                shaftThickness: CGFloat(
+                    try container.decodeIfPresent(
+                        Double.self,
+                        forKey: .shaftThickness
+                    ) ?? 0
+                ),
+                zIndex: CGFloat(zIndex)
+            )
+        } else {
+            item = CanvasArrowItem(
+                id: id,
+                center: try container.decode(
+                    BoardPointRecord.self,
+                    forKey: .center
+                ).cgPoint,
+                size: try container.decode(
+                    BoardSizeRecord.self,
+                    forKey: .size
+                ).cgSize,
+                zIndex: CGFloat(zIndex),
+                rotationRadians: CGFloat(
+                    try container.decodeIfPresent(
+                        Double.self,
+                        forKey: .rotationRadians
+                    ) ?? 0
+                )
+            )
+        }
+
+        self.init(
+            id: item.id,
+            startPoint: BoardPointRecord(item.startPoint),
+            endPoint: BoardPointRecord(item.endPoint),
+            shaftThickness: Double(item.shaftThickness),
+            zIndex: Double(item.zIndex)
+        )
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(startPoint, forKey: .startPoint)
+        try container.encode(endPoint, forKey: .endPoint)
+        try container.encode(shaftThickness, forKey: .shaftThickness)
+        try container.encode(zIndex, forKey: .zIndex)
+    }
 }
 
 enum BoardItemRecord: Codable, Equatable {

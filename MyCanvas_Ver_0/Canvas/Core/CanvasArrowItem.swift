@@ -1,6 +1,11 @@
 import CoreGraphics
 import Foundation
 
+private let canvasArrowShaftToHeadWidthRatio: CGFloat = 0.44
+private let canvasArrowHeadLengthToHeadWidthRatio: CGFloat = 0.95
+private let canvasArrowMinimumVisibleLength: CGFloat = 1
+private let canvasArrowMinimumVisibleHeight: CGFloat = 1
+
 enum CanvasArrowEndpointRole: CaseIterable {
     case start
     case end
@@ -8,10 +13,10 @@ enum CanvasArrowEndpointRole: CaseIterable {
 
 struct CanvasArrowItem {
     let id: CanvasItemID
-    var center: CGPoint
-    var size: CGSize
+    var startPoint: CGPoint
+    var endPoint: CGPoint
+    var shaftThickness: CGFloat
     var zIndex: CGFloat
-    var rotationRadians: CGFloat
 
     init(
         id: CanvasItemID = UUID(),
@@ -21,18 +26,103 @@ struct CanvasArrowItem {
         rotationRadians: CGFloat = 0
     ) {
         self.id = id
-        self.center = center
-        self.size = size
         self.zIndex = zIndex
-        self.rotationRadians = rotationRadians
+        shaftThickness = Self.shaftThickness(forOverallHeight: size.height)
+        let resolvedEndpoints = Self.resolvedEndpoints(
+            center: center,
+            length: size.width,
+            rotationRadians: rotationRadians
+        )
+        startPoint = resolvedEndpoints.start
+        endPoint = resolvedEndpoints.end
+    }
+
+    init(
+        id: CanvasItemID = UUID(),
+        startPoint: CGPoint,
+        endPoint: CGPoint,
+        shaftThickness: CGFloat,
+        zIndex: CGFloat = 0
+    ) {
+        self.id = id
+        let resolvedEndpoints = Self.resolvedEndpoints(
+            startPoint: startPoint,
+            endPoint: endPoint,
+            fallbackRotationRadians: 0
+        )
+        self.startPoint = resolvedEndpoints.start
+        self.endPoint = resolvedEndpoints.end
+        self.shaftThickness = max(
+            shaftThickness,
+            Self.minimumShaftThickness
+        )
+        self.zIndex = zIndex
+    }
+
+    var center: CGPoint {
+        get {
+            CGPoint(
+                x: (startPoint.x + endPoint.x) / 2,
+                y: (startPoint.y + endPoint.y) / 2
+            )
+        }
+        set {
+            let delta = CGPoint(
+                x: newValue.x - center.x,
+                y: newValue.y - center.y
+            )
+            startPoint = Self.translated(startPoint, by: delta)
+            endPoint = Self.translated(endPoint, by: delta)
+        }
+    }
+
+    var size: CGSize {
+        get {
+            CGSize(
+                width: length,
+                height: overallHeight
+            )
+        }
+        set {
+            let resolvedEndpoints = Self.resolvedEndpoints(
+                center: center,
+                length: newValue.width,
+                rotationRadians: rotationRadians
+            )
+            startPoint = resolvedEndpoints.start
+            endPoint = resolvedEndpoints.end
+            shaftThickness = Self.shaftThickness(
+                forOverallHeight: newValue.height
+            )
+        }
+    }
+
+    var rotationRadians: CGFloat {
+        get {
+            normalizedCanvasAngle(
+                atan2(
+                    endPoint.y - startPoint.y,
+                    endPoint.x - startPoint.x
+                )
+            )
+        }
+        set {
+            let resolvedEndpoints = Self.resolvedEndpoints(
+                center: center,
+                length: length,
+                rotationRadians: newValue
+            )
+            startPoint = resolvedEndpoints.start
+            endPoint = resolvedEndpoints.end
+        }
     }
 
     var localFrame: CGRect {
         CGRect(
-            x: -size.width / 2,
-            y: -size.height / 2,
-            width: size.width,
-            height: size.height
+            x: -length / 2,
+            y: -overallHeight / 2,
+            width: length,
+            height: overallHeight
         )
     }
 
@@ -46,10 +136,10 @@ struct CanvasArrowItem {
 
     var worldFrame: CGRect {
         CGRect(
-            x: center.x - size.width / 2,
-            y: center.y - size.height / 2,
-            width: size.width,
-            height: size.height
+            x: center.x - length / 2,
+            y: center.y - overallHeight / 2,
+            width: length,
+            height: overallHeight
         )
     }
 
@@ -67,9 +157,9 @@ struct CanvasArrowItem {
     ) -> CGPoint {
         switch role {
         case .start:
-            return CGPoint(x: localFrame.minX, y: localFrame.midY)
+            return CGPoint(x: localFrame.minX, y: 0)
         case .end:
-            return CGPoint(x: localFrame.maxX, y: localFrame.midY)
+            return CGPoint(x: localFrame.maxX, y: 0)
         }
     }
 
@@ -97,20 +187,24 @@ struct CanvasArrowItem {
 
     func duplicated(offsetInWorld: CGPoint) -> CanvasArrowItem {
         CanvasArrowItem(
-            center: CGPoint(
-                x: center.x + offsetInWorld.x,
-                y: center.y + offsetInWorld.y
+            startPoint: CGPoint(
+                x: startPoint.x + offsetInWorld.x,
+                y: startPoint.y + offsetInWorld.y
             ),
-            size: size,
-            zIndex: zIndex,
-            rotationRadians: rotationRadians
+            endPoint: CGPoint(
+                x: endPoint.x + offsetInWorld.x,
+                y: endPoint.y + offsetInWorld.y
+            ),
+            shaftThickness: shaftThickness,
+            zIndex: zIndex
         )
     }
 
     func matchesDocumentState(_ other: CanvasArrowItem) -> Bool {
         id == other.id &&
-            center == other.center &&
-            size == other.size &&
+            startPoint == other.startPoint &&
+            endPoint == other.endPoint &&
+            shaftThickness == other.shaftThickness &&
             zIndex == other.zIndex &&
             rotationRadians == other.rotationRadians
     }
@@ -128,6 +222,117 @@ struct CanvasArrowItem {
         return CGPoint(
             x: point.x * cosine - point.y * sine,
             y: point.x * sine + point.y * cosine
+        )
+    }
+
+    private var length: CGFloat {
+        max(
+            hypot(
+                endPoint.x - startPoint.x,
+                endPoint.y - startPoint.y
+            ),
+            Self.minimumLength
+        )
+    }
+
+    private var overallHeight: CGFloat {
+        Self.overallHeight(forShaftThickness: shaftThickness)
+    }
+
+    private static var minimumLength: CGFloat {
+        canvasArrowMinimumVisibleLength
+    }
+
+    private static var minimumShaftThickness: CGFloat {
+        shaftThickness(forOverallHeight: canvasArrowMinimumVisibleHeight)
+    }
+
+    private static func overallHeight(
+        forShaftThickness shaftThickness: CGFloat
+    ) -> CGFloat {
+        max(shaftThickness, minimumShaftThickness) / canvasArrowShaftToHeadWidthRatio
+    }
+
+    private static func shaftThickness(
+        forOverallHeight overallHeight: CGFloat
+    ) -> CGFloat {
+        max(overallHeight, canvasArrowMinimumVisibleHeight) * canvasArrowShaftToHeadWidthRatio
+    }
+
+    private static func resolvedEndpoints(
+        center: CGPoint,
+        length: CGFloat,
+        rotationRadians: CGFloat
+    ) -> (start: CGPoint, end: CGPoint) {
+        let resolvedLength = max(length, minimumLength)
+        let halfLength = resolvedLength / 2
+        let direction = CGPoint(
+            x: cos(normalizedCanvasAngle(rotationRadians)),
+            y: sin(normalizedCanvasAngle(rotationRadians))
+        )
+        return (
+            start: CGPoint(
+                x: center.x - direction.x * halfLength,
+                y: center.y - direction.y * halfLength
+            ),
+            end: CGPoint(
+                x: center.x + direction.x * halfLength,
+                y: center.y + direction.y * halfLength
+            )
+        )
+    }
+
+    private static func resolvedEndpoints(
+        startPoint: CGPoint,
+        endPoint: CGPoint,
+        fallbackRotationRadians: CGFloat
+    ) -> (start: CGPoint, end: CGPoint) {
+        let center = CGPoint(
+            x: (startPoint.x + endPoint.x) / 2,
+            y: (startPoint.y + endPoint.y) / 2
+        )
+        let delta = CGPoint(
+            x: endPoint.x - startPoint.x,
+            y: endPoint.y - startPoint.y
+        )
+        let length = hypot(delta.x, delta.y)
+        if length >= minimumLength {
+            return (startPoint, endPoint)
+        }
+
+        let direction: CGPoint
+        if length > 0.0001 {
+            direction = CGPoint(
+                x: delta.x / length,
+                y: delta.y / length
+            )
+        } else {
+            direction = CGPoint(
+                x: cos(normalizedCanvasAngle(fallbackRotationRadians)),
+                y: sin(normalizedCanvasAngle(fallbackRotationRadians))
+            )
+        }
+
+        let halfLength = minimumLength / 2
+        return (
+            start: CGPoint(
+                x: center.x - direction.x * halfLength,
+                y: center.y - direction.y * halfLength
+            ),
+            end: CGPoint(
+                x: center.x + direction.x * halfLength,
+                y: center.y + direction.y * halfLength
+            )
+        )
+    }
+
+    private static func translated(
+        _ point: CGPoint,
+        by delta: CGPoint
+    ) -> CGPoint {
+        CGPoint(
+            x: point.x + delta.x,
+            y: point.y + delta.y
         )
     }
 }
@@ -159,15 +364,8 @@ func canvasArrowPolygonPoints(in rect: CGRect) -> [CGPoint] {
     let startX = standardizedRect.minX
     let endX = standardizedRect.maxX
     let centerY = standardizedRect.midY
-    let tailHalfHeight = standardizedRect.height * 0.22
-    let preferredHeadLength = max(
-        standardizedRect.width * 0.28,
-        standardizedRect.height * 0.95
-    )
-    let headLength = min(
-        max(preferredHeadLength, standardizedRect.width * 0.18),
-        standardizedRect.width * 0.55
-    )
+    let tailHalfHeight = standardizedRect.height * canvasArrowShaftToHeadWidthRatio / 2
+    let headLength = standardizedRect.height * canvasArrowHeadLengthToHeadWidthRatio
     let neckX = max(
         endX - headLength,
         startX + (standardizedRect.width * 0.15)

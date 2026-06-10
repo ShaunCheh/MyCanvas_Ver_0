@@ -5,7 +5,7 @@ struct CanvasArrowEndpointDragState {
     let itemID: CanvasItemID
     let draggedEndpointRole: CanvasArrowEndpointRole
     let fixedEndpointWorldPoint: CGPoint
-    let preservedThickness: CGFloat
+    let preservedOverallHeight: CGFloat
     let minimumLength: CGFloat
     let fallbackRotationRadians: CGFloat
 
@@ -19,7 +19,7 @@ struct CanvasArrowEndpointDragState {
         fixedEndpointWorldPoint = item.endpointWorldPoint(
             for: draggedEndpointRole == .start ? .end : .start
         )
-        preservedThickness = item.size.height
+        preservedOverallHeight = item.size.height
         self.minimumLength = max(minimumLength, 1)
         fallbackRotationRadians = item.rotationRadians
     }
@@ -77,7 +77,7 @@ struct CanvasArrowEndpointDragState {
             ),
             size: CGSize(
                 width: length,
-                height: preservedThickness
+                height: preservedOverallHeight
             ),
             rotationRadians: atan2(direction.y, direction.x)
         )
