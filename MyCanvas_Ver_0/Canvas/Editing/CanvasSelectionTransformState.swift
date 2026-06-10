@@ -355,6 +355,8 @@ struct CanvasSelectionTransformSnapshot: Equatable {
         switch item {
         case .image:
             return item.applyingGeometry(scaledItemGeometry) ?? item
+        case .arrow:
+            return item.applyingGeometry(scaledItemGeometry) ?? item
         case let .text(textItem):
             return .text(
                 resizedTextItem(
@@ -469,7 +471,7 @@ struct CanvasSelectionTransformSnapshot: Equatable {
         switch sourceItemsByID[itemID]?.kind {
         case .some(.markdown):
             return .nonUniform
-        case .some(.image), .some(.text), .some(.handDrawing), .none:
+        case .some(.image), .some(.text), .some(.handDrawing), .some(.arrow), .none:
             return .uniform
         }
     }
@@ -730,7 +732,7 @@ extension CanvasBoardItem {
         }
 
         switch self {
-        case .image, .text, .markdown:
+        case .image, .text, .markdown, .arrow:
             var updatedItem = self
             updatedItem.center = geometry.center
             updatedItem.size = geometry.size

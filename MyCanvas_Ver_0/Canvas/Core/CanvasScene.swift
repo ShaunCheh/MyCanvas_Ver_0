@@ -32,6 +32,10 @@ final class CanvasScene {
         append(.handDrawing(item))
     }
 
+    func append(_ item: CanvasArrowItem) {
+        append(.arrow(item))
+    }
+
     func upsert(_ item: CanvasBoardItem) {
         if let index = items.firstIndex(where: { $0.id == item.id }) {
             items[index] = item
@@ -54,6 +58,10 @@ final class CanvasScene {
 
     func upsert(_ item: CanvasHandDrawingItem) {
         upsert(.handDrawing(item))
+    }
+
+    func upsert(_ item: CanvasArrowItem) {
+        upsert(.arrow(item))
     }
 
     @discardableResult
@@ -98,6 +106,10 @@ final class CanvasScene {
 
     func handDrawingItem(withID id: CanvasItemID) -> CanvasHandDrawingItem? {
         boardItem(withID: id)?.handDrawingItem
+    }
+
+    func arrowItem(withID id: CanvasItemID) -> CanvasArrowItem? {
+        boardItem(withID: id)?.arrowItem
     }
 
     func itemWorldQuad(withID id: CanvasImageItemID) -> CanvasQuad? {
@@ -821,6 +833,8 @@ final class CanvasScene {
             )
         case let .handDrawing(item):
             return .handDrawing(item.duplicated(offsetInWorld: offsetInWorld))
+        case let .arrow(item):
+            return .arrow(item.duplicated(offsetInWorld: offsetInWorld))
         }
     }
 
@@ -830,7 +844,7 @@ final class CanvasScene {
         size: CGSize
     ) -> CanvasBoardItem {
         switch item {
-        case .image, .text, .markdown:
+        case .image, .text, .markdown, .arrow:
             var resizedItem = item
             resizedItem.center = center
             resizedItem.size = size

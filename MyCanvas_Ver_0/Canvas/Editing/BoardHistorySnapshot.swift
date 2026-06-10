@@ -38,6 +38,8 @@ extension BoardHistorySnapshot: Equatable {
                 return lhsMarkdown.matchesDocumentState(rhsMarkdown)
             case let (.handDrawing(lhsHandDrawing), .handDrawing(rhsHandDrawing)):
                 return lhsHandDrawing.matchesDocumentState(rhsHandDrawing)
+            case let (.arrow(lhsArrow), .arrow(rhsArrow)):
+                return lhsArrow.matchesDocumentState(rhsArrow)
             default:
                 return false
             }

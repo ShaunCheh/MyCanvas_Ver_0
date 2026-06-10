@@ -47,11 +47,14 @@ struct CanvasMarkdownRenderPayload {
     let cameraZoomScale: CGFloat
 }
 
+struct CanvasArrowRenderPayload {}
+
 enum CanvasRenderPayload {
     case image(CanvasImageRenderPayload)
     case handDrawing(CanvasHandDrawingRenderPayload)
     case text(CanvasTextRenderPayload)
     case markdown(CanvasMarkdownRenderPayload)
+    case arrow(CanvasArrowRenderPayload)
 }
 
 // Screen geometry is the shared contract consumed by selection chrome,
@@ -110,6 +113,8 @@ enum CanvasEditHandleRole: CaseIterable {
     case bottomLeading
     case leading
     case rotate
+    case arrowStart
+    case arrowEnd
 }
 
 // Unified edit handles carry both their anchor point and the current chrome
@@ -166,7 +171,9 @@ enum CanvasEditSelectionOverlaySubject: Equatable {
 
 struct CanvasEditSelectionOverlayPayload {
     let subject: CanvasEditSelectionOverlaySubject
-    let rotateAffordance: CanvasEditRotateOverlayPayload
+    let rotateAffordance: CanvasEditRotateOverlayPayload?
+    let outlineScreenPath: CGPath?
+    let translationScreenPath: CGPath?
 }
 
 struct CanvasEditCropOverlayPayload {
@@ -339,7 +346,7 @@ extension CanvasEditHandleRole {
             return .bottom
         case .leading:
             return .leading
-        case .rotate:
+        case .rotate, .arrowStart, .arrowEnd:
             return nil
         }
     }
@@ -362,7 +369,26 @@ extension CanvasEditHandleRole {
             return .bottomLeading
         case .bottomTrailing:
             return .bottomTrailing
-        case .rotate:
+        case .rotate, .arrowStart, .arrowEnd:
+            return nil
+        }
+    }
+
+    var arrowEndpointRole: CanvasArrowEndpointRole? {
+        switch self {
+        case .arrowStart:
+            return .start
+        case .arrowEnd:
+            return .end
+        case .topLeading,
+             .top,
+             .topTrailing,
+             .trailing,
+             .bottomTrailing,
+             .bottom,
+             .bottomLeading,
+             .leading,
+             .rotate:
             return nil
         }
     }

@@ -39,6 +39,7 @@ Write here.
 """
     // New markdown items still bootstrap from a fixed world-space layout width.
     private static let defaultMarkdownMaxLayoutWidth: CGFloat = 320
+    private static let defaultArrowSize = CGSize(width: 220, height: 80)
 
     let scene = CanvasScene()
     var camera = CanvasCamera()
@@ -154,6 +155,10 @@ Write here.
     }
 
     var canAddHandDrawingItem: Bool {
+        inlineEditState == nil
+    }
+
+    var canAddArrowItem: Bool {
         inlineEditState == nil
     }
 
@@ -2566,6 +2571,33 @@ Write here.
         )
         expandBoardIfNeeded(toInclude: item.worldFrame)
         let changeReason = "add hand drawing item"
+        _ = recordImmediateHistoryChange(
+            from: beforeSnapshot,
+            reason: changeReason,
+            autosaveReason: changeReason
+        )
+        return item
+    }
+
+    @discardableResult
+    func addArrowItem() -> CanvasArrowItem? {
+        guard canAddArrowItem else {
+            return nil
+        }
+
+        let beforeSnapshot = currentBoardHistorySnapshot()
+        let item = CanvasArrowItem(
+            center: camera.center,
+            size: Self.defaultArrowSize,
+            zIndex: nextBoardItemZIndex()
+        )
+        scene.append(item)
+        _ = replaceSelection(
+            with: [item.id],
+            primarySelectedItemID: item.id
+        )
+        expandBoardIfNeeded(toInclude: item.worldBounds)
+        let changeReason = "add arrow item"
         _ = recordImmediateHistoryChange(
             from: beforeSnapshot,
             reason: changeReason,

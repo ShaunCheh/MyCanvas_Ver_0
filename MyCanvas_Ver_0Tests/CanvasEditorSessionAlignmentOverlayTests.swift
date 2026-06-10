@@ -295,7 +295,8 @@ final class CanvasEditorSessionAlignmentOverlayTests: XCTestCase {
 
         XCTAssertEqual(editOverlay.itemID, item.id)
         XCTAssertTrue(editOverlay.handles.isEmpty)
-        XCTAssertFalse(payload.rotateAffordance.handle.screenCenter.x.isNaN)
+        let rotateAffordance = try XCTUnwrap(payload.rotateAffordance)
+        XCTAssertFalse(rotateAffordance.handle.screenCenter.x.isNaN)
     }
 
     func testMakeCanvasSnapshotKeepsResizeHandlesForSingleImageSelection() throws {
@@ -325,6 +326,32 @@ final class CanvasEditorSessionAlignmentOverlayTests: XCTestCase {
 
         XCTAssertEqual(editOverlay.itemID, item.id)
         XCTAssertEqual(editOverlay.handles.map(\.role), [.top, .trailing, .bottom, .leading])
+    }
+
+    func testMakeCanvasSnapshotUsesEndpointHandlesForSingleArrowSelection() throws {
+        let item = CanvasArrowItem(
+            center: CGPoint(x: 40, y: 20),
+            size: CGSize(width: 180, height: 72),
+            rotationRadians: .pi / 6
+        )
+        let session = makeAlignmentOverlayTestSession(
+            items: [.arrow(item)],
+            selectedItemID: item.id
+        )
+
+        let snapshot = session.makeCanvasSnapshot()
+        let editOverlay = try XCTUnwrap(snapshot.editOverlay)
+
+        guard case let .selection(payload) = editOverlay.payload else {
+            XCTFail("Expected single arrow selection overlay payload.")
+            return
+        }
+
+        XCTAssertEqual(editOverlay.itemID, item.id)
+        XCTAssertEqual(editOverlay.handles.map(\.role), [.arrowStart, .arrowEnd])
+        XCTAssertNil(payload.rotateAffordance)
+        XCTAssertNotNil(payload.outlineScreenPath)
+        XCTAssertNotNil(payload.translationScreenPath)
     }
 
     func testMakeCanvasSnapshotUsesWidthOnlyHandlesForAllMarkdownMultiSelection() throws {
@@ -565,9 +592,10 @@ final class CanvasEditorSessionAlignmentOverlayTests: XCTestCase {
             XCTFail("Expected selection payload.")
             return
         }
+        let rotateAffordance = try XCTUnwrap(payload.rotateAffordance)
 
         let pressContext = session.resolvePointerTarget(
-            at: payload.rotateAffordance.handle.screenCenter,
+            at: rotateAffordance.handle.screenCenter,
             interactionMetrics: makeAlignmentOverlayTestContextResolverMetrics()
         )
 

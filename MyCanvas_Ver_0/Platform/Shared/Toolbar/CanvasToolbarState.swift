@@ -13,6 +13,7 @@ enum CanvasToolbarItemID: String, CaseIterable, Sendable {
     case text
     case markdown
     case handDrawing
+    case arrow
     case importMedia
     case undo
     case redo

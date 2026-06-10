@@ -83,6 +83,8 @@ struct CanvasContextMenuActionResolver {
             return .addMarkdownItem(markdownSource: nil)
         case .addHandDrawingItem:
             return .addHandDrawingItem(paper: .square)
+        case .addArrowItem:
+            return .addArrowItem
         case .beginTextEdit:
             guard let itemID = context.singleEffectiveItemID else {
                 return nil
@@ -287,6 +289,7 @@ struct CanvasContextMenuActionResolver {
                  .groupRotateHandle,
                  .selectionHandle,
                  .groupSelectionHandle,
+                 .arrowEndpointHandle,
                  .selectedItemBody,
                  .unselectedItemBody,
                  .blank:
@@ -320,7 +323,7 @@ struct CanvasContextMenuActionResolver {
                 .command(.undo),
                 .command(.redo)
             ]
-        case .selectedItemBody, .selectionHandle, .rotateHandle:
+        case .selectedItemBody, .selectionHandle, .arrowEndpointHandle, .rotateHandle:
             return selectedItemActionIDs(
                 includeCropCommand: includeCropCommand,
                 includeBeginTextEditCommand: targetTextItem != nil,

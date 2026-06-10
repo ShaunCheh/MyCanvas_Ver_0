@@ -25,6 +25,8 @@ final class CanvasCommandExecutor {
             return session.canAddMarkdownItem
         case .addHandDrawingItem:
             return session.canAddHandDrawingItem
+        case .addArrowItem:
+            return session.canAddArrowItem
         case let .beginTextEdit(itemID):
             return session.canBeginTextEdit(withID: itemID)
         case let .beginMarkdownEdit(itemID):
@@ -136,6 +138,14 @@ final class CanvasCommandExecutor {
                 followUp: .presentHandDrawingEditor(
                     itemID: addedHandDrawingItem.id
                 )
+            )
+        case .addArrowItem:
+            guard let addedArrowItem = session.addArrowItem() else {
+                return nil
+            }
+
+            return CanvasCommandExecutionResult(
+                refreshReason: "add arrow item \(addedArrowItem.id.uuidString)"
             )
         case let .beginTextEdit(itemID):
             guard session.beginTextEdit(withID: itemID) else {

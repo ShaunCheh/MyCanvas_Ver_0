@@ -107,6 +107,17 @@ struct BoardGeometryPreviewBuilder {
                 zIndex: handDrawingRecord.zIndex,
                 rotationRadians: handDrawingRecord.rotationRadians
             )
+        case let .arrow(arrowRecord):
+            return makeNode(
+                boardID: boardID,
+                documentOrder: documentOrder,
+                id: arrowRecord.id,
+                kind: .shape,
+                center: arrowRecord.center,
+                size: arrowRecord.size,
+                zIndex: arrowRecord.zIndex,
+                rotationRadians: arrowRecord.rotationRadians
+            )
         }
     }
 

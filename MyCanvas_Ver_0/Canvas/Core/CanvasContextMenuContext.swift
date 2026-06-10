@@ -8,6 +8,7 @@ enum CanvasContextMenuTargetKind {
     case cropOutline
     case selectionHandle(role: CanvasSelectionHandleRole)
     case groupSelectionHandle(role: CanvasSelectionHandleRole)
+    case arrowEndpointHandle(role: CanvasArrowEndpointRole)
     case selectedItemBody
     case unselectedItemBody
     case blank
@@ -18,7 +19,8 @@ enum CanvasContextMenuTargetKind {
              .groupRotateHandle,
              .cropHandle,
              .selectionHandle,
-             .groupSelectionHandle:
+             .groupSelectionHandle,
+             .arrowEndpointHandle:
             return true
         case .cropOutline, .selectedItemBody, .unselectedItemBody, .blank:
             return false
@@ -39,6 +41,8 @@ enum CanvasContextMenuTargetKind {
             return "selectionHandle(\(String(describing: role)))"
         case let .groupSelectionHandle(role):
             return "groupSelectionHandle(\(String(describing: role)))"
+        case let .arrowEndpointHandle(role):
+            return "arrowEndpointHandle(\(String(describing: role)))"
         case .selectedItemBody:
             return "selectedItemBody"
         case .unselectedItemBody:
@@ -163,7 +167,8 @@ struct CanvasContextMenuContext {
              .groupRotateHandle,
              .cropHandle,
              .selectionHandle,
-             .groupSelectionHandle:
+             .groupSelectionHandle,
+             .arrowEndpointHandle:
             guard let anchorRect else {
                 return invocationViewportPoint
             }
@@ -208,6 +213,7 @@ struct CanvasContextMenuContext {
              .cropOutline,
              .selectionHandle,
              .groupSelectionHandle,
+             .arrowEndpointHandle,
              .selectedItemBody:
             return true
         case .unselectedItemBody, .blank:

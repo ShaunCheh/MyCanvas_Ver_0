@@ -57,6 +57,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         case draggingSelectedItem(CanvasSelectedItemDragState)
         case draggingSelection(CanvasSelectionDragState)
         case resizingSelectedItem(PointerResizeState)
+        case adjustingArrowEndpoint(CanvasArrowEndpointDragState)
         case resizingSelection(CanvasSelectionResizeState)
         case draggingCanvas
     }
@@ -291,6 +292,11 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         button.translatesAutoresizingMaskIntoConstraints = false
         return button
     }()
+    private let arrowButton: NSButton = {
+        let button = NSButton()
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }()
     private let undoButton: NSButton = {
         let button = NSButton()
         button.translatesAutoresizingMaskIntoConstraints = false
@@ -312,6 +318,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             .text: textButton,
             .markdown: markdownButton,
             .handDrawing: handDrawingButton,
+            .arrow: arrowButton,
             .importMedia: importButton
         ]
     }
@@ -849,6 +856,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             if supportsHandDrawingEditing {
                 performCommand(.addHandDrawingItem(paper: .square))
             }
+        case .addArrowItem:
+            performCommand(.addArrowItem)
         case .beginTextEdit:
             if let selectedItemID = interactionState.selectedItemID {
                 performCommand(.beginTextEdit(itemID: selectedItemID))
@@ -1047,6 +1056,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         setupTextButton()
         setupMarkdownButton()
         setupHandDrawingButton()
+        setupArrowButton()
         setupUndoButton()
         setupRedoButton()
         setupBackButton()
@@ -1561,6 +1571,12 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         updateInlineEditButtonsAppearance()
     }
 
+    private func setupArrowButton() {
+        arrowButton.target = self
+        arrowButton.action = #selector(handleArrowButtonClick)
+        renderToolbar()
+    }
+
     private func setupUndoButton() {
         undoButton.target = self
         undoButton.action = #selector(handleUndoButtonClick)
@@ -1916,6 +1932,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
              .draggingSelectedItem,
              .draggingSelection,
              .resizingSelectedItem,
+             .adjustingArrowEndpoint,
              .resizingSelection,
              .draggingCanvas:
             // Reuse primary-cancel semantics so secondary click never leaves a
@@ -2017,6 +2034,22 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
 
                 pointerDragState = .resizingSelectedItem(resizeState)
                 resizeSelectedItem(using: resizeState, to: location)
+            case let .arrowEndpointHandle(endpointRole):
+                guard let itemID = pressContext.targetItemID else {
+                    pointerDragState = .idle
+                    return
+                }
+
+                guard let endpointState = makePointerArrowEndpointState(
+                    itemID: itemID,
+                    endpointRole: endpointRole
+                ) else {
+                    pointerDragState = .idle
+                    return
+                }
+
+                pointerDragState = .adjustingArrowEndpoint(endpointState)
+                adjustArrowEndpoint(using: endpointState, to: location)
             case let .groupSelectionHandle(handleRole):
                 guard let resizeState = makeSelectionResizeState(
                     handleRole: handleRole
@@ -2102,6 +2135,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             pointerDragState = .draggingSelection(updatedDragState)
         case let .resizingSelectedItem(resizeState):
             resizeSelectedItem(using: resizeState, to: location)
+        case let .adjustingArrowEndpoint(endpointState):
+            adjustArrowEndpoint(using: endpointState, to: location)
         case let .resizingSelection(resizeState):
             resizeSelection(using: resizeState, to: location)
         case .draggingCanvas:
@@ -2180,6 +2215,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         case .resizingSelectedItem:
             finalizeMarkdownResizeCommitIfNeeded(for: pointerDragState)
             commitPendingPointerHistoryTransaction(autosaveReason: "resize item")
+        case .adjustingArrowEndpoint:
+            commitPendingPointerHistoryTransaction(autosaveReason: "adjust arrow")
         case .resizingSelection:
             finalizeMarkdownResizeCommitIfNeeded(for: pointerDragState)
             commitPendingPointerHistoryTransaction(autosaveReason: "resize selection")
@@ -2209,6 +2246,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         case .resizingSelectedItem:
             finalizeMarkdownResizeCommitIfNeeded(for: pointerDragState)
             commitPendingPointerHistoryTransaction(autosaveReason: "resize item")
+        case .adjustingArrowEndpoint:
+            commitPendingPointerHistoryTransaction(autosaveReason: "adjust arrow")
         case .resizingSelection:
             finalizeMarkdownResizeCommitIfNeeded(for: pointerDragState)
             commitPendingPointerHistoryTransaction(autosaveReason: "resize selection")
@@ -2486,6 +2525,11 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         }
 
         performCommand(.addHandDrawingItem(paper: .square))
+    }
+
+    @objc
+    private func handleArrowButtonClick() {
+        performCommand(.addArrowItem)
     }
 
     @objc
@@ -4406,6 +4450,22 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         )
     }
 
+    private func makePointerArrowEndpointState(
+        itemID: CanvasItemID,
+        endpointRole: CanvasArrowEndpointRole
+    ) -> CanvasArrowEndpointDragState? {
+        guard let arrowItem = scene.arrowItem(withID: itemID) else {
+            return nil
+        }
+
+        let minimumWorldLength = Self.minimumResizeViewportDimension / camera.zoomScale
+        return CanvasArrowEndpointDragState(
+            item: arrowItem,
+            draggedEndpointRole: endpointRole,
+            minimumLength: minimumWorldLength
+        )
+    }
+
     private func makeSelectionResizeState(
         handleRole: CanvasSelectionHandleRole
     ) -> CanvasSelectionResizeState? {
@@ -4494,6 +4554,24 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         }
 
         expandBoardIfNeeded(toInclude: resizedItem.worldBounds)
+        refreshCanvas()
+    }
+
+    private func adjustArrowEndpoint(
+        using endpointState: CanvasArrowEndpointDragState,
+        to viewportLocation: CGPoint
+    ) {
+        let geometry = endpointState.updatedGeometry(
+            draggedWorldPoint: camera.viewportToWorld(viewportLocation)
+        )
+        guard
+            let updatedArrowItem = scene.applyBoardItemGeometries([geometry])?.first,
+            updatedArrowItem.worldBounds.isNull == false
+        else {
+            return
+        }
+
+        expandBoardIfNeeded(toInclude: updatedArrowItem.worldBounds)
         refreshCanvas()
     }
 
@@ -5237,6 +5315,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             reason = "crop item"
         case .selectionHandle:
             reason = "resize item"
+        case .arrowEndpointHandle:
+            reason = "adjust arrow"
         case .groupSelectionHandle:
             reason = "resize selection"
         case .selectionTranslationArea, .selectedItemBody:
@@ -5315,7 +5395,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             )
         case .idle, .pressed, .croppingSelectedItem, .movingCropFrame,
              .rotatingSelectedItem, .rotatingSelection, .draggingSelectedItem,
-             .draggingSelection, .draggingCanvas:
+             .draggingSelection, .adjustingArrowEndpoint, .draggingCanvas:
             return
         }
 
@@ -5844,6 +5924,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             return "markdown"
         case .handDrawing:
             return "handDrawing"
+        case .arrow:
+            return "arrow"
         }
     }
 
@@ -5861,6 +5943,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             return "selectionHandle(\(String(describing: role)))"
         case let .groupSelectionHandle(role):
             return "groupSelectionHandle(\(String(describing: role)))"
+        case let .arrowEndpointHandle(role):
+            return "arrowEndpointHandle(\(String(describing: role)))"
         case .selectionTranslationArea:
             return "selectionTranslationArea"
         case .selectedItemBody:
@@ -6212,6 +6296,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             return "draggingSelection"
         case .resizingSelectedItem:
             return "resizingSelectedItem"
+        case .adjustingArrowEndpoint:
+            return "adjustingArrowEndpoint"
         case .resizingSelection:
             return "resizingSelection"
         case .draggingCanvas:

@@ -9,7 +9,8 @@ struct CanvasMiniMapRenderer {
             CanvasMiniMapImageNodeProvider(),
             CanvasMiniMapHandDrawingNodeProvider(),
             CanvasMiniMapTextNodeProvider(),
-            CanvasMiniMapMarkdownNodeProvider()
+            CanvasMiniMapMarkdownNodeProvider(),
+            CanvasMiniMapArrowNodeProvider()
         ]
     }
 

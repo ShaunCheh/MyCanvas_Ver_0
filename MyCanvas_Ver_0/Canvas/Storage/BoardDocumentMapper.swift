@@ -64,6 +64,8 @@ enum BoardDocumentMapper {
                         )
                     )
                 )
+            case let .arrow(arrowRecord):
+                return CanvasBoardItem.arrow(makeArrowItem(from: arrowRecord))
             }
         }
 
@@ -114,6 +116,8 @@ enum BoardDocumentMapper {
             return .markdown(makeMarkdownRecord(from: markdownItem))
         case let .handDrawing(handDrawingItem):
             return .handDrawing(makeHandDrawingRecord(from: handDrawingItem))
+        case let .arrow(arrowItem):
+            return .arrow(makeArrowRecord(from: arrowItem))
         }
     }
 
@@ -166,6 +170,18 @@ enum BoardDocumentMapper {
             size: handDrawingRecord.size.cgSize,
             zIndex: CGFloat(handDrawingRecord.zIndex),
             rotationRadians: CGFloat(handDrawingRecord.rotationRadians ?? 0)
+        )
+    }
+
+    private static func makeArrowItem(
+        from arrowRecord: BoardArrowItemRecord
+    ) -> CanvasArrowItem {
+        CanvasArrowItem(
+            id: arrowRecord.id,
+            center: arrowRecord.center.cgPoint,
+            size: arrowRecord.size.cgSize,
+            zIndex: CGFloat(arrowRecord.zIndex),
+            rotationRadians: CGFloat(arrowRecord.rotationRadians ?? 0)
         )
     }
 
@@ -226,6 +242,18 @@ enum BoardDocumentMapper {
             contentRevision: item.contentRevision,
             rotationRadians: Double(item.rotationRadians),
             storage: .bundle
+        )
+    }
+
+    private static func makeArrowRecord(
+        from item: CanvasArrowItem
+    ) -> BoardArrowItemRecord {
+        BoardArrowItemRecord(
+            id: item.id,
+            center: BoardPointRecord(item.center),
+            size: BoardSizeRecord(item.size),
+            zIndex: Double(item.zIndex),
+            rotationRadians: Double(item.rotationRadians)
         )
     }
 

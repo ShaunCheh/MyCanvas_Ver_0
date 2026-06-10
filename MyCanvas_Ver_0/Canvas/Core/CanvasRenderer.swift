@@ -315,6 +315,9 @@ struct CanvasRenderer {
         let screenQuad: CanvasQuad
         let screenCenter: CGPoint
         let selectionHandles: [CanvasEditHandleGeometry]
+        let selectionOutlineScreenPath: CGPath?
+        let selectionTranslationScreenPath: CGPath?
+        let rotateAffordance: CanvasEditRotateOverlayPayload?
         if selectedItems.count == 1,
            let effectiveItem = selectedItems.first
         {
@@ -324,8 +327,25 @@ struct CanvasRenderer {
             screenCenter = camera.worldToViewport(effectiveItem.center)
             selectionHandles = selectionEditHandles(
                 forSingleSelectedItem: effectiveItem,
-                screenQuad: screenQuad
+                screenQuad: screenQuad,
+                camera: camera
             )
+            if let arrowItem = effectiveItem.arrowItem {
+                let arrowScreenPath = makeArrowScreenPath(
+                    for: arrowItem,
+                    camera: camera
+                )
+                selectionOutlineScreenPath = arrowScreenPath
+                selectionTranslationScreenPath = arrowScreenPath
+                rotateAffordance = nil
+            } else {
+                selectionOutlineScreenPath = nil
+                selectionTranslationScreenPath = nil
+                rotateAffordance = makeRotateAffordance(
+                    screenCenter: screenCenter,
+                    screenQuad: screenQuad
+                )
+            }
         } else {
             let groupWorldBounds = groupSelectionWorldBounds(for: selectedItems)
             subject = .group(
@@ -341,13 +361,18 @@ struct CanvasRenderer {
                 forGroupSelectedItems: selectedItems,
                 screenQuad: screenQuad
             )
-        }
-        let selectionPayload = CanvasEditSelectionOverlayPayload(
-            subject: subject,
-            rotateAffordance: makeRotateAffordance(
+            selectionOutlineScreenPath = nil
+            selectionTranslationScreenPath = nil
+            rotateAffordance = makeRotateAffordance(
                 screenCenter: screenCenter,
                 screenQuad: screenQuad
             )
+        }
+        let selectionPayload = CanvasEditSelectionOverlayPayload(
+            subject: subject,
+            rotateAffordance: rotateAffordance,
+            outlineScreenPath: selectionOutlineScreenPath,
+            translationScreenPath: selectionTranslationScreenPath
         )
 
         return CanvasEditRenderOverlay(
@@ -704,6 +729,12 @@ struct CanvasRenderer {
                 camera: camera,
                 rotationPreviewState: rotationPreviewState
             )
+        case let .arrow(arrowItem):
+            return makeArrowRenderItem(
+                for: arrowItem,
+                camera: camera,
+                rotationPreviewState: rotationPreviewState
+            )
         }
     }
 
@@ -766,7 +797,7 @@ struct CanvasRenderer {
         ) {
         case let .handDrawing(resolvedHandDrawingItem):
             effectiveHandDrawingItem = resolvedHandDrawingItem
-        case .image, .text, .markdown:
+        case .image, .text, .markdown, .arrow:
             assertionFailure("Expected hand drawing item after applying geometry.")
             effectiveHandDrawingItem = item
         }
@@ -807,7 +838,7 @@ struct CanvasRenderer {
         ) {
         case let .text(resolvedTextItem):
             effectiveTextItem = resolvedTextItem
-        case .image, .markdown, .handDrawing:
+        case .image, .markdown, .handDrawing, .arrow:
             assertionFailure("Expected text item after applying text presentation.")
             effectiveTextItem = item
         }
@@ -853,7 +884,7 @@ struct CanvasRenderer {
         ) {
         case let .markdown(resolvedMarkdownItem):
             effectiveMarkdownItem = resolvedMarkdownItem
-        case .image, .text, .handDrawing:
+        case .image, .text, .handDrawing, .arrow:
             assertionFailure("Expected markdown item after applying geometry.")
             effectiveMarkdownItem = item
         }
@@ -886,6 +917,39 @@ struct CanvasRenderer {
                     cameraZoomScale: camera.zoomScale
                 )
             )
+        )
+    }
+
+    private func makeArrowRenderItem(
+        for item: CanvasArrowItem,
+        camera: CanvasCamera,
+        rotationPreviewState: CanvasRotationPreviewState?
+    ) -> CanvasRenderItem {
+        let effectiveArrowItem: CanvasArrowItem
+        switch effectiveBoardItem(
+            from: .arrow(item),
+            rotationPreviewState: rotationPreviewState
+        ) {
+        case let .arrow(resolvedArrowItem):
+            effectiveArrowItem = resolvedArrowItem
+        case .image, .text, .markdown, .handDrawing:
+            assertionFailure("Expected arrow item after applying geometry.")
+            effectiveArrowItem = item
+        }
+
+        let screenQuad = camera.worldToViewport(effectiveArrowItem.worldQuad)
+        return CanvasRenderItem(
+            id: effectiveArrowItem.id,
+            screenFrame: screenQuad.boundingRect.standardized,
+            screenQuad: screenQuad,
+            screenCenter: camera.worldToViewport(effectiveArrowItem.center),
+            screenBoundsSize: CGSize(
+                width: effectiveArrowItem.size.width * camera.zoomScale,
+                height: effectiveArrowItem.size.height * camera.zoomScale
+            ),
+            rotationRadians: effectiveArrowItem.rotationRadians,
+            zIndex: effectiveArrowItem.zIndex,
+            payload: .arrow(CanvasArrowRenderPayload())
         )
     }
 
@@ -962,6 +1026,45 @@ struct CanvasRenderer {
         )
     }
 
+    private func makeArrowEndpointHandles(
+        for item: CanvasArrowItem,
+        camera: CanvasCamera
+    ) -> [CanvasEditHandleGeometry] {
+        CanvasArrowEndpointRole.allCases.map { role in
+            CanvasEditHandleGeometry(
+                role: role == .start ? .arrowStart : .arrowEnd,
+                screenCenter: camera.worldToViewport(
+                    item.endpointWorldPoint(for: role)
+                ),
+                screenRotationRadians: item.rotationRadians
+            )
+        }
+    }
+
+    private func makeArrowScreenPath(
+        for item: CanvasArrowItem,
+        camera: CanvasCamera
+    ) -> CGPath {
+        let screenPoints = canvasArrowPolygonPoints(in: item.localFrame).map { localPoint in
+            camera.worldToViewport(item.worldPoint(fromLocal: localPoint))
+        }
+        return closedPath(for: screenPoints)
+    }
+
+    private func closedPath(for points: [CGPoint]) -> CGPath {
+        let path = CGMutablePath()
+        guard let firstPoint = points.first else {
+            return path
+        }
+
+        path.move(to: firstPoint)
+        for point in points.dropFirst() {
+            path.addLine(to: point)
+        }
+        path.closeSubpath()
+        return path
+    }
+
     private func makeCropEditHandles(
         for screenQuad: CanvasQuad
     ) -> [CanvasEditHandleGeometry] {
@@ -1009,6 +1112,9 @@ struct CanvasRenderer {
         case .rotate:
             assertionFailure("Rotate handle center is derived separately.")
             return screenQuad.topMidpoint
+        case .arrowStart, .arrowEnd:
+            assertionFailure("Arrow endpoint handle center is derived separately.")
+            return screenQuad.topMidpoint
         }
     }
 
@@ -1025,13 +1131,22 @@ struct CanvasRenderer {
 
     private func selectionEditHandles(
         forSingleSelectedItem item: CanvasBoardItem,
-        screenQuad: CanvasQuad
+        screenQuad: CanvasQuad,
+        camera: CanvasCamera
     ) -> [CanvasEditHandleGeometry] {
         switch item.kind {
         case .text:
             return []
         case .markdown:
             return makeMarkdownEdgeEditHandles(for: screenQuad)
+        case .arrow:
+            guard let arrowItem = item.arrowItem else {
+                return []
+            }
+            return makeArrowEndpointHandles(
+                for: arrowItem,
+                camera: camera
+            )
         case .image, .handDrawing:
             return makeCornerEditHandles(for: screenQuad)
         }

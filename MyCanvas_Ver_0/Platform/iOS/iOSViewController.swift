@@ -73,6 +73,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         case draggingSelectedItem(CanvasSelectedItemDragState)
         case draggingSelection(CanvasSelectionDragState)
         case resizingSelectedItem(PointerResizeState)
+        case adjustingArrowEndpoint(CanvasArrowEndpointDragState)
         case resizingSelection(CanvasSelectionResizeState)
         case scrollingMarkdownItem(PointerMarkdownScrollState)
         case draggingCanvas
@@ -310,6 +311,11 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         button.translatesAutoresizingMaskIntoConstraints = false
         return button
     }()
+    private let arrowButton: UIButton = {
+        let button = UIButton(type: .system)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }()
     private let undoButton: UIButton = {
         let button = UIButton(type: .system)
         button.translatesAutoresizingMaskIntoConstraints = false
@@ -331,6 +337,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             .text: textButton,
             .markdown: markdownButton,
             .handDrawing: handDrawingButton,
+            .arrow: arrowButton,
             .importMedia: importButton
         ]
     }
@@ -960,6 +967,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         setupTextButton()
         setupMarkdownButton()
         setupHandDrawingButton()
+        setupArrowButton()
         setupUndoButton()
         setupRedoButton()
         setupBackButton()
@@ -1373,6 +1381,15 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         updateInlineEditButtonsAppearance()
     }
 
+    private func setupArrowButton() {
+        arrowButton.addTarget(
+            self,
+            action: #selector(handleArrowButtonTap),
+            for: .touchUpInside
+        )
+        renderToolbar()
+    }
+
     private func setupUndoButton() {
         undoButton.addTarget(self, action: #selector(handleUndoButtonTap), for: .touchUpInside)
         updateInlineEditButtonsAppearance()
@@ -1671,6 +1688,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
              .draggingSelectedItem,
              .draggingSelection,
              .resizingSelectedItem,
+             .adjustingArrowEndpoint,
              .resizingSelection,
              .scrollingMarkdownItem,
              .draggingCanvas:
@@ -1787,6 +1805,22 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
 
                 pointerDragState = .resizingSelectedItem(resizeState)
                 resizeSelectedItem(using: resizeState, to: location)
+            case let .arrowEndpointHandle(endpointRole):
+                guard let itemID = pressContext.targetItemID else {
+                    pointerDragState = .idle
+                    return
+                }
+
+                guard let endpointState = makePointerArrowEndpointState(
+                    itemID: itemID,
+                    endpointRole: endpointRole
+                ) else {
+                    pointerDragState = .idle
+                    return
+                }
+
+                pointerDragState = .adjustingArrowEndpoint(endpointState)
+                adjustArrowEndpoint(using: endpointState, to: location)
             case let .groupSelectionHandle(handleRole):
                 guard let resizeState = makeSelectionResizeState(
                     handleRole: handleRole
@@ -1872,6 +1906,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             pointerDragState = .draggingSelection(updatedDragState)
         case let .resizingSelectedItem(resizeState):
             resizeSelectedItem(using: resizeState, to: location)
+        case let .adjustingArrowEndpoint(endpointState):
+            adjustArrowEndpoint(using: endpointState, to: location)
         case let .resizingSelection(resizeState):
             resizeSelection(using: resizeState, to: location)
         case let .scrollingMarkdownItem(scrollState):
@@ -1953,6 +1989,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         case .resizingSelectedItem:
             finalizeMarkdownResizeCommitIfNeeded(for: pointerDragState)
             commitPendingPointerHistoryTransaction(autosaveReason: "resize item")
+        case .adjustingArrowEndpoint:
+            commitPendingPointerHistoryTransaction(autosaveReason: "adjust arrow")
         case .resizingSelection:
             finalizeMarkdownResizeCommitIfNeeded(for: pointerDragState)
             commitPendingPointerHistoryTransaction(autosaveReason: "resize selection")
@@ -1984,6 +2022,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         case .resizingSelectedItem:
             finalizeMarkdownResizeCommitIfNeeded(for: pointerDragState)
             commitPendingPointerHistoryTransaction(autosaveReason: "resize item")
+        case .adjustingArrowEndpoint:
+            commitPendingPointerHistoryTransaction(autosaveReason: "adjust arrow")
         case .resizingSelection:
             finalizeMarkdownResizeCommitIfNeeded(for: pointerDragState)
             commitPendingPointerHistoryTransaction(autosaveReason: "resize selection")
@@ -2457,6 +2497,11 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         }
 
         performCommand(.addHandDrawingItem(paper: .square))
+    }
+
+    @objc
+    private func handleArrowButtonTap() {
+        performCommand(.addArrowItem)
     }
 
     @objc
@@ -4377,6 +4422,22 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         )
     }
 
+    private func makePointerArrowEndpointState(
+        itemID: CanvasItemID,
+        endpointRole: CanvasArrowEndpointRole
+    ) -> CanvasArrowEndpointDragState? {
+        guard let arrowItem = scene.arrowItem(withID: itemID) else {
+            return nil
+        }
+
+        let minimumWorldLength = Self.minimumResizeViewportDimension / camera.zoomScale
+        return CanvasArrowEndpointDragState(
+            item: arrowItem,
+            draggedEndpointRole: endpointRole,
+            minimumLength: minimumWorldLength
+        )
+    }
+
     private func makeSelectionResizeState(
         handleRole: CanvasSelectionHandleRole
     ) -> CanvasSelectionResizeState? {
@@ -4466,6 +4527,26 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
 
         expandBoardIfNeeded(toInclude: resizedItem.worldBounds)
         requestCanvasRefresh(reason: "resize selected item to \(describe(rect: resizedItem.worldBounds))")
+    }
+
+    private func adjustArrowEndpoint(
+        using endpointState: CanvasArrowEndpointDragState,
+        to viewportLocation: CGPoint
+    ) {
+        let geometry = endpointState.updatedGeometry(
+            draggedWorldPoint: camera.viewportToWorld(viewportLocation)
+        )
+        guard
+            let updatedArrowItem = scene.applyBoardItemGeometries([geometry])?.first,
+            updatedArrowItem.worldBounds.isNull == false
+        else {
+            return
+        }
+
+        expandBoardIfNeeded(toInclude: updatedArrowItem.worldBounds)
+        requestCanvasRefresh(
+            reason: "adjust arrow to \(describe(rect: updatedArrowItem.worldBounds))"
+        )
     }
 
     private func resizeSelection(
@@ -5163,6 +5244,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             reason = "crop item"
         case .selectionHandle:
             reason = "resize item"
+        case .arrowEndpointHandle:
+            reason = "adjust arrow"
         case .groupSelectionHandle:
             reason = "resize selection"
         case .selectionTranslationArea, .selectedItemBody:
@@ -5251,7 +5334,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             )
         case .idle, .pressed, .croppingSelectedItem, .movingCropFrame,
              .rotatingSelectedItem, .rotatingSelection, .draggingSelectedItem,
-             .draggingSelection, .scrollingMarkdownItem, .draggingCanvas:
+             .draggingSelection, .adjustingArrowEndpoint,
+             .scrollingMarkdownItem, .draggingCanvas:
             return
         }
 

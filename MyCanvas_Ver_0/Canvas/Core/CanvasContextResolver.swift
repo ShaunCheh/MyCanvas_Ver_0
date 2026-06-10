@@ -166,6 +166,7 @@ struct CanvasContextResolver {
              .groupRotateHandle,
              .selectionHandle,
              .groupSelectionHandle,
+             .arrowEndpointHandle,
              .cropHandle:
             return "editHandle"
         case .selectionTranslationArea,
@@ -187,6 +188,8 @@ struct CanvasContextResolver {
             pointerTargetKind = .selectionHandle(role: role)
         case let .groupSelectionHandle(role):
             pointerTargetKind = .groupSelectionHandle(role: role)
+        case let .arrowEndpointHandle(role):
+            pointerTargetKind = .arrowEndpointHandle(role: role)
         case .selectionTranslationArea:
             pointerTargetKind = .selectionTranslationArea
         case let .cropHandle(role):
@@ -306,6 +309,8 @@ struct CanvasContextResolver {
             return .selectionHandle(role: role)
         case let .groupSelectionHandle(role):
             return .groupSelectionHandle(role: role)
+        case let .arrowEndpointHandle(role):
+            return .arrowEndpointHandle(role: role)
         case .selectionTranslationArea:
             return .selectedItemBody
         case .selectedItemBody:

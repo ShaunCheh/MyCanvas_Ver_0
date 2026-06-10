@@ -46,6 +46,7 @@ struct CanvasToolbarStateBuilder {
         if supportsHandDrawingEditing {
             itemStates.append(handDrawingItemState(session: session))
         }
+        itemStates.append(arrowItemState(session: session))
         itemStates.append(importItemState(isEnabled: isImportEnabled))
 
         return CanvasToolbarState(
@@ -210,6 +211,21 @@ struct CanvasToolbarStateBuilder {
         )
     }
 
+    func arrowItemState(session: CanvasEditorSession) -> CanvasToolbarItemState {
+        let descriptor = commandCatalog.descriptor(
+            for: .addArrowItem,
+            session: session
+        )
+        return CanvasToolbarItemState(
+            id: .arrow,
+            systemImageName: descriptor.systemImageName,
+            isEnabled: descriptor.isEnabled,
+            isActive: descriptor.isActive,
+            accessibilityLabel: "Add arrow",
+            visualRole: .accent
+        )
+    }
+
     func importItemState(isEnabled: Bool = true) -> CanvasToolbarItemState {
         CanvasToolbarItemState(
             id: .importMedia,
@@ -261,7 +277,7 @@ struct CanvasToolbarStateBuilder {
         session: CanvasEditorSession
     ) -> Bool {
         switch session.selectedBoardItemKind {
-        case .text, .markdown, .handDrawing:
+        case .text, .markdown, .handDrawing, .arrow:
             return true
         case .image, .none:
             return false

@@ -18,7 +18,7 @@ final class CanvasToolbarStateBuilderTests: XCTestCase {
 
         XCTAssertEqual(
             state.items.map(\.id),
-            [.undo, .redo, .crop, .multiSelect, .save, .text, .markdown, .importMedia]
+            [.undo, .redo, .crop, .multiSelect, .save, .text, .markdown, .arrow, .importMedia]
         )
 
         let multiSelectItem = try XCTUnwrap(
@@ -48,6 +48,25 @@ final class CanvasToolbarStateBuilderTests: XCTestCase {
         XCTAssertEqual(markdownItem.accessibilityLabel, "Add markdown")
         XCTAssertTrue(markdownItem.isEnabled)
         XCTAssertEqual(markdownItem.visualRole, .accent)
+    }
+
+    func testMainToolbarStateIncludesArrowItem() throws {
+        let session = makeToolbarStateBuilderTestSession()
+        let builder = CanvasToolbarStateBuilder()
+
+        let state = builder.mainToolbarState(
+            session: session,
+            saveState: .idle,
+            placement: CanvasToolbarPlacement(preferredEdge: .trailing)
+        )
+
+        let arrowItem = try XCTUnwrap(
+            state.items.first(where: { $0.id == .arrow })
+        )
+        XCTAssertEqual(arrowItem.systemImageName, "arrowshape.right.fill")
+        XCTAssertEqual(arrowItem.accessibilityLabel, "Add arrow")
+        XCTAssertTrue(arrowItem.isEnabled)
+        XCTAssertEqual(arrowItem.visualRole, .accent)
     }
 
     func testSelectedTextShowsDeleteToolbarItem() throws {
@@ -242,7 +261,7 @@ final class CanvasToolbarStateBuilderTests: XCTestCase {
 
         XCTAssertEqual(
             state.items.map(\.id),
-            [.undo, .redo, .crop, .multiSelect, .save, .text, .markdown, .handDrawing, .importMedia]
+            [.undo, .redo, .crop, .multiSelect, .save, .text, .markdown, .handDrawing, .arrow, .importMedia]
         )
     }
 

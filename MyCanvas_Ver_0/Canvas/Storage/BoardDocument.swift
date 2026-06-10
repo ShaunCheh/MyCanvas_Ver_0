@@ -75,14 +75,18 @@ struct BoardRuntimeState {
     var handDrawingItems: [CanvasHandDrawingItem] {
         items.compactMap(\.handDrawingItem)
     }
+
+    var arrowItems: [CanvasArrowItem] {
+        items.compactMap(\.arrowItem)
+    }
 }
 
 struct BoardDocument: Codable {
     // Board schema now evolves independently from image asset internals.
-    // Format version 9 adds `type: "markdown"` records. Older clients that do
-    // not understand markdown items cannot forward-decode documents once such
+    // Format version 10 adds `type: "arrow"` records. Older clients that do
+    // not understand arrow items cannot forward-decode documents once such
     // records have been saved.
-    static let currentFormatVersion = 9
+    static let currentFormatVersion = 10
     static let defaultTitle = "Untitled Board"
 
     let formatVersion: Int
@@ -242,6 +246,10 @@ struct BoardDocument: Codable {
 
     var handDrawingItemRecords: [BoardHandDrawingItemRecord] {
         items.compactMap(\.handDrawingItemRecord)
+    }
+
+    var arrowItemRecords: [BoardArrowItemRecord] {
+        items.compactMap(\.arrowItemRecord)
     }
 
     var contentState: BoardDocumentContentState {
@@ -996,11 +1004,20 @@ struct BoardHandDrawingItemRecord: Codable, Equatable {
     }
 }
 
+struct BoardArrowItemRecord: Codable, Equatable {
+    let id: UUID
+    var center: BoardPointRecord
+    var size: BoardSizeRecord
+    var zIndex: Double
+    var rotationRadians: Double?
+}
+
 enum BoardItemRecord: Codable, Equatable {
     case image(BoardImageItemRecord)
     case text(BoardTextItemRecord)
     case markdown(BoardMarkdownItemRecord)
     case handDrawing(BoardHandDrawingItemRecord)
+    case arrow(BoardArrowItemRecord)
 
     private enum CodingKeys: String, CodingKey {
         case type
@@ -1008,6 +1025,7 @@ enum BoardItemRecord: Codable, Equatable {
         case text
         case markdown
         case handDrawing
+        case arrow
     }
 
     private enum ItemType: String, Codable {
@@ -1015,6 +1033,7 @@ enum BoardItemRecord: Codable, Equatable {
         case text
         case markdown
         case handDrawing
+        case arrow
     }
 
     init(from decoder: Decoder) throws {
@@ -1049,6 +1068,13 @@ enum BoardItemRecord: Codable, Equatable {
                         forKey: .handDrawing
                     )
                 )
+            case .arrow:
+                self = .arrow(
+                    try container.decode(
+                        BoardArrowItemRecord.self,
+                        forKey: .arrow
+                    )
+                )
             }
             return
         }
@@ -1072,6 +1098,9 @@ enum BoardItemRecord: Codable, Equatable {
         case let .handDrawing(record):
             try container.encode(ItemType.handDrawing, forKey: .type)
             try container.encode(record, forKey: .handDrawing)
+        case let .arrow(record):
+            try container.encode(ItemType.arrow, forKey: .type)
+            try container.encode(record, forKey: .arrow)
         }
     }
 
@@ -1084,6 +1113,8 @@ enum BoardItemRecord: Codable, Equatable {
         case let .markdown(record):
             return record.id
         case let .handDrawing(record):
+            return record.id
+        case let .arrow(record):
             return record.id
         }
     }
@@ -1098,6 +1129,8 @@ enum BoardItemRecord: Codable, Equatable {
             return record.zIndex
         case let .handDrawing(record):
             return record.zIndex
+        case let .arrow(record):
+            return record.zIndex
         }
     }
 
@@ -1105,7 +1138,7 @@ enum BoardItemRecord: Codable, Equatable {
         switch self {
         case let .image(record):
             return record.referencedAssetFilenames
-        case .text, .markdown:
+        case .text, .markdown, .arrow:
             return []
         case let .handDrawing(record):
             return record.referencedAssetFilenames
@@ -1114,7 +1147,7 @@ enum BoardItemRecord: Codable, Equatable {
 
     var referencedHandDrawingDocumentIDs: Set<HandDrawingDocumentID> {
         switch self {
-        case .image, .text, .markdown:
+        case .image, .text, .markdown, .arrow:
             return []
         case let .handDrawing(record):
             return record.referencedHandDrawingDocumentIDs
@@ -1147,6 +1180,14 @@ enum BoardItemRecord: Codable, Equatable {
 
     var handDrawingItemRecord: BoardHandDrawingItemRecord? {
         guard case let .handDrawing(record) = self else {
+            return nil
+        }
+
+        return record
+    }
+
+    var arrowItemRecord: BoardArrowItemRecord? {
+        guard case let .arrow(record) = self else {
             return nil
         }
 

@@ -80,6 +80,12 @@ struct CanvasClickSelectionResolver: Sendable {
                 affectedItemID: pressedItemID,
                 action: .none
             )
+        case .arrowEndpointHandle:
+            return CanvasClickSelectionDecision(
+                target: "arrow_endpoint_handle",
+                affectedItemID: pressedItemID,
+                action: .none
+            )
         case .selectionTranslationArea:
             return CanvasClickSelectionDecision(
                 target: "selection_translation_area",

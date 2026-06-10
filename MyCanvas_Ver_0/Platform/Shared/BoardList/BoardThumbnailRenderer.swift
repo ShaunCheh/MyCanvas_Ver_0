@@ -175,7 +175,7 @@ final class BoardThumbnailRenderer {
                 partialResult[runtimeHandDrawingItem.id] = runtimeHandDrawingItem
                     .previewAsset
                     .posterCGImage
-            case .text, .markdown:
+            case .text, .markdown, .arrow:
                 break
             }
         }
@@ -412,6 +412,17 @@ final class BoardThumbnailRenderer {
                     ],
                     renderOrder: renderOrder
                 )
+            case let .arrow(arrowItemRecord):
+                drawArrowItem(
+                    arrowItemRecord,
+                    geometry: geometry,
+                    in: context,
+                    traceContext: traceContext,
+                    documentOrder: traceContext.documentOrderByID[
+                        arrowItemRecord.id
+                    ],
+                    renderOrder: renderOrder
+                )
             }
         }
 
@@ -533,7 +544,7 @@ final class BoardThumbnailRenderer {
                 imageItemRecord = record
             case let .handDrawing(record):
                 imageItemRecord = record.previewImageRecord
-            case .text, .markdown:
+            case .text, .markdown, .arrow:
                 continue
             }
 
@@ -682,6 +693,56 @@ final class BoardThumbnailRenderer {
                 renderedImage: renderedImage
             )
         }
+    }
+
+    private func drawArrowItem(
+        _ itemRecord: BoardArrowItemRecord,
+        geometry: CanvasMiniMapViewGeometry,
+        in context: CGContext,
+        traceContext _: BoardThumbnailTraceContext,
+        documentOrder _: Int?,
+        renderOrder _: Int
+    ) {
+        let visibleSize = itemRecord.size.cgSize
+        guard visibleSize.width > 0, visibleSize.height > 0 else {
+            return
+        }
+
+        let mappedSize = CGSize(
+            width: visibleSize.width * geometry.scale,
+            height: visibleSize.height * geometry.scale
+        )
+        guard mappedSize.width > 0, mappedSize.height > 0 else {
+            return
+        }
+
+        let mappedCenter = geometry.worldToMiniMap(itemRecord.center.cgPoint)
+        let rotationRadians = normalizedCanvasAngle(
+            CGFloat(itemRecord.rotationRadians ?? 0)
+        )
+        let path = canvasArrowPath(
+            in: CGRect(
+                x: -mappedSize.width / 2,
+                y: -mappedSize.height / 2,
+                width: mappedSize.width,
+                height: mappedSize.height
+            )
+        )
+
+        context.saveGState()
+        context.translateBy(x: mappedCenter.x, y: mappedCenter.y)
+        context.rotate(by: rotationRadians)
+        context.setFillColor(
+            CGColor(
+                red: 0.12,
+                green: 0.12,
+                blue: 0.12,
+                alpha: 1
+            )
+        )
+        context.addPath(path)
+        context.fillPath()
+        context.restoreGState()
     }
 
     private func makePosterBackedLayout(

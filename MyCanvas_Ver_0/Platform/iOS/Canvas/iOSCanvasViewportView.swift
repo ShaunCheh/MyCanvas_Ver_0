@@ -102,6 +102,7 @@ final class iOSCanvasViewportView: UIView {
     private let rotationTextBackgroundLayer = CAShapeLayer()
     private let rotationTextLayer = CATextLayer()
     private var selectionHandleLayers: [CanvasSelectionHandleRole: CAShapeLayer] = [:]
+    private var arrowEndpointHandleLayers: [CanvasArrowEndpointRole: CAShapeLayer] = [:]
     private let cropMaskLayer = CAShapeLayer()
     private let cropOutlineLayer = CAShapeLayer()
     private var cropHandleLayers: [CanvasCropHandleRole: CAShapeLayer] = [:]
@@ -111,6 +112,7 @@ final class iOSCanvasViewportView: UIView {
     private var handDrawingLayers: [CanvasItemID: CanvasImageLayer] = [:]
     private var textLayers: [CanvasItemID: CanvasTextLayer] = [:]
     private var markdownLayers: [CanvasItemID: CanvasMarkdownItemLayer] = [:]
+    private var arrowLayers: [CanvasItemID: CanvasArrowLayer] = [:]
     private var lastReportedViewportSize: CGSize?
     private var snapshot: CanvasRenderSnapshot = .empty
     private var interactionState: TouchInteractionState = .idle
@@ -368,6 +370,7 @@ final class iOSCanvasViewportView: UIView {
         configureRotationTextBackgroundLayer()
         configureRotationTextLayer()
         configureSelectionHandleLayers()
+        configureArrowEndpointHandleLayers()
         configureCropMaskLayer()
         configureCropOutlineLayer()
         configureCropHandleLayers()
@@ -481,10 +484,20 @@ final class iOSCanvasViewportView: UIView {
                 return nil
             }
         )
+        let incomingArrowIDs = Set(
+            snapshot.items.compactMap { item in
+                if case .arrow = item.payload {
+                    return item.id
+                }
+
+                return nil
+            }
+        )
         let existingImageIDs = Set(imageLayers.keys)
         let existingHandDrawingIDs = Set(handDrawingLayers.keys)
         let existingTextIDs = Set(textLayers.keys)
         let existingMarkdownIDs = Set(markdownLayers.keys)
+        let existingArrowIDs = Set(arrowLayers.keys)
 
         for removedID in existingImageIDs.subtracting(incomingImageIDs) {
             imageLayers[removedID]?.removeFromSuperlayer()
@@ -504,6 +517,11 @@ final class iOSCanvasViewportView: UIView {
         for removedID in existingMarkdownIDs.subtracting(incomingMarkdownIDs) {
             markdownLayers[removedID]?.removeFromSuperlayer()
             markdownLayers[removedID] = nil
+        }
+
+        for removedID in existingArrowIDs.subtracting(incomingArrowIDs) {
+            arrowLayers[removedID]?.removeFromSuperlayer()
+            arrowLayers[removedID] = nil
         }
 
         let contentsScale = window?.screen.scale ?? UIScreen.main.scale
@@ -547,6 +565,12 @@ final class iOSCanvasViewportView: UIView {
                 markdownLayer.update(
                     with: item,
                     markdownPayload: markdownPayload,
+                    contentsScale: contentsScale
+                )
+            case .arrow:
+                let arrowLayer = arrowLayer(for: item.id)
+                arrowLayer.update(
+                    with: item,
                     contentsScale: contentsScale
                 )
             }
@@ -747,6 +771,18 @@ final class iOSCanvasViewportView: UIView {
         }
     }
 
+    private func configureArrowEndpointHandleLayers() {
+        for role in CanvasArrowEndpointRole.allCases {
+            let handleLayer = CAShapeLayer()
+            handleLayer.fillColor = Self.selectionHandleFillColor
+            handleLayer.strokeColor = Self.selectionStrokeColor
+            handleLayer.lineWidth = Self.selectionHandleLineWidth
+            handleLayer.isHidden = true
+            overlayLayer.addSublayer(handleLayer)
+            arrowEndpointHandleLayers[role] = handleLayer
+        }
+    }
+
     private func configureCropMaskLayer() {
         cropMaskLayer.fillColor = Self.cropMaskFillColor
         cropMaskLayer.fillRule = .evenOdd
@@ -943,7 +979,8 @@ final class iOSCanvasViewportView: UIView {
 
         // Selection owns both the outline/resize handles and the rotate
         // affordance so the viewport can keep one coherent blue chrome.
-        selectionOutlineLayer.path = Self.quadPath(for: editOverlay.activeScreenQuad)
+        selectionOutlineLayer.path = payload.outlineScreenPath
+            ?? Self.quadPath(for: editOverlay.activeScreenQuad)
         selectionOutlineLayer.isHidden = false
         selectionOutlineLayer.contentsScale = currentContentsScale
 
@@ -970,7 +1007,32 @@ final class iOSCanvasViewportView: UIView {
             handleLayer.contentsScale = currentContentsScale
         }
 
-        refreshRotateAffordance(payload.rotateAffordance)
+        for role in CanvasArrowEndpointRole.allCases {
+            guard
+                let handleLayer = arrowEndpointHandleLayers[role],
+                let handle = editOverlay.handles.first(where: {
+                    $0.role.arrowEndpointRole == role
+                })
+            else {
+                arrowEndpointHandleLayers[role]?.path = nil
+                arrowEndpointHandleLayers[role]?.frame = .zero
+                arrowEndpointHandleLayers[role]?.isHidden = true
+                continue
+            }
+
+            handleLayer.frame = bounds
+            handleLayer.path = Self.arrowEndpointHandlePath(
+                centeredAt: handle.screenCenter
+            )
+            handleLayer.isHidden = false
+            handleLayer.contentsScale = currentContentsScale
+        }
+
+        if let rotateAffordance = payload.rotateAffordance {
+            refreshRotateAffordance(rotateAffordance)
+        } else {
+            hideRotateAffordance()
+        }
     }
 
     private func refreshSelectionHighlights() {
@@ -1008,6 +1070,14 @@ final class iOSCanvasViewportView: UIView {
         )
         rotateHandleLayer.isHidden = false
         rotateHandleLayer.contentsScale = currentContentsScale
+    }
+
+    private func hideRotateAffordance() {
+        rotateGuideLayer.path = nil
+        rotateGuideLayer.isHidden = true
+        rotateHandleLayer.path = nil
+        rotateHandleLayer.frame = .zero
+        rotateHandleLayer.isHidden = true
     }
 
     private func refreshRotationInteractionOverlay(
@@ -1147,11 +1217,13 @@ final class iOSCanvasViewportView: UIView {
             handleLayer.isHidden = true
         }
 
-        rotateGuideLayer.path = nil
-        rotateGuideLayer.isHidden = true
-        rotateHandleLayer.path = nil
-        rotateHandleLayer.frame = .zero
-        rotateHandleLayer.isHidden = true
+        for handleLayer in arrowEndpointHandleLayers.values {
+            handleLayer.path = nil
+            handleLayer.frame = .zero
+            handleLayer.isHidden = true
+        }
+
+        hideRotateAffordance()
     }
 
     private func hideCropOverlay() {
@@ -1185,6 +1257,18 @@ final class iOSCanvasViewportView: UIView {
             size: cropHandleSize,
             rotationRadians: rotationRadians
         )
+    }
+
+    private static func arrowEndpointHandlePath(
+        centeredAt center: CGPoint
+    ) -> CGPath {
+        let handleRect = CGRect(
+            x: center.x - selectionHandleSize / 2,
+            y: center.y - selectionHandleSize / 2,
+            width: selectionHandleSize,
+            height: selectionHandleSize
+        )
+        return CGPath(ellipseIn: handleRect, transform: nil)
     }
 
     private static func selectionHandlePath(
@@ -1441,6 +1525,17 @@ final class iOSCanvasViewportView: UIView {
         itemsLayer.addSublayer(markdownLayer)
         markdownLayers[itemID] = markdownLayer
         return markdownLayer
+    }
+
+    private func arrowLayer(for itemID: CanvasItemID) -> CanvasArrowLayer {
+        if let arrowLayer = arrowLayers[itemID] {
+            return arrowLayer
+        }
+
+        let arrowLayer = CanvasArrowLayer(itemID: itemID)
+        itemsLayer.addSublayer(arrowLayer)
+        arrowLayers[itemID] = arrowLayer
+        return arrowLayer
     }
 
     private func registerActiveTouches(_ touches: Set<UITouch>) {

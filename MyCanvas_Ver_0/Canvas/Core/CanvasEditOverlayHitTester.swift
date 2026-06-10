@@ -6,6 +6,7 @@ enum CanvasEditOverlayHitTargetKind {
     case groupRotateHandle
     case selectionHandle(role: CanvasSelectionHandleRole)
     case groupSelectionHandle(role: CanvasSelectionHandleRole)
+    case arrowEndpointHandle(role: CanvasArrowEndpointRole)
     case selectionTranslationArea
     case cropHandle(role: CanvasCropHandleRole)
     // Crop translation now covers both the visible crop interior and the edge
@@ -22,6 +23,8 @@ enum CanvasEditOverlayHitTargetKind {
             return "selectionHandle(\(String(describing: role)))"
         case let .groupSelectionHandle(role):
             return "groupSelectionHandle(\(String(describing: role)))"
+        case let .arrowEndpointHandle(role):
+            return "arrowEndpointHandle(\(String(describing: role)))"
         case .selectionTranslationArea:
             return "selectionTranslationArea"
         case let .cropHandle(role):
@@ -116,23 +119,39 @@ struct CanvasEditOverlayHitTester {
         guard case let .selection(payload) = editOverlay.payload else {
             return nil
         }
-        let rotateHitTargetKind: CanvasEditOverlayHitTargetKind = payload.subject.isGroupSelection
-            ? .groupRotateHandle
-            : .rotateHandle
+        if let rotateAffordance = payload.rotateAffordance {
+            let rotateHitTargetKind: CanvasEditOverlayHitTargetKind = payload.subject.isGroupSelection
+                ? .groupRotateHandle
+                : .rotateHandle
 
-        let rotateHitRect = rect(
-            centeredAt: payload.rotateAffordance.handle.screenCenter,
-            size: metrics.rotateHandleHitTargetSize
-        )
-        if rotateHitRect.contains(viewportPoint) {
-            return CanvasEditOverlayHitTarget(
-                kind: rotateHitTargetKind,
-                itemID: editOverlay.itemID,
-                anchorRect: rotateHitRect
+            let rotateHitRect = rect(
+                centeredAt: rotateAffordance.handle.screenCenter,
+                size: metrics.rotateHandleHitTargetSize
             )
+            if rotateHitRect.contains(viewportPoint) {
+                return CanvasEditOverlayHitTarget(
+                    kind: rotateHitTargetKind,
+                    itemID: editOverlay.itemID,
+                    anchorRect: rotateHitRect
+                )
+            }
         }
 
         for handle in editOverlay.handles {
+            if let role = handle.role.arrowEndpointRole {
+                let hitRect = rect(
+                    centeredAt: handle.screenCenter,
+                    size: metrics.selectionHandleHitTargetSize
+                )
+                if hitRect.contains(viewportPoint) {
+                    return CanvasEditOverlayHitTarget(
+                        kind: .arrowEndpointHandle(role: role),
+                        itemID: editOverlay.itemID,
+                        anchorRect: hitRect
+                    )
+                }
+            }
+
             guard let role = handle.role.selectionHandleRole else {
                 continue
             }
@@ -160,6 +179,7 @@ struct CanvasEditOverlayHitTester {
         if isWithinSelectionTranslationArea(
             viewportPoint,
             selectionScreenQuad: editOverlay.activeScreenQuad,
+            selectionTranslationPath: payload.translationScreenPath,
             selectedMemberScreenQuads: selectedMemberScreenQuads,
             expectedMemberCount: payload.subject.memberItemIDs.count,
             outlineHitSlopWidth: metrics.selectionOutlineHitTargetWidth
@@ -215,10 +235,28 @@ struct CanvasEditOverlayHitTester {
     private func isWithinSelectionTranslationArea(
         _ viewportPoint: CGPoint,
         selectionScreenQuad: CanvasQuad,
+        selectionTranslationPath: CGPath?,
         selectedMemberScreenQuads: [CanvasQuad],
         expectedMemberCount: Int,
         outlineHitSlopWidth: CGFloat
     ) -> Bool {
+        if let selectionTranslationPath {
+            if selectionTranslationPath.contains(viewportPoint) {
+                return true
+            }
+
+            let strokedTranslationPath = selectionTranslationPath.copy(
+                strokingWithWidth: outlineHitSlopWidth,
+                lineCap: .round,
+                lineJoin: .round,
+                miterLimit: 10,
+                transform: .identity
+            )
+            if strokedTranslationPath.contains(viewportPoint) {
+                return true
+            }
+        }
+
         if isWithinQuadOutlineHitArea(
             viewportPoint,
             screenQuad: selectionScreenQuad,

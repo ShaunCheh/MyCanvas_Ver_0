@@ -159,3 +159,30 @@ struct CanvasMiniMapMarkdownNodeProvider: CanvasMiniMapNodeProviding {
         }
     }
 }
+
+struct CanvasMiniMapArrowNodeProvider: CanvasMiniMapNodeProviding {
+    func makeNodes(
+        context: CanvasMiniMapNodeProviderContext
+    ) -> [CanvasMiniMapNode] {
+        context.scene.orderedBoardItems().compactMap { boardItem in
+            guard let item = boardItem.arrowItem else {
+                return nil
+            }
+
+            let effectiveItem = effectiveMiniMapBoardItem(
+                from: .arrow(item),
+                rotationPreviewState: context.rotationPreviewState
+            ).arrowItem ?? item
+
+            return CanvasMiniMapNode(
+                id: effectiveItem.id,
+                kind: .shape,
+                worldQuad: effectiveItem.worldQuad,
+                zIndex: effectiveItem.zIndex,
+                isPreviewActive: context.rotationPreviewState?.geometry(
+                    for: effectiveItem.id
+                ) != nil
+            )
+        }
+    }
+}

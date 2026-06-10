@@ -337,6 +337,65 @@ final class CanvasCommandPolicyParityTests: XCTestCase {
         XCTAssertNotNil(session.transientHandDrawingAssetPayload(for: itemID))
     }
 
+    func testAddArrowDescriptorAndExecutorMatchPolicyInEditingMode() {
+        let session = makeCommandPolicyParityTestSession(workspaceMode: .editing)
+        let executor = CanvasCommandExecutor(session: session)
+        CanvasCommandPolicyParityTestRetainer.executors.append(executor)
+
+        let descriptor = commandCatalog.descriptor(
+            for: .addArrowItem,
+            session: session
+        )
+        let decision = policy.commandDecision(
+            for: .addArrowItem,
+            workspaceMode: session.workspaceMode
+        )
+
+        XCTAssertEqual(decision, .allow)
+        XCTAssertTrue(descriptor.isEnabled)
+        XCTAssertFalse(descriptor.isActive)
+        XCTAssertTrue(executor.canExecute(.addArrowItem))
+    }
+
+    func testAddArrowDescriptorAndExecutorMatchPolicyInReadingMode() {
+        let session = makeCommandPolicyParityTestSession(workspaceMode: .reading)
+        let executor = CanvasCommandExecutor(session: session)
+        CanvasCommandPolicyParityTestRetainer.executors.append(executor)
+
+        let descriptor = commandCatalog.descriptor(
+            for: .addArrowItem,
+            session: session
+        )
+        let decision = policy.commandDecision(
+            for: .addArrowItem,
+            workspaceMode: session.workspaceMode
+        )
+
+        XCTAssertEqual(decision, .block(reason: .readingMode, feedback: nil))
+        XCTAssertFalse(descriptor.isEnabled)
+        XCTAssertFalse(descriptor.isActive)
+        XCTAssertFalse(executor.canExecute(.addArrowItem))
+    }
+
+    func testAddArrowCommandCreatesDefaultHorizontalArrow() throws {
+        let session = makeCommandPolicyParityTestSession(workspaceMode: .editing)
+        let executor = CanvasCommandExecutor(session: session)
+        CanvasCommandPolicyParityTestRetainer.executors.append(executor)
+
+        let result = try XCTUnwrap(executor.execute(.addArrowItem))
+        let itemID = try XCTUnwrap(session.singleSelectedItemID)
+        let item = try XCTUnwrap(session.scene.arrowItem(withID: itemID))
+
+        XCTAssertEqual(item.center, session.camera.center)
+        XCTAssertEqual(item.size, CGSize(width: 220, height: 80))
+        XCTAssertEqual(item.rotationRadians, 0, accuracy: 0.0001)
+        XCTAssertEqual(itemID, item.id)
+        XCTAssertEqual(
+            result.refreshReason,
+            "add arrow item \(item.id.uuidString)"
+        )
+    }
+
     func testCommitTextDescriptorResetsActiveStateWhenPolicyBlocksInReadingMode() {
         let session = makeCommandPolicyParityTestSession(workspaceMode: .editing)
         let executor = CanvasCommandExecutor(session: session)
