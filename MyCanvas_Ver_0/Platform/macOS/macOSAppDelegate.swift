@@ -10,7 +10,7 @@ import Foundation
 import AppKit
 
 @main
-final class macOSAppDelegate: NSObject, NSApplicationDelegate {
+final class macOSAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var window: NSWindow?
     private static let sharedDelegate = macOSAppDelegate()
     
@@ -23,6 +23,42 @@ final class macOSAppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         FolderBookmarkStore.mirrorStoredBookmarkToSharedStoreIfNeeded()
         FolderBookmarkStore.logStoredBookmarkPresence()
+        NSApp.mainMenu = makeMainMenu()
+        openMainWindow()
+    }
+
+    func applicationShouldHandleReopen(
+        _ sender: NSApplication,
+        hasVisibleWindows _: Bool
+    ) -> Bool {
+        openMainWindow()
+        return true
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(
+        _ sender: NSApplication
+    ) -> Bool {
+        false
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        guard let closingWindow = notification.object as? NSWindow,
+              closingWindow === window else {
+            return
+        }
+        window = nil
+    }
+
+    private func openMainWindow() {
+        if let window {
+            if window.isMiniaturized {
+                window.deminiaturize(nil)
+            }
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+
         let viewController = macOSAppRootViewController()
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
@@ -35,15 +71,16 @@ final class macOSAppDelegate: NSObject, NSApplicationDelegate {
         window.center()
         window.title = "MyCanvas_Ver_0"
         window.contentViewController = viewController
-        window.makeKeyAndOrderFront(nil)
-        NSApp.mainMenu = makeMainMenu()
-        NSApp.activate(ignoringOtherApps: true)
+        window.delegate = self
         self.window = window
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     private func makeMainMenu() -> NSMenu {
         let mainMenu = NSMenu()
         mainMenu.addItem(makeApplicationMenuItem())
+        mainMenu.addItem(makeFileMenuItem())
         mainMenu.addItem(makeEditMenuItem())
         return mainMenu
     }
@@ -59,6 +96,20 @@ final class macOSAppDelegate: NSObject, NSApplicationDelegate {
         )
         appMenuItem.submenu = appMenu
         return appMenuItem
+    }
+
+    private func makeFileMenuItem() -> NSMenuItem {
+        let fileMenuItem = NSMenuItem(title: "File", action: nil, keyEquivalent: "")
+        let fileMenu = NSMenu(title: "File")
+        let closeItem = NSMenuItem(
+            title: "Close Window",
+            action: #selector(NSWindow.performClose(_:)),
+            keyEquivalent: "w"
+        )
+        closeItem.keyEquivalentModifierMask = [.command]
+        fileMenu.addItem(closeItem)
+        fileMenuItem.submenu = fileMenu
+        return fileMenuItem
     }
 
     private func makeEditMenuItem() -> NSMenuItem {
