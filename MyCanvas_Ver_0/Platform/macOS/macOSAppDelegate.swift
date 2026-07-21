@@ -66,6 +66,8 @@ final class macOSAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate 
             backing: .buffered,
             defer: false
         )
+        // 由 AppDelegate 在 windowWillClose 中释放，避免 NSWindow 在 ARC 下重复释放
+        window.isReleasedWhenClosed = false
         // 需要设置最小尺寸，否则不会显示
         window.contentMinSize = NSSize(width: 640, height: 420)
         window.center()
