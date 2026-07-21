@@ -34,10 +34,13 @@ final class macOSAppRootViewController: NSViewController {
     }
 
     override func loadView() {
-        let rootView = NSView()
+        let rootView = macOSAppearanceAwareView()
         rootView.wantsLayer = true
-        rootView.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        rootView.onEffectiveAppearanceChange = { [weak self] in
+            self?.updateAppearance()
+        }
         view = rootView
+        updateAppearance()
     }
 
     override func viewDidLoad() {
@@ -50,6 +53,17 @@ final class macOSAppRootViewController: NSViewController {
         )
         setupTransitionInfrastructure()
         display(launchCoordinator.initialDestination())
+    }
+
+    private func updateAppearance() {
+        let appearance = view.effectiveAppearance
+        PlatformLayerAppearance.performWithoutAnimations {
+            view.layer?.backgroundColor = PlatformLayerAppearance.resolvedCGColor(
+                .windowBackgroundColor,
+                for: appearance
+            )
+        }
+        activeTransitionSession?.carrier.updateAppearance(appearance)
     }
 
     func display(_ destination: AppLaunchDestination) {

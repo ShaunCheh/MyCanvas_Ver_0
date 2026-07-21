@@ -121,14 +121,18 @@ final class macOSGIFFrameImportViewController: NSViewController, NSCollectionVie
     }
 
     override func loadView() {
-        view = NSView()
+        let rootView = macOSAppearanceAwareView()
+        rootView.onEffectiveAppearanceChange = { [weak self] in
+            self?.updateAppearance()
+        }
+        view = rootView
     }
 
     override func viewDidLoad() {
         super.viewDidLoad()
         preferredContentSize = CGSize(width: 760, height: 620)
         view.wantsLayer = true
-        view.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        updateAppearance()
         setupViewHierarchy()
         setupConstraints()
         configureButtons()
@@ -152,6 +156,20 @@ final class macOSGIFFrameImportViewController: NSViewController, NSCollectionVie
 
     override func cancelOperation(_ sender: Any?) {
         dismiss(self)
+    }
+
+    private func updateAppearance() {
+        guard isViewLoaded else {
+            return
+        }
+
+        let appearance = view.effectiveAppearance
+        PlatformLayerAppearance.performWithoutAnimations {
+            view.layer?.backgroundColor = PlatformLayerAppearance.resolvedCGColor(
+                .windowBackgroundColor,
+                for: appearance
+            )
+        }
     }
 
     private func setupViewHierarchy() {
@@ -522,12 +540,8 @@ private final class macOSGIFFrameImportCollectionItem: NSCollectionViewItem {
     )
 
     private let previewContainerView: NSView = {
-        let view = NSView()
+        let view = macOSGIFFrameImportPreviewContainerView()
         view.translatesAutoresizingMaskIntoConstraints = false
-        view.wantsLayer = true
-        view.layer?.cornerRadius = 12
-        view.layer?.masksToBounds = true
-        view.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
         return view
     }()
     private let imageViewContainer: NSImageView = {
@@ -583,7 +597,11 @@ private final class macOSGIFFrameImportCollectionItem: NSCollectionViewItem {
     }
 
     override func loadView() {
-        view = NSView()
+        let rootView = macOSAppearanceAwareView()
+        rootView.onEffectiveAppearanceChange = { [weak self] in
+            self?.updateSelectionAppearance()
+        }
+        view = rootView
     }
 
     override func viewDidLoad() {
@@ -646,7 +664,6 @@ private final class macOSGIFFrameImportCollectionItem: NSCollectionViewItem {
         view.layer?.cornerRadius = 16
         view.layer?.masksToBounds = true
         view.layer?.borderWidth = 2
-        view.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
 
         let clickGestureRecognizer = NSClickGestureRecognizer(
             target: self,
@@ -756,13 +773,59 @@ private final class macOSGIFFrameImportCollectionItem: NSCollectionViewItem {
     }
 
     private func updateSelectionAppearance() {
-        view.layer?.borderColor = isFrameSelected
-            ? NSColor.controlAccentColor.cgColor
-            : NSColor.separatorColor.cgColor
-        view.layer?.backgroundColor = isFrameSelected
-            ? NSColor.controlAccentColor.withAlphaComponent(0.12).cgColor
-            : NSColor.controlBackgroundColor.cgColor
-        selectionBadgeView.isHidden = isFrameSelected == false
+        let borderColor: NSColor = isFrameSelected
+            ? .controlAccentColor
+            : .separatorColor
+        let backgroundColor: NSColor = isFrameSelected
+            ? NSColor.controlAccentColor.withAlphaComponent(0.12)
+            : .controlBackgroundColor
+        let appearance = view.effectiveAppearance
+        PlatformLayerAppearance.performWithoutAnimations {
+            view.layer?.borderColor = PlatformLayerAppearance.resolvedCGColor(
+                borderColor,
+                for: appearance
+            )
+            view.layer?.backgroundColor = PlatformLayerAppearance.resolvedCGColor(
+                backgroundColor,
+                for: appearance
+            )
+            selectionBadgeView.isHidden = isFrameSelected == false
+        }
+    }
+}
+
+private final class macOSGIFFrameImportPreviewContainerView: NSView {
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.cornerRadius = 12
+        layer?.masksToBounds = true
+        updateAppearance()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        updateAppearance()
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateAppearance()
+    }
+
+    private func updateAppearance() {
+        let appearance = effectiveAppearance
+        PlatformLayerAppearance.performWithoutAnimations {
+            layer?.backgroundColor = PlatformLayerAppearance.resolvedCGColor(
+                .controlBackgroundColor,
+                for: appearance
+            )
+        }
     }
 }
 #endif

@@ -65,8 +65,6 @@ final class macOSBoardPreviewView: NSView {
         boardLayer.strokeColor = nil
         boardLayer.lineWidth = Self.boardLineWidth
 
-        occupancyLayer.fillColor = NSColor.systemGray.cgColor
-        occupancyLayer.strokeColor = NSColor.systemGray.withAlphaComponent(0.85).cgColor
         occupancyLayer.lineWidth = 1
 
         updateAppearance()
@@ -78,9 +76,23 @@ final class macOSBoardPreviewView: NSView {
     }
 
     private func updateAppearance() {
-        backgroundLayer.backgroundColor = CanvasWorkspacePalette.backgroundColor
-        layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.75).cgColor
-        layer?.borderWidth = Self.borderWidth
+        let appearance = effectiveAppearance
+        performWithoutLayerActions {
+            backgroundLayer.backgroundColor = CanvasWorkspacePalette.backgroundColor
+            layer?.borderColor = PlatformLayerAppearance.resolvedCGColor(
+                NSColor.separatorColor.withAlphaComponent(0.75),
+                for: appearance
+            )
+            layer?.borderWidth = Self.borderWidth
+            occupancyLayer.fillColor = PlatformLayerAppearance.resolvedCGColor(
+                .systemGray,
+                for: appearance
+            )
+            occupancyLayer.strokeColor = PlatformLayerAppearance.resolvedCGColor(
+                NSColor.systemGray.withAlphaComponent(0.85),
+                for: appearance
+            )
+        }
     }
 
     private func refreshPreview() {
@@ -95,10 +107,7 @@ final class macOSBoardPreviewView: NSView {
     }
 
     private func performWithoutLayerActions(_ updates: () -> Void) {
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        updates()
-        CATransaction.commit()
+        PlatformLayerAppearance.performWithoutAnimations(updates)
     }
 }
 #endif

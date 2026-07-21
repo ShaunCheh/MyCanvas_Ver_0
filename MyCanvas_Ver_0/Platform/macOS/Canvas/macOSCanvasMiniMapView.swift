@@ -88,12 +88,8 @@ final class macOSCanvasMiniMapView: NSView {
         boardLayer.strokeColor = nil
         boardLayer.lineWidth = Self.boardLineWidth
 
-        occupancyLayer.fillColor = NSColor.systemGray.cgColor
-        occupancyLayer.strokeColor = NSColor.systemGray.withAlphaComponent(0.85).cgColor
         occupancyLayer.lineWidth = 1
 
-        viewportLayer.fillColor = NSColor.systemBlue.withAlphaComponent(0.12).cgColor
-        viewportLayer.strokeColor = NSColor.systemBlue.cgColor
         viewportLayer.lineWidth = Self.viewportLineWidth
 
         updateAppearance()
@@ -119,9 +115,31 @@ final class macOSCanvasMiniMapView: NSView {
     }
 
     private func updateAppearance() {
-        backgroundLayer.backgroundColor = CanvasWorkspacePalette.backgroundColor
-        layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.75).cgColor
-        layer?.borderWidth = Self.borderWidth
+        let appearance = effectiveAppearance
+        performWithoutLayerActions {
+            backgroundLayer.backgroundColor = CanvasWorkspacePalette.backgroundColor
+            layer?.borderColor = PlatformLayerAppearance.resolvedCGColor(
+                NSColor.separatorColor.withAlphaComponent(0.75),
+                for: appearance
+            )
+            layer?.borderWidth = Self.borderWidth
+            occupancyLayer.fillColor = PlatformLayerAppearance.resolvedCGColor(
+                .systemGray,
+                for: appearance
+            )
+            occupancyLayer.strokeColor = PlatformLayerAppearance.resolvedCGColor(
+                NSColor.systemGray.withAlphaComponent(0.85),
+                for: appearance
+            )
+            viewportLayer.fillColor = PlatformLayerAppearance.resolvedCGColor(
+                NSColor.systemBlue.withAlphaComponent(0.12),
+                for: appearance
+            )
+            viewportLayer.strokeColor = PlatformLayerAppearance.resolvedCGColor(
+                .systemBlue,
+                for: appearance
+            )
+        }
     }
 
     private func refreshMiniMap() {
@@ -217,10 +235,7 @@ final class macOSCanvasMiniMapView: NSView {
     }
 
     private func performWithoutLayerActions(_ updates: () -> Void) {
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        updates()
-        CATransaction.commit()
+        PlatformLayerAppearance.performWithoutAnimations(updates)
     }
 }
 #endif

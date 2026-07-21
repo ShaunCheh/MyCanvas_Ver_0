@@ -226,7 +226,11 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
     }()
 
     override func loadView() {
-        view = NSView()
+        let rootView = macOSAppearanceAwareView()
+        rootView.onEffectiveAppearanceChange = { [weak self] in
+            self?.updateAppearance()
+        }
+        view = rootView
     }
 
     deinit {
@@ -248,6 +252,7 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
         setupMouseEventLogging()
         refreshBookmarkStatus()
         applyTransitionInteractionFreeze()
+        updateAppearance()
     }
 
     override func viewDidLayout() {
@@ -530,7 +535,6 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
 
     private func setupViewHierarchy() {
         view.wantsLayer = true
-        view.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
 
         actionStackView.addArrangedSubview(selectFolderButton)
         actionStackView.addArrangedSubview(displayModeControl)
@@ -546,6 +550,20 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
 
         contentContainerView.addSubview(collectionScrollView)
         contentContainerView.addSubview(emptyStateLabel)
+    }
+
+    private func updateAppearance() {
+        guard isViewLoaded else {
+            return
+        }
+
+        let appearance = view.effectiveAppearance
+        PlatformLayerAppearance.performWithoutAnimations {
+            view.layer?.backgroundColor = PlatformLayerAppearance.resolvedCGColor(
+                .windowBackgroundColor,
+                for: appearance
+            )
+        }
     }
 
     private func setupConstraints() {

@@ -266,6 +266,16 @@ final class SelectionAccessoryHostView: NSView {
         return nil
     }
 
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        updateAppearance()
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateAppearance()
+    }
+
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard currentState != nil, isHidden == false else {
             return nil
@@ -392,17 +402,51 @@ final class SelectionAccessoryHostView: NSView {
         )
         button.imagePosition = .imageLeading
         button.alignment = .center
+        button.font = .systemFont(ofSize: 13, weight: .medium)
+        button.wantsLayer = true
+        button.layer?.cornerRadius = 8
+        applyAppearance(descriptor, to: button)
+        return button
+    }
+
+    private func updateAppearance() {
+        guard let currentState else {
+            return
+        }
+
+        for (index, actionState) in currentState.actionStates.enumerated() {
+            guard let button = actionStackButton(at: index) else {
+                continue
+            }
+            applyAppearance(actionState.descriptor, to: button)
+        }
+    }
+
+    private func actionStackButton(at index: Int) -> NSButton? {
+        guard stackView.arrangedSubviews.indices.contains(index) else {
+            return nil
+        }
+        return stackView.arrangedSubviews[index] as? NSButton
+    }
+
+    private func applyAppearance(
+        _ descriptor: SelectionAccessoryActionDescriptor,
+        to button: NSButton
+    ) {
         button.contentTintColor = descriptor.isEnabled
             ? (descriptor.isActive ? .systemOrange : .labelColor)
             : .secondaryLabelColor
-        button.font = .systemFont(ofSize: 13, weight: .medium)
         button.isEnabled = descriptor.isEnabled
-        button.wantsLayer = true
-        button.layer?.cornerRadius = 8
-        button.layer?.backgroundColor = descriptor.isActive
-            ? NSColor.systemOrange.withAlphaComponent(0.14).cgColor
-            : NSColor.clear.cgColor
-        return button
+
+        let backgroundColor = descriptor.isActive
+            ? NSColor.systemOrange.withAlphaComponent(0.14)
+            : NSColor.clear
+        PlatformLayerAppearance.performWithoutAnimations {
+            button.layer?.backgroundColor = PlatformLayerAppearance.resolvedCGColor(
+                backgroundColor,
+                for: effectiveAppearance
+            )
+        }
     }
 
     @objc

@@ -12,6 +12,7 @@ protocol macOSBoardListCanvasTransitionCarrying: AnyObject {
     )
     func animateTransition(completion: @escaping () -> Void)
     func updateTransitionContext(_ context: BoardListCanvasTransitionContext)
+    func updateAppearance(_ appearance: NSAppearance)
     func completeTransition()
     func cancelTransition()
 }
@@ -41,6 +42,7 @@ final class macOSSnapshotShellCarrier: macOSBoardListCanvasTransitionCarrying {
     private weak var sourceViewController: NSViewController?
     private weak var destinationViewController: NSViewController?
     private var currentContext: BoardListCanvasTransitionContext?
+    private var currentAppearance: NSAppearance?
     private var shellShadowView: NSView?
     private var shellContentView: NSView?
 
@@ -53,6 +55,7 @@ final class macOSSnapshotShellCarrier: macOSBoardListCanvasTransitionCarrying {
             removeShellViews()
             self.overlayHostView = overlayHostView
         }
+        updateAppearance(overlayHostView.effectiveAppearance)
     }
 
     func prepareTransition(
@@ -87,6 +90,20 @@ final class macOSSnapshotShellCarrier: macOSBoardListCanvasTransitionCarrying {
 
     func updateTransitionContext(_ context: BoardListCanvasTransitionContext) {
         currentContext = context
+    }
+
+    func updateAppearance(_ appearance: NSAppearance) {
+        currentAppearance = appearance
+        guard let shellContentView else {
+            return
+        }
+
+        PlatformLayerAppearance.performWithoutAnimations {
+            shellContentView.layer?.backgroundColor = PlatformLayerAppearance.resolvedCGColor(
+                .windowBackgroundColor,
+                for: appearance
+            )
+        }
     }
 
     func completeTransition() {
@@ -361,9 +378,17 @@ final class macOSSnapshotShellCarrier: macOSBoardListCanvasTransitionCarrying {
         let contentView = NSView(frame: frame)
         contentView.autoresizingMask = [.width, .height]
         contentView.wantsLayer = true
-        contentView.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
         contentView.layer?.cornerRadius = cornerRadius
         contentView.layer?.masksToBounds = true
+        let appearance = currentAppearance
+            ?? overlayHostView?.effectiveAppearance
+            ?? contentView.effectiveAppearance
+        PlatformLayerAppearance.performWithoutAnimations {
+            contentView.layer?.backgroundColor = PlatformLayerAppearance.resolvedCGColor(
+                .windowBackgroundColor,
+                for: appearance
+            )
+        }
         return contentView
     }
 
@@ -400,6 +425,7 @@ final class macOSSnapshotShellCarrier: macOSBoardListCanvasTransitionCarrying {
     private func resetTransitionState() {
         removeShellViews()
         currentContext = nil
+        currentAppearance = nil
         sourceViewController = nil
         destinationViewController = nil
     }

@@ -43,7 +43,6 @@ final class iOSVideoTimelineView: UIView {
         view.layer.cornerCurve = .continuous
         view.layer.masksToBounds = true
         view.layer.borderWidth = 1
-        view.layer.borderColor = UIColor.separator.cgColor
         return view
     }()
     private let playheadView: UIView = {
@@ -133,11 +132,27 @@ final class iOSVideoTimelineView: UIView {
         setupLayers()
         scrollView.delegate = self
         updatePlaceholderAppearance()
+        updateAppearance()
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         nil
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        updateAppearance()
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        guard previousTraitCollection?.hasDifferentColorAppearance(
+            comparedTo: traitCollection
+        ) != false else {
+            return
+        }
+        updateAppearance()
     }
 
     override func layoutSubviews() {
@@ -268,6 +283,16 @@ final class iOSVideoTimelineView: UIView {
         rulerView.layer.addSublayer(rulerTickLayer)
         rulerView.layer.addSublayer(rulerLabelLayer)
         trackFrameLayer.contentsGravity = .resizeAspectFill
+    }
+
+    private func updateAppearance() {
+        PlatformLayerAppearance.performWithoutAnimations {
+            trackView.layer.borderColor = PlatformLayerAppearance.resolvedCGColor(
+                .separator,
+                for: traitCollection
+            )
+        }
+        renderRuler()
     }
 
     private func updateGeometry(recenterOnPlayhead: Bool) {
@@ -457,52 +482,59 @@ final class iOSVideoTimelineView: UIView {
     }
 
     private func renderRuler() {
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        rulerTickLayer.sublayers?.forEach { $0.removeFromSuperlayer() }
-        rulerLabelLayer.sublayers?.forEach { $0.removeFromSuperlayer() }
-
-        let geometryViewport = makeGeometryViewport()
-        let tickStepSeconds = makeTickStepSeconds(
-            secondsPerPoint: geometryViewport.displayedSecondsPerPoint
+        let tickColor = PlatformLayerAppearance.resolvedCGColor(
+            .separator,
+            for: traitCollection
         )
-        guard tickStepSeconds > 0 else {
-            CATransaction.commit()
-            return
-        }
+        let labelColor = PlatformLayerAppearance.resolvedCGColor(
+            .secondaryLabel,
+            for: traitCollection
+        )
+        PlatformLayerAppearance.performWithoutAnimations {
+            rulerTickLayer.sublayers?.forEach { $0.removeFromSuperlayer() }
+            rulerLabelLayer.sublayers?.forEach { $0.removeFromSuperlayer() }
 
-        var tickTimeSeconds = 0.0
-        let upperBoundTimeSeconds = geometryViewport.upperBoundTimeSeconds
-        while tickTimeSeconds <= upperBoundTimeSeconds + 0.0001 {
-            let tickX = geometryViewport.contentX(forTimeSeconds: tickTimeSeconds)
-            let tickLayer = CALayer()
-            tickLayer.backgroundColor = UIColor.separator.cgColor
-            tickLayer.frame = CGRect(
-                x: tickX.rounded(.down),
-                y: 14,
-                width: 1,
-                height: 6
+            let geometryViewport = makeGeometryViewport()
+            let tickStepSeconds = makeTickStepSeconds(
+                secondsPerPoint: geometryViewport.displayedSecondsPerPoint
             )
-            rulerTickLayer.addSublayer(tickLayer)
+            guard tickStepSeconds > 0 else {
+                return
+            }
 
-            let labelLayer = CATextLayer()
-            labelLayer.contentsScale = UIScreen.main.scale
-            labelLayer.fontSize = 11
-            labelLayer.foregroundColor = UIColor.secondaryLabel.cgColor
-            labelLayer.alignmentMode = .left
-            labelLayer.string = formatTimelineTickTime(tickTimeSeconds)
-            labelLayer.frame = CGRect(
-                x: tickX + 4,
-                y: 0,
-                width: 72,
-                height: 14
-            )
-            rulerLabelLayer.addSublayer(labelLayer)
+            var tickTimeSeconds = 0.0
+            let upperBoundTimeSeconds = geometryViewport.upperBoundTimeSeconds
+            while tickTimeSeconds <= upperBoundTimeSeconds + 0.0001 {
+                let tickX = geometryViewport.contentX(
+                    forTimeSeconds: tickTimeSeconds
+                )
+                let tickLayer = CALayer()
+                tickLayer.backgroundColor = tickColor
+                tickLayer.frame = CGRect(
+                    x: tickX.rounded(.down),
+                    y: 14,
+                    width: 1,
+                    height: 6
+                )
+                rulerTickLayer.addSublayer(tickLayer)
 
-            tickTimeSeconds += tickStepSeconds
+                let labelLayer = CATextLayer()
+                labelLayer.contentsScale = UIScreen.main.scale
+                labelLayer.fontSize = 11
+                labelLayer.foregroundColor = labelColor
+                labelLayer.alignmentMode = .left
+                labelLayer.string = formatTimelineTickTime(tickTimeSeconds)
+                labelLayer.frame = CGRect(
+                    x: tickX + 4,
+                    y: 0,
+                    width: 72,
+                    height: 14
+                )
+                rulerLabelLayer.addSublayer(labelLayer)
+
+                tickTimeSeconds += tickStepSeconds
+            }
         }
-
-        CATransaction.commit()
     }
 
     private func makeTickStepSeconds(secondsPerPoint: Double) -> Double {

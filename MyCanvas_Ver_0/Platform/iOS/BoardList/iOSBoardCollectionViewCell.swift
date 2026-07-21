@@ -99,6 +99,21 @@ final class iOSBoardCollectionViewCell: UICollectionViewCell, UITextFieldDelegat
         return nil
     }
 
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        updateSelectionAppearance()
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        guard previousTraitCollection?.hasDifferentColorAppearance(
+            comparedTo: traitCollection
+        ) != false else {
+            return
+        }
+        updateSelectionAppearance()
+    }
+
     override var isSelected: Bool {
         didSet {
             updateSelectionAppearance()
@@ -449,10 +464,16 @@ final class iOSBoardCollectionViewCell: UICollectionViewCell, UITextFieldDelegat
         contentView.backgroundColor = isSelected
             ? UIColor.systemBlue.withAlphaComponent(0.14)
             : UIColor.secondarySystemBackground
-        contentView.layer.borderColor = (isSelected
+        let borderColor = isSelected
             ? UIColor.systemBlue
-            : UIColor.separator.withAlphaComponent(0.55)).cgColor
-        contentView.layer.borderWidth = isSelected ? 2 : 1
+            : UIColor.separator.withAlphaComponent(0.55)
+        PlatformLayerAppearance.performWithoutAnimations {
+            contentView.layer.borderColor = PlatformLayerAppearance.resolvedCGColor(
+                borderColor,
+                for: traitCollection
+            )
+            contentView.layer.borderWidth = isSelected ? 2 : 1
+        }
     }
 
     private func resolvedPreviewViewSize(

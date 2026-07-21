@@ -351,7 +351,6 @@ private final class iOSCanvasInputIndicatorItemView: UIView {
         view.layer.cornerRadius = Layout.cornerRadius
         view.layer.cornerCurve = .continuous
         view.layer.borderWidth = 1
-        view.layer.borderColor = UIColor.separator.withAlphaComponent(0.24).cgColor
         return view
     }()
     private let label: UILabel = {
@@ -384,6 +383,7 @@ private final class iOSCanvasInputIndicatorItemView: UIView {
             label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -Layout.horizontalInset),
             label.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -Layout.verticalInset)
         ])
+        updateAppearance()
     }
 
     @available(*, unavailable)
@@ -391,9 +391,27 @@ private final class iOSCanvasInputIndicatorItemView: UIView {
         fatalError("init(coder:) has not been implemented")
     }
 
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        guard previousTraitCollection == nil ||
+                previousTraitCollection?.hasDifferentColorAppearance(comparedTo: traitCollection) == true else {
+            return
+        }
+        updateAppearance()
+    }
+
     func apply(text: String) {
         label.text = text
         accessibilityLabel = text
+    }
+
+    private func updateAppearance() {
+        PlatformLayerAppearance.performWithoutAnimations {
+            backgroundView.layer.borderColor = PlatformLayerAppearance.resolvedCGColor(
+                UIColor.separator.withAlphaComponent(0.24),
+                for: traitCollection
+            )
+        }
     }
 }
 #elseif os(macOS)
@@ -686,10 +704,8 @@ private final class macOSCanvasInputIndicatorItemView: NSView {
         let view = NSView()
         view.translatesAutoresizingMaskIntoConstraints = false
         view.wantsLayer = true
-        view.layer?.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.94).cgColor
         view.layer?.cornerRadius = Layout.cornerRadius
         view.layer?.borderWidth = 1
-        view.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.3).cgColor
         return view
     }()
     private let label: NSTextField = {
@@ -720,6 +736,7 @@ private final class macOSCanvasInputIndicatorItemView: NSView {
             label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -Layout.horizontalInset),
             label.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -Layout.verticalInset)
         ])
+        updateAppearance()
     }
 
     override var isFlipped: Bool {
@@ -728,6 +745,16 @@ private final class macOSCanvasInputIndicatorItemView: NSView {
 
     required init?(coder: NSCoder) {
         return nil
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        updateAppearance()
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateAppearance()
     }
 
     func apply(text: String) {
@@ -743,6 +770,19 @@ private final class macOSCanvasInputIndicatorItemView: NSView {
                 height: labelSize.height + Layout.verticalInset * 2
             )
         )
+    }
+
+    private func updateAppearance() {
+        PlatformLayerAppearance.performWithoutAnimations {
+            backgroundView.layer?.backgroundColor = PlatformLayerAppearance.resolvedCGColor(
+                NSColor.controlBackgroundColor.withAlphaComponent(0.94),
+                for: effectiveAppearance
+            )
+            backgroundView.layer?.borderColor = PlatformLayerAppearance.resolvedCGColor(
+                NSColor.separatorColor.withAlphaComponent(0.3),
+                for: effectiveAppearance
+            )
+        }
     }
 }
 #endif

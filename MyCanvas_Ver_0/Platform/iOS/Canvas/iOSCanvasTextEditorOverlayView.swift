@@ -28,7 +28,6 @@ final class iOSCanvasTextEditorOverlayView: UIView {
         view.layer.cornerRadius = Layout.cornerRadius
         view.layer.cornerCurve = .continuous
         view.layer.borderWidth = 1
-        view.layer.borderColor = UIColor.separator.withAlphaComponent(0.24).cgColor
         view.layer.shadowColor = UIColor.black.cgColor
         view.layer.shadowOpacity = Layout.shadowOpacity
         view.layer.shadowRadius = Layout.shadowRadius
@@ -150,11 +149,27 @@ final class iOSCanvasTextEditorOverlayView: UIView {
             textView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -Layout.horizontalInset),
             textView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -Layout.verticalInset)
         ])
+        updateAppearance()
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        updateAppearance()
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        guard previousTraitCollection?.hasDifferentColorAppearance(
+            comparedTo: traitCollection
+        ) != false else {
+            return
+        }
+        updateAppearance()
     }
 
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
@@ -194,6 +209,15 @@ final class iOSCanvasTextEditorOverlayView: UIView {
         button.translatesAutoresizingMaskIntoConstraints = false
         button.accessibilityLabel = accessibilityLabel
         return button
+    }
+
+    private func updateAppearance() {
+        PlatformLayerAppearance.performWithoutAnimations {
+            backgroundView.layer.borderColor = PlatformLayerAppearance.resolvedCGColor(
+                UIColor.separator.withAlphaComponent(0.24),
+                for: traitCollection
+            )
+        }
     }
 
     @objc

@@ -95,14 +95,18 @@ final class macOSCanvasMarkdownEditorViewController: NSViewController {
     }
 
     override func loadView() {
-        view = NSView()
+        let rootView = macOSAppearanceAwareView()
+        rootView.onEffectiveAppearanceChange = { [weak self] in
+            self?.updateAppearance()
+        }
+        view = rootView
     }
 
     override func viewDidLoad() {
         super.viewDidLoad()
         preferredContentSize = CGSize(width: 720, height: 540)
         view.wantsLayer = true
-        view.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        updateAppearance()
         configureButtons()
         setupViewHierarchy()
         setupConstraints()
@@ -128,6 +132,20 @@ final class macOSCanvasMarkdownEditorViewController: NSViewController {
 
     override func cancelOperation(_ sender: Any?) {
         dismiss(self)
+    }
+
+    private func updateAppearance() {
+        guard isViewLoaded else {
+            return
+        }
+
+        let appearance = view.effectiveAppearance
+        PlatformLayerAppearance.performWithoutAnimations {
+            view.layer?.backgroundColor = PlatformLayerAppearance.resolvedCGColor(
+                .windowBackgroundColor,
+                for: appearance
+            )
+        }
     }
 
     private func configureButtons() {

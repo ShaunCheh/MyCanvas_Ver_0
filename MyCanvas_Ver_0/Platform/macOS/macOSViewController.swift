@@ -167,7 +167,6 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         let view = NSView()
         view.translatesAutoresizingMaskIntoConstraints = false
         view.wantsLayer = true
-        view.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
         view.layer?.masksToBounds = true
         return view
     }()
@@ -186,9 +185,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         button.wantsLayer = true
         button.layer?.cornerRadius = 22
         button.layer?.masksToBounds = true
-        button.layer?.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.92).cgColor
         button.layer?.borderWidth = 1
-        button.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.35).cgColor
         button.contentTintColor = .labelColor
         if let image = NSImage(
             systemSymbolName: "chevron.left",
@@ -209,9 +206,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         button.wantsLayer = true
         button.layer?.cornerRadius = 22
         button.layer?.masksToBounds = true
-        button.layer?.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.92).cgColor
         button.layer?.borderWidth = 1
-        button.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.35).cgColor
         button.contentTintColor = .labelColor
         if let image = NSImage(
             systemSymbolName: CanvasWorkspaceMode.editing.systemImageName,
@@ -1028,14 +1023,17 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     }
 
     override func loadView() {
-        let rootView = NSView()
+        let rootView = macOSAppearanceAwareView()
         rootView.wantsLayer = true
-        rootView.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        rootView.onEffectiveAppearanceChange = { [weak self] in
+            self?.updateAppearance()
+        }
         view = rootView
     }
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        updateAppearance()
         print(
             "[Canvas macOS][ControllerLifecycle] " +
             "action=viewDidLoad.begin " +
@@ -1077,6 +1075,36 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             "cameraViewportSize=\(describe(size: camera.viewportSize)) " +
             "selectedItemID=\(describe(itemID: interactionState.selectedItemID))"
         )
+    }
+
+    private func updateAppearance() {
+        guard isViewLoaded else {
+            return
+        }
+
+        let appearance = view.effectiveAppearance
+        let chromeBackgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.92)
+        let chromeBorderColor = NSColor.separatorColor.withAlphaComponent(0.35)
+        PlatformLayerAppearance.performWithoutAnimations {
+            view.layer?.backgroundColor = PlatformLayerAppearance.resolvedCGColor(
+                .windowBackgroundColor,
+                for: appearance
+            )
+            canvasHostView.layer?.backgroundColor = PlatformLayerAppearance.resolvedCGColor(
+                .windowBackgroundColor,
+                for: appearance
+            )
+            for button in [backButton, workspaceModeButton] {
+                button.layer?.backgroundColor = PlatformLayerAppearance.resolvedCGColor(
+                    chromeBackgroundColor,
+                    for: appearance
+                )
+                button.layer?.borderColor = PlatformLayerAppearance.resolvedCGColor(
+                    chromeBorderColor,
+                    for: appearance
+                )
+            }
+        }
     }
 
     override func viewWillAppear() {

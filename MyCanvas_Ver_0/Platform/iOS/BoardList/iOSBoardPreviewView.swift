@@ -40,6 +40,11 @@ final class iOSBoardPreviewView: UIView {
 
     override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
         super.traitCollectionDidChange(previousTraitCollection)
+        guard previousTraitCollection?.hasDifferentColorAppearance(
+            comparedTo: traitCollection
+        ) != false else {
+            return
+        }
         updateAppearance()
     }
 
@@ -65,8 +70,6 @@ final class iOSBoardPreviewView: UIView {
         boardLayer.strokeColor = nil
         boardLayer.lineWidth = Self.boardLineWidth
 
-        occupancyLayer.fillColor = UIColor.systemGray.cgColor
-        occupancyLayer.strokeColor = UIColor.systemGray2.cgColor
         occupancyLayer.lineWidth = 1
 
         updateAppearance()
@@ -78,9 +81,22 @@ final class iOSBoardPreviewView: UIView {
     }
 
     private func updateAppearance() {
-        backgroundLayer.backgroundColor = CanvasWorkspacePalette.backgroundColor
-        layer.borderColor = UIColor.separator.withAlphaComponent(0.75).cgColor
-        layer.borderWidth = Self.borderWidth
+        PlatformLayerAppearance.performWithoutAnimations {
+            backgroundLayer.backgroundColor = CanvasWorkspacePalette.backgroundColor
+            occupancyLayer.fillColor = PlatformLayerAppearance.resolvedCGColor(
+                .systemGray,
+                for: traitCollection
+            )
+            occupancyLayer.strokeColor = PlatformLayerAppearance.resolvedCGColor(
+                .systemGray2,
+                for: traitCollection
+            )
+            layer.borderColor = PlatformLayerAppearance.resolvedCGColor(
+                UIColor.separator.withAlphaComponent(0.75),
+                for: traitCollection
+            )
+            layer.borderWidth = Self.borderWidth
+        }
     }
 
     private func refreshPreview() {

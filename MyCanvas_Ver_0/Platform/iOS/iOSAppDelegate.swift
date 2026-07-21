@@ -27,7 +27,7 @@ final class iOSAppDelegate: UIResponder, UIApplicationDelegate {
         // window.rootViewController = UINavigationController(rootViewController: iOSViewController())
         // 不设置背景色，甚至不会触发-[UIApplication sendEvent:]
         // window.backgroundColor = .systemBackground
-        window.backgroundColor = .white
+        window.backgroundColor = .systemBackground
         window.makeKeyAndVisible()
         self.window = window
         return true

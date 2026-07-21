@@ -4,19 +4,19 @@ overview: 对 macOS 与 iOS 全 App 中“动态系统色转换为静态 CGColor
 todos:
   - id: appearance-foundation
     content: 建立跨平台动态 layer 色解析、无动画刷新机制及基础测试
-    status: pending
+    status: completed
   - id: macos-appearance
     content: 收口 macOS 根界面、列表、转场、Canvas chrome 与外围编辑器外观刷新
-    status: pending
+    status: completed
   - id: ios-appearance
     content: 收口 iOS 窗口、列表、Canvas chrome、媒体与手绘界面外观刷新
-    status: pending
+    status: completed
   - id: shared-overlays
     content: 修复跨平台输入提示及 macOS 共享浮层的动态 layer 色
-    status: pending
+    status: completed
   - id: verify-themes
     content: 执行双平台构建、测试和完整浅色/深色切换回归验证
-    status: pending
+    status: completed
 isProject: false
 ---
 

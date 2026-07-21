@@ -187,7 +187,6 @@ private final class HandDrawingCanvasPageView: UIView {
         layer.cornerRadius = 24
         layer.cornerCurve = .continuous
         layer.borderWidth = 1
-        layer.borderColor = UIColor.separator.withAlphaComponent(0.24).cgColor
         clipsToBounds = true
         isMultipleTouchEnabled = true
         addSubview(committedCanvasHostView)
@@ -207,11 +206,36 @@ private final class HandDrawingCanvasPageView: UIView {
             interactionOverlayView.trailingAnchor.constraint(equalTo: trailingAnchor),
             interactionOverlayView.bottomAnchor.constraint(equalTo: bottomAnchor)
         ])
+        updateAppearance()
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        updateAppearance()
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        guard previousTraitCollection?.hasDifferentColorAppearance(
+            comparedTo: traitCollection
+        ) != false else {
+            return
+        }
+        updateAppearance()
+    }
+
+    private func updateAppearance() {
+        PlatformLayerAppearance.performWithoutAnimations {
+            layer.borderColor = PlatformLayerAppearance.resolvedCGColor(
+                UIColor.separator.withAlphaComponent(0.24),
+                for: traitCollection
+            )
+        }
     }
 
     func apply(state: HandDrawingCanvasSurfaceState) {
@@ -896,6 +920,21 @@ private final class HandDrawingCanvasInteractionOverlayView: UIView {
         fatalError("init(coder:) has not been implemented")
     }
 
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        setNeedsDisplay()
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        guard previousTraitCollection?.hasDifferentColorAppearance(
+            comparedTo: traitCollection
+        ) != false else {
+            return
+        }
+        setNeedsDisplay()
+    }
+
     func apply(state: HandDrawingCanvasInteractionOverlayState) {
         lassoPathPoints = state.lassoPathPoints
         selectedStrokeBounds = state.selectedStrokeBounds
@@ -927,9 +966,17 @@ private final class HandDrawingCanvasInteractionOverlayView: UIView {
             roundedRect: selectedStrokeBounds.insetBy(dx: -6, dy: -6),
             cornerRadius: 12
         )
+        let accentColor = PlatformLayerAppearance.resolvedCGColor(
+            .systemBlue,
+            for: traitCollection
+        )
+        let accentFillColor = PlatformLayerAppearance.resolvedCGColor(
+            UIColor.systemBlue.withAlphaComponent(0.08),
+            for: traitCollection
+        )
         context.saveGState()
-        context.setStrokeColor(UIColor.systemBlue.cgColor)
-        context.setFillColor(UIColor.systemBlue.withAlphaComponent(0.08).cgColor)
+        context.setStrokeColor(accentColor)
+        context.setFillColor(accentFillColor)
         context.setLineWidth(2)
         context.setLineDash(phase: 0, lengths: [8, 6])
         context.addPath(path.cgPath)
@@ -951,7 +998,12 @@ private final class HandDrawingCanvasInteractionOverlayView: UIView {
         }
 
         context.saveGState()
-        context.setStrokeColor(UIColor.systemBlue.cgColor)
+        context.setStrokeColor(
+            PlatformLayerAppearance.resolvedCGColor(
+                .systemBlue,
+                for: traitCollection
+            )
+        )
         context.setLineWidth(2)
         context.setLineCap(.round)
         context.setLineJoin(.round)

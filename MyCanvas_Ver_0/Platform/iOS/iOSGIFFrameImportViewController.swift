@@ -577,6 +577,21 @@ private final class iOSGIFFrameImportCollectionViewCell: UICollectionViewCell {
         return nil
     }
 
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        updateSelectionAppearance()
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        guard previousTraitCollection?.hasDifferentColorAppearance(
+            comparedTo: traitCollection
+        ) != false else {
+            return
+        }
+        updateSelectionAppearance()
+    }
+
     override var isSelected: Bool {
         didSet {
             updateSelectionAppearance()
@@ -708,13 +723,19 @@ private final class iOSGIFFrameImportCollectionViewCell: UICollectionViewCell {
     }
 
     private func updateSelectionAppearance() {
-        contentView.layer.borderColor = isSelected
-            ? UIColor.systemBlue.cgColor
-            : UIColor.separator.cgColor
+        let borderColor: UIColor = isSelected
+            ? .systemBlue
+            : .separator
         contentView.backgroundColor = isSelected
             ? UIColor.systemBlue.withAlphaComponent(0.12)
             : UIColor.tertiarySystemBackground
         selectionBadgeView.isHidden = isSelected == false
+        PlatformLayerAppearance.performWithoutAnimations {
+            contentView.layer.borderColor = PlatformLayerAppearance.resolvedCGColor(
+                borderColor,
+                for: traitCollection
+            )
+        }
     }
 }
 #endif

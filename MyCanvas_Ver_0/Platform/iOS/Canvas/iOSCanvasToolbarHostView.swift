@@ -16,7 +16,6 @@ final class iOSCanvasToolbarHostView: UIView {
         view.layer.cornerRadius = Layout.cornerRadius
         view.layer.cornerCurve = .continuous
         view.layer.borderWidth = 1
-        view.layer.borderColor = UIColor.separator.withAlphaComponent(0.24).cgColor
         view.layer.shadowColor = UIColor.black.cgColor
         view.layer.shadowOpacity = Layout.shadowOpacity
         view.layer.shadowRadius = Layout.shadowRadius
@@ -82,11 +81,27 @@ final class iOSCanvasToolbarHostView: UIView {
             )
         ])
         updateDockEdgeLayout()
+        updateAppearance()
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        updateAppearance()
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        guard previousTraitCollection?.hasDifferentColorAppearance(
+            comparedTo: traitCollection
+        ) != false else {
+            return
+        }
+        updateAppearance()
     }
 
     func registerButtons(_ buttons: [CanvasToolbarItemID: UIButton]) {
@@ -151,6 +166,15 @@ final class iOSCanvasToolbarHostView: UIView {
         }
         let hitView = super.hitTest(point, with: event)
         return hitView === self ? nil : hitView
+    }
+
+    private func updateAppearance() {
+        PlatformLayerAppearance.performWithoutAnimations {
+            backgroundView.layer.borderColor = PlatformLayerAppearance.resolvedCGColor(
+                UIColor.separator.withAlphaComponent(0.24),
+                for: traitCollection
+            )
+        }
     }
 
     private func syncButtons(with itemStates: [CanvasToolbarItemState]) {

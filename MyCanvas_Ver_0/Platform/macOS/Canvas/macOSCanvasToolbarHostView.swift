@@ -23,10 +23,8 @@ final class macOSCanvasToolbarHostView: NSView {
         let view = macOSCanvasChromeOverlayView()
         view.translatesAutoresizingMaskIntoConstraints = false
         view.wantsLayer = true
-        view.layer?.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.92).cgColor
         view.layer?.cornerRadius = Layout.cornerRadius
         view.layer?.borderWidth = 1
-        view.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.35).cgColor
         view.layer?.shadowColor = NSColor.black.cgColor
         view.layer?.shadowOpacity = Layout.shadowOpacity
         view.layer?.shadowRadius = Layout.shadowRadius
@@ -57,6 +55,7 @@ final class macOSCanvasToolbarHostView: NSView {
     private var preferredAxisOverride: CanvasToolbarAxis?
     private var isTransitionRendering = false
     private var transitionInteractivity = true
+    private var latestItemStates: [CanvasToolbarItemState] = []
 
     var dockEdge: CanvasToolbarDockEdge = .trailing {
         didSet {
@@ -94,10 +93,21 @@ final class macOSCanvasToolbarHostView: NSView {
             )
         ])
         updateDockEdgeLayout()
+        updateAppearance()
     }
 
     required init?(coder: NSCoder) {
         return nil
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        updateAppearance()
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateAppearance()
     }
 
     private static func bootstrapFrame(from frameRect: CGRect) -> CGRect {
@@ -183,7 +193,32 @@ final class macOSCanvasToolbarHostView: NSView {
         return hitView === self ? nil : hitView
     }
 
+    private func updateAppearance() {
+        let appearance = effectiveAppearance
+        PlatformLayerAppearance.performWithoutAnimations {
+            backgroundView.layer?.backgroundColor = PlatformLayerAppearance.resolvedCGColor(
+                NSColor.controlBackgroundColor.withAlphaComponent(0.92),
+                for: appearance
+            )
+            backgroundView.layer?.borderColor = PlatformLayerAppearance.resolvedCGColor(
+                NSColor.separatorColor.withAlphaComponent(0.35),
+                for: appearance
+            )
+            for itemState in latestItemStates {
+                guard let button = registeredButtons[itemState.id] else {
+                    continue
+                }
+                updateLayerAppearance(
+                    itemState,
+                    on: button,
+                    for: appearance
+                )
+            }
+        }
+    }
+
     private func syncButtons(with itemStates: [CanvasToolbarItemState]) {
+        latestItemStates = itemStates
         let orderedButtons: [NSButton] = itemStates.compactMap { itemState in
             guard let button = registeredButtons[itemState.id] else {
                 return nil
@@ -317,11 +352,13 @@ final class macOSCanvasToolbarHostView: NSView {
         button.wantsLayer = true
         button.layer?.cornerRadius = 12
         button.layer?.borderWidth = 1
-        button.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.24).cgColor
-        button.layer?.backgroundColor = (preservesVisualRole
-            ? backgroundColor(for: itemState.visualRole)
-            : NSColor.quaternaryLabelColor.withAlphaComponent(0.35)
-        ).cgColor
+        PlatformLayerAppearance.performWithoutAnimations {
+            updateLayerAppearance(
+                itemState,
+                on: button,
+                for: effectiveAppearance
+            )
+        }
         button.contentTintColor = foregroundColor
         button.toolTip = accessibilityDescription
         button.image = NSImage(
@@ -329,6 +366,26 @@ final class macOSCanvasToolbarHostView: NSView {
             accessibilityDescription: accessibilityDescription
         )
         button.isEnabled = itemState.isEnabled
+    }
+
+    private func updateLayerAppearance(
+        _ itemState: CanvasToolbarItemState,
+        on button: NSButton,
+        for appearance: NSAppearance
+    ) {
+        let preservesVisualRole =
+            itemState.isEnabled || itemState.preservesVisualRoleWhenDisabled
+        let resolvedBackgroundColor = preservesVisualRole
+            ? backgroundColor(for: itemState.visualRole)
+            : NSColor.quaternaryLabelColor.withAlphaComponent(0.35)
+        button.layer?.borderColor = PlatformLayerAppearance.resolvedCGColor(
+            NSColor.separatorColor.withAlphaComponent(0.24),
+            for: appearance
+        )
+        button.layer?.backgroundColor = PlatformLayerAppearance.resolvedCGColor(
+            resolvedBackgroundColor,
+            for: appearance
+        )
     }
 
     private func foregroundColor(

@@ -59,6 +59,11 @@ final class iOSCanvasMiniMapView: UIView {
 
     override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
         super.traitCollectionDidChange(previousTraitCollection)
+        guard previousTraitCollection?.hasDifferentColorAppearance(
+            comparedTo: traitCollection
+        ) != false else {
+            return
+        }
         updateAppearance()
     }
 
@@ -101,12 +106,8 @@ final class iOSCanvasMiniMapView: UIView {
         boardLayer.strokeColor = nil
         boardLayer.lineWidth = Self.boardLineWidth
 
-        occupancyLayer.fillColor = UIColor.systemGray.cgColor
-        occupancyLayer.strokeColor = UIColor.systemGray2.cgColor
         occupancyLayer.lineWidth = 1
 
-        viewportLayer.fillColor = UIColor.systemBlue.withAlphaComponent(0.12).cgColor
-        viewportLayer.strokeColor = UIColor.systemBlue.cgColor
         viewportLayer.lineWidth = Self.viewportLineWidth
 
         updateAppearance()
@@ -132,9 +133,30 @@ final class iOSCanvasMiniMapView: UIView {
     }
 
     private func updateAppearance() {
-        backgroundLayer.backgroundColor = CanvasWorkspacePalette.backgroundColor
-        layer.borderColor = UIColor.separator.withAlphaComponent(0.75).cgColor
-        layer.borderWidth = Self.borderWidth
+        PlatformLayerAppearance.performWithoutAnimations {
+            backgroundLayer.backgroundColor = CanvasWorkspacePalette.backgroundColor
+            occupancyLayer.fillColor = PlatformLayerAppearance.resolvedCGColor(
+                .systemGray,
+                for: traitCollection
+            )
+            occupancyLayer.strokeColor = PlatformLayerAppearance.resolvedCGColor(
+                .systemGray2,
+                for: traitCollection
+            )
+            viewportLayer.fillColor = PlatformLayerAppearance.resolvedCGColor(
+                UIColor.systemBlue.withAlphaComponent(0.12),
+                for: traitCollection
+            )
+            viewportLayer.strokeColor = PlatformLayerAppearance.resolvedCGColor(
+                .systemBlue,
+                for: traitCollection
+            )
+            layer.borderColor = PlatformLayerAppearance.resolvedCGColor(
+                UIColor.separator.withAlphaComponent(0.75),
+                for: traitCollection
+            )
+            layer.borderWidth = Self.borderWidth
+        }
     }
 
     private func refreshMiniMap() {

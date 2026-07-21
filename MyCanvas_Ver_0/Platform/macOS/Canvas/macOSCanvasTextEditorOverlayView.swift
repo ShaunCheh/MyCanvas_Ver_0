@@ -18,10 +18,8 @@ final class macOSCanvasTextEditorOverlayView: NSView {
         let view = NSView()
         view.translatesAutoresizingMaskIntoConstraints = false
         view.wantsLayer = true
-        view.layer?.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.96).cgColor
         view.layer?.cornerRadius = Layout.cornerRadius
         view.layer?.borderWidth = 1
-        view.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.35).cgColor
         view.layer?.shadowColor = NSColor.black.cgColor
         view.layer?.shadowOpacity = Layout.shadowOpacity
         view.layer?.shadowRadius = Layout.shadowRadius
@@ -149,10 +147,21 @@ final class macOSCanvasTextEditorOverlayView: NSView {
             scrollView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -Layout.horizontalInset),
             scrollView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -Layout.verticalInset)
         ])
+        updateAppearance()
     }
 
     required init?(coder: NSCoder) {
         return nil
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        updateAppearance()
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateAppearance()
     }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -173,6 +182,20 @@ final class macOSCanvasTextEditorOverlayView: NSView {
         fontSizeLabel.stringValue = fontSizeDescription(for: style.fontSize)
         decreaseFontSizeButton.isEnabled = canDecreaseFontSize
         increaseFontSizeButton.isEnabled = canIncreaseFontSize
+    }
+
+    private func updateAppearance() {
+        let appearance = effectiveAppearance
+        PlatformLayerAppearance.performWithoutAnimations {
+            backgroundView.layer?.backgroundColor = PlatformLayerAppearance.resolvedCGColor(
+                NSColor.controlBackgroundColor.withAlphaComponent(0.96),
+                for: appearance
+            )
+            backgroundView.layer?.borderColor = PlatformLayerAppearance.resolvedCGColor(
+                NSColor.separatorColor.withAlphaComponent(0.35),
+                for: appearance
+            )
+        }
     }
 
     private static func makeFontSizeButton(

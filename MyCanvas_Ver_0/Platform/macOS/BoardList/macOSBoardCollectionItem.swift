@@ -103,7 +103,11 @@ final class macOSBoardCollectionItem: NSCollectionViewItem, NSTextFieldDelegate 
     private var unexpectedInitialEndRetryCount = 0
 
     override func loadView() {
-        view = NSView()
+        let rootView = macOSAppearanceAwareView()
+        rootView.onEffectiveAppearanceChange = { [weak self] in
+            self?.updateSelectionAppearance()
+        }
+        view = rootView
     }
 
     override func viewDidLoad() {
@@ -526,10 +530,19 @@ final class macOSBoardCollectionItem: NSCollectionViewItem, NSTextFieldDelegate 
         let borderColor = isSelected
             ? NSColor.controlAccentColor
             : NSColor.separatorColor.withAlphaComponent(0.55)
+        let appearance = view.effectiveAppearance
 
-        view.layer?.backgroundColor = backgroundColor.cgColor
-        view.layer?.borderColor = borderColor.cgColor
-        view.layer?.borderWidth = isSelected ? 2 : 1
+        PlatformLayerAppearance.performWithoutAnimations {
+            view.layer?.backgroundColor = PlatformLayerAppearance.resolvedCGColor(
+                backgroundColor,
+                for: appearance
+            )
+            view.layer?.borderColor = PlatformLayerAppearance.resolvedCGColor(
+                borderColor,
+                for: appearance
+            )
+            view.layer?.borderWidth = isSelected ? 2 : 1
+        }
     }
 
     private func logSelectionTrace(_ phase: String, extra: String = "") {
