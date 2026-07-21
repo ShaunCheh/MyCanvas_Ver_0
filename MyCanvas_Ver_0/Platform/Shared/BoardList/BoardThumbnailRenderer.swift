@@ -1345,6 +1345,8 @@ func logBoardThumbnailTraceImageRegions(
     contentInset: CGFloat,
     image: CGImage
 ) {
+    // Temporarily muted: BoardList ThumbnailTrace noise.
+    #if false
     let normalizedTargetPixelSize = CGSize(
         width: max(targetPixelSize.width.rounded(.up), 1),
         height: max(targetPixelSize.height.rounded(.up), 1)
@@ -1385,6 +1387,7 @@ func logBoardThumbnailTraceImageRegions(
         geometry: geometry,
         image: image
     )
+    #endif
 }
 
 private func logRenderSurface(
@@ -1395,6 +1398,8 @@ private func logRenderSurface(
     geometry: CanvasMiniMapViewGeometry,
     context: CGContext
 ) {
+    // Temporarily muted: BoardList ThumbnailTrace noise.
+    #if false
     print(
         "[BoardList][ThumbnailTrace][RenderSurface] " +
             "mode=\(traceContext.mode) " +
@@ -1407,6 +1412,7 @@ private func logRenderSurface(
             "scale=\(formatBoardThumbnailValue(geometry.scale)) " +
             "contextCTM=\(describeBoardThumbnailTransform(context.ctm))"
     )
+    #endif
 }
 
 private func logPersistedReplayDraw(
@@ -1416,6 +1422,8 @@ private func logPersistedReplayDraw(
     persistedThumbnail: CGImage,
     context: CGContext
 ) {
+    // Temporarily muted: BoardList ThumbnailTrace noise.
+    #if false
     print(
         "[BoardList][ThumbnailTrace][PersistedReplayDraw] " +
             "mode=\(traceContext.mode) " +
@@ -1425,6 +1433,7 @@ private func logPersistedReplayDraw(
             "persistedSignature=\(BoardThumbnailImageSignature.describe(persistedThumbnail)) " +
             "contextCTM=\(describeBoardThumbnailTransform(context.ctm))"
     )
+    #endif
 }
 
 private func logPosterBackedDraw(
@@ -1443,6 +1452,8 @@ private func logPosterBackedDraw(
     rotationRadians: CGFloat,
     context: CGContext
 ) {
+    // Temporarily muted: BoardList ThumbnailTrace noise.
+    #if false
     print(
         "[BoardList][ThumbnailTrace][PosterDraw] " +
             "mode=\(traceContext.mode) " +
@@ -1463,6 +1474,7 @@ private func logPosterBackedDraw(
             "imageSignature=\(BoardThumbnailImageSignature.describe(image)) " +
             "contextCTM=\(describeBoardThumbnailTransform(context.ctm))"
     )
+    #endif
 }
 
 private func logPosterBackedRenderedRegion(
@@ -1474,6 +1486,8 @@ private func logPosterBackedRenderedRegion(
     previewVisibleRect: CGRect,
     renderedImage: CGImage
 ) {
+    // Temporarily muted: BoardList ThumbnailTrace noise.
+    #if false
     let bitmapVisibleRect = bitmapRectForRenderedPreview(
         previewRect: previewVisibleRect,
         image: renderedImage
@@ -1489,6 +1503,7 @@ private func logPosterBackedRenderedRegion(
             "previewVisibleRect=\(describeBoardThumbnailRect(previewVisibleRect)) " +
             "renderedRegionSignature=\(describeBoardThumbnailRegionSignature(renderedImage, bitmapRect: bitmapVisibleRect))"
     )
+    #endif
 }
 
 private func logNodeRegionSamples(
@@ -1498,6 +1513,8 @@ private func logNodeRegionSamples(
     geometry: CanvasMiniMapViewGeometry,
     image: CGImage
 ) {
+    // Temporarily muted: BoardList ThumbnailTrace noise.
+    #if false
     for node in nodes where node.kind == .image || node.kind == .handDrawing {
         let previewRect = geometry.worldToMiniMap(node.worldQuad)
             .boundingRect
@@ -1516,6 +1533,7 @@ private func logNodeRegionSamples(
                 "regionSignature=\(describeBoardThumbnailRegionSignature(image, bitmapRect: bitmapRect))"
         )
     }
+    #endif
 }
 
 private func logTextDraw(
@@ -1530,6 +1548,8 @@ private func logTextDraw(
     rotationRadians: CGFloat,
     context: CGContext
 ) {
+    // Temporarily muted: BoardList ThumbnailTrace noise.
+    #if false
     print(
         "[BoardList][ThumbnailTrace][TextDraw] " +
             "mode=\(traceContext.mode) " +
@@ -1546,18 +1566,22 @@ private func logTextDraw(
             "rotationDeg=\(formatBoardThumbnailValue(rotationRadians * 180 / .pi)) " +
             "contextCTM=\(describeBoardThumbnailTransform(context.ctm))"
     )
+    #endif
 }
 
 private func logRenderedImage(
     traceContext: BoardThumbnailTraceContext,
     image: CGImage
 ) {
+    // Temporarily muted: BoardList ThumbnailTrace noise.
+    #if false
     print(
         "[BoardList][ThumbnailTrace][RenderedImage] " +
             "mode=\(traceContext.mode) " +
             "boardID=\(traceContext.boardID?.uuidString ?? "nil") " +
             "signature=\(BoardThumbnailImageSignature.describe(image))"
     )
+    #endif
 }
 
 private func bitmapRectForRenderedPreview(

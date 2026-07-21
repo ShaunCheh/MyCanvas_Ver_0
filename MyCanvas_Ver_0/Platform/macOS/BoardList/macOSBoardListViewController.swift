@@ -313,6 +313,8 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
     }
 
     private func logSelectionTrace(_ phase: String, extra: String = "") {
+        // Temporarily muted: BoardList SelectionTrace noise.
+        #if false
         let extraSuffix = extra.isEmpty ? "" : " \(extra)"
         print(
             "[BoardList][macOS][SelectionTrace] " +
@@ -323,6 +325,7 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
                 "collectionSelection=\(describeSelectionTraceIndexPaths(collectionView.selectionIndexPaths))" +
                 extraSuffix
         )
+        #endif
     }
 
     private func selectionTraceTimestamp() -> String {
@@ -330,6 +333,8 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
     }
 
     private func logRenameTrace(_ phase: String, extra: String = "") {
+        // Temporarily muted: BoardList RenameTrace noise.
+        #if false
         let extraSuffix = extra.isEmpty ? "" : " \(extra)"
         print(
             "[BoardList][macOS][RenameTrace] " +
@@ -341,6 +346,7 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
                 "actionPanelBoardID=\(actionPanelState?.boardID.uuidString ?? "nil")" +
                 extraSuffix
         )
+        #endif
     }
 
     private func describeSelectionTraceEntryID(_ entryID: BoardListEntryID?) -> String {
@@ -381,6 +387,8 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
         indexPath: IndexPath,
         reason: String?
     ) {
+        // Temporarily muted: BoardList ThumbnailTrace noise.
+        #if false
         var message =
             "[BoardList][macOS][ThumbnailTrace][Controller] " +
             "t=\(selectionTraceTimestamp()) " +
@@ -395,6 +403,7 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
             message += " reason=\(reason)"
         }
         print(message)
+        #endif
     }
 
     private func describeBoardListPreviewContent(

@@ -292,6 +292,8 @@ private func logBoardPreviewSeedSummary(
     nodeCount: Int,
     boardWorldRect: CGRect
 ) {
+    // Temporarily muted: BoardList ThumbnailTrace noise.
+    #if false
     print(
         "[BoardList][ThumbnailTrace][Seed] " +
             "boardID=\(boardID.uuidString) " +
@@ -299,6 +301,7 @@ private func logBoardPreviewSeedSummary(
             "nodeCount=\(nodeCount) " +
             "boardWorldRect=\(describeBoardPreviewRect(boardWorldRect))"
     )
+    #endif
 }
 
 private func logBoardPreviewSeedNode(
@@ -312,6 +315,8 @@ private func logBoardPreviewSeedNode(
     rotationRadians: CGFloat,
     worldQuad: CanvasQuad
 ) {
+    // Temporarily muted: BoardList ThumbnailTrace noise.
+    #if false
     print(
         "[BoardList][ThumbnailTrace][SeedNode] " +
             "boardID=\(boardID?.uuidString ?? "nil") " +
@@ -325,6 +330,7 @@ private func logBoardPreviewSeedNode(
             "rotationDeg=\(formatBoardPreviewValue(rotationRadians * 180 / .pi)) " +
             "worldQuad=\(describeBoardPreviewQuad(worldQuad))"
     )
+    #endif
 }
 
 private func describeBoardPreviewNodeKind(_ kind: CanvasMiniMapNodeKind) -> String {

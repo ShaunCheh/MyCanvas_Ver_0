@@ -469,6 +469,8 @@ private func logBoardPreviewProviderCacheHitMetadata(
     cachedImage: CGImage,
     tracePolicy: BoardPreviewTracePolicy
 ) {
+    // Temporarily muted: BoardList ThumbnailTrace noise.
+    #if false
     print(
         "[BoardList][ThumbnailTrace][CacheHit] " +
             "phase=\(phase) " +
@@ -481,6 +483,7 @@ private func logBoardPreviewProviderCacheHitMetadata(
             "imageItemCount=\(item.document.imageItemRecords.count) " +
             "textItemCount=\(item.document.textItemRecords.count)"
     )
+    #endif
 }
 
 private func logBoardPreviewProviderSourceImagesIfNeeded(
@@ -496,6 +499,8 @@ private func logBoardPreviewProviderSourceImagesIfNeeded(
         return
     }
 
+    // Temporarily muted: BoardList ThumbnailTrace noise.
+    #if false
     print(
         "[BoardList][ThumbnailTrace][Guard] " +
             "phase=\(phase) " +
@@ -569,6 +574,7 @@ private func logBoardPreviewProviderSourceImagesIfNeeded(
                 "error=\(error)"
         )
     }
+    #endif
 }
 
 private func logBoardPreviewProviderDecision(
@@ -579,6 +585,8 @@ private func logBoardPreviewProviderDecision(
     source: String,
     reason: String? = nil
 ) {
+    // Temporarily muted: BoardList ThumbnailTrace noise.
+    #if false
     var message =
         "[BoardList][ThumbnailTrace][Provider] " +
         "phase=\(phase) " +
@@ -590,6 +598,7 @@ private func logBoardPreviewProviderDecision(
         message += " reason=\(reason)"
     }
     print(message)
+    #endif
 }
 
 private func describeBoardPreviewProviderSize(_ size: CGSize) -> String {

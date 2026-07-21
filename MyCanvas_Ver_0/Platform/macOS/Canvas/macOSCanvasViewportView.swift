@@ -130,6 +130,8 @@ final class macOSCanvasViewportView: NSView {
 
     override func layout() {
         super.layout()
+        // Temporarily muted: ViewportLifecycle noise.
+        #if false
         print(
             "[Canvas macOS][ViewportLifecycle] " +
             "action=layout " +
@@ -137,6 +139,7 @@ final class macOSCanvasViewportView: NSView {
             "viewFrame=\(macOSViewportDescribe(frame)) " +
             "windowFrame=\(window.map { macOSViewportDescribe($0.frame) } ?? "nil")"
         )
+        #endif
         performWithoutLayerActions {
             updateLayerFrames()
         }
@@ -146,6 +149,8 @@ final class macOSCanvasViewportView: NSView {
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+        // Temporarily muted: ViewportLifecycle noise.
+        #if false
         print(
             "[Canvas macOS][ViewportLifecycle] " +
             "action=viewDidMoveToWindow " +
@@ -153,6 +158,7 @@ final class macOSCanvasViewportView: NSView {
             "viewFrame=\(macOSViewportDescribe(frame)) " +
             "windowFrame=\(window.map { macOSViewportDescribe($0.frame) } ?? "nil")"
         )
+        #endif
         updateBackgroundAppearance()
         performWithoutLayerActions {
             refreshItemLayers()

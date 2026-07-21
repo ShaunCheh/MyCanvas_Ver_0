@@ -234,6 +234,8 @@ enum BoardPersistedThumbnailStore {
         image: CGImage,
         maxPixelSize: Int? = nil
     ) {
+        // Temporarily muted: BoardList ThumbnailTrace noise.
+        #if false
         var message =
             "[BoardList][ThumbnailTrace][PersistedImage] " +
             "phase=\(phase) " +
@@ -244,6 +246,7 @@ enum BoardPersistedThumbnailStore {
             message += " maxPixelSize=\(maxPixelSize)"
         }
         print(message)
+        #endif
     }
 }
 

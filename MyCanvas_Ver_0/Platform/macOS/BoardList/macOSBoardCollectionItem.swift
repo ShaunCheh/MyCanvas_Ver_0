@@ -274,6 +274,8 @@ final class macOSBoardCollectionItem: NSCollectionViewItem, NSTextFieldDelegate 
             targetPixelSize: targetPixelSize
         ) { [weak self] previewContent in
             guard let self else {
+                // Temporarily muted: BoardList ThumbnailTrace noise.
+                #if false
                 print(
                     "[BoardList][macOS][ThumbnailTrace][Item] " +
                         "t=\(boardListSelectionTraceTimestamp()) " +
@@ -282,6 +284,7 @@ final class macOSBoardCollectionItem: NSCollectionViewItem, NSTextFieldDelegate 
                         "requestedRevision=\(item.revisionToken) " +
                         "reason=item-deallocated"
                 )
+                #endif
                 return
             }
 
@@ -530,6 +533,8 @@ final class macOSBoardCollectionItem: NSCollectionViewItem, NSTextFieldDelegate 
     }
 
     private func logSelectionTrace(_ phase: String, extra: String = "") {
+        // Temporarily muted: BoardList SelectionTrace noise.
+        #if false
         let extraSuffix = extra.isEmpty ? "" : " \(extra)"
         print(
             "[BoardList][macOS][SelectionTrace] " +
@@ -543,9 +548,12 @@ final class macOSBoardCollectionItem: NSCollectionViewItem, NSTextFieldDelegate 
                 "highlightState=\(describeSelectionTraceHighlightState(highlightState))" +
                 extraSuffix
         )
+        #endif
     }
 
     private func logThumbnailTrace(_ phase: String, extra: String = "") {
+        // Temporarily muted: BoardList ThumbnailTrace noise.
+        #if false
         let extraSuffix = extra.isEmpty ? "" : " \(extra)"
         print(
             "[BoardList][macOS][ThumbnailTrace][Item] " +
@@ -557,6 +565,7 @@ final class macOSBoardCollectionItem: NSCollectionViewItem, NSTextFieldDelegate 
                 "displayMode=\(representedDisplayMode?.title ?? "nil")" +
                 extraSuffix
         )
+        #endif
     }
 
     private func describeThumbnailPreviewContent(
@@ -749,6 +758,8 @@ final class macOSBoardCollectionItem: NSCollectionViewItem, NSTextFieldDelegate 
     }
 
     private func logRenameTrace(_ phase: String, extra: String = "") {
+        // Temporarily muted: BoardList RenameTrace noise.
+        #if false
         let extraSuffix = extra.isEmpty ? "" : " \(extra)"
         let isFirstResponder = view.window?.firstResponder === titleTextField
         print(
@@ -764,6 +775,7 @@ final class macOSBoardCollectionItem: NSCollectionViewItem, NSTextFieldDelegate 
                 "isAwaitingInitialFocusStabilization=\(isAwaitingInitialFocusStabilization)" +
                 extraSuffix
         )
+        #endif
     }
 
     @objc
