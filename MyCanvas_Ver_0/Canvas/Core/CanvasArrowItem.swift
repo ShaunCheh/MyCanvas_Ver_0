@@ -200,6 +200,24 @@ struct CanvasArrowItem {
         )
     }
 
+    func adjustingShaftThickness(by delta: CGFloat) -> CanvasArrowItem {
+        guard delta.isFinite else {
+            return self
+        }
+
+        let proposedShaftThickness = shaftThickness + delta
+        guard proposedShaftThickness.isFinite else {
+            return self
+        }
+
+        var adjustedItem = self
+        adjustedItem.shaftThickness = max(
+            proposedShaftThickness,
+            Self.minimumShaftThickness
+        )
+        return adjustedItem
+    }
+
     func matchesDocumentState(_ other: CanvasArrowItem) -> Bool {
         id == other.id &&
             startPoint == other.startPoint &&

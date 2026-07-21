@@ -104,7 +104,9 @@ struct CanvasContextMenuActionResolver {
         case .decreaseTextFontSize,
              .increaseTextFontSize,
              .decreaseMarkdownContentSize,
-             .increaseMarkdownContentSize:
+             .increaseMarkdownContentSize,
+             .decreaseArrowThickness,
+             .increaseArrowThickness:
             return nil
         case .crop:
             if context.isInlineCropModeActive {

@@ -489,7 +489,7 @@ final class SelectionAccessoryHostView: NSView {
             "\(String(describing: $0.commandID)) enabled=\($0.descriptor.isEnabled)"
         }.joined(separator: ", ") ?? "nil"
         print(
-            "[Canvas macOS][MarkdownAccessoryHost] " +
+            "[Canvas macOS][SelectionAccessoryHost] " +
             "event=apply " +
             "stateItemID=\(state.map { $0.itemID.uuidString } ?? "nil") " +
             "stateAnchorRect=\(state.map { Self.describe(rect: $0.anchorRect) } ?? "nil") " +
@@ -514,7 +514,7 @@ final class SelectionAccessoryHostView: NSView {
         }
 
         print(
-            "[Canvas macOS][MarkdownAccessoryHost] " +
+            "[Canvas macOS][SelectionAccessoryHost] " +
             "event=layout " +
             "stateItemID=\(state.itemID.uuidString) " +
             "anchorRect=\(Self.describe(rect: state.anchorRect)) " +

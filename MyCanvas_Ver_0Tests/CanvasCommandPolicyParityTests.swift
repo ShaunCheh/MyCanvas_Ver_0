@@ -396,6 +396,87 @@ final class CanvasCommandPolicyParityTests: XCTestCase {
         )
     }
 
+    func testArrowThicknessCommandsPreserveEndpointsAndSupportUndoRedo() throws {
+        let session = makeCommandPolicyParityTestSession(workspaceMode: .editing)
+        let executor = CanvasCommandExecutor(session: session)
+        CanvasCommandPolicyParityTestRetainer.executors.append(executor)
+        let originalItem = try XCTUnwrap(session.addArrowItem())
+
+        let decreaseDescriptor = commandCatalog.descriptor(
+            for: .decreaseArrowThickness,
+            session: session
+        )
+        let increaseDescriptor = commandCatalog.descriptor(
+            for: .increaseArrowThickness,
+            session: session
+        )
+        XCTAssertTrue(decreaseDescriptor.isEnabled)
+        XCTAssertTrue(increaseDescriptor.isEnabled)
+        XCTAssertTrue(executor.canExecute(.decreaseArrowThickness))
+        XCTAssertTrue(executor.canExecute(.increaseArrowThickness))
+
+        let result = try XCTUnwrap(executor.execute(.increaseArrowThickness))
+        let thickenedItem = try XCTUnwrap(
+            session.scene.arrowItem(withID: originalItem.id)
+        )
+        XCTAssertEqual(thickenedItem.startPoint, originalItem.startPoint)
+        XCTAssertEqual(thickenedItem.endPoint, originalItem.endPoint)
+        XCTAssertGreaterThan(
+            thickenedItem.shaftThickness,
+            originalItem.shaftThickness
+        )
+        XCTAssertGreaterThan(thickenedItem.size.height, originalItem.size.height)
+        XCTAssertEqual(
+            result.refreshReason,
+            "increase arrow thickness \(originalItem.id.uuidString)"
+        )
+
+        XCTAssertNotNil(executor.execute(.undo))
+        let undoneItem = try XCTUnwrap(
+            session.scene.arrowItem(withID: originalItem.id)
+        )
+        XCTAssertTrue(undoneItem.matchesDocumentState(originalItem))
+
+        XCTAssertNotNil(executor.execute(.redo))
+        let redoneItem = try XCTUnwrap(
+            session.scene.arrowItem(withID: originalItem.id)
+        )
+        XCTAssertTrue(redoneItem.matchesDocumentState(thickenedItem))
+
+        XCTAssertNotNil(executor.execute(.decreaseArrowThickness))
+        let restoredItem = try XCTUnwrap(
+            session.scene.arrowItem(withID: originalItem.id)
+        )
+        XCTAssertTrue(restoredItem.matchesDocumentState(originalItem))
+    }
+
+    func testArrowThicknessCommandsRespectMinimumThickness() {
+        let session = makeCommandPolicyParityTestSession(workspaceMode: .editing)
+        let executor = CanvasCommandExecutor(session: session)
+        CanvasCommandPolicyParityTestRetainer.executors.append(executor)
+        let item = CanvasArrowItem(
+            startPoint: CGPoint(x: 0, y: 0),
+            endPoint: CGPoint(x: 180, y: 0),
+            shaftThickness: 0
+        )
+        session.scene.append(item)
+        session.interactionState = CanvasInteractionState(selectedItemID: item.id)
+
+        let decreaseDescriptor = commandCatalog.descriptor(
+            for: .decreaseArrowThickness,
+            session: session
+        )
+        let increaseDescriptor = commandCatalog.descriptor(
+            for: .increaseArrowThickness,
+            session: session
+        )
+
+        XCTAssertFalse(decreaseDescriptor.isEnabled)
+        XCTAssertTrue(increaseDescriptor.isEnabled)
+        XCTAssertFalse(executor.canExecute(.decreaseArrowThickness))
+        XCTAssertTrue(executor.canExecute(.increaseArrowThickness))
+    }
+
     func testArrowEndpointDragPreservesArrowProfile() throws {
         let item = CanvasArrowItem(
             center: CGPoint(x: 120, y: 80),
@@ -460,6 +541,8 @@ final class CanvasCommandPolicyParityTests: XCTestCase {
         XCTAssertFalse(CanvasCommand.commitMarkdownEdit.shouldCommitActiveInlineTextBeforeExecuting)
         XCTAssertFalse(CanvasCommand.decreaseMarkdownContentSize.shouldCommitActiveInlineTextBeforeExecuting)
         XCTAssertFalse(CanvasCommand.increaseMarkdownContentSize.shouldCommitActiveInlineTextBeforeExecuting)
+        XCTAssertFalse(CanvasCommand.decreaseArrowThickness.shouldCommitActiveInlineTextBeforeExecuting)
+        XCTAssertFalse(CanvasCommand.increaseArrowThickness.shouldCommitActiveInlineTextBeforeExecuting)
         XCTAssertTrue(CanvasCommand.undo.shouldCommitActiveInlineTextBeforeExecuting)
     }
 

@@ -43,6 +43,10 @@ final class CanvasCommandExecutor {
             return session.canDecreaseMarkdownContentSize
         case .increaseMarkdownContentSize:
             return session.canIncreaseMarkdownContentSize
+        case .decreaseArrowThickness:
+            return session.canDecreaseArrowThickness
+        case .increaseArrowThickness:
+            return session.canIncreaseArrowThickness
         case .crop:
             return session.isInlineCropModeActive || session.canBeginCropMode
         case let .beginCropMode(itemID):
@@ -220,6 +224,22 @@ final class CanvasCommandExecutor {
 
             return CanvasCommandExecutionResult(
                 refreshReason: "increase markdown content size \(updatedItem.id.uuidString)"
+            )
+        case .decreaseArrowThickness:
+            guard let updatedItem = session.decreaseArrowThickness() else {
+                return nil
+            }
+
+            return CanvasCommandExecutionResult(
+                refreshReason: "decrease arrow thickness \(updatedItem.id.uuidString)"
+            )
+        case .increaseArrowThickness:
+            guard let updatedItem = session.increaseArrowThickness() else {
+                return nil
+            }
+
+            return CanvasCommandExecutionResult(
+                refreshReason: "increase arrow thickness \(updatedItem.id.uuidString)"
             )
         case .crop:
             if session.isInlineCropModeActive {

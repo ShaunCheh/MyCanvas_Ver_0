@@ -179,8 +179,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     private var transientMarkdownScrollState: TransientMarkdownScrollState?
     private var activeOverlayEditorPresentationState: OverlayEditorPresentationState = .none
     private let commandCatalog = CanvasCommandCatalog()
-    private let markdownSelectionAccessoryResolver =
-        CanvasMarkdownSelectionAccessoryResolver()
+    private let selectionAccessoryResolver =
+        CanvasSelectionAccessoryResolver()
     private let toolbarStateBuilder = CanvasToolbarStateBuilder()
     private let contextMenuActionResolver = CanvasContextMenuActionResolver()
     private let clickSelectionResolver = CanvasClickSelectionResolver()
@@ -526,6 +526,10 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             performCommand(.decreaseMarkdownContentSize)
         case .increaseMarkdownContentSize:
             performCommand(.increaseMarkdownContentSize)
+        case .decreaseArrowThickness:
+            performCommand(.decreaseArrowThickness)
+        case .increaseArrowThickness:
+            performCommand(.increaseArrowThickness)
         default:
             return
         }
@@ -5475,7 +5479,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             return
         }
 
-        guard let state = resolvedMarkdownSelectionAccessoryState() else {
+        guard let state = resolvedSelectionAccessoryState() else {
             selectionAccessoryHostView.dismiss()
             return
         }
@@ -5488,10 +5492,10 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         )
     }
 
-    private func resolvedMarkdownSelectionAccessoryState() -> SelectionAccessoryState? {
-        markdownSelectionAccessoryResolver.resolveState(
+    private func resolvedSelectionAccessoryState() -> SelectionAccessoryState? {
+        selectionAccessoryResolver.resolveState(
             session: editorSession,
-            environment: CanvasMarkdownSelectionAccessoryResolver.Environment(
+            environment: CanvasSelectionAccessoryResolver.Environment(
                 workspaceMode: workspaceMode,
                 isTransitionInteractionFrozen: isTransitionInteractionFrozen,
                 hasContextMenu: contextMenuState != nil,
@@ -5500,12 +5504,12 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
                 hasInlineEditPresentation: presentationInlineEditState != nil
             ),
             anchorRect: editorSession.singleSelectedItemID.flatMap {
-                markdownSelectionAccessoryAnchorRect(for: $0)
+                selectionAccessoryAnchorRect(for: $0)
             }
         )
     }
 
-    private func markdownSelectionAccessoryAnchorRect(
+    private func selectionAccessoryAnchorRect(
         for itemID: CanvasItemID
     ) -> CGRect? {
         if let editOverlay = lastRenderSnapshot.editOverlay,

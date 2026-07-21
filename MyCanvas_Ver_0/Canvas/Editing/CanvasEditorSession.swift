@@ -30,6 +30,7 @@ private struct CanvasPreparedImportItem {
 final class CanvasEditorSession {
     private static let inlineTextFontSizeStep: CGFloat = 2
     private static let markdownContentSizeStep: CGFloat = 2
+    private static let arrowShaftThicknessStep: CGFloat = 4
     private static let geometryComparisonEpsilon: CGFloat = 0.0001
     private static let isMarkdownTraceLoggingEnabled = false
     private static let defaultMarkdownSource = """
@@ -218,6 +219,14 @@ Write here.
         canAdjustMarkdownContentSize(by: Self.markdownContentSizeStep)
     }
 
+    var canDecreaseArrowThickness: Bool {
+        canAdjustArrowShaftThickness(by: -Self.arrowShaftThicknessStep)
+    }
+
+    var canIncreaseArrowThickness: Bool {
+        canAdjustArrowShaftThickness(by: Self.arrowShaftThicknessStep)
+    }
+
     var canClearSelection: Bool {
         hasSelection
     }
@@ -304,6 +313,10 @@ Write here.
 
     var selectedMarkdownItem: CanvasMarkdownItem? {
         selectedBoardItem?.markdownItem
+    }
+
+    var selectedArrowItem: CanvasArrowItem? {
+        selectedBoardItem?.arrowItem
     }
 
     var selectedBoardItems: [CanvasBoardItem] {
@@ -705,6 +718,16 @@ Write here.
     @discardableResult
     func increaseMarkdownContentSize() -> CanvasMarkdownItem? {
         adjustMarkdownContentSize(by: Self.markdownContentSizeStep)
+    }
+
+    @discardableResult
+    func decreaseArrowThickness() -> CanvasArrowItem? {
+        adjustArrowShaftThickness(by: -Self.arrowShaftThicknessStep)
+    }
+
+    @discardableResult
+    func increaseArrowThickness() -> CanvasArrowItem? {
+        adjustArrowShaftThickness(by: Self.arrowShaftThicknessStep)
     }
 
     @discardableResult
@@ -2706,6 +2729,56 @@ Write here.
         let changeReason = delta < 0
             ? "decrease markdown content size"
             : "increase markdown content size"
+        _ = recordImmediateHistoryChange(
+            from: beforeSnapshot,
+            reason: changeReason,
+            autosaveReason: changeReason
+        )
+        return updatedItem
+    }
+
+    private func canAdjustArrowShaftThickness(by delta: CGFloat) -> Bool {
+        guard
+            inlineEditState == nil,
+            let item = selectedArrowItem,
+            selectionCount == 1,
+            delta != 0
+        else {
+            return false
+        }
+
+        return item.adjustingShaftThickness(by: delta).shaftThickness !=
+            item.shaftThickness
+    }
+
+    @discardableResult
+    private func adjustArrowShaftThickness(by delta: CGFloat) -> CanvasArrowItem? {
+        guard
+            inlineEditState == nil,
+            let item = selectedArrowItem,
+            selectionCount == 1
+        else {
+            return nil
+        }
+
+        let adjustedItem = item.adjustingShaftThickness(by: delta)
+        guard adjustedItem.shaftThickness != item.shaftThickness else {
+            return nil
+        }
+
+        let beforeSnapshot = currentBoardHistorySnapshot()
+        guard
+            let updatedItem = scene.applyBoardItems([.arrow(adjustedItem)])?
+                .first?
+                .arrowItem
+        else {
+            return nil
+        }
+
+        expandBoardIfNeeded(toInclude: updatedItem.worldBounds)
+        let changeReason = delta < 0
+            ? "decrease arrow thickness"
+            : "increase arrow thickness"
         _ = recordImmediateHistoryChange(
             from: beforeSnapshot,
             reason: changeReason,

@@ -126,6 +126,22 @@ struct CanvasCommandCatalog {
                 isEnabled: session.canIncreaseMarkdownContentSize,
                 isActive: false
             )
+        case .decreaseArrowThickness:
+            descriptor = CanvasCommandDescriptor(
+                id: .decreaseArrowThickness,
+                title: "Thinner Arrow",
+                systemImageName: "minus",
+                isEnabled: session.canDecreaseArrowThickness,
+                isActive: false
+            )
+        case .increaseArrowThickness:
+            descriptor = CanvasCommandDescriptor(
+                id: .increaseArrowThickness,
+                title: "Thicker Arrow",
+                systemImageName: "plus",
+                isEnabled: session.canIncreaseArrowThickness,
+                isActive: false
+            )
         case .crop:
             let isActive = session.isInlineCropModeActive
             let resolvedTargetItemID = singleEffectiveItemID(

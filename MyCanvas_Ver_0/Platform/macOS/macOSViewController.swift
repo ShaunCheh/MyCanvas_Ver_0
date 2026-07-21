@@ -138,7 +138,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     private static let rotateHandleHitTargetSize: CGFloat = 22
     private static let geometryComparisonEpsilon: CGFloat = 0.0001
     private static let markdownScrollHistoryCommitDelay: TimeInterval = 0.25
-    private static let isMarkdownSelectionAccessoryTraceLoggingEnabled = true
+    private static let isSelectionAccessoryTraceLoggingEnabled = true
     private static let isPointerHitTraceLoggingEnabled = true
     private static let observedKeyboardShortcutReuseWindow: TimeInterval = 0.45
     private static let continuousRawInputObservationInterval: TimeInterval = 0.32
@@ -156,8 +156,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     private var markdownScrollHistoryCommitWorkItem: DispatchWorkItem?
     private var activeOverlayEditorPresentationState: OverlayEditorPresentationState = .none
     private let commandCatalog = CanvasCommandCatalog()
-    private let markdownSelectionAccessoryResolver =
-        CanvasMarkdownSelectionAccessoryResolver()
+    private let selectionAccessoryResolver =
+        CanvasSelectionAccessoryResolver()
     private let toolbarStateBuilder = CanvasToolbarStateBuilder()
     private let contextMenuActionResolver = CanvasContextMenuActionResolver()
     private let clickSelectionResolver = CanvasClickSelectionResolver()
@@ -500,6 +500,10 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             performCommand(.decreaseMarkdownContentSize)
         case .increaseMarkdownContentSize:
             performCommand(.increaseMarkdownContentSize)
+        case .decreaseArrowThickness:
+            performCommand(.decreaseArrowThickness)
+        case .increaseArrowThickness:
+            performCommand(.increaseArrowThickness)
         default:
             return
         }
@@ -873,6 +877,10 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             performCommand(.decreaseMarkdownContentSize)
         case .increaseMarkdownContentSize:
             performCommand(.increaseMarkdownContentSize)
+        case .decreaseArrowThickness:
+            performCommand(.decreaseArrowThickness)
+        case .increaseArrowThickness:
+            performCommand(.increaseArrowThickness)
         case .crop:
             performCommand(CanvasCommand.crop)
         case .undo:
@@ -5561,8 +5569,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             return
         }
 
-        guard let state = resolvedMarkdownSelectionAccessoryState() else {
-            logMarkdownSelectionAccessoryPresentation(
+        guard let state = resolvedSelectionAccessoryState() else {
+            logSelectionAccessoryPresentation(
                 state: nil,
                 layoutContext: layoutContext
             )
@@ -5572,7 +5580,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
 
         let resolvedLayoutContext =
             layoutContext ?? contextMenuLayoutContextForCurrentChromeState()
-        logMarkdownSelectionAccessoryPresentation(
+        logSelectionAccessoryPresentation(
             state: state,
             layoutContext: resolvedLayoutContext
         )
@@ -5582,7 +5590,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         )
     }
 
-    private func resolvedMarkdownSelectionAccessoryState() -> SelectionAccessoryState? {
+    private func resolvedSelectionAccessoryState() -> SelectionAccessoryState? {
         let resolvedWorkspaceMode = workspaceMode
         let resolvedIsTransitionInteractionFrozen = isTransitionInteractionFrozen
         let resolvedHasContextMenu = contextMenuState != nil
@@ -5591,11 +5599,11 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         let resolvedHasInlineEditPresentation = presentationInlineEditState != nil
         let resolvedSelectedItemID = editorSession.singleSelectedItemID
         let resolvedAnchorRect = resolvedSelectedItemID.flatMap {
-            markdownSelectionAccessoryAnchorRect(for: $0)
+            selectionAccessoryAnchorRect(for: $0)
         }
-        let resolvedState = markdownSelectionAccessoryResolver.resolveState(
+        let resolvedState = selectionAccessoryResolver.resolveState(
             session: editorSession,
-            environment: CanvasMarkdownSelectionAccessoryResolver.Environment(
+            environment: CanvasSelectionAccessoryResolver.Environment(
                 workspaceMode: resolvedWorkspaceMode,
                 isTransitionInteractionFrozen: resolvedIsTransitionInteractionFrozen,
                 hasContextMenu: resolvedHasContextMenu,
@@ -5604,9 +5612,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             ),
             anchorRect: resolvedAnchorRect
         )
-        logMarkdownSelectionAccessoryResolution(
+        logSelectionAccessoryResolution(
             selectedItemID: resolvedSelectedItemID,
-            selectedMarkdownItemID: editorSession.selectedMarkdownItem?.id,
             selectedItemKind: editorSession.selectedBoardItemKind,
             workspaceMode: resolvedWorkspaceMode,
             isTransitionInteractionFrozen: resolvedIsTransitionInteractionFrozen,
@@ -5619,7 +5626,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         return resolvedState
     }
 
-    private func markdownSelectionAccessoryAnchorRect(
+    private func selectionAccessoryAnchorRect(
         for itemID: CanvasItemID
     ) -> CGRect? {
         if let editOverlay = lastRenderSnapshot.editOverlay,
@@ -5631,7 +5638,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
                     editOverlay.activeScreenQuad.boundingRect.standardized,
                     from: canvasViewportView
                 )
-                logMarkdownSelectionAccessoryAnchorRect(
+                logSelectionAccessoryAnchorRect(
                     itemID: itemID,
                     source: "editOverlay",
                     resolvedRect: resolvedRect
@@ -5645,7 +5652,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         guard let renderItem = lastRenderSnapshot.items.first(where: {
             $0.id == itemID
         }) else {
-            logMarkdownSelectionAccessoryAnchorRect(
+            logSelectionAccessoryAnchorRect(
                 itemID: itemID,
                 source: "renderItemFallbackMissing",
                 resolvedRect: nil
@@ -5656,7 +5663,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             renderItem.screenQuad.boundingRect.standardized,
             from: canvasViewportView
         )
-        logMarkdownSelectionAccessoryAnchorRect(
+        logSelectionAccessoryAnchorRect(
             itemID: itemID,
             source: "renderItemFallback",
             resolvedRect: resolvedRect
@@ -5984,9 +5991,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         }
     }
 
-    private func logMarkdownSelectionAccessoryResolution(
+    private func logSelectionAccessoryResolution(
         selectedItemID: CanvasItemID?,
-        selectedMarkdownItemID: CanvasItemID?,
         selectedItemKind: CanvasBoardItemKind?,
         workspaceMode: CanvasWorkspaceMode,
         isTransitionInteractionFrozen: Bool,
@@ -5996,7 +6002,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         anchorRect: CGRect?,
         state: SelectionAccessoryState?
     ) {
-        guard Self.isMarkdownSelectionAccessoryTraceLoggingEnabled else {
+        guard Self.isSelectionAccessoryTraceLoggingEnabled else {
             return
         }
 
@@ -6006,10 +6012,9 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             "\(String(describing: $0.commandID)) enabled=\($0.descriptor.isEnabled)"
         }.joined(separator: ", ") ?? "nil"
         print(
-            "[Canvas macOS][MarkdownAccessory] " +
+            "[Canvas macOS][SelectionAccessory] " +
             "event=resolveState " +
             "selectedItemID=\(describe(itemID: selectedItemID)) " +
-            "selectedMarkdownItemID=\(describe(itemID: selectedMarkdownItemID)) " +
             "selectedItemKind=\(String(describing: selectedItemKind)) " +
             "workspaceMode=\(workspaceMode.rawValue) " +
             "isTransitionInteractionFrozen=\(isTransitionInteractionFrozen) " +
@@ -6024,18 +6029,18 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         )
     }
 
-    private func logMarkdownSelectionAccessoryPresentation(
+    private func logSelectionAccessoryPresentation(
         state: SelectionAccessoryState?,
         layoutContext: CanvasChromeLayoutContext?
     ) {
-        guard Self.isMarkdownSelectionAccessoryTraceLoggingEnabled else {
+        guard Self.isSelectionAccessoryTraceLoggingEnabled else {
             return
         }
 
         let resolvedSafeBounds = layoutContext.map { describe(rect: $0.safeBounds) } ?? "nil"
         let resolvedOccupiedRectCount = layoutContext?.occupiedRects.count ?? 0
         print(
-            "[Canvas macOS][MarkdownAccessory] " +
+            "[Canvas macOS][SelectionAccessory] " +
             "event=syncPresentation " +
             "stateItemID=\(describe(itemID: state?.itemID)) " +
             "stateAnchorRect=\(state.map { describe(rect: $0.anchorRect) } ?? "nil") " +
@@ -6048,17 +6053,17 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         )
     }
 
-    private func logMarkdownSelectionAccessoryAnchorRect(
+    private func logSelectionAccessoryAnchorRect(
         itemID: CanvasItemID,
         source: String,
         resolvedRect: CGRect?
     ) {
-        guard Self.isMarkdownSelectionAccessoryTraceLoggingEnabled else {
+        guard Self.isSelectionAccessoryTraceLoggingEnabled else {
             return
         }
 
         print(
-            "[Canvas macOS][MarkdownAccessory] " +
+            "[Canvas macOS][SelectionAccessory] " +
             "event=resolveAnchorRect " +
             "itemID=\(itemID.uuidString) " +
             "source=\(source) " +
@@ -6073,7 +6078,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         reason: String,
         step: String
     ) {
-        guard Self.isMarkdownSelectionAccessoryTraceLoggingEnabled else {
+        guard Self.isSelectionAccessoryTraceLoggingEnabled else {
             return
         }
         print(

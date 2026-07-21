@@ -85,4 +85,30 @@ struct SelectionAccessoryState: Equatable {
             ]
         )
     }
+
+    static func arrow(
+        itemID: CanvasItemID,
+        anchorRect: CGRect,
+        decreaseDescriptor: CanvasCommandDescriptor,
+        increaseDescriptor: CanvasCommandDescriptor
+    ) -> SelectionAccessoryState {
+        SelectionAccessoryState(
+            itemID: itemID,
+            anchorRect: anchorRect,
+            actionStates: [
+                SelectionAccessoryActionState(
+                    commandID: decreaseDescriptor.id,
+                    descriptor: SelectionAccessoryActionDescriptor(
+                        commandDescriptor: decreaseDescriptor
+                    )
+                ),
+                SelectionAccessoryActionState(
+                    commandID: increaseDescriptor.id,
+                    descriptor: SelectionAccessoryActionDescriptor(
+                        commandDescriptor: increaseDescriptor
+                    )
+                )
+            ]
+        )
+    }
 }

@@ -14,6 +14,8 @@ enum CanvasCommandID: String {
     case commitMarkdownEdit
     case decreaseMarkdownContentSize
     case increaseMarkdownContentSize
+    case decreaseArrowThickness
+    case increaseArrowThickness
     case crop
     case undo
     case redo
@@ -44,6 +46,8 @@ enum CanvasCommandID: String {
              .commitMarkdownEdit,
              .decreaseMarkdownContentSize,
              .increaseMarkdownContentSize,
+             .decreaseArrowThickness,
+             .increaseArrowThickness,
              .crop,
              .undo,
              .redo,
@@ -76,6 +80,8 @@ enum CanvasCommand {
     case commitMarkdownEdit
     case decreaseMarkdownContentSize
     case increaseMarkdownContentSize
+    case decreaseArrowThickness
+    case increaseArrowThickness
     case crop
     case beginCropMode(itemID: CanvasItemID)
     case undo
@@ -128,6 +134,10 @@ enum CanvasCommand {
             return .decreaseMarkdownContentSize
         case .increaseMarkdownContentSize:
             return .increaseMarkdownContentSize
+        case .decreaseArrowThickness:
+            return .decreaseArrowThickness
+        case .increaseArrowThickness:
+            return .increaseArrowThickness
         case .crop:
             return .crop
         case .beginCropMode:
@@ -180,7 +190,9 @@ enum CanvasCommand {
              .increaseTextFontSize,
              .commitMarkdownEdit,
              .decreaseMarkdownContentSize,
-             .increaseMarkdownContentSize:
+             .increaseMarkdownContentSize,
+             .decreaseArrowThickness,
+             .increaseArrowThickness:
             return false
         case .importMedia,
              .addTextItem,
@@ -229,6 +241,8 @@ enum CanvasCommand {
              .commitMarkdownEdit,
              .decreaseMarkdownContentSize,
              .increaseMarkdownContentSize,
+             .decreaseArrowThickness,
+             .increaseArrowThickness,
              .crop,
              .beginCropMode,
              .undo,
