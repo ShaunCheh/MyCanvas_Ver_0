@@ -22,7 +22,7 @@ todos:
     status: completed
   - id: history-autosave
     content: 统一 group 拖拽/缩放/membership 的 history 与 autosave 提交
-    status: pending
+    status: completed
   - id: tests-builds
     content: 补充单测并运行 iOS/macOS build 验证
     status: pending

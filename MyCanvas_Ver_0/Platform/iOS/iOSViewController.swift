@@ -4718,7 +4718,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         )
         guard editorSession.updateGroupFrame(
             withID: dragState.groupID,
-            to: proposedFrame
+            to: proposedFrame,
+            reconcileMembership: false
         ) else {
             return editorSession.groupFrame(withID: dragState.groupID)
                 == proposedFrame.standardized
@@ -4751,7 +4752,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         )
         guard editorSession.updateGroupFrame(
             withID: resizeState.groupID,
-            to: proposedFrame
+            to: proposedFrame,
+            reconcileMembership: false
         ) else {
             return editorSession.groupFrame(withID: resizeState.groupID)
                 == proposedFrame.standardized
@@ -5850,9 +5852,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     private func commitPendingPointerHistoryTransaction(
         autosaveReason: String
     ) {
-        _ = editorSession.reconcileFrameGroupMemberships()
         guard editorSession.commitPendingHistoryTransaction(
-            autosaveReason: autosaveReason
+            reconcilingFrameGroupMembershipsWithAutosaveReason: autosaveReason
         ) else {
             return
         }

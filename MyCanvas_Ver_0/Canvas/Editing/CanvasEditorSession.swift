@@ -658,6 +658,30 @@ Write here.
     }
 
     @discardableResult
+    func commitPendingHistoryTransaction(
+        reconcilingFrameGroupMembershipsWithAutosaveReason autosaveReason: String,
+        membershipAutosaveReason: String = "update group membership"
+    ) -> Bool {
+        guard historyController.hasPendingTransaction else {
+            return false
+        }
+
+        let hadChangesBeforeMembershipReconcile =
+            historyController.pendingTransactionHasChanges(
+                to: currentBoardHistorySnapshot()
+            ) ?? false
+        let didUpdateGroupMembership = reconcileFrameGroupMemberships()
+        let resolvedAutosaveReason =
+            didUpdateGroupMembership && hadChangesBeforeMembershipReconcile == false
+            ? membershipAutosaveReason
+            : autosaveReason
+
+        return commitPendingHistoryTransaction(
+            autosaveReason: resolvedAutosaveReason
+        )
+    }
+
+    @discardableResult
     func recordImmediateHistoryChange(
         from beforeSnapshot: BoardHistorySnapshot,
         reason: String,
@@ -788,7 +812,8 @@ Write here.
     func updateGroupFrame(
         withID groupID: CanvasItemGroupID,
         to frame: CGRect,
-        recordHistory: Bool = false
+        recordHistory: Bool = false,
+        reconcileMembership: Bool = true
     ) -> Bool {
         guard
             canUpdateGroupFrame(withID: groupID),
@@ -813,7 +838,9 @@ Write here.
         let beforeSnapshot = recordHistory ? currentBoardHistorySnapshot() : nil
         groups[groupIndex].frame = standardizedFrame
         expandBoardIfNeeded(toInclude: standardizedFrame)
-        _ = reconcileItemMembership(forGroupID: groupID)
+        if reconcileMembership {
+            _ = reconcileItemMembership(forGroupID: groupID)
+        }
 
         if let beforeSnapshot {
             _ = recordImmediateHistoryChange(

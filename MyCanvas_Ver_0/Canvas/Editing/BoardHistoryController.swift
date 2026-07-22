@@ -26,6 +26,10 @@ final class BoardHistoryController {
         redoStack.isEmpty == false
     }
 
+    var hasPendingTransaction: Bool {
+        pendingTransaction != nil
+    }
+
     func reset() {
         undoStack.removeAll()
         redoStack.removeAll()
@@ -48,6 +52,16 @@ final class BoardHistoryController {
 
     func cancelPendingTransaction() {
         pendingTransaction = nil
+    }
+
+    func pendingTransactionHasChanges(
+        to snapshot: BoardHistorySnapshot
+    ) -> Bool? {
+        guard let pendingTransaction else {
+            return nil
+        }
+
+        return pendingTransaction.initialSnapshot != snapshot
     }
 
     @discardableResult
