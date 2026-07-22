@@ -65,6 +65,56 @@ final class BoardVideoStorageTests: XCTestCase {
         XCTAssertEqual(roundTrippedItem.rotationRadians, item.rotationRadians)
     }
 
+    func testBoardDocumentMapperRoundTripsCanvasItemGroups() throws {
+        let boardID = UUID()
+        let itemID = UUID()
+        let posterImage = try makeSolidColorImage(red: 0.4, green: 0.2, blue: 1)
+        let item = makeVideoItem(
+            id: itemID,
+            posterAsset: .persistedStaticImage(
+                filename: "group-poster.png",
+                cgImage: posterImage
+            ),
+            sourceVideoFilename: "group-source.mov",
+            posterTimeSeconds: 2
+        )
+        var runtimeState = makeRuntimeState(
+            boardID: boardID,
+            now: Date(timeIntervalSince1970: 1_710_000_000),
+            item: item
+        )
+        let groupID = UUID()
+        runtimeState.groups = [
+            CanvasItemGroup(
+                id: groupID,
+                title: "Question Evidence",
+                description: "Image answers the markdown question.",
+                itemIDs: [itemID]
+            )
+        ]
+
+        let document = BoardDocumentMapper.makeDocument(from: runtimeState)
+        let groupRecord = try XCTUnwrap(document.groups.first)
+
+        XCTAssertEqual(groupRecord.id, groupID)
+        XCTAssertEqual(groupRecord.title, "Question Evidence")
+        XCTAssertEqual(groupRecord.description, "Image answers the markdown question.")
+        XCTAssertEqual(groupRecord.itemIDs, [itemID])
+
+        let roundTrippedState = try BoardDocumentMapper.makeRuntimeState(
+            from: document,
+            imageLoader: { _ in
+                posterImage
+            }
+        )
+        let roundTrippedGroup = try XCTUnwrap(roundTrippedState.groups.first)
+
+        XCTAssertEqual(roundTrippedGroup.id, groupID)
+        XCTAssertEqual(roundTrippedGroup.title, "Question Evidence")
+        XCTAssertEqual(roundTrippedGroup.description, "Image answers the markdown question.")
+        XCTAssertEqual(roundTrippedGroup.itemIDs, [itemID])
+    }
+
     func testBoardStoreSaveLoadAndCleanupPreservesVideoPosterAndSourceAssets() throws {
         try withTemporaryBoardWorkspace { _, userDefaults in
             let boardID = UUID()

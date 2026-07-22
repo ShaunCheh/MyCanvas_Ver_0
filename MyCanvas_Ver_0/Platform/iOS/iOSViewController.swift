@@ -241,6 +241,29 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         button.configuration = configuration
         return button
     }()
+    private let groupListButton: UIButton = {
+        let button = UIButton(type: .system)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        var configuration = UIButton.Configuration.filled()
+        configuration.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
+            pointSize: 17,
+            weight: .semibold
+        )
+        configuration.image = UIImage(systemName: "rectangle.3.group")
+        configuration.baseBackgroundColor = .secondarySystemBackground
+        configuration.baseForegroundColor = .label
+        configuration.cornerStyle = .capsule
+        configuration.contentInsets = .zero
+        button.configuration = configuration
+        button.accessibilityLabel = "Canvas groups"
+        return button
+    }()
+    private let groupListView: iOSCanvasGroupListView = {
+        let view = iOSCanvasGroupListView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.isHidden = true
+        return view
+    }()
     // Keep placement transient until persistence is designed; future UIPanGestureRecognizer
     // bridge code should write drag results back into this value.
     private var transientToolbarPlacement = CanvasToolbarPlacement(
@@ -358,6 +381,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     }
     private var isTransitionInteractionFrozen = false
     private var transitionChromeHidden = false
+    private var isGroupListVisible = false
     private var lastPinchDispatchTimestamp: TimeInterval?
     private var lastZoomRefreshTimestamp: TimeInterval?
     private var didMutateCameraDuringPinchGesture = false
@@ -977,6 +1001,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         setupRedoButton()
         setupBackButton()
         setupWorkspaceModeButton()
+        setupGroupListButton()
         setupMiniMapView()
         setupContextMenuHostView()
         setupSelectionAccessoryHostView()
@@ -1047,7 +1072,9 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         chromeOverlayView.addSubview(inputIndicatorHostView)
         chromeOverlayView.addSubview(contextMenuHostView)
         chromeOverlayView.addSubview(backButton)
+        chromeOverlayView.addSubview(groupListButton)
         chromeOverlayView.addSubview(workspaceModeButton)
+        chromeOverlayView.addSubview(groupListView)
         registerToolbarButtons()
     }
 
@@ -1055,6 +1082,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         let safeAreaLayoutGuide = chromeOverlayView.safeAreaLayoutGuide
         let preferredTextEditorWidth = textEditorOverlayView.widthAnchor.constraint(equalToConstant: 320)
         preferredTextEditorWidth.priority = .defaultHigh
+        let preferredGroupListWidth = groupListView.widthAnchor.constraint(equalToConstant: 280)
+        preferredGroupListWidth.priority = .defaultHigh
         NSLayoutConstraint.activate([
             canvasHostView.topAnchor.constraint(equalTo: view.topAnchor),
             canvasHostView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -1088,6 +1117,16 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             workspaceModeButton.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor, constant: 20),
             workspaceModeButton.widthAnchor.constraint(equalToConstant: 44),
             workspaceModeButton.heightAnchor.constraint(equalToConstant: 44),
+            groupListButton.trailingAnchor.constraint(equalTo: workspaceModeButton.leadingAnchor, constant: -12),
+            groupListButton.topAnchor.constraint(equalTo: workspaceModeButton.topAnchor),
+            groupListButton.widthAnchor.constraint(equalToConstant: 44),
+            groupListButton.heightAnchor.constraint(equalToConstant: 44),
+            groupListView.topAnchor.constraint(equalTo: groupListButton.bottomAnchor, constant: 8),
+            groupListView.trailingAnchor.constraint(equalTo: groupListButton.trailingAnchor),
+            groupListView.leadingAnchor.constraint(greaterThanOrEqualTo: safeAreaLayoutGuide.leadingAnchor, constant: 20),
+            groupListView.widthAnchor.constraint(lessThanOrEqualTo: safeAreaLayoutGuide.widthAnchor, constant: -40),
+            preferredGroupListWidth,
+            groupListView.heightAnchor.constraint(equalToConstant: 280),
             textEditorOverlayView.centerXAnchor.constraint(equalTo: safeAreaLayoutGuide.centerXAnchor),
             textEditorOverlayView.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor, constant: 76),
             textEditorOverlayView.leadingAnchor.constraint(greaterThanOrEqualTo: safeAreaLayoutGuide.leadingAnchor, constant: 20),
@@ -1175,6 +1214,16 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         appendChromeBlocker(
             kind: .modeToggle,
             for: workspaceModeButton,
+            to: &chromeBlockers
+        )
+        appendChromeBlocker(
+            kind: .groupList,
+            for: groupListButton,
+            to: &chromeBlockers
+        )
+        appendChromeBlocker(
+            kind: .groupList,
+            for: groupListView,
             to: &chromeBlockers
         )
         return chromeBlockers
@@ -1425,12 +1474,33 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         updateWorkspaceModeButtonAppearance()
     }
 
+    private func setupGroupListButton() {
+        groupListButton.addTarget(
+            self,
+            action: #selector(handleGroupListButtonTap),
+            for: .touchUpInside
+        )
+        updateGroupListPresentation()
+    }
+
     private func updateWorkspaceModeButtonAppearance() {
         var configuration = workspaceModeButton.configuration ?? UIButton.Configuration.filled()
         configuration.image = UIImage(systemName: workspaceMode.systemImageName)
         workspaceModeButton.configuration = configuration
         workspaceModeButton.accessibilityLabel = workspaceMode.accessibilityLabel
         workspaceModeButton.accessibilityValue = workspaceMode.accessibilityValue
+    }
+
+    private func updateGroupListPresentation() {
+        groupListView.render(groups: editorSession.groups)
+        groupListView.isHidden = isGroupListVisible == false
+        groupListButton.isSelected = isGroupListVisible
+        groupListButton.accessibilityValue = isGroupListVisible ? "Expanded" : "Collapsed"
+        var configuration = groupListButton.configuration ?? UIButton.Configuration.filled()
+        configuration.baseBackgroundColor = isGroupListVisible
+            ? .tertiarySystemFill
+            : .secondarySystemBackground
+        groupListButton.configuration = configuration
     }
 
     private func setupMiniMapView() {
@@ -2659,6 +2729,13 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         beginToolbarModeTransition(
             to: workspaceMode == .editing ? .toReading : .toEditing
         )
+    }
+
+    @objc
+    private func handleGroupListButtonTap() {
+        isGroupListVisible.toggle()
+        updateGroupListPresentation()
+        updateChromeOverlayLayout()
     }
 
     private func beginToolbarModeTransition(
@@ -5323,18 +5400,21 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         }
         updateWorkspaceModeButtonAppearance()
         updateInlineEditButtonsAppearance()
+        updateGroupListPresentation()
     }
 
     private func startNewBoard() {
         editorSession.startNewBoard()
         updateWorkspaceModeButtonAppearance()
         updateInlineEditButtonsAppearance()
+        updateGroupListPresentation()
     }
 
     private func restorePersistedBoardIfPossible() {
         editorSession.restorePersistedBoardIfPossible()
         updateWorkspaceModeButtonAppearance()
         updateInlineEditButtonsAppearance()
+        updateGroupListPresentation()
     }
 
     private func applyBoardRuntimeState(_ runtimeState: BoardRuntimeState) {
@@ -5342,6 +5422,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         editorSession.applyBoardRuntimeState(runtimeState)
         updateWorkspaceModeButtonAppearance()
         updateInlineEditButtonsAppearance()
+        updateGroupListPresentation()
     }
 
     private func currentBoardHistorySnapshot() -> BoardHistorySnapshot {
@@ -6075,6 +6156,142 @@ private enum iOSVideoEditorFlowError: LocalizedError {
         case .presenterUnavailable:
             "The canvas editor is no longer available."
         }
+    }
+}
+
+private final class iOSCanvasGroupListView: UIView {
+    private let scrollView: UIScrollView = {
+        let scrollView = UIScrollView()
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.alwaysBounceVertical = true
+        scrollView.contentInsetAdjustmentBehavior = .never
+        scrollView.showsVerticalScrollIndicator = true
+        return scrollView
+    }()
+
+    private let stackView: UIStackView = {
+        let stackView = UIStackView()
+        stackView.translatesAutoresizingMaskIntoConstraints = false
+        stackView.axis = .vertical
+        stackView.alignment = .fill
+        stackView.spacing = 10
+        return stackView
+    }()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        setupView()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        setupView()
+    }
+
+    func render(groups: [CanvasItemGroup]) {
+        stackView.arrangedSubviews.forEach { view in
+            stackView.removeArrangedSubview(view)
+            view.removeFromSuperview()
+        }
+
+        if groups.isEmpty {
+            stackView.addArrangedSubview(
+                makeEmptyStateLabel()
+            )
+            return
+        }
+
+        for group in groups {
+            stackView.addArrangedSubview(
+                makeGroupRow(for: group)
+            )
+        }
+    }
+
+    private func setupView() {
+        backgroundColor = .secondarySystemBackground
+        layer.cornerRadius = 16
+        layer.cornerCurve = .continuous
+        layer.borderWidth = 1
+        layer.borderColor = UIColor.separator.cgColor
+        layer.shadowColor = UIColor.black.cgColor
+        layer.shadowOpacity = 0.14
+        layer.shadowRadius = 18
+        layer.shadowOffset = CGSize(width: 0, height: 8)
+        clipsToBounds = false
+
+        addSubview(scrollView)
+        scrollView.addSubview(stackView)
+
+        NSLayoutConstraint.activate([
+            scrollView.topAnchor.constraint(equalTo: topAnchor),
+            scrollView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            stackView.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor, constant: 12),
+            stackView.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor, constant: 12),
+            stackView.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor, constant: -12),
+            stackView.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor, constant: -12),
+            stackView.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor, constant: -24)
+        ])
+    }
+
+    private func makeEmptyStateLabel() -> UILabel {
+        let label = UILabel()
+        label.numberOfLines = 0
+        label.textAlignment = .left
+        label.font = .preferredFont(forTextStyle: .subheadline)
+        label.textColor = .secondaryLabel
+        label.text = "No groups yet"
+        return label
+    }
+
+    private func makeGroupRow(for group: CanvasItemGroup) -> UIView {
+        let container = UIView()
+        container.backgroundColor = .tertiarySystemBackground
+        container.layer.cornerRadius = 12
+        container.layer.cornerCurve = .continuous
+
+        let rowStack = UIStackView()
+        rowStack.translatesAutoresizingMaskIntoConstraints = false
+        rowStack.axis = .vertical
+        rowStack.alignment = .fill
+        rowStack.spacing = 4
+
+        let titleLabel = UILabel()
+        titleLabel.font = .preferredFont(forTextStyle: .headline)
+        titleLabel.textColor = .label
+        titleLabel.numberOfLines = 2
+        titleLabel.text = group.displayTitle
+
+        let metadataLabel = UILabel()
+        metadataLabel.font = .preferredFont(forTextStyle: .caption1)
+        metadataLabel.textColor = .secondaryLabel
+        metadataLabel.text = "\(group.itemIDs.count) item\(group.itemIDs.count == 1 ? "" : "s")"
+
+        rowStack.addArrangedSubview(titleLabel)
+        rowStack.addArrangedSubview(metadataLabel)
+
+        let descriptionText = group.description
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if descriptionText.isEmpty == false {
+            let descriptionLabel = UILabel()
+            descriptionLabel.font = .preferredFont(forTextStyle: .subheadline)
+            descriptionLabel.textColor = .secondaryLabel
+            descriptionLabel.numberOfLines = 3
+            descriptionLabel.text = descriptionText
+            rowStack.addArrangedSubview(descriptionLabel)
+        }
+
+        container.addSubview(rowStack)
+        NSLayoutConstraint.activate([
+            rowStack.topAnchor.constraint(equalTo: container.topAnchor, constant: 10),
+            rowStack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 10),
+            rowStack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -10),
+            rowStack.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -10)
+        ])
+
+        return container
     }
 }
 

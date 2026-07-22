@@ -17,6 +17,9 @@ enum BoardDocumentMapper {
             selectedItemIDs: runtimeState.interactionState.selectedItemIDs,
             primarySelectedItemID: runtimeState.interactionState.primarySelectedItemID,
             workspaceMode: runtimeState.workspaceMode,
+            groups: runtimeState.groups.map { group in
+                makeGroupRecord(from: group)
+            },
             items: runtimeState.items.map { item in
                 makeItemRecord(from: item)
             }
@@ -76,6 +79,9 @@ enum BoardDocumentMapper {
             contentUpdatedAt: document.contentUpdatedAt,
             viewStateUpdatedAt: document.viewStateUpdatedAt,
             items: items,
+            groups: document.groups.map { groupRecord in
+                makeGroup(from: groupRecord)
+            },
             boardState: makeBoardState(
                 boardBaseSize: document.boardBaseSize,
                 boardRect: document.boardRect,
@@ -119,6 +125,28 @@ enum BoardDocumentMapper {
         case let .arrow(arrowItem):
             return .arrow(makeArrowRecord(from: arrowItem))
         }
+    }
+
+    private static func makeGroup(
+        from groupRecord: BoardGroupRecord
+    ) -> CanvasItemGroup {
+        CanvasItemGroup(
+            id: groupRecord.id,
+            title: groupRecord.title,
+            description: groupRecord.description,
+            itemIDs: groupRecord.itemIDs
+        )
+    }
+
+    private static func makeGroupRecord(
+        from group: CanvasItemGroup
+    ) -> BoardGroupRecord {
+        BoardGroupRecord(
+            id: group.id,
+            title: group.title,
+            description: group.description,
+            itemIDs: group.itemIDs
+        )
     }
 
     private static func makeTextItem(from textRecord: BoardTextItemRecord) -> CanvasTextItem {

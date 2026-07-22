@@ -20,6 +20,7 @@ struct BoardRuntimeState {
     var contentUpdatedAt: Date
     var viewStateUpdatedAt: Date
     var items: [CanvasBoardItem]
+    var groups: [CanvasItemGroup] = []
     var boardState: CanvasBoardState?
     var camera: CanvasCamera
     var interactionState: CanvasInteractionState
@@ -41,6 +42,7 @@ struct BoardRuntimeState {
             contentUpdatedAt: now,
             viewStateUpdatedAt: now,
             items: [],
+            groups: [],
             boardState: nil,
             camera: CanvasCamera(),
             interactionState: CanvasInteractionState(),
@@ -81,12 +83,46 @@ struct BoardRuntimeState {
     }
 }
 
+typealias CanvasItemGroupID = UUID
+
+struct CanvasItemGroup: Equatable, Hashable, Sendable {
+    let id: CanvasItemGroupID
+    var title: String
+    var description: String
+    var itemIDs: [CanvasItemID]
+
+    init(
+        id: CanvasItemGroupID = UUID(),
+        title: String,
+        description: String = "",
+        itemIDs: [CanvasItemID]
+    ) {
+        self.id = id
+        self.title = title
+        self.description = description
+        self.itemIDs = Self.normalizedItemIDs(itemIDs)
+    }
+
+    var displayTitle: String {
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmedTitle.isEmpty ? "Untitled Group" : trimmedTitle
+    }
+
+    private static func normalizedItemIDs(
+        _ itemIDs: [CanvasItemID]
+    ) -> [CanvasItemID] {
+        var seenItemIDs = Set<CanvasItemID>()
+        return itemIDs.filter { itemID in
+            seenItemIDs.insert(itemID).inserted
+        }
+    }
+}
+
 struct BoardDocument: Codable {
     // Board schema now evolves independently from image asset internals.
-    // Format version 11 migrates arrow geometry from box-based sizing to
-    // explicit start/end points plus shaft thickness so endpoint drags preserve
-    // arrow proportions instead of re-scaling the full silhouette.
-    static let currentFormatVersion = 11
+    // Format version 12 adds board-level item groups with descriptions so
+    // semantic relationships can be stored independently from individual items.
+    static let currentFormatVersion = 12
     static let defaultTitle = "Untitled Board"
 
     let formatVersion: Int
@@ -135,6 +171,7 @@ struct BoardDocument: Codable {
         }
     }
     var workspaceMode: CanvasWorkspaceMode?
+    var groups: [BoardGroupRecord]
     var items: [BoardItemRecord]
 
     var updatedAt: Date {
@@ -155,6 +192,7 @@ struct BoardDocument: Codable {
         selectedItemIDs: [UUID] = [],
         primarySelectedItemID: UUID? = nil,
         workspaceMode: CanvasWorkspaceMode?,
+        groups: [BoardGroupRecord] = [],
         items: [BoardItemRecord]
     ) {
         self.formatVersion = formatVersion
@@ -170,6 +208,7 @@ struct BoardDocument: Codable {
         storedSelectedItemIDs = []
         storedPrimarySelectedItemID = nil
         self.workspaceMode = workspaceMode
+        self.groups = groups
         self.items = items
         applyNormalizedSelection(
             selectedItemIDs: selectedItemIDs,
@@ -190,6 +229,7 @@ struct BoardDocument: Codable {
         cameraZoomScale: Double,
         selectedItemID: UUID?,
         workspaceMode: CanvasWorkspaceMode?,
+        groups: [BoardGroupRecord] = [],
         items: [BoardItemRecord]
     ) {
         self.init(
@@ -206,6 +246,7 @@ struct BoardDocument: Codable {
             selectedItemIDs: selectedItemID.map { [$0] } ?? [],
             primarySelectedItemID: selectedItemID,
             workspaceMode: workspaceMode,
+            groups: groups,
             items: items
         )
     }
@@ -256,6 +297,7 @@ struct BoardDocument: Codable {
         BoardDocumentContentState(
             title: title,
             boardRect: boardRect,
+            groups: groups,
             items: items
         )
     }
@@ -274,6 +316,7 @@ struct BoardDocument: Codable {
     mutating func replaceContentState(with other: BoardDocument) {
         title = other.title
         boardRect = other.boardRect
+        groups = other.groups
         items = other.items
     }
 
@@ -304,6 +347,7 @@ struct BoardDocument: Codable {
         case selectedItemIDs
         case primarySelectedItemID
         case workspaceMode
+        case groups
         case items
     }
 
@@ -357,6 +401,10 @@ struct BoardDocument: Codable {
             CanvasWorkspaceMode.self,
             forKey: .workspaceMode
         )
+        groups = try container.decodeIfPresent(
+            [BoardGroupRecord].self,
+            forKey: .groups
+        ) ?? []
         items = try container.decode([BoardItemRecord].self, forKey: .items)
         storedSelectedItemIDs = []
         storedPrimarySelectedItemID = nil
@@ -386,6 +434,7 @@ struct BoardDocument: Codable {
         )
         try container.encodeIfPresent(selectedItemID, forKey: .selectedItemID)
         try container.encodeIfPresent(workspaceMode, forKey: .workspaceMode)
+        try container.encode(groups, forKey: .groups)
         try container.encode(items, forKey: .items)
     }
 
@@ -405,7 +454,34 @@ struct BoardDocument: Codable {
 struct BoardDocumentContentState: Equatable {
     var title: String
     var boardRect: BoardRectRecord?
+    var groups: [BoardGroupRecord]
     var items: [BoardItemRecord]
+}
+
+struct BoardGroupRecord: Codable, Equatable {
+    let id: UUID
+    var title: String
+    var description: String
+    var itemIDs: [UUID]
+
+    init(
+        id: UUID,
+        title: String,
+        description: String,
+        itemIDs: [UUID]
+    ) {
+        self.id = id
+        self.title = title
+        self.description = description
+        self.itemIDs = Self.normalizedItemIDs(itemIDs)
+    }
+
+    private static func normalizedItemIDs(_ itemIDs: [UUID]) -> [UUID] {
+        var seenItemIDs = Set<UUID>()
+        return itemIDs.filter { itemID in
+            seenItemIDs.insert(itemID).inserted
+        }
+    }
 }
 
 struct BoardDocumentViewState: Equatable {

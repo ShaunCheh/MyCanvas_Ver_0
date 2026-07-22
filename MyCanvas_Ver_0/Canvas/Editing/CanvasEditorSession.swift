@@ -43,6 +43,7 @@ Write here.
     private static let defaultArrowSize = CGSize(width: 220, height: 80)
 
     let scene = CanvasScene()
+    var groups: [CanvasItemGroup] = []
     var camera = CanvasCamera()
     var boardState: CanvasBoardState?
     var interactionState = CanvasInteractionState()
@@ -512,6 +513,7 @@ Write here.
         activeBoardContentUpdatedAt = runtimeState.contentUpdatedAt
         activeBoardViewStateUpdatedAt = runtimeState.viewStateUpdatedAt
         scene.setItems(runtimeState.items)
+        groups = runtimeState.groups
         boardState = runtimeState.boardState
         camera = runtimeState.camera
         interactionState = runtimeState.interactionState
@@ -530,6 +532,7 @@ Write here.
     func currentBoardHistorySnapshot() -> BoardHistorySnapshot {
         BoardHistorySnapshot(
             items: scene.orderedBoardItems(),
+            groups: groups,
             boardState: boardState,
             interactionState: interactionState
         )
@@ -543,6 +546,7 @@ Write here.
             )
         } else {
             scene.setItems(snapshot.items)
+            groups = snapshot.groups
             boardState = snapshot.boardState
             interactionState = snapshot.interactionState
             inlineEditState = nil
@@ -1467,6 +1471,7 @@ Write here.
             return false
         }
 
+        removeDeletedItemIDsFromGroups(Set([itemID]))
         _ = normalizeSelectionAfterMutation()
 
         if let beforeSnapshot {
@@ -1491,6 +1496,7 @@ Write here.
             return false
         }
 
+        removeDeletedItemIDsFromGroups(Set(itemIDsToDelete))
         _ = normalizeSelectionAfterMutation()
 
         if let beforeSnapshot {
@@ -1867,6 +1873,7 @@ Write here.
             contentUpdatedAt: activeBoardContentUpdatedAt,
             viewStateUpdatedAt: activeBoardViewStateUpdatedAt,
             items: scene.orderedBoardItems(),
+            groups: groups,
             boardState: boardState,
             camera: camera,
             interactionState: interactionState,
@@ -3037,6 +3044,22 @@ Write here.
         }
 
         return item
+    }
+
+    private func removeDeletedItemIDsFromGroups(
+        _ deletedItemIDs: Set<CanvasItemID>
+    ) {
+        guard deletedItemIDs.isEmpty == false else {
+            return
+        }
+
+        groups = groups.compactMap { group in
+            var updatedGroup = group
+            updatedGroup.itemIDs.removeAll { itemID in
+                deletedItemIDs.contains(itemID)
+            }
+            return updatedGroup.itemIDs.isEmpty ? nil : updatedGroup
+        }
     }
 
     private func filteredExistingItemIDs(

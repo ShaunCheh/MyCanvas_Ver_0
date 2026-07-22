@@ -3,6 +3,7 @@ import Foundation
 
 struct BoardHistorySnapshot {
     var items: [CanvasBoardItem]
+    var groups: [CanvasItemGroup] = []
     var boardState: CanvasBoardState?
     var interactionState: CanvasInteractionState
 }
@@ -10,6 +11,7 @@ struct BoardHistorySnapshot {
 extension BoardHistorySnapshot: Equatable {
     static func == (lhs: BoardHistorySnapshot, rhs: BoardHistorySnapshot) -> Bool {
         itemsMatch(lhs.items, rhs.items) &&
+        lhs.groups == rhs.groups &&
         boardStatesMatch(lhs.boardState, rhs.boardState) &&
         lhs.interactionState == rhs.interactionState
     }
@@ -66,6 +68,7 @@ extension BoardRuntimeState {
     var historySnapshot: BoardHistorySnapshot {
         BoardHistorySnapshot(
             items: items,
+            groups: groups,
             boardState: boardState,
             interactionState: interactionState
         )
@@ -83,6 +86,7 @@ extension BoardRuntimeState {
             contentUpdatedAt: contentUpdatedAt ?? self.contentUpdatedAt,
             viewStateUpdatedAt: viewStateUpdatedAt ?? self.viewStateUpdatedAt,
             items: snapshot.items,
+            groups: snapshot.groups,
             boardState: snapshot.boardState,
             camera: camera,
             interactionState: snapshot.interactionState,
