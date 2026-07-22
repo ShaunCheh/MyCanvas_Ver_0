@@ -166,6 +166,27 @@ final class macOSCanvasToolbarHostView: NSView {
         isHidden = presentation.keepsHostVisible == false
     }
 
+    func applyTransitionImmediately(
+        _ presentation: CanvasToolbarTransitionPresentation
+    ) {
+        clearTransitionAnimations()
+        logTransitionRenderRequest(
+            presentation: presentation,
+            animated: false
+        )
+        isTransitionRendering = true
+        transitionInteractivity = presentation.isInteractive
+        backgroundView.isHidden = presentation.showsBackground == false
+        applyTransitionFrameImmediately(presentation.frame)
+        syncButtons(with: presentation.itemStates)
+        applyContentTransitionAppearance(
+            alpha: presentation.contentAlpha,
+            scale: presentation.contentScale,
+            animated: false
+        )
+        isHidden = presentation.keepsHostVisible == false
+    }
+
     func completeTransition(applying state: CanvasToolbarState) {
         isTransitionRendering = false
         render(state)
@@ -317,6 +338,32 @@ final class macOSCanvasToolbarHostView: NSView {
                 targetFrame: targetFrame
             )
         }
+    }
+
+    private func applyTransitionFrameImmediately(_ targetFrame: CGRect) {
+        guard frame != targetFrame else {
+            logTransitionFrameRequest(
+                event: "applyTransitionFrameImmediately.noop",
+                targetFrame: targetFrame,
+                animated: false
+            )
+            return
+        }
+
+        let sourceFrame = frame
+        logTransitionFrameRequest(
+            event: "applyTransitionFrameImmediately.begin",
+            targetFrame: targetFrame,
+            animated: false
+        )
+
+        cancelTransitionFrameDiagnostics()
+        frame = targetFrame
+        logTransitionFrameSample(
+            label: "immediate",
+            sourceFrame: sourceFrame,
+            targetFrame: targetFrame
+        )
     }
 
     private func clearTransitionAnimations() {

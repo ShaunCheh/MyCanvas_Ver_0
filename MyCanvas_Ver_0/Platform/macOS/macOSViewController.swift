@@ -2685,10 +2685,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             currentPresentation: initialPresentation,
             pendingLayoutReconcile: true
         )
-        toolbarHostView.renderTransition(
-            initialPresentation,
-            animated: false
-        )
+        toolbarHostView.applyTransitionImmediately(initialPresentation)
 
         switch initialStage {
         case .collapsing, .expanding:
@@ -3009,10 +3006,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
                 locksFrameToHorizontalSlide: locksFrameToHorizontalSlide
             )
 
-            self.toolbarHostView.renderTransition(
-                presentation,
-                animated: false
-            )
+            self.toolbarHostView.applyTransitionImmediately(presentation)
 
             guard linearProgress >= 1 else {
                 return
@@ -3022,10 +3016,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             if self.toolbarManualTransitionTimer === timer {
                 self.toolbarManualTransitionTimer = nil
             }
-            self.toolbarHostView.renderTransition(
-                targetPresentation,
-                animated: false
-            )
+            self.toolbarHostView.applyTransitionImmediately(targetPresentation)
             completion()
         }
 
