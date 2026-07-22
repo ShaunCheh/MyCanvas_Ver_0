@@ -24,6 +24,7 @@ struct CanvasRenderer {
         boardState: CanvasBoardState? = nil,
         camera: CanvasCamera,
         interactionState: CanvasInteractionState = CanvasInteractionState(),
+        groupInteractionState: CanvasGroupInteractionState = CanvasGroupInteractionState(),
         inlineEditState: CanvasInlineEditState? = nil,
         rotationPreviewState: CanvasRotationPreviewState? = nil,
         rotationInteractionState: CanvasRotationInteractionState? = nil,
@@ -79,6 +80,12 @@ struct CanvasRenderer {
             inlineEditState: inlineEditState,
             rotationPreviewState: rotationPreviewState
         )
+        let groupEditOverlay = makeGroupEditOverlay(
+            groups: groups,
+            camera: camera,
+            groupInteractionState: groupInteractionState,
+            inlineEditState: inlineEditState
+        )
         let selectionHighlights = makeSelectionHighlights(
             scene: scene,
             camera: camera,
@@ -103,7 +110,7 @@ struct CanvasRenderer {
             groups: renderGroups,
             items: renderItems,
             selectionHighlights: selectionHighlights,
-            groupEditOverlay: nil,
+            groupEditOverlay: groupEditOverlay,
             editOverlay: editOverlay,
             interactionOverlay: interactionOverlay
         )
@@ -132,6 +139,45 @@ struct CanvasRenderer {
             id: group.id,
             screenFrame: camera.worldToViewport(worldFrame).standardized,
             worldFrame: worldFrame
+        )
+    }
+
+    private func makeGroupEditOverlay(
+        groups: [CanvasItemGroup],
+        camera: CanvasCamera,
+        groupInteractionState: CanvasGroupInteractionState,
+        inlineEditState: CanvasInlineEditState?
+    ) -> CanvasGroupEditOverlay? {
+        guard
+            inlineEditState == nil,
+            let selectedGroupID = groupInteractionState.selectedGroupID,
+            let group = groups.first(where: { $0.id == selectedGroupID }),
+            let rawFrame = group.frame
+        else {
+            return nil
+        }
+
+        let worldFrame = rawFrame.standardized
+        guard worldFrame.isNull == false,
+              worldFrame.isInfinite == false,
+              worldFrame.width > 0,
+              worldFrame.height > 0,
+              worldFrame.intersects(camera.visibleWorldRect)
+        else {
+            return nil
+        }
+
+        let worldQuad = CanvasQuad(rect: worldFrame)
+        let screenQuad = camera.worldToViewport(worldQuad)
+        let screenFrame = camera.worldToViewport(worldFrame).standardized
+        return CanvasGroupEditOverlay(
+            groupID: selectedGroupID,
+            worldFrame: worldFrame,
+            screenFrame: screenFrame,
+            handles: makeEditHandles(
+                for: screenQuad,
+                roles: CanvasSelectionHandleRole.allCases.map(\.editHandleRole)
+            )
         )
     }
 

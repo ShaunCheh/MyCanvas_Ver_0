@@ -10,7 +10,7 @@ todos:
     status: completed
   - id: group-edit-overlay
     content: 渲染选中 group 的边框和缩放 handles
-    status: pending
+    status: completed
   - id: group-drag
     content: 在 iOS/macOS controller 接入 group frame 拖拽
     status: pending

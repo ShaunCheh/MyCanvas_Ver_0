@@ -398,6 +398,7 @@ Write here.
             boardState: boardState,
             camera: camera,
             interactionState: presentationInteractionState,
+            groupInteractionState: groupInteractionState,
             inlineEditState: presentationInlineEditState,
             rotationPreviewState: presentationRotationPreviewState,
             rotationInteractionState: presentationRotationInteractionState,

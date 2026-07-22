@@ -845,6 +845,12 @@ final class macOSCanvasViewportView: NSView {
     }
 
     private func refreshEditOverlay() {
+        if let groupEditOverlay = snapshot.groupEditOverlay {
+            refreshGroupEditOverlay(from: groupEditOverlay)
+            hideCropOverlay()
+            return
+        }
+
         guard let editOverlay = snapshot.editOverlay else {
             hideEditOverlay()
             return
@@ -858,6 +864,50 @@ final class macOSCanvasViewportView: NSView {
             hideSelectionOverlay()
             refreshCropChrome(from: editOverlay)
         }
+    }
+
+    private func refreshGroupEditOverlay(
+        from groupEditOverlay: CanvasGroupEditOverlay
+    ) {
+        selectionHighlightsLayer.path = nil
+        selectionHighlightsLayer.isHidden = true
+
+        selectionOutlineLayer.path = Self.groupEditOverlayPath(
+            for: groupEditOverlay.screenFrame
+        )
+        selectionOutlineLayer.isHidden = false
+        selectionOutlineLayer.contentsScale = currentContentsScale
+
+        for role in CanvasSelectionHandleRole.allCases {
+            guard
+                let handleLayer = selectionHandleLayers[role],
+                let handle = groupEditOverlay.handles.first(where: {
+                    $0.role == role.editHandleRole
+                })
+            else {
+                selectionHandleLayers[role]?.path = nil
+                selectionHandleLayers[role]?.frame = .zero
+                selectionHandleLayers[role]?.isHidden = true
+                continue
+            }
+
+            handleLayer.frame = bounds
+            handleLayer.path = Self.selectionHandlePath(
+                for: role,
+                centeredAt: handle.screenCenter,
+                rotationRadians: handle.screenRotationRadians
+            )
+            handleLayer.isHidden = false
+            handleLayer.contentsScale = currentContentsScale
+        }
+
+        for handleLayer in arrowEndpointHandleLayers.values {
+            handleLayer.path = nil
+            handleLayer.frame = .zero
+            handleLayer.isHidden = true
+        }
+
+        hideRotateAffordance()
     }
 
     private func refreshInteractionOverlay() {
@@ -1307,6 +1357,20 @@ final class macOSCanvasViewportView: NSView {
 
         path.closeSubpath()
         return path
+    }
+
+    private static func groupEditOverlayPath(for screenFrame: CGRect) -> CGPath {
+        let frame = screenFrame.standardized
+        let cornerRadius = min(
+            groupFrameCornerRadius,
+            min(frame.width, frame.height) / 2
+        )
+        return CGPath(
+            roundedRect: frame,
+            cornerWidth: cornerRadius,
+            cornerHeight: cornerRadius,
+            transform: nil
+        )
     }
 
     private static func rotationTextFrame(
