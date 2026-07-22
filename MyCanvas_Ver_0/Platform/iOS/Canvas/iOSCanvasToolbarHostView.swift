@@ -31,6 +31,17 @@ final class iOSCanvasToolbarHostView: UIView {
         return view
     }()
 
+    private let contentScrollView: UIScrollView = {
+        let scrollView = UIScrollView()
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.backgroundColor = .clear
+        scrollView.clipsToBounds = true
+        scrollView.contentInsetAdjustmentBehavior = .never
+        scrollView.showsHorizontalScrollIndicator = false
+        scrollView.showsVerticalScrollIndicator = false
+        return scrollView
+    }()
+
     private let buttonsStackView: iOSCanvasChromeStackView = {
         let stackView = iOSCanvasChromeStackView()
         stackView.translatesAutoresizingMaskIntoConstraints = false
@@ -45,6 +56,8 @@ final class iOSCanvasToolbarHostView: UIView {
     private var preferredAxisOverride: CanvasToolbarAxis?
     private var isTransitionRendering = false
     private var transitionInteractivity = true
+    private var horizontalStackHeightConstraint: NSLayoutConstraint?
+    private var verticalStackWidthConstraint: NSLayoutConstraint?
 
     var dockEdge: CanvasToolbarDockEdge = .trailing {
         didSet {
@@ -57,7 +70,20 @@ final class iOSCanvasToolbarHostView: UIView {
         translatesAutoresizingMaskIntoConstraints = false
         addSubview(backgroundView)
         addSubview(contentClipView)
-        contentClipView.addSubview(buttonsStackView)
+        contentClipView.addSubview(contentScrollView)
+        contentScrollView.addSubview(buttonsStackView)
+
+        let horizontalStackHeightConstraint = buttonsStackView.heightAnchor.constraint(
+            equalTo: contentScrollView.frameLayoutGuide.heightAnchor,
+            constant: -(CanvasToolbarChromeMetrics.verticalInset * 2)
+        )
+        let verticalStackWidthConstraint = buttonsStackView.widthAnchor.constraint(
+            equalTo: contentScrollView.frameLayoutGuide.widthAnchor,
+            constant: -(CanvasToolbarChromeMetrics.horizontalInset * 2)
+        )
+        self.horizontalStackHeightConstraint = horizontalStackHeightConstraint
+        self.verticalStackWidthConstraint = verticalStackWidthConstraint
+
         NSLayoutConstraint.activate([
             backgroundView.topAnchor.constraint(equalTo: topAnchor),
             backgroundView.leadingAnchor.constraint(equalTo: leadingAnchor),
@@ -67,17 +93,25 @@ final class iOSCanvasToolbarHostView: UIView {
             contentClipView.leadingAnchor.constraint(equalTo: leadingAnchor),
             contentClipView.trailingAnchor.constraint(equalTo: trailingAnchor),
             contentClipView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            contentScrollView.topAnchor.constraint(equalTo: contentClipView.topAnchor),
+            contentScrollView.leadingAnchor.constraint(equalTo: contentClipView.leadingAnchor),
+            contentScrollView.trailingAnchor.constraint(equalTo: contentClipView.trailingAnchor),
+            contentScrollView.bottomAnchor.constraint(equalTo: contentClipView.bottomAnchor),
             buttonsStackView.topAnchor.constraint(
-                equalTo: contentClipView.topAnchor,
+                equalTo: contentScrollView.contentLayoutGuide.topAnchor,
                 constant: CanvasToolbarChromeMetrics.verticalInset
             ),
             buttonsStackView.leadingAnchor.constraint(
-                equalTo: contentClipView.leadingAnchor,
+                equalTo: contentScrollView.contentLayoutGuide.leadingAnchor,
                 constant: CanvasToolbarChromeMetrics.horizontalInset
             ),
             buttonsStackView.trailingAnchor.constraint(
-                equalTo: contentClipView.trailingAnchor,
+                equalTo: contentScrollView.contentLayoutGuide.trailingAnchor,
                 constant: -CanvasToolbarChromeMetrics.horizontalInset
+            ),
+            buttonsStackView.bottomAnchor.constraint(
+                equalTo: contentScrollView.contentLayoutGuide.bottomAnchor,
+                constant: -CanvasToolbarChromeMetrics.verticalInset
             )
         ])
         updateDockEdgeLayout()
@@ -198,12 +232,24 @@ final class iOSCanvasToolbarHostView: UIView {
 
     private func updateDockEdgeLayout() {
         let preferredAxis = preferredAxisOverride ?? dockEdge.preferredAxis
+        let isHorizontal = preferredAxis == .horizontal
+        let previousAxis = buttonsStackView.axis
         buttonsStackView.axis = preferredAxis == .horizontal
             ? .horizontal
             : .vertical
         buttonsStackView.alignment = preferredAxis == .horizontal
             ? .center
             : .trailing
+        horizontalStackHeightConstraint?.isActive = isHorizontal
+        verticalStackWidthConstraint?.isActive = isHorizontal == false
+        contentScrollView.alwaysBounceHorizontal = isHorizontal
+        contentScrollView.alwaysBounceVertical = isHorizontal == false
+        contentScrollView.showsHorizontalScrollIndicator = isHorizontal
+        contentScrollView.showsVerticalScrollIndicator = isHorizontal == false
+
+        if previousAxis != buttonsStackView.axis {
+            contentScrollView.setContentOffset(.zero, animated: false)
+        }
     }
 
     private func applyContentTransitionAppearance(

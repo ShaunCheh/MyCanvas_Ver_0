@@ -1279,8 +1279,11 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     }
 
     private func measuredToolbarHostSize() -> CGSize {
-        CanvasChromeLayoutGeometry.sanitizedSize(
-            toolbarHostView.measuredContentSize()
+        constrainedToolbarMeasuredSize(
+            CanvasChromeLayoutGeometry.sanitizedSize(
+                toolbarHostView.measuredContentSize()
+            ),
+            for: toolbarPreferredPlacement()
         )
     }
 
@@ -2730,7 +2733,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             )
             let offscreenFrame = CanvasToolbarTransitionGeometry.offscreenFrame(
                 from: collapsedFrame,
-                safeBounds: toolbarLayoutSafeBounds()
+                safeBounds: toolbarLayoutSafeBounds(),
+                placement: visibleState.placement
             )
 
             return CanvasToolbarTransitionContext(
@@ -2762,7 +2766,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             )
             let offscreenFrame = CanvasToolbarTransitionGeometry.offscreenFrame(
                 from: collapsedFrame,
-                safeBounds: toolbarLayoutSafeBounds()
+                safeBounds: toolbarLayoutSafeBounds(),
+                placement: visibleState.placement
             )
 
             return CanvasToolbarTransitionContext(
@@ -2998,16 +3003,23 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             context.frames.collapsedFrame,
             fallback: currentFrame
         )
+        let placement = context.visibleSnapshot.state.placement
 
         switch direction {
         case .toReading:
-            let isCollapsed = currentFrame.height <= (collapsedFrame.height + 0.5)
+            let isCollapsed = toolbarExpansionExtent(
+                currentFrame,
+                for: placement
+            ) <= (toolbarExpansionExtent(collapsedFrame, for: placement) + 0.5)
             if isCollapsed {
                 return .exiting(
                     progress: toolbarLinearProgress(
-                        from: collapsedFrame.minX,
-                        to: context.frames.offscreenFrame.minX,
-                        current: currentFrame.minX
+                        from: toolbarSlideCoordinate(collapsedFrame, for: placement),
+                        to: toolbarSlideCoordinate(
+                            context.frames.offscreenFrame,
+                            for: placement
+                        ),
+                        current: toolbarSlideCoordinate(currentFrame, for: placement)
                     )
                 )
             }
@@ -3015,11 +3027,14 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             return .collapsing(progress: 0)
 
         case .toEditing:
-            if currentFrame.height > (collapsedFrame.height + 0.5) {
+            if toolbarExpansionExtent(
+                currentFrame,
+                for: placement
+            ) > (toolbarExpansionExtent(collapsedFrame, for: placement) + 0.5) {
                 let expandingProgress = toolbarLinearProgress(
-                    from: collapsedFrame.height,
-                    to: context.frames.visibleFrame.height,
-                    current: currentFrame.height
+                    from: toolbarExpansionExtent(collapsedFrame, for: placement),
+                    to: toolbarExpansionExtent(context.frames.visibleFrame, for: placement),
+                    current: toolbarExpansionExtent(currentFrame, for: placement)
                 )
                 if expandingProgress >= 0.999 {
                     return .steadyVisible
@@ -3029,9 +3044,9 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             }
 
             let enteringProgress = toolbarLinearProgress(
-                from: context.frames.offscreenFrame.minX,
-                to: collapsedFrame.minX,
-                current: currentFrame.minX
+                from: toolbarSlideCoordinate(context.frames.offscreenFrame, for: placement),
+                to: toolbarSlideCoordinate(collapsedFrame, for: placement),
+                current: toolbarSlideCoordinate(currentFrame, for: placement)
             )
             if enteringProgress >= 0.999 {
                 return .expanding(progress: 0)
@@ -3047,6 +3062,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         let currentFrame = currentToolbarAnimatedFrame(
             fallback: runtime.currentPresentation.frame
         )
+        let placement = runtime.context.visibleSnapshot.state.placement
 
         switch runtime.stage {
         case .steadyVisible:
@@ -3063,9 +3079,15 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             return CanvasToolbarTransitionGeometry.presentation(
                 for: .collapsing(
                     progress: toolbarLinearProgress(
-                        from: runtime.context.frames.visibleFrame.height,
-                        to: runtime.context.frames.collapsedFrame.height,
-                        current: currentFrame.height
+                        from: toolbarExpansionExtent(
+                            runtime.context.frames.visibleFrame,
+                            for: placement
+                        ),
+                        to: toolbarExpansionExtent(
+                            runtime.context.frames.collapsedFrame,
+                            for: placement
+                        ),
+                        current: toolbarExpansionExtent(currentFrame, for: placement)
                     )
                 ),
                 context: runtime.context
@@ -3074,9 +3096,15 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             return CanvasToolbarTransitionGeometry.presentation(
                 for: .exiting(
                     progress: toolbarLinearProgress(
-                        from: runtime.context.frames.collapsedFrame.minX,
-                        to: runtime.context.frames.offscreenFrame.minX,
-                        current: currentFrame.minX
+                        from: toolbarSlideCoordinate(
+                            runtime.context.frames.collapsedFrame,
+                            for: placement
+                        ),
+                        to: toolbarSlideCoordinate(
+                            runtime.context.frames.offscreenFrame,
+                            for: placement
+                        ),
+                        current: toolbarSlideCoordinate(currentFrame, for: placement)
                     )
                 ),
                 context: runtime.context
@@ -3085,9 +3113,15 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             return CanvasToolbarTransitionGeometry.presentation(
                 for: .entering(
                     progress: toolbarLinearProgress(
-                        from: runtime.context.frames.offscreenFrame.minX,
-                        to: runtime.context.frames.collapsedFrame.minX,
-                        current: currentFrame.minX
+                        from: toolbarSlideCoordinate(
+                            runtime.context.frames.offscreenFrame,
+                            for: placement
+                        ),
+                        to: toolbarSlideCoordinate(
+                            runtime.context.frames.collapsedFrame,
+                            for: placement
+                        ),
+                        current: toolbarSlideCoordinate(currentFrame, for: placement)
                     )
                 ),
                 context: runtime.context
@@ -3096,9 +3130,15 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             return CanvasToolbarTransitionGeometry.presentation(
                 for: .expanding(
                     progress: toolbarLinearProgress(
-                        from: runtime.context.frames.collapsedFrame.height,
-                        to: runtime.context.frames.visibleFrame.height,
-                        current: currentFrame.height
+                        from: toolbarExpansionExtent(
+                            runtime.context.frames.collapsedFrame,
+                            for: placement
+                        ),
+                        to: toolbarExpansionExtent(
+                            runtime.context.frames.visibleFrame,
+                            for: placement
+                        ),
+                        current: toolbarExpansionExtent(currentFrame, for: placement)
                     )
                 ),
                 context: runtime.context
@@ -3218,11 +3258,75 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             )
         }
 
-        return CanvasChromeLayoutGeometry.sanitizedSize(
-            CanvasToolbarMeasurement.measuredContentSize(
-                forMeasuredStackSize: measuredStackSize
-            )
+        return constrainedToolbarMeasuredSize(
+            CanvasChromeLayoutGeometry.sanitizedSize(
+                CanvasToolbarMeasurement.measuredContentSize(
+                    forMeasuredStackSize: measuredStackSize
+                )
+            ),
+            for: state.placement
         )
+    }
+
+    private func constrainedToolbarMeasuredSize(
+        _ measuredSize: CGSize,
+        for placement: CanvasToolbarPlacement
+    ) -> CGSize {
+        let sanitizedSize = CanvasChromeLayoutGeometry.sanitizedSize(
+            measuredSize
+        )
+        guard
+            sanitizedSize.width > 0,
+            sanitizedSize.height > 0,
+            let safeBounds = CanvasChromeLayoutGeometry.sanitizedRect(
+                toolbarLayoutSafeBounds()
+            )
+        else {
+            return sanitizedSize
+        }
+
+        let configuration = CanvasToolbarPlacementConfiguration()
+        let inset = max(configuration.edgeInset, 0)
+        let layoutBounds = CanvasChromeLayoutGeometry.sanitizedRect(
+            safeBounds.insetBy(dx: inset, dy: inset)
+        ) ?? safeBounds
+
+        switch placement.preferredEdge {
+        case .top, .bottom:
+            return CGSize(
+                width: min(sanitizedSize.width, layoutBounds.width),
+                height: sanitizedSize.height
+            )
+        case .leading, .trailing:
+            return CGSize(
+                width: sanitizedSize.width,
+                height: min(sanitizedSize.height, layoutBounds.height)
+            )
+        }
+    }
+
+    private func toolbarExpansionExtent(
+        _ frame: CGRect,
+        for placement: CanvasToolbarPlacement
+    ) -> CGFloat {
+        switch placement.preferredEdge {
+        case .top, .bottom:
+            return frame.width
+        case .leading, .trailing:
+            return frame.height
+        }
+    }
+
+    private func toolbarSlideCoordinate(
+        _ frame: CGRect,
+        for placement: CanvasToolbarPlacement
+    ) -> CGFloat {
+        switch placement.preferredEdge {
+        case .top, .bottom:
+            return frame.minY
+        case .leading, .trailing:
+            return frame.minX
+        }
     }
 
     private func toolbarLinearProgress(

@@ -52,6 +52,40 @@ final class CanvasToolbarPlacementPassTests: XCTestCase {
         XCTAssertEqual(result.hiddenToolbarFrame.width, visibleFrame.width)
         XCTAssertEqual(result.hiddenToolbarFrame.height, visibleFrame.width)
     }
+
+    func testCollapsedFrameUsesShortEdgeForHorizontalToolbar() {
+        let visibleFrame = CGRect(x: 20, y: 720, width: 350, height: 64)
+
+        let collapsedFrame = CanvasToolbarTransitionGeometry.collapsedFrame(
+            from: visibleFrame
+        )
+
+        XCTAssertEqual(collapsedFrame.origin, visibleFrame.origin)
+        XCTAssertEqual(collapsedFrame.width, visibleFrame.height)
+        XCTAssertEqual(collapsedFrame.height, visibleFrame.height)
+    }
+
+    func testResolveDerivesBottomHiddenFrameFromVisibleToolbarFrame() throws {
+        let safeBounds = CGRect(x: 0, y: 0, width: 390, height: 844)
+        let result = CanvasToolbarPlacementPass.resolve(
+            safeBounds: safeBounds,
+            toolbarPreferredPlacement: CanvasToolbarPlacement(
+                preferredEdge: .bottom
+            ),
+            toolbarMeasuredSize: CGSize(width: 350, height: 64),
+            baseChromeBlockers: [],
+            scale: 3
+        )
+
+        let visibleFrame = try XCTUnwrap(
+            CanvasChromeLayoutGeometry.sanitizedRect(result.toolbarFrame)
+        )
+
+        XCTAssertEqual(result.hiddenToolbarFrame.minX, visibleFrame.minX)
+        XCTAssertEqual(result.hiddenToolbarFrame.minY, safeBounds.maxY)
+        XCTAssertEqual(result.hiddenToolbarFrame.width, visibleFrame.height)
+        XCTAssertEqual(result.hiddenToolbarFrame.height, visibleFrame.height)
+    }
 }
 
 private func makeToolbarPlacementTestChromeBlockers() -> [CanvasChromeBlocker] {

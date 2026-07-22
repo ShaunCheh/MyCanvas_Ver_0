@@ -17,6 +17,18 @@ enum CanvasToolbarTransitionGeometry {
         from collapsedFrame: CGRect,
         safeBounds: CGRect
     ) -> CGRect {
+        offscreenFrame(
+            from: collapsedFrame,
+            safeBounds: safeBounds,
+            placement: CanvasToolbarPlacement(preferredEdge: .trailing)
+        )
+    }
+
+    static func offscreenFrame(
+        from collapsedFrame: CGRect,
+        safeBounds: CGRect,
+        placement: CanvasToolbarPlacement
+    ) -> CGRect {
         let baseFrame = sanitizedRectOrFallback(
             collapsedFrame,
             fallbackOrigin: finiteOrigin(from: collapsedFrame.origin),
@@ -25,14 +37,48 @@ enum CanvasToolbarTransitionGeometry {
                 height: collapsedSquareEdge(from: collapsedFrame)
             )
         )
-        let safeBoundsMaxX = CanvasChromeLayoutGeometry
-            .sanitizedRect(safeBounds)?
-            .maxX ?? baseFrame.maxX
+        let sanitizedSafeBounds = CanvasChromeLayoutGeometry
+            .sanitizedRect(safeBounds)
+        let origin: CGPoint
+
+        switch placement.preferredEdge {
+        case .top:
+            origin = CGPoint(
+                x: baseFrame.minX,
+                y: min(
+                    baseFrame.minY,
+                    (sanitizedSafeBounds?.minY ?? baseFrame.minY) - baseFrame.height
+                )
+            )
+        case .bottom:
+            origin = CGPoint(
+                x: baseFrame.minX,
+                y: max(
+                    baseFrame.minY,
+                    sanitizedSafeBounds?.maxY ?? baseFrame.maxY
+                )
+            )
+        case .leading:
+            origin = CGPoint(
+                x: min(
+                    baseFrame.minX,
+                    (sanitizedSafeBounds?.minX ?? baseFrame.minX) - baseFrame.width
+                ),
+                y: baseFrame.minY
+            )
+        case .trailing:
+            origin = CGPoint(
+                x: max(
+                    baseFrame.minX,
+                    sanitizedSafeBounds?.maxX ?? baseFrame.maxX
+                ),
+                y: baseFrame.minY
+            )
+        }
+
         return CGRect(
-            x: max(baseFrame.minX, safeBoundsMaxX),
-            y: baseFrame.minY,
-            width: baseFrame.width,
-            height: baseFrame.height
+            origin: origin,
+            size: baseFrame.size
         ).standardized
     }
 
@@ -65,7 +111,8 @@ enum CanvasToolbarTransitionGeometry {
 
         return offscreenFrame(
             from: hiddenCollapsedFrame,
-            safeBounds: safeBounds
+            safeBounds: safeBounds,
+            placement: placement
         )
     }
 
@@ -220,7 +267,7 @@ enum CanvasToolbarTransitionGeometry {
         if let sanitizedVisibleFrame = CanvasChromeLayoutGeometry.sanitizedRect(
             visibleFrame
         ) {
-            return sanitizedVisibleFrame.width
+            return min(sanitizedVisibleFrame.width, sanitizedVisibleFrame.height)
         }
 
         return CanvasToolbarMeasurement.measuredContentSize(
