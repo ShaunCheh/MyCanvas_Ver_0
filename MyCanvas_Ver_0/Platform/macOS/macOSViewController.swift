@@ -233,6 +233,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     private let toolbarPlacementSolver = CanvasToolbarPlacementSolver()
     private let toolbarHostView = macOSCanvasToolbarHostView()
     private var toolbarTransitionRuntime: CanvasToolbarTransitionRuntime?
+    private var preservedHiddenToolbarFrame: CGRect?
     private var isToolbarTransitionActive: Bool {
         toolbarTransitionRuntime != nil
     }
@@ -1345,11 +1346,11 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             scale: toolbarPlacementScale(),
             solver: toolbarPlacementSolver
         )
-        applyToolbarFrame(
-            toolbarState.items.isEmpty
-                ? toolbarPlacementResult.hiddenToolbarFrame
-                : toolbarPlacementResult.toolbarFrame
+        let resolvedToolbarFrame = resolvedOverlayToolbarFrame(
+            for: toolbarState,
+            placementResult: toolbarPlacementResult
         )
+        applyToolbarFrame(resolvedToolbarFrame)
         let miniMapFrame = resolveMiniMapFrame(
             in: toolbarPlacementResult.chromeLayoutContext
         )
@@ -1364,6 +1365,26 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             chromeLayoutContext: toolbarPlacementResult.chromeLayoutContext,
             miniMapFrame: miniMapFrame
         )
+    }
+
+    private func resolvedOverlayToolbarFrame(
+        for toolbarState: CanvasToolbarState,
+        placementResult: CanvasToolbarPlacementPassResult
+    ) -> CGRect {
+        guard toolbarState.items.isEmpty else {
+            preservedHiddenToolbarFrame = nil
+            return placementResult.toolbarFrame
+        }
+
+        guard
+            let rawPreservedHiddenToolbarFrame = preservedHiddenToolbarFrame,
+            let sanitizedPreservedHiddenToolbarFrame = CanvasChromeLayoutGeometry
+                .sanitizedRect(rawPreservedHiddenToolbarFrame)
+        else {
+            return placementResult.hiddenToolbarFrame
+        }
+
+        return sanitizedPreservedHiddenToolbarFrame
     }
 
     private func applyToolbarFrame(_ toolbarFrame: CGRect) {
@@ -2837,8 +2858,14 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     private func finishToolbarModeTransition(
         applying settledState: CanvasToolbarState
     ) {
+        let transitionContext = toolbarTransitionRuntime?.context
         let pendingLayoutReconcile = toolbarTransitionRuntime?.pendingLayoutReconcile
             ?? true
+        if settledState.items.isEmpty {
+            preservedHiddenToolbarFrame = transitionContext?.frames.offscreenFrame
+        } else {
+            preservedHiddenToolbarFrame = nil
+        }
         toolbarTransitionRuntime = nil
         toolbarHostView.completeTransition(applying: settledState)
         if pendingLayoutReconcile {

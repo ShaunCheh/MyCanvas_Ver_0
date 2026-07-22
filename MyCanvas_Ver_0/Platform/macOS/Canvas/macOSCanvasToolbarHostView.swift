@@ -18,6 +18,7 @@ final class macOSCanvasToolbarHostView: NSView {
             )
         )
     }
+    private static let isTransitionFrameDiagnosticLoggingEnabled = true
 
     private let backgroundView: macOSCanvasChromeOverlayView = {
         let view = macOSCanvasChromeOverlayView()
@@ -56,6 +57,7 @@ final class macOSCanvasToolbarHostView: NSView {
     private var isTransitionRendering = false
     private var transitionInteractivity = true
     private var latestItemStates: [CanvasToolbarItemState] = []
+    private var transitionFrameDiagnosticWorkItems: [DispatchWorkItem] = []
 
     var dockEdge: CanvasToolbarDockEdge = .trailing {
         didSet {
@@ -284,22 +286,168 @@ final class macOSCanvasToolbarHostView: NSView {
         animated: Bool
     ) {
         guard frame != targetFrame else {
+            logTransitionFrameRequest(
+                event: "applyTransitionFrame.noop",
+                targetFrame: targetFrame,
+                animated: animated
+            )
             return
         }
 
+        logTransitionFrameRequest(
+            event: "applyTransitionFrame.begin",
+            targetFrame: targetFrame,
+            animated: animated
+        )
+
         if animated {
+            scheduleTransitionFrameDiagnostics(
+                sourceFrame: frame,
+                targetFrame: targetFrame,
+                duration: NSAnimationContext.current.duration
+            )
             animator().setFrameOrigin(targetFrame.origin)
             animator().setFrameSize(targetFrame.size)
         } else {
+            cancelTransitionFrameDiagnostics()
             frame = targetFrame
+            logTransitionFrameSample(
+                label: "immediate",
+                sourceFrame: frame,
+                targetFrame: targetFrame
+            )
         }
     }
 
     private func clearTransitionAnimations() {
+        cancelTransitionFrameDiagnostics()
         layer?.removeAllAnimations()
         backgroundView.layer?.removeAllAnimations()
         contentClipView.layer?.removeAllAnimations()
         buttonsStackView.layer?.removeAllAnimations()
+    }
+
+    private func scheduleTransitionFrameDiagnostics(
+        sourceFrame: CGRect,
+        targetFrame: CGRect,
+        duration: TimeInterval
+    ) {
+        guard Self.isTransitionFrameDiagnosticLoggingEnabled else {
+            return
+        }
+
+        cancelTransitionFrameDiagnostics()
+
+        let sanitizedDuration = max(duration, 0)
+        let samplePoints: [(label: String, delay: TimeInterval)] = [
+            ("t0", 0),
+            ("t25", sanitizedDuration * 0.25),
+            ("t50", sanitizedDuration * 0.50),
+            ("t75", sanitizedDuration * 0.75),
+            ("t100", sanitizedDuration)
+        ]
+
+        transitionFrameDiagnosticWorkItems = samplePoints.map { samplePoint in
+            let workItem = DispatchWorkItem { [weak self] in
+                self?.logTransitionFrameSample(
+                    label: samplePoint.label,
+                    sourceFrame: sourceFrame,
+                    targetFrame: targetFrame
+                )
+            }
+
+            if samplePoint.delay <= 0 {
+                DispatchQueue.main.async(execute: workItem)
+            } else {
+                DispatchQueue.main.asyncAfter(
+                    deadline: .now() + samplePoint.delay,
+                    execute: workItem
+                )
+            }
+            return workItem
+        }
+    }
+
+    private func cancelTransitionFrameDiagnostics() {
+        transitionFrameDiagnosticWorkItems.forEach { workItem in
+            workItem.cancel()
+        }
+        transitionFrameDiagnosticWorkItems.removeAll()
+    }
+
+    private func logTransitionFrameRequest(
+        event: String,
+        targetFrame: CGRect,
+        animated: Bool
+    ) {
+        guard Self.isTransitionFrameDiagnosticLoggingEnabled else {
+            return
+        }
+
+        let currentFrame = frame
+        let originDelta = CGPoint(
+            x: targetFrame.minX - currentFrame.minX,
+            y: targetFrame.minY - currentFrame.minY
+        )
+        let sizeDelta = CGSize(
+            width: targetFrame.width - currentFrame.width,
+            height: targetFrame.height - currentFrame.height
+        )
+
+        print(
+            "[Canvas macOS][ToolbarFrameDiagnostics] " +
+            "event=\(event) " +
+            "animated=\(animated) " +
+            "hostIsFlipped=\(isFlipped) " +
+            "superviewIsFlipped=\(superview?.isFlipped ?? false) " +
+            "currentFrame=\(describe(rect: currentFrame)) " +
+            "targetFrame=\(describe(rect: targetFrame)) " +
+            "originDelta=\(describe(point: originDelta)) " +
+            "sizeDelta=\(describe(size: sizeDelta))"
+        )
+    }
+
+    private func logTransitionFrameSample(
+        label: String,
+        sourceFrame: CGRect,
+        targetFrame: CGRect
+    ) {
+        guard Self.isTransitionFrameDiagnosticLoggingEnabled else {
+            return
+        }
+
+        let modelFrame = frame
+        let presentationFrame = layer?.presentation()?.frame
+        let presentationDescription = presentationFrame.map(describe(rect:)) ?? "nil"
+        let modelDeltaFromSource = CGPoint(
+            x: modelFrame.minX - sourceFrame.minX,
+            y: modelFrame.minY - sourceFrame.minY
+        )
+        let presentationDeltaFromSource = presentationFrame.map { frame in
+            CGPoint(
+                x: frame.minX - sourceFrame.minX,
+                y: frame.minY - sourceFrame.minY
+            )
+        }
+        let presentationDeltaDescription = presentationDeltaFromSource
+            .map(describe(point:)) ?? "nil"
+        let targetDeltaFromSource = CGPoint(
+            x: targetFrame.minX - sourceFrame.minX,
+            y: targetFrame.minY - sourceFrame.minY
+        )
+
+        print(
+            "[Canvas macOS][ToolbarFrameDiagnostics] " +
+            "event=animationSample " +
+            "sample=\(label) " +
+            "sourceFrame=\(describe(rect: sourceFrame)) " +
+            "targetFrame=\(describe(rect: targetFrame)) " +
+            "modelFrame=\(describe(rect: modelFrame)) " +
+            "presentationFrame=\(presentationDescription) " +
+            "targetDeltaFromSource=\(describe(point: targetDeltaFromSource)) " +
+            "modelDeltaFromSource=\(describe(point: modelDeltaFromSource)) " +
+            "presentationDeltaFromSource=\(presentationDeltaDescription)"
+        )
     }
 
     private func logTransitionRenderRequest(
