@@ -624,6 +624,33 @@ Write here.
         return true
     }
 
+    @discardableResult
+    func appendGroup(
+        title: String? = nil,
+        description: String = "",
+        itemIDs: [CanvasItemID] = [],
+        recordHistory: Bool = false
+    ) -> CanvasItemGroup {
+        let beforeSnapshot = recordHistory ? currentBoardHistorySnapshot() : nil
+        let nextGroupIndex = groups.count + 1
+        let group = CanvasItemGroup(
+            title: title ?? "group \(nextGroupIndex)",
+            description: description,
+            itemIDs: itemIDs
+        )
+        groups.append(group)
+
+        if let beforeSnapshot {
+            _ = recordImmediateHistoryChange(
+                from: beforeSnapshot,
+                reason: "add group",
+                autosaveReason: "add group"
+            )
+        }
+
+        return group
+    }
+
     func canBeginTextEdit(withID itemID: CanvasItemID) -> Bool {
         guard inlineEditState == nil else {
             return false

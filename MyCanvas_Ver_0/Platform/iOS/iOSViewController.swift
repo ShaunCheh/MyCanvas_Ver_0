@@ -519,6 +519,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         }
 
         updateInlineEditButtonsAppearance()
+        updateGroupListPresentation()
 
         if let refreshReason = executionResult.refreshReason {
             requestCanvasRefresh(reason: refreshReason)
@@ -1480,6 +1481,9 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             action: #selector(handleGroupListButtonTap),
             for: .touchUpInside
         )
+        groupListView.onAddGroupRequested = { [weak self] in
+            self?.handleAddGroupRequested()
+        }
         updateGroupListPresentation()
     }
 
@@ -2734,6 +2738,12 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     @objc
     private func handleGroupListButtonTap() {
         isGroupListVisible.toggle()
+        updateGroupListPresentation()
+        updateChromeOverlayLayout()
+    }
+
+    private func handleAddGroupRequested() {
+        _ = editorSession.appendGroup(recordHistory: true)
         updateGroupListPresentation()
         updateChromeOverlayLayout()
     }
@@ -6160,6 +6170,8 @@ private enum iOSVideoEditorFlowError: LocalizedError {
 }
 
 private final class iOSCanvasGroupListView: UIView {
+    var onAddGroupRequested: (() -> Void)?
+
     private let scrollView: UIScrollView = {
         let scrollView = UIScrollView()
         scrollView.translatesAutoresizingMaskIntoConstraints = false
@@ -6193,6 +6205,8 @@ private final class iOSCanvasGroupListView: UIView {
             stackView.removeArrangedSubview(view)
             view.removeFromSuperview()
         }
+
+        stackView.addArrangedSubview(makeAddGroupRow())
 
         if groups.isEmpty {
             stackView.addArrangedSubview(
@@ -6234,6 +6248,46 @@ private final class iOSCanvasGroupListView: UIView {
             stackView.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor, constant: -12),
             stackView.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor, constant: -24)
         ])
+    }
+
+    private func makeAddGroupRow() -> UIButton {
+        let button = UIButton(type: .system)
+        button.contentHorizontalAlignment = .leading
+        button.backgroundColor = .systemBackground
+        button.layer.cornerRadius = 12
+        button.layer.cornerCurve = .continuous
+        button.layer.borderWidth = 1
+        button.layer.borderColor = UIColor.separator.cgColor
+
+        var configuration = UIButton.Configuration.plain()
+        configuration.image = UIImage(systemName: "plus.circle.fill")
+        configuration.imagePadding = 8
+        configuration.baseForegroundColor = .label
+        configuration.contentInsets = NSDirectionalEdgeInsets(
+            top: 10,
+            leading: 10,
+            bottom: 10,
+            trailing: 10
+        )
+        configuration.attributedTitle = AttributedString(
+            "添加group",
+            attributes: AttributeContainer([
+                .font: UIFont.preferredFont(forTextStyle: .headline)
+            ])
+        )
+        button.configuration = configuration
+        button.accessibilityLabel = "Add group"
+        button.addTarget(
+            self,
+            action: #selector(handleAddGroupButtonTap),
+            for: .touchUpInside
+        )
+        return button
+    }
+
+    @objc
+    private func handleAddGroupButtonTap() {
+        onAddGroupRequested?()
     }
 
     private func makeEmptyStateLabel() -> UILabel {
