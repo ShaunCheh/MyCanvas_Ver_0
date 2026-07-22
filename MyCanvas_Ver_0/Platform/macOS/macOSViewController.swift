@@ -1374,19 +1374,12 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         placementResult: CanvasToolbarPlacementPassResult
     ) -> CGRect {
         guard toolbarState.items.isEmpty else {
-            preservedHiddenToolbarFrame = nil
+            preserveHiddenToolbarFrame(nil)
             return placementResult.toolbarFrame
         }
 
-        guard
-            let rawPreservedHiddenToolbarFrame = preservedHiddenToolbarFrame,
-            let sanitizedPreservedHiddenToolbarFrame = CanvasChromeLayoutGeometry
-                .sanitizedRect(rawPreservedHiddenToolbarFrame)
-        else {
-            return placementResult.hiddenToolbarFrame
-        }
-
-        return sanitizedPreservedHiddenToolbarFrame
+        return sanitizedPreservedHiddenToolbarFrame()
+            ?? placementResult.hiddenToolbarFrame
     }
 
     private func applyToolbarFrame(_ toolbarFrame: CGRect) {
@@ -1404,6 +1397,22 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         if toolbarHostView.frame != sanitizedToolbarFrame {
             toolbarHostView.frame = sanitizedToolbarFrame
         }
+    }
+
+    private func preserveHiddenToolbarFrame(_ frame: CGRect?) {
+        preservedHiddenToolbarFrame = frame.flatMap { candidateFrame in
+            CanvasChromeLayoutGeometry.sanitizedRect(candidateFrame)
+        }
+    }
+
+    private func sanitizedPreservedHiddenToolbarFrame() -> CGRect? {
+        guard let preservedHiddenToolbarFrame else {
+            return nil
+        }
+
+        return CanvasChromeLayoutGeometry.sanitizedRect(
+            preservedHiddenToolbarFrame
+        )
     }
 
     private func toolbarLayoutSafeBounds() -> CGRect {
@@ -2662,6 +2671,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         }
 
         dismissContextMenu()
+        let hadActiveToolbarTransition = toolbarTransitionRuntime != nil
         cancelAndRebaseToolbarTransitionIfNeeded(targetMode: targetMode)
 
         guard let context = prepareToolbarTransitionContext(direction: direction) else {
@@ -2678,14 +2688,21 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             for: initialStage,
             context: context
         )
+        let synchronizedInitialPresentation = synchronizedInitialToolbarPresentation(
+            initialPresentation,
+            stage: initialStage,
+            direction: direction,
+            context: context,
+            shouldSynchronizeOffscreenStart: hadActiveToolbarTransition == false
+        )
 
         toolbarTransitionRuntime = CanvasToolbarTransitionRuntime(
             context: context,
             stage: initialStage,
-            currentPresentation: initialPresentation,
+            currentPresentation: synchronizedInitialPresentation,
             pendingLayoutReconcile: true
         )
-        toolbarHostView.applyTransitionImmediately(initialPresentation)
+        toolbarHostView.applyTransitionImmediately(synchronizedInitialPresentation)
 
         switch initialStage {
         case .collapsing, .expanding:
@@ -2695,6 +2712,28 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         case .steadyVisible, .hidden:
             finishToolbarModeTransition(applying: context.settledState)
         }
+    }
+
+    private func synchronizedInitialToolbarPresentation(
+        _ presentation: CanvasToolbarTransitionPresentation,
+        stage: CanvasToolbarTransitionStage,
+        direction: CanvasToolbarTransitionDirection,
+        context: CanvasToolbarTransitionContext,
+        shouldSynchronizeOffscreenStart: Bool
+    ) -> CanvasToolbarTransitionPresentation {
+        guard shouldSynchronizeOffscreenStart,
+              direction == .toEditing,
+              case .entering = stage
+        else {
+            return presentation
+        }
+
+        var synchronizedPresentation = presentation
+        synchronizedPresentation.frame = normalizedToolbarFrame(
+            context.frames.offscreenFrame,
+            fallback: presentation.frame
+        )
+        return synchronizedPresentation
     }
 
     private func prepareToolbarTransitionContext(
@@ -2861,9 +2900,9 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         let pendingLayoutReconcile = toolbarTransitionRuntime?.pendingLayoutReconcile
             ?? true
         if settledState.items.isEmpty {
-            preservedHiddenToolbarFrame = transitionContext?.frames.offscreenFrame
+            preserveHiddenToolbarFrame(transitionContext?.frames.offscreenFrame)
         } else {
-            preservedHiddenToolbarFrame = nil
+            preserveHiddenToolbarFrame(nil)
         }
         cancelManualToolbarTransition()
         toolbarTransitionRuntime = nil
@@ -3366,6 +3405,12 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     private func resolvedSteadyToolbarFrame(
         for state: CanvasToolbarState
     ) -> CGRect {
+        if state.items.isEmpty,
+           let preservedHiddenToolbarFrame = sanitizedPreservedHiddenToolbarFrame()
+        {
+            return preservedHiddenToolbarFrame
+        }
+
         let placementResult = CanvasToolbarPlacementPass.resolve(
             safeBounds: toolbarLayoutSafeBounds(),
             toolbarPreferredPlacement: state.placement,
