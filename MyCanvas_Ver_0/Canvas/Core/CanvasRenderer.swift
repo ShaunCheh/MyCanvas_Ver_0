@@ -103,6 +103,7 @@ struct CanvasRenderer {
             groups: renderGroups,
             items: renderItems,
             selectionHighlights: selectionHighlights,
+            groupEditOverlay: nil,
             editOverlay: editOverlay,
             interactionOverlay: interactionOverlay
         )

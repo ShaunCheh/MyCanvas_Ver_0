@@ -92,6 +92,18 @@ struct CanvasClickSelectionResolver: Sendable {
                 affectedItemID: pressedItemID,
                 action: .none
             )
+        case .groupFrameBody:
+            return CanvasClickSelectionDecision(
+                target: "group_frame_body",
+                affectedItemID: nil,
+                action: .none
+            )
+        case .groupFrameResizeHandle:
+            return CanvasClickSelectionDecision(
+                target: "group_frame_resize_handle",
+                affectedItemID: nil,
+                action: .none
+            )
         case .selectedItemBody, .unselectedItemBody:
             guard
                 let itemID = pressedItemID,

@@ -207,6 +207,13 @@ struct CanvasEditRenderOverlay {
     let payload: CanvasEditRenderOverlayPayload
 }
 
+struct CanvasGroupEditOverlay {
+    let groupID: CanvasItemGroupID
+    let worldFrame: CGRect
+    let screenFrame: CGRect
+    let handles: [CanvasEditHandleGeometry]
+}
+
 struct CanvasInteractionLineSegment {
     let start: CGPoint
     let end: CGPoint
@@ -407,6 +414,7 @@ struct CanvasRenderSnapshot {
     let groups: [CanvasGroupRenderItem]
     let items: [CanvasRenderItem]
     let selectionHighlights: [CanvasSelectionHighlight]
+    let groupEditOverlay: CanvasGroupEditOverlay?
     let editOverlay: CanvasEditRenderOverlay?
     let interactionOverlay: CanvasInteractionRenderOverlay?
 
@@ -417,6 +425,7 @@ struct CanvasRenderSnapshot {
         groups: [],
         items: [],
         selectionHighlights: [],
+        groupEditOverlay: nil,
         editOverlay: nil,
         interactionOverlay: nil
     )

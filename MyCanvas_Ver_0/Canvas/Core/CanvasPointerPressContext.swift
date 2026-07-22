@@ -12,6 +12,8 @@ enum CanvasPointerTargetKind {
     case selectionTranslationArea
     case selectedItemBody
     case unselectedItemBody
+    case groupFrameBody
+    case groupFrameResizeHandle(role: CanvasSelectionHandleRole)
     case blank
 
     var debugName: String {
@@ -36,6 +38,10 @@ enum CanvasPointerTargetKind {
             return "selectedItemBody"
         case .unselectedItemBody:
             return "unselectedItemBody"
+        case .groupFrameBody:
+            return "groupFrameBody"
+        case let .groupFrameResizeHandle(role):
+            return "groupFrameResizeHandle(\(String(describing: role)))"
         case .blank:
             return "blank"
         }
@@ -47,5 +53,6 @@ struct CanvasPointerPressContext {
     let invocationWorldPoint: CGPoint
     let targetKind: CanvasPointerTargetKind
     let targetItemID: CanvasItemID?
+    let targetGroupID: CanvasItemGroupID?
     let anchorRect: CGRect?
 }

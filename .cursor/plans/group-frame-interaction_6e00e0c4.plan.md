@@ -4,10 +4,10 @@ overview: 为当前已能创建并渲染的 group 框补上跨平台拖拽、缩
 todos:
   - id: group-selection-state
     content: 新增 group 选择态、查询和 frame 更新 API
-    status: pending
+    status: completed
   - id: group-hit-testing
     content: 扩展 context resolver 支持 group body 和 resize handles 命中
-    status: pending
+    status: completed
   - id: group-edit-overlay
     content: 渲染选中 group 的边框和缩放 handles
     status: pending

@@ -293,9 +293,11 @@ struct CanvasContextMenuActionResolver {
                  .groupRotateHandle,
                  .selectionHandle,
                  .groupSelectionHandle,
+                 .groupFrameResizeHandle,
                  .arrowEndpointHandle,
                  .selectedItemBody,
                  .unselectedItemBody,
+                 .groupFrameBody,
                  .blank:
                 return []
             }
@@ -343,6 +345,8 @@ struct CanvasContextMenuActionResolver {
                 includeVideoDisplayFrameAction: false,
                 includeGIFFrameImportAction: false
             )
+        case .groupFrameBody, .groupFrameResizeHandle:
+            return []
         case .unselectedItemBody:
             // Keep invocation target and current selection separate so opening a
             // menu does not rewrite selection/history before the user chooses an

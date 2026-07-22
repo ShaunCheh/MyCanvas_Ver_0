@@ -1976,6 +1976,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
 
                     pointerDragState = .draggingSelectedItem(updatedDragState)
                 }
+            case .groupFrameBody, .groupFrameResizeHandle:
+                pointerDragState = .idle
             case .unselectedItemBody, .blank:
                 pointerDragState = .draggingCanvas
                 panCanvas(from: pressedLocation, to: location)
@@ -2046,6 +2048,29 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             let releasedContext = resolvePointerPressContext(at: location)
             let releasedItemID = releasedContext.targetItemID
             let previousInteractionState = interactionState
+            if let groupClickResult = executeGroupFrameClickSelectionIfMatched(
+                pressContext: pressContext,
+                releasedContext: releasedContext
+            ) {
+                logClickResult(
+                    target: "group_frame",
+                    result: groupClickResult.result,
+                    pressedItemID: pressedItemID,
+                    releasedItemID: releasedItemID,
+                    previousInteractionState: previousInteractionState,
+                    currentInteractionState: interactionState,
+                    affectedItemID: nil
+                )
+                if clearedAlignmentInteractionState,
+                   groupClickResult.didTriggerPressedRefresh == false
+                {
+                    requestCanvasRefresh(
+                        reason: "clear alignment interaction on pointer up"
+                    )
+                }
+                editorSession.cancelPendingHistoryTransaction()
+                return
+            }
             let clickDecision = clickSelectionResolver.resolve(
                 pressTargetKind: pressContext.targetKind,
                 pressedItemID: pressContext.targetItemID,
@@ -3952,6 +3977,31 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         performCommand(.clearSelection(recordHistory: recordHistory))
     }
 
+    private func executeGroupFrameClickSelectionIfMatched(
+        pressContext: CanvasPointerPressContext,
+        releasedContext: CanvasPointerPressContext
+    ) -> (result: String, didTriggerPressedRefresh: Bool)? {
+        guard
+            case .groupFrameBody = pressContext.targetKind,
+            case .groupFrameBody = releasedContext.targetKind,
+            let groupID = pressContext.targetGroupID,
+            releasedContext.targetGroupID == groupID
+        else {
+            return nil
+        }
+
+        let didSelectGroup = editorSession.selectGroup(
+            withID: groupID,
+            recordHistory: true
+        )
+        guard didSelectGroup else {
+            return ("selection_unchanged", false)
+        }
+
+        requestCanvasRefresh(reason: "select group frame")
+        return ("group_selected", true)
+    }
+
     private func executeClickSelectionDecision(
         _ decision: CanvasClickSelectionDecision
     ) -> (result: String, didTriggerPressedRefresh: Bool) {
@@ -5459,7 +5509,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             reason = interactionState.selectionCount > 1
                 ? "move selection"
                 : "move item"
-        case .unselectedItemBody, .blank:
+        case .groupFrameBody, .groupFrameResizeHandle, .unselectedItemBody, .blank:
             return
         }
 

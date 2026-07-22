@@ -11,6 +11,8 @@ enum CanvasContextMenuTargetKind {
     case arrowEndpointHandle(role: CanvasArrowEndpointRole)
     case selectedItemBody
     case unselectedItemBody
+    case groupFrameBody
+    case groupFrameResizeHandle(role: CanvasSelectionHandleRole)
     case blank
 
     var isEditHandle: Bool {
@@ -20,9 +22,10 @@ enum CanvasContextMenuTargetKind {
              .cropHandle,
              .selectionHandle,
              .groupSelectionHandle,
+             .groupFrameResizeHandle,
              .arrowEndpointHandle:
             return true
-        case .cropOutline, .selectedItemBody, .unselectedItemBody, .blank:
+        case .cropOutline, .selectedItemBody, .unselectedItemBody, .groupFrameBody, .blank:
             return false
         }
     }
@@ -47,6 +50,10 @@ enum CanvasContextMenuTargetKind {
             return "selectedItemBody"
         case .unselectedItemBody:
             return "unselectedItemBody"
+        case .groupFrameBody:
+            return "groupFrameBody"
+        case let .groupFrameResizeHandle(role):
+            return "groupFrameResizeHandle(\(String(describing: role)))"
         case .blank:
             return "blank"
         }
@@ -59,6 +66,7 @@ struct CanvasContextMenuContext {
     let targetKind: CanvasContextMenuTargetKind
     let editOverlayHitTargetKind: CanvasEditOverlayHitTargetKind?
     let targetItemID: CanvasItemID?
+    let targetGroupID: CanvasItemGroupID?
     let anchorRect: CGRect?
     let currentSelectedItemIDs: [CanvasItemID]
     let currentPrimarySelectedItemID: CanvasItemID?
@@ -74,6 +82,7 @@ struct CanvasContextMenuContext {
         targetKind: CanvasContextMenuTargetKind,
         editOverlayHitTargetKind: CanvasEditOverlayHitTargetKind?,
         targetItemID: CanvasItemID?,
+        targetGroupID: CanvasItemGroupID? = nil,
         anchorRect: CGRect?,
         currentSelectedItemIDs: [CanvasItemID] = [],
         currentPrimarySelectedItemID: CanvasItemID? = nil,
@@ -88,6 +97,7 @@ struct CanvasContextMenuContext {
         self.targetKind = targetKind
         self.editOverlayHitTargetKind = editOverlayHitTargetKind
         self.targetItemID = targetItemID
+        self.targetGroupID = targetGroupID
         self.anchorRect = anchorRect
         let normalizedCurrentSelection = normalizeCanvasSelectionState(
             selectedItemIDs: currentSelectedItemIDs,
@@ -168,6 +178,7 @@ struct CanvasContextMenuContext {
              .cropHandle,
              .selectionHandle,
              .groupSelectionHandle,
+             .groupFrameResizeHandle,
              .arrowEndpointHandle:
             guard let anchorRect else {
                 return invocationViewportPoint
@@ -177,7 +188,7 @@ struct CanvasContextMenuContext {
                 x: anchorRect.midX,
                 y: anchorRect.midY
             )
-        case .cropOutline, .selectedItemBody, .unselectedItemBody, .blank:
+        case .cropOutline, .selectedItemBody, .unselectedItemBody, .groupFrameBody, .blank:
             // Body/outline menus should follow the actual invocation point instead
             // of the item's geometric center so the menu feels attached to the click.
             return invocationViewportPoint
@@ -194,6 +205,7 @@ struct CanvasContextMenuContext {
             "anchorRect=\(anchorRect.map(contextMenuDescribe) ?? "nil")",
             "anchorPoint=\(contextMenuDescribe(anchorPoint))",
             "targetItemID=\(targetItemID?.uuidString ?? "nil")",
+            "targetGroupID=\(targetGroupID?.uuidString ?? "nil")",
             "currentSelectedItemIDs=\(contextMenuDescribe(currentSelectedItemIDs))",
             "currentPrimarySelectedItemID=\(currentPrimarySelectedItemID?.uuidString ?? "nil")",
             "effectiveSelectedItemIDs=\(contextMenuDescribe(effectiveSelectedItemIDs))",
@@ -213,10 +225,11 @@ struct CanvasContextMenuContext {
              .cropOutline,
              .selectionHandle,
              .groupSelectionHandle,
+             .groupFrameResizeHandle,
              .arrowEndpointHandle,
              .selectedItemBody:
             return true
-        case .unselectedItemBody, .blank:
+        case .unselectedItemBody, .groupFrameBody, .blank:
             return false
         }
     }

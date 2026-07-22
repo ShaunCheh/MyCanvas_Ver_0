@@ -125,6 +125,17 @@ struct CanvasContextResolver {
             )
         }
 
+        if let groupEditOverlayTarget = resolveGroupEditOverlayTarget(
+            at: viewportPoint,
+            renderSnapshot: renderSnapshot,
+            metrics: interactionMetrics
+        ) {
+            return ResolutionResult(
+                branch: groupEditOverlayTarget.pointerTargetKind.debugName,
+                resolvedTarget: groupEditOverlayTarget
+            )
+        }
+
         if isInlineEditModeActive {
             return ResolutionResult(
                 branch: "inlineEditBlank",
@@ -132,29 +143,39 @@ struct CanvasContextResolver {
             )
         }
 
-        guard let itemID = scene.topmostBoardItemID(containing: invocationWorldPoint) else {
+        if let itemID = scene.topmostBoardItemID(containing: invocationWorldPoint) {
+            let targetKind: CanvasPointerTargetKind =
+                selectedItemIDs.contains(itemID)
+                ? .selectedItemBody
+                : .unselectedItemBody
+
             return ResolutionResult(
-                branch: "blank",
-                resolvedTarget: ResolvedTarget(pointerTargetKind: .blank)
+                branch: "itemBody",
+                resolvedTarget: ResolvedTarget(
+                    pointerTargetKind: targetKind,
+                    targetItemID: itemID,
+                    anchorRect: itemAnchorRect(
+                        for: itemID,
+                        renderSnapshot: renderSnapshot
+                    )
+                ),
+                sceneHitItemID: itemID
             )
         }
 
-        let targetKind: CanvasPointerTargetKind =
-            selectedItemIDs.contains(itemID)
-            ? .selectedItemBody
-            : .unselectedItemBody
+        if let groupFrameTarget = resolveGroupFrameBodyTarget(
+            at: viewportPoint,
+            renderSnapshot: renderSnapshot
+        ) {
+            return ResolutionResult(
+                branch: "groupFrameBody",
+                resolvedTarget: groupFrameTarget
+            )
+        }
 
         return ResolutionResult(
-            branch: "itemBody",
-            resolvedTarget: ResolvedTarget(
-                pointerTargetKind: targetKind,
-                targetItemID: itemID,
-                anchorRect: itemAnchorRect(
-                    for: itemID,
-                    renderSnapshot: renderSnapshot
-                )
-            ),
-            sceneHitItemID: itemID
+            branch: "blank",
+            resolvedTarget: ResolvedTarget(pointerTargetKind: .blank)
         )
     }
 
@@ -271,6 +292,7 @@ struct CanvasContextResolver {
             ),
             editOverlayHitTargetKind: resolvedTarget.editOverlayHitTargetKind,
             targetItemID: resolvedTarget.targetItemID,
+            targetGroupID: resolvedTarget.targetGroupID,
             anchorRect: resolvedTarget.anchorRect,
             currentSelectedItemIDs: selectedItemIDs,
             currentPrimarySelectedItemID: primarySelectedItemID,
@@ -289,6 +311,7 @@ struct CanvasContextResolver {
             invocationWorldPoint: worldPoint,
             targetKind: resolvedTarget.pointerTargetKind,
             targetItemID: resolvedTarget.targetItemID,
+            targetGroupID: resolvedTarget.targetGroupID,
             anchorRect: resolvedTarget.anchorRect
         )
     }
@@ -317,15 +340,82 @@ struct CanvasContextResolver {
             return .selectedItemBody
         case .unselectedItemBody:
             return .unselectedItemBody
+        case .groupFrameBody:
+            return .groupFrameBody
+        case let .groupFrameResizeHandle(role):
+            return .groupFrameResizeHandle(role: role)
         case .blank:
             return .blank
         }
+    }
+
+    private func resolveGroupEditOverlayTarget(
+        at viewportPoint: CGPoint,
+        renderSnapshot: CanvasRenderSnapshot,
+        metrics: CanvasContextResolverMetrics
+    ) -> ResolvedTarget? {
+        guard let overlay = renderSnapshot.groupEditOverlay else {
+            return nil
+        }
+
+        for handle in overlay.handles.reversed() {
+            guard let role = handle.role.selectionHandleRole else {
+                continue
+            }
+
+            let hitRect = centeredHitRect(
+                at: handle.screenCenter,
+                targetSize: metrics.selectionHandleHitTargetSize
+            )
+            guard hitRect.contains(viewportPoint) else {
+                continue
+            }
+
+            return ResolvedTarget(
+                pointerTargetKind: .groupFrameResizeHandle(role: role),
+                targetGroupID: overlay.groupID,
+                anchorRect: hitRect
+            )
+        }
+
+        return nil
+    }
+
+    private func resolveGroupFrameBodyTarget(
+        at viewportPoint: CGPoint,
+        renderSnapshot: CanvasRenderSnapshot
+    ) -> ResolvedTarget? {
+        guard let group = renderSnapshot.groups.reversed().first(
+            where: { $0.screenFrame.contains(viewportPoint) }
+        ) else {
+            return nil
+        }
+
+        return ResolvedTarget(
+            pointerTargetKind: .groupFrameBody,
+            targetGroupID: group.id,
+            anchorRect: group.screenFrame
+        )
+    }
+
+    private func centeredHitRect(
+        at center: CGPoint,
+        targetSize: CGFloat
+    ) -> CGRect {
+        let normalizedSize = max(1, targetSize)
+        return CGRect(
+            x: center.x - normalizedSize / 2,
+            y: center.y - normalizedSize / 2,
+            width: normalizedSize,
+            height: normalizedSize
+        ).standardized
     }
 
     private struct ResolvedTarget {
         let pointerTargetKind: CanvasPointerTargetKind
         var editOverlayHitTargetKind: CanvasEditOverlayHitTargetKind? = nil
         var targetItemID: CanvasItemID? = nil
+        var targetGroupID: CanvasItemGroupID? = nil
         var anchorRect: CGRect? = nil
     }
 
