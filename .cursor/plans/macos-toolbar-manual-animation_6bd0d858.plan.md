@@ -4,7 +4,7 @@ overview: 将 macOS 工具条编辑/阅读切换的滑入滑出从 AppKit animat
 todos:
   - id: manual-driver-entry
     content: 替换 macOS toolbar transition 的 NSAnimationContext 入口为手写 driver
-    status: pending
+    status: completed
   - id: axis-locked-frame
     content: 实现 slide-only 每帧只插值 x，固定 y/width/height
     status: pending

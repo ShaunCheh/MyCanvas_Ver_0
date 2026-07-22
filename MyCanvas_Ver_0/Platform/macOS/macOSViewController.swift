@@ -233,6 +233,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     private let toolbarPlacementSolver = CanvasToolbarPlacementSolver()
     private let toolbarHostView = macOSCanvasToolbarHostView()
     private var toolbarTransitionRuntime: CanvasToolbarTransitionRuntime?
+    private var toolbarManualTransitionTimer: Timer?
+    private var toolbarManualTransitionID = UUID()
     private var preservedHiddenToolbarFrame: CGRect?
     private var isToolbarTransitionActive: Bool {
         toolbarTransitionRuntime != nil
@@ -2866,6 +2868,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         } else {
             preservedHiddenToolbarFrame = nil
         }
+        cancelManualToolbarTransition()
         toolbarTransitionRuntime = nil
         toolbarHostView.completeTransition(applying: settledState)
         if pendingLayoutReconcile {
@@ -2891,6 +2894,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         )
         runtime.pendingLayoutReconcile = true
         toolbarTransitionRuntime = runtime
+        cancelManualToolbarTransition()
         toolbarHostView.renderTransition(
             runtime.currentPresentation,
             animated: false
@@ -2917,11 +2921,13 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             duration: duration
         )
         let expectedDirection = runtime.context.direction
+        let sourcePresentation = runtime.currentPresentation
         runtime.stage = targetStage
         runtime.currentPresentation = targetPresentation
         toolbarTransitionRuntime = runtime
 
         if duration <= 0 {
+            cancelManualToolbarTransition()
             toolbarHostView.renderTransition(
                 targetPresentation,
                 animated: false
@@ -2930,14 +2936,11 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             return
         }
 
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = duration
-            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            self.toolbarHostView.renderTransition(
-                targetPresentation,
-                animated: true
-            )
-        } completionHandler: { [weak self] in
+        runManualToolbarTransition(
+            from: sourcePresentation,
+            to: targetPresentation,
+            duration: duration
+        ) { [weak self] in
             guard let self else {
                 return
             }
@@ -2950,6 +2953,147 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
 
             completion()
         }
+    }
+
+    private func runManualToolbarTransition(
+        from sourcePresentation: CanvasToolbarTransitionPresentation,
+        to targetPresentation: CanvasToolbarTransitionPresentation,
+        duration: TimeInterval,
+        completion: @escaping () -> Void
+    ) {
+        cancelManualToolbarTransition()
+
+        let transitionID = UUID()
+        toolbarManualTransitionID = transitionID
+        let startTime = CACurrentMediaTime()
+        let sanitizedDuration = max(duration, 0)
+
+        let timer = Timer(
+            timeInterval: 1.0 / 60.0,
+            repeats: true
+        ) { [weak self] timer in
+            guard let self else {
+                timer.invalidate()
+                return
+            }
+
+            guard self.toolbarManualTransitionID == transitionID else {
+                timer.invalidate()
+                return
+            }
+
+            let elapsed = CACurrentMediaTime() - startTime
+            let linearProgress = sanitizedDuration <= 0
+                ? 1
+                : min(max(CGFloat(elapsed / sanitizedDuration), 0), 1)
+            let easedProgress = self.easeInOutToolbarProgress(linearProgress)
+            let presentation = self.interpolatedToolbarPresentation(
+                from: sourcePresentation,
+                to: targetPresentation,
+                progress: easedProgress
+            )
+
+            self.toolbarHostView.renderTransition(
+                presentation,
+                animated: false
+            )
+
+            guard linearProgress >= 1 else {
+                return
+            }
+
+            timer.invalidate()
+            if self.toolbarManualTransitionTimer === timer {
+                self.toolbarManualTransitionTimer = nil
+            }
+            self.toolbarHostView.renderTransition(
+                targetPresentation,
+                animated: false
+            )
+            completion()
+        }
+
+        toolbarManualTransitionTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+        timer.fire()
+    }
+
+    private func cancelManualToolbarTransition() {
+        toolbarManualTransitionID = UUID()
+        toolbarManualTransitionTimer?.invalidate()
+        toolbarManualTransitionTimer = nil
+    }
+
+    private func interpolatedToolbarPresentation(
+        from sourcePresentation: CanvasToolbarTransitionPresentation,
+        to targetPresentation: CanvasToolbarTransitionPresentation,
+        progress: CGFloat
+    ) -> CanvasToolbarTransitionPresentation {
+        let t = min(max(progress, 0), 1)
+        return CanvasToolbarTransitionPresentation(
+            frame: interpolatedToolbarFrame(
+                from: sourcePresentation.frame,
+                to: targetPresentation.frame,
+                progress: t
+            ),
+            itemStates: targetPresentation.itemStates,
+            showsBackground: targetPresentation.showsBackground,
+            contentAlpha: interpolatedToolbarValue(
+                from: sourcePresentation.contentAlpha,
+                to: targetPresentation.contentAlpha,
+                progress: t
+            ),
+            contentScale: interpolatedToolbarValue(
+                from: sourcePresentation.contentScale,
+                to: targetPresentation.contentScale,
+                progress: t
+            ),
+            keepsHostVisible: sourcePresentation.keepsHostVisible ||
+                targetPresentation.keepsHostVisible,
+            isInteractive: false
+        )
+    }
+
+    private func interpolatedToolbarFrame(
+        from sourceFrame: CGRect,
+        to targetFrame: CGRect,
+        progress: CGFloat
+    ) -> CGRect {
+        CGRect(
+            x: interpolatedToolbarValue(
+                from: sourceFrame.minX,
+                to: targetFrame.minX,
+                progress: progress
+            ),
+            y: interpolatedToolbarValue(
+                from: sourceFrame.minY,
+                to: targetFrame.minY,
+                progress: progress
+            ),
+            width: interpolatedToolbarValue(
+                from: sourceFrame.width,
+                to: targetFrame.width,
+                progress: progress
+            ),
+            height: interpolatedToolbarValue(
+                from: sourceFrame.height,
+                to: targetFrame.height,
+                progress: progress
+            )
+        ).standardized
+    }
+
+    private func interpolatedToolbarValue(
+        from sourceValue: CGFloat,
+        to targetValue: CGFloat,
+        progress: CGFloat
+    ) -> CGFloat {
+        sourceValue + ((targetValue - sourceValue) * min(max(progress, 0), 1))
+    }
+
+    private func easeInOutToolbarProgress(_ progress: CGFloat) -> CGFloat {
+        let t = min(max(progress, 0), 1)
+        return 0.5 - (cos(t * .pi) / 2)
     }
 
     private func applyWorkspaceModeForToolbarTransition(
