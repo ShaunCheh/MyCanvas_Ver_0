@@ -136,7 +136,7 @@ final class BoardVideoStorageTests: XCTestCase {
         }
     }
 
-    func testBoardCatalogEntryExposesStorageSizeSummary() throws {
+    func testBoardStoreLoadsStorageSizeSummaryOnDemand() throws {
         try withTemporaryBoardWorkspace { _, userDefaults in
             let boardID = UUID()
             let sourceVideoFilename = "source-video.mov"
@@ -165,22 +165,19 @@ final class BoardVideoStorageTests: XCTestCase {
             )
             try BoardStore.saveBoard(runtimeState, userDefaults: userDefaults)
 
-            let entry = try XCTUnwrap(
-                BoardStore.listBoardDocumentEntries(userDefaults: userDefaults).first
-            )
-            let byteCount = try XCTUnwrap(entry.storageSizeSummary.byteCount)
-
-            XCTAssertGreaterThan(byteCount, 0)
-            XCTAssertTrue(entry.storageSizeSummary.displayText.hasPrefix("Size: "))
-
             let catalogItem = try XCTUnwrap(
                 try BoardCatalogLoader(userDefaults: userDefaults)
                     .loadCatalogItem(boardID: boardID)
             )
-            XCTAssertEqual(
-                catalogItem.storageSizeSummary.byteCount,
-                entry.storageSizeSummary.byteCount
+            let summary = try BoardStore.loadBoardStorageSizeSummary(
+                id: boardID,
+                userDefaults: userDefaults
             )
+            let byteCount = try XCTUnwrap(summary.byteCount)
+
+            XCTAssertGreaterThan(byteCount, 0)
+            XCTAssertEqual(catalogItem.boardID, boardID)
+            XCTAssertTrue(summary.displayText.hasPrefix("Size: "))
         }
     }
 

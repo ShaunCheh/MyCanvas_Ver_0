@@ -4,7 +4,6 @@ struct BoardCatalogItem {
     let document: BoardDocument
     let persistedThumbnailURL: URL
     let assetsDirectoryURL: URL
-    let storageSizeSummary: BoardStorageSizeSummary
     let previewSeed: BoardPreviewSeed
 
     var boardID: UUID {

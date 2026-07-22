@@ -8,7 +8,6 @@ struct BoardDocumentCatalogEntry {
     let documentURL: URL
     let assetsDirectoryURL: URL
     let document: BoardDocument
-    let storageSizeSummary: BoardStorageSizeSummary
 
     var summary: BoardSummary {
         document.summary
@@ -19,6 +18,7 @@ struct BoardStorageSizeSummary: Hashable, Sendable {
     let byteCount: Int64?
 
     static let unavailable = BoardStorageSizeSummary(byteCount: nil)
+    static let loadingDisplayText = "Size: Loading..."
 
     var displayText: String {
         guard let byteCount else {
@@ -476,6 +476,27 @@ enum BoardStore {
         }
     }
 
+    static func loadBoardStorageSizeSummary(
+        id: UUID,
+        userDefaults: UserDefaults = .standard
+    ) throws -> BoardStorageSizeSummary {
+        try SelectedFolderAccess.withBoardsDirectoryURL(userDefaults: userDefaults) { boardsDirectoryURL in
+            let boardDirectoryURL = self.boardDirectoryURL(
+                for: id,
+                boardsDirectoryURL: boardsDirectoryURL
+            )
+            guard FileManager.default.fileExists(atPath: boardDirectoryURL.path),
+                  try isDirectory(boardDirectoryURL)
+            else {
+                throw BoardStoreError.invalidBoardDirectory
+            }
+
+            return BoardStorageSizeSummary(
+                byteCount: try boardDirectoryStorageByteCount(at: boardDirectoryURL)
+            )
+        }
+    }
+
     static func updateHandDrawingStorage(
         boardID: UUID,
         itemID: CanvasItemID,
@@ -553,9 +574,6 @@ enum BoardStore {
         }
 
         let document = try readBoardDocument(at: boardDocumentURL)
-        let storageSizeSummary = BoardStorageSizeSummary(
-            byteCount: try? boardDirectoryStorageByteCount(at: boardDirectoryURL)
-        )
         return BoardDocumentCatalogEntry(
             boardDirectoryURL: boardDirectoryURL,
             documentURL: boardDocumentURL,
@@ -563,8 +581,7 @@ enum BoardStore {
                 assetsDirectoryName,
                 isDirectory: true
             ),
-            document: document,
-            storageSizeSummary: storageSizeSummary
+            document: document
         )
     }
 

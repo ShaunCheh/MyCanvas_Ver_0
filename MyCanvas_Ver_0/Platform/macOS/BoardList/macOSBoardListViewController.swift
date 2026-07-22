@@ -25,6 +25,7 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
     private let previewProvider = BoardPreviewProvider()
     private var availableBoards: [BoardCatalogItem] = []
     private var selectedEntryID: BoardListEntryID?
+    private var boardStorageSizeSummaryRequestID: UUID?
     private var actionPanelState: BoardListActionPanelState? {
         didSet {
             logRenameTrace(
@@ -977,13 +978,6 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
         availableBoards.first(where: { $0.boardID == boardID })?.title
     }
 
-    private func boardStorageSizeSummaryText(for boardID: UUID) -> String {
-        availableBoards.first { $0.boardID == boardID }?
-            .storageSizeSummary
-            .displayText
-            ?? BoardStorageSizeSummary.unavailable.displayText
-    }
-
     private func normalizedBoardTitle(_ title: String) -> String {
         let normalizedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard normalizedTitle.isEmpty == false else {
@@ -1091,16 +1085,60 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
         )
         selectedEntryID = .board(boardID)
         syncCollectionSelection()
+        let requestID = UUID()
+        boardStorageSizeSummaryRequestID = requestID
         actionPanelState = .renameMenu(
             boardID: boardID,
             anchorPoint: anchorPoint,
-            summaryText: boardStorageSizeSummaryText(for: boardID)
+            summaryText: BoardStorageSizeSummary.loadingDisplayText
+        )
+        loadBoardStorageSizeSummary(
+            for: boardID,
+            requestID: requestID
         )
     }
 
     private func dismissActionPanel() {
         logRenameTrace("dismissActionPanel")
+        boardStorageSizeSummaryRequestID = nil
         actionPanelState = nil
+    }
+
+    private func loadBoardStorageSizeSummary(
+        for boardID: UUID,
+        requestID: UUID
+    ) {
+        DispatchQueue.global(qos: .utility).async {
+            let summary = (try? BoardStore.loadBoardStorageSizeSummary(
+                id: boardID
+            )) ?? .unavailable
+
+            DispatchQueue.main.async { [weak self] in
+                self?.applyBoardStorageSizeSummary(
+                    summary,
+                    for: boardID,
+                    requestID: requestID
+                )
+            }
+        }
+    }
+
+    private func applyBoardStorageSizeSummary(
+        _ summary: BoardStorageSizeSummary,
+        for boardID: UUID,
+        requestID: UUID
+    ) {
+        guard
+            boardStorageSizeSummaryRequestID == requestID,
+            let currentState = actionPanelState,
+            currentState.boardID == boardID
+        else {
+            return
+        }
+
+        actionPanelState = currentState.replacingSummaryText(
+            summary.displayText
+        )
     }
 
     private func updateActionPanelPresentation() {

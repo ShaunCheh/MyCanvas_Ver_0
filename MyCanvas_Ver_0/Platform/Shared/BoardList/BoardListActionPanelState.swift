@@ -53,6 +53,17 @@ struct BoardListActionPanelState: Hashable, Sendable {
         actionStates.isEmpty
     }
 
+    func replacingSummaryText(
+        _ summaryText: String?
+    ) -> BoardListActionPanelState {
+        BoardListActionPanelState(
+            boardID: boardID,
+            layoutAnchorPoint: layoutAnchorPoint,
+            summaryText: summaryText,
+            actionStates: actionStates
+        )
+    }
+
     static func renameMenu(
         boardID: UUID,
         anchorPoint: CGPoint,
