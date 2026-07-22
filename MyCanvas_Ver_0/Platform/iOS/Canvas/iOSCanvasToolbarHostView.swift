@@ -8,6 +8,7 @@ final class iOSCanvasToolbarHostView: UIView, UIScrollViewDelegate {
         static let shadowRadius: CGFloat = 10
         static let shadowOffset = CGSize(width: 0, height: 4)
     }
+    private static let isScrollOffsetDiagnosticLoggingEnabled = true
 
     private let backgroundView: iOSCanvasChromeOverlayView = {
         let view = iOSCanvasChromeOverlayView()
@@ -152,6 +153,13 @@ final class iOSCanvasToolbarHostView: UIView, UIScrollViewDelegate {
     }
 
     func render(_ state: CanvasToolbarState) {
+        logScrollOffsetDiagnostic(
+            "render.begin",
+            extra:
+                "items=\(state.items.count) " +
+                "preferredAxis=\(String(describing: state.preferredAxis)) " +
+                "preferredEdge=\(state.placement.preferredEdge)"
+        )
         isTransitionRendering = false
         preferredAxisOverride = state.preferredAxis
         dockEdge = state.placement.preferredEdge
@@ -160,9 +168,22 @@ final class iOSCanvasToolbarHostView: UIView, UIScrollViewDelegate {
         applyContentTransitionAppearance(alpha: 1, scale: 1)
         isHidden = state.items.isEmpty
         syncButtons(with: state.items)
+        logScrollOffsetDiagnostic(
+            "render.end",
+            extra: "items=\(state.items.count)"
+        )
     }
 
     func renderTransition(_ presentation: CanvasToolbarTransitionPresentation) {
+        logScrollOffsetDiagnostic(
+            "renderTransition.begin",
+            extra:
+                "items=\(presentation.itemStates.count) " +
+                "frame=\(describe(rect: presentation.frame)) " +
+                "contentAlpha=\(format(presentation.contentAlpha)) " +
+                "contentScale=\(format(presentation.contentScale)) " +
+                "keepsHostVisible=\(presentation.keepsHostVisible)"
+        )
         isTransitionRendering = true
         transitionInteractivity = presentation.isInteractive
         backgroundView.isHidden = presentation.showsBackground == false
@@ -175,14 +196,26 @@ final class iOSCanvasToolbarHostView: UIView, UIScrollViewDelegate {
             scale: presentation.contentScale
         )
         isHidden = presentation.keepsHostVisible == false
+        logScrollOffsetDiagnostic(
+            "renderTransition.end",
+            extra: "items=\(presentation.itemStates.count)"
+        )
     }
 
     func completeTransition(applying state: CanvasToolbarState) {
+        logScrollOffsetDiagnostic(
+            "completeTransition",
+            extra: "items=\(state.items.count)"
+        )
         isTransitionRendering = false
         render(state)
     }
 
     func cancelTransition(applying state: CanvasToolbarState) {
+        logScrollOffsetDiagnostic(
+            "cancelTransition",
+            extra: "items=\(state.items.count)"
+        )
         isTransitionRendering = false
         render(state)
     }
@@ -210,6 +243,9 @@ final class iOSCanvasToolbarHostView: UIView, UIScrollViewDelegate {
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        if shouldRestoreRememberedContentOffset {
+            logScrollOffsetDiagnostic("layoutSubviews.restorePending")
+        }
         restoreRememberedContentOffsetIfNeeded()
     }
 
@@ -218,9 +254,16 @@ final class iOSCanvasToolbarHostView: UIView, UIScrollViewDelegate {
             isProgrammaticallyRestoringContentOffset == false,
             shouldRestoreRememberedContentOffset == false
         else {
+            logScrollOffsetDiagnostic(
+                "scrollViewDidScroll.ignored",
+                extra:
+                    "programmatic=\(isProgrammaticallyRestoringContentOffset) " +
+                    "restorePending=\(shouldRestoreRememberedContentOffset)"
+            )
             return
         }
 
+        logScrollOffsetDiagnostic("scrollViewDidScroll.record")
         rememberCurrentContentOffset()
     }
 
@@ -234,6 +277,12 @@ final class iOSCanvasToolbarHostView: UIView, UIScrollViewDelegate {
     }
 
     private func syncButtons(with itemStates: [CanvasToolbarItemState]) {
+        logScrollOffsetDiagnostic(
+            "syncButtons.begin",
+            extra:
+                "incomingItems=\(itemStates.count) " +
+                "existingArranged=\(buttonsStackView.arrangedSubviews.count)"
+        )
         rememberCurrentContentOffsetIfStable()
         shouldRestoreRememberedContentOffset = true
 
@@ -254,9 +303,14 @@ final class iOSCanvasToolbarHostView: UIView, UIScrollViewDelegate {
             buttonsStackView.addArrangedSubview(button)
         }
         setNeedsLayout()
+        logScrollOffsetDiagnostic(
+            "syncButtons.end",
+            extra: "arranged=\(buttonsStackView.arrangedSubviews.count)"
+        )
     }
 
     private func updateDockEdgeLayout() {
+        logScrollOffsetDiagnostic("updateDockEdgeLayout.begin")
         rememberCurrentContentOffsetIfStable()
 
         let preferredAxis = preferredAxisOverride ?? dockEdge.preferredAxis
@@ -276,10 +330,17 @@ final class iOSCanvasToolbarHostView: UIView, UIScrollViewDelegate {
 
         shouldRestoreRememberedContentOffset = true
         setNeedsLayout()
+        logScrollOffsetDiagnostic(
+            "updateDockEdgeLayout.end",
+            extra:
+                "preferredAxis=\(String(describing: preferredAxis)) " +
+                "isHorizontal=\(isHorizontal)"
+        )
     }
 
     private func rememberCurrentContentOffsetIfStable() {
         guard shouldRestoreRememberedContentOffset == false else {
+            logScrollOffsetDiagnostic("remember.skipRestorePending")
             return
         }
 
@@ -288,6 +349,7 @@ final class iOSCanvasToolbarHostView: UIView, UIScrollViewDelegate {
 
     private func rememberCurrentContentOffset() {
         guard contentScrollView.bounds.isEmpty == false else {
+            logScrollOffsetDiagnostic("remember.skipEmptyBounds")
             return
         }
 
@@ -298,6 +360,7 @@ final class iOSCanvasToolbarHostView: UIView, UIScrollViewDelegate {
         if currentOffset.y.isFinite {
             rememberedVerticalContentOffset = max(currentOffset.y, 0)
         }
+        logScrollOffsetDiagnostic("remember.saved")
     }
 
     private func restoreRememberedContentOffsetIfNeeded() {
@@ -315,6 +378,12 @@ final class iOSCanvasToolbarHostView: UIView, UIScrollViewDelegate {
             visibleSize.width > 0,
             visibleSize.height > 0
         else {
+            logScrollOffsetDiagnostic(
+                "restore.skipInvalidGeometry",
+                extra:
+                    "contentSize=\(describe(size: contentSize)) " +
+                    "visibleSize=\(describe(size: visibleSize))"
+            )
             return
         }
 
@@ -336,14 +405,70 @@ final class iOSCanvasToolbarHostView: UIView, UIScrollViewDelegate {
             )
         }
 
+        logScrollOffsetDiagnostic(
+            "restore.resolved",
+            extra:
+                "preferredAxis=\(String(describing: preferredAxis)) " +
+                "maxOffsetX=\(format(maxOffsetX)) " +
+                "maxOffsetY=\(format(maxOffsetY)) " +
+                "restored=\(describe(point: restoredOffset))"
+        )
         shouldRestoreRememberedContentOffset = false
         guard contentScrollView.contentOffset != restoredOffset else {
+            logScrollOffsetDiagnostic("restore.noopSameOffset")
             return
         }
 
         isProgrammaticallyRestoringContentOffset = true
         contentScrollView.setContentOffset(restoredOffset, animated: false)
         isProgrammaticallyRestoringContentOffset = false
+        logScrollOffsetDiagnostic("restore.applied")
+    }
+
+    private func logScrollOffsetDiagnostic(
+        _ event: String,
+        extra: String = ""
+    ) {
+        guard Self.isScrollOffsetDiagnosticLoggingEnabled else {
+            return
+        }
+
+        let suffix = extra.isEmpty ? "" : " \(extra)"
+        print(
+            "[Canvas iOS][ToolbarScrollOffset] " +
+                "event=\(event) " +
+                "hostFrame=\(describe(rect: frame)) " +
+                "scrollBounds=\(describe(rect: contentScrollView.bounds)) " +
+                "contentSize=\(describe(size: contentScrollView.contentSize)) " +
+                "offset=\(describe(point: contentScrollView.contentOffset)) " +
+                "rememberedX=\(format(rememberedHorizontalContentOffset)) " +
+                "rememberedY=\(format(rememberedVerticalContentOffset)) " +
+                "restorePending=\(shouldRestoreRememberedContentOffset) " +
+                "programmatic=\(isProgrammaticallyRestoringContentOffset) " +
+                "axis=\(String(describing: buttonsStackView.axis)) " +
+                "arranged=\(buttonsStackView.arrangedSubviews.count)" +
+                suffix
+        )
+    }
+
+    private func describe(point: CGPoint) -> String {
+        "(\(format(point.x)),\(format(point.y)))"
+    }
+
+    private func describe(size: CGSize) -> String {
+        "(\(format(size.width))x\(format(size.height)))"
+    }
+
+    private func describe(rect: CGRect) -> String {
+        "(\(format(rect.minX)),\(format(rect.minY)),\(format(rect.width))x\(format(rect.height)))"
+    }
+
+    private func format(_ value: CGFloat) -> String {
+        guard value.isFinite else {
+            return "\(value)"
+        }
+
+        return String(format: "%.2f", value)
     }
 
     private func applyContentTransitionAppearance(
