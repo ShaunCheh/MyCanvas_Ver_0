@@ -1,7 +1,7 @@
 #if os(iOS)
 import UIKit
 
-final class iOSCanvasToolbarHostView: UIView {
+final class iOSCanvasToolbarHostView: UIView, UIScrollViewDelegate {
     private enum Layout {
         static let cornerRadius: CGFloat = 18
         static let shadowOpacity: Float = 0.12
@@ -39,6 +39,7 @@ final class iOSCanvasToolbarHostView: UIView {
         scrollView.contentInsetAdjustmentBehavior = .never
         scrollView.showsHorizontalScrollIndicator = false
         scrollView.showsVerticalScrollIndicator = false
+        scrollView.delaysContentTouches = false
         return scrollView
     }()
 
@@ -58,6 +59,10 @@ final class iOSCanvasToolbarHostView: UIView {
     private var transitionInteractivity = true
     private var horizontalStackHeightConstraint: NSLayoutConstraint?
     private var verticalStackWidthConstraint: NSLayoutConstraint?
+    private var rememberedHorizontalContentOffset: CGFloat = 0
+    private var rememberedVerticalContentOffset: CGFloat = 0
+    private var isProgrammaticallyRestoringContentOffset = false
+    private var shouldRestoreRememberedContentOffset = false
 
     var dockEdge: CanvasToolbarDockEdge = .trailing {
         didSet {
@@ -72,6 +77,7 @@ final class iOSCanvasToolbarHostView: UIView {
         addSubview(contentClipView)
         contentClipView.addSubview(contentScrollView)
         contentScrollView.addSubview(buttonsStackView)
+        contentScrollView.delegate = self
 
         let horizontalStackHeightConstraint = buttonsStackView.heightAnchor.constraint(
             equalTo: contentScrollView.frameLayoutGuide.heightAnchor,
@@ -202,6 +208,22 @@ final class iOSCanvasToolbarHostView: UIView {
         return hitView === self ? nil : hitView
     }
 
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        restoreRememberedContentOffsetIfNeeded()
+    }
+
+    func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        guard
+            isProgrammaticallyRestoringContentOffset == false,
+            shouldRestoreRememberedContentOffset == false
+        else {
+            return
+        }
+
+        rememberCurrentContentOffset()
+    }
+
     private func updateAppearance() {
         PlatformLayerAppearance.performWithoutAnimations {
             backgroundView.layer.borderColor = PlatformLayerAppearance.resolvedCGColor(
@@ -212,6 +234,9 @@ final class iOSCanvasToolbarHostView: UIView {
     }
 
     private func syncButtons(with itemStates: [CanvasToolbarItemState]) {
+        rememberCurrentContentOffsetIfStable()
+        shouldRestoreRememberedContentOffset = true
+
         let orderedButtons: [UIButton] = itemStates.compactMap { itemState in
             guard let button = registeredButtons[itemState.id] else {
                 return nil
@@ -228,12 +253,14 @@ final class iOSCanvasToolbarHostView: UIView {
         orderedButtons.forEach { button in
             buttonsStackView.addArrangedSubview(button)
         }
+        setNeedsLayout()
     }
 
     private func updateDockEdgeLayout() {
+        rememberCurrentContentOffsetIfStable()
+
         let preferredAxis = preferredAxisOverride ?? dockEdge.preferredAxis
         let isHorizontal = preferredAxis == .horizontal
-        let previousAxis = buttonsStackView.axis
         buttonsStackView.axis = preferredAxis == .horizontal
             ? .horizontal
             : .vertical
@@ -247,9 +274,76 @@ final class iOSCanvasToolbarHostView: UIView {
         contentScrollView.showsHorizontalScrollIndicator = isHorizontal
         contentScrollView.showsVerticalScrollIndicator = isHorizontal == false
 
-        if previousAxis != buttonsStackView.axis {
-            contentScrollView.setContentOffset(.zero, animated: false)
+        shouldRestoreRememberedContentOffset = true
+        setNeedsLayout()
+    }
+
+    private func rememberCurrentContentOffsetIfStable() {
+        guard shouldRestoreRememberedContentOffset == false else {
+            return
         }
+
+        rememberCurrentContentOffset()
+    }
+
+    private func rememberCurrentContentOffset() {
+        guard contentScrollView.bounds.isEmpty == false else {
+            return
+        }
+
+        let currentOffset = contentScrollView.contentOffset
+        if currentOffset.x.isFinite {
+            rememberedHorizontalContentOffset = max(currentOffset.x, 0)
+        }
+        if currentOffset.y.isFinite {
+            rememberedVerticalContentOffset = max(currentOffset.y, 0)
+        }
+    }
+
+    private func restoreRememberedContentOffsetIfNeeded() {
+        guard shouldRestoreRememberedContentOffset else {
+            return
+        }
+
+        let contentSize = contentScrollView.contentSize
+        let visibleSize = contentScrollView.bounds.size
+        guard
+            contentSize.width.isFinite,
+            contentSize.height.isFinite,
+            visibleSize.width.isFinite,
+            visibleSize.height.isFinite,
+            visibleSize.width > 0,
+            visibleSize.height > 0
+        else {
+            return
+        }
+
+        let preferredAxis = preferredAxisOverride ?? dockEdge.preferredAxis
+        let maxOffsetX = max(contentSize.width - visibleSize.width, 0)
+        let maxOffsetY = max(contentSize.height - visibleSize.height, 0)
+        let restoredOffset: CGPoint
+
+        switch preferredAxis {
+        case .horizontal:
+            restoredOffset = CGPoint(
+                x: min(rememberedHorizontalContentOffset, maxOffsetX),
+                y: 0
+            )
+        case .vertical:
+            restoredOffset = CGPoint(
+                x: 0,
+                y: min(rememberedVerticalContentOffset, maxOffsetY)
+            )
+        }
+
+        shouldRestoreRememberedContentOffset = false
+        guard contentScrollView.contentOffset != restoredOffset else {
+            return
+        }
+
+        isProgrammaticallyRestoringContentOffset = true
+        contentScrollView.setContentOffset(restoredOffset, animated: false)
+        isProgrammaticallyRestoringContentOffset = false
     }
 
     private func applyContentTransitionAppearance(
