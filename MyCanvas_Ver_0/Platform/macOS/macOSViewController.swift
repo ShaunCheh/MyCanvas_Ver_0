@@ -2963,11 +2963,18 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         toolbarTransitionRuntime = runtime
 
         if duration <= 0 {
-            cancelManualToolbarTransition()
-            toolbarHostView.renderTransition(
+            let completionPresentation = reconciledToolbarCompletionPresentation(
                 targetPresentation,
-                animated: false
+                targetStage: targetStage,
+                context: runtime.context
             )
+            updateCurrentToolbarTransitionPresentation(
+                completionPresentation,
+                targetStage: targetStage,
+                expectedDirection: expectedDirection
+            )
+            cancelManualToolbarTransition()
+            toolbarHostView.applyTransitionImmediately(completionPresentation)
             completion()
             return
         }
@@ -2975,6 +2982,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         runManualToolbarTransition(
             from: sourcePresentation,
             to: targetPresentation,
+            context: runtime.context,
             targetStage: targetStage,
             duration: duration
         ) { [weak self] in
@@ -2995,6 +3003,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     private func runManualToolbarTransition(
         from sourcePresentation: CanvasToolbarTransitionPresentation,
         to targetPresentation: CanvasToolbarTransitionPresentation,
+        context: CanvasToolbarTransitionContext,
         targetStage: CanvasToolbarTransitionStage,
         duration: TimeInterval,
         completion: @escaping () -> Void
@@ -3055,13 +3064,98 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             if self.toolbarManualTransitionTimer === timer {
                 self.toolbarManualTransitionTimer = nil
             }
-            self.toolbarHostView.applyTransitionImmediately(targetPresentation)
+            let completionPresentation = self.reconciledToolbarCompletionPresentation(
+                targetPresentation,
+                targetStage: targetStage,
+                context: context
+            )
+            self.updateCurrentToolbarTransitionPresentation(
+                completionPresentation,
+                targetStage: targetStage,
+                expectedDirection: context.direction
+            )
+            self.toolbarHostView.applyTransitionImmediately(completionPresentation)
             completion()
         }
 
         toolbarManualTransitionTimer = timer
         RunLoop.main.add(timer, forMode: .common)
         timer.fire()
+    }
+
+    private func reconciledToolbarCompletionPresentation(
+        _ presentation: CanvasToolbarTransitionPresentation,
+        targetStage: CanvasToolbarTransitionStage,
+        context: CanvasToolbarTransitionContext
+    ) -> CanvasToolbarTransitionPresentation {
+        guard let reconciledFrame = reconciledToolbarCompletionFrame(
+            targetStage: targetStage,
+            context: context,
+            fallback: presentation.frame
+        ) else {
+            return presentation
+        }
+
+        var reconciledPresentation = presentation
+        reconciledPresentation.frame = reconciledFrame
+        return reconciledPresentation
+    }
+
+    private func reconciledToolbarCompletionFrame(
+        targetStage: CanvasToolbarTransitionStage,
+        context: CanvasToolbarTransitionContext,
+        fallback: CGRect
+    ) -> CGRect? {
+        switch targetStage {
+        case .steadyVisible:
+            return resolvedSteadyToolbarFrame(
+                for: context.settledState
+            )
+
+        case .hidden:
+            return normalizedToolbarFrame(
+                context.frames.offscreenFrame,
+                fallback: fallback
+            )
+
+        case let .entering(progress)
+            where clampedToolbarTransitionProgress(progress) >= 0.999:
+            return resolvedSteadyToolbarFrame(
+                for: context.settledState
+            )
+
+        case let .expanding(progress)
+            where clampedToolbarTransitionProgress(progress) >= 0.999:
+            return resolvedSteadyToolbarFrame(
+                for: context.settledState
+            )
+
+        case let .exiting(progress)
+            where clampedToolbarTransitionProgress(progress) >= 0.999:
+            return normalizedToolbarFrame(
+                context.frames.offscreenFrame,
+                fallback: fallback
+            )
+
+        case .collapsing, .entering, .exiting, .expanding:
+            return nil
+        }
+    }
+
+    private func updateCurrentToolbarTransitionPresentation(
+        _ presentation: CanvasToolbarTransitionPresentation,
+        targetStage: CanvasToolbarTransitionStage,
+        expectedDirection: CanvasToolbarTransitionDirection
+    ) {
+        guard var runtime = toolbarTransitionRuntime,
+              runtime.context.direction == expectedDirection,
+              runtime.stage == targetStage
+        else {
+            return
+        }
+
+        runtime.currentPresentation = presentation
+        toolbarTransitionRuntime = runtime
     }
 
     private func cancelManualToolbarTransition() {
