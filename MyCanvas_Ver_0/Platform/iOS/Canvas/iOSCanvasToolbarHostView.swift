@@ -55,6 +55,7 @@ final class iOSCanvasToolbarHostView: UIView, UIScrollViewDelegate {
     }()
 
     private var registeredButtons: [CanvasToolbarItemID: UIButton] = [:]
+    private var renderedItemIDs: [CanvasToolbarItemID] = []
     private var preferredAxisOverride: CanvasToolbarAxis?
     private var isTransitionRendering = false
     private var transitionInteractivity = true
@@ -285,25 +286,48 @@ final class iOSCanvasToolbarHostView: UIView, UIScrollViewDelegate {
                 "incomingItems=\(itemStates.count) " +
                 "existingArranged=\(buttonsStackView.arrangedSubviews.count)"
         )
-        rememberCurrentContentOffsetIfStable()
-        shouldRestoreRememberedContentOffset = true
 
-        let orderedButtons: [UIButton] = itemStates.compactMap { itemState in
+        let orderedButtonPairs: [(id: CanvasToolbarItemID, button: UIButton)] = itemStates.compactMap { itemState in
             guard let button = registeredButtons[itemState.id] else {
                 return nil
             }
             applyAppearance(itemState, to: button)
-            return button
+            return (itemState.id, button)
+        }
+        let orderedItemIDs = orderedButtonPairs.map(\.id)
+        let orderedButtons = orderedButtonPairs.map(\.button)
+        let existingArrangedSubviews = buttonsStackView.arrangedSubviews
+        let hasSameArrangedButtons =
+            renderedItemIDs == orderedItemIDs &&
+            existingArrangedSubviews.count == orderedButtons.count &&
+            zip(existingArrangedSubviews, orderedButtons).allSatisfy { existingView, orderedButton in
+                existingView === orderedButton
+            }
+
+        guard hasSameArrangedButtons == false else {
+            logScrollOffsetDiagnostic(
+                "syncButtons.skipStableArrangement",
+                extra: "arranged=\(buttonsStackView.arrangedSubviews.count)"
+            )
+            return
         }
 
-        buttonsStackView.arrangedSubviews.forEach { arrangedSubview in
-            buttonsStackView.removeArrangedSubview(arrangedSubview)
-            arrangedSubview.removeFromSuperview()
+        rememberCurrentContentOffsetIfStable()
+        shouldRestoreRememberedContentOffset = true
+
+        UIView.performWithoutAnimation {
+            buttonsStackView.arrangedSubviews.forEach { arrangedSubview in
+                buttonsStackView.removeArrangedSubview(arrangedSubview)
+                arrangedSubview.removeFromSuperview()
+            }
+
+            orderedButtons.forEach { button in
+                buttonsStackView.addArrangedSubview(button)
+            }
+            buttonsStackView.layoutIfNeeded()
         }
 
-        orderedButtons.forEach { button in
-            buttonsStackView.addArrangedSubview(button)
-        }
+        renderedItemIDs = orderedItemIDs
         setNeedsLayout()
         logScrollOffsetDiagnostic(
             "syncButtons.end",

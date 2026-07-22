@@ -8,7 +8,7 @@
          BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
          <BreakpointContent
             uuid = "B0FA6193-CB49-4F93-88E0-07E420ADC804"
-            shouldBeEnabled = "Yes"
+            shouldBeEnabled = "No"
             ignoreCount = "0"
             continueAfterRunningActions = "No"
             filePath = "MyCanvas_Ver_0/Platform/Shared/Rendering/PlatformLayerAppearance.swift"
