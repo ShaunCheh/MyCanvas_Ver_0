@@ -144,12 +144,31 @@ final class BoardListActionPanelHostView: UIView {
             arrangedSubview.removeFromSuperview()
         }
 
+        if let summaryText = state.summaryText,
+           summaryText.isEmpty == false {
+            actionStackView.addArrangedSubview(
+                makeSummaryLabel(text: summaryText)
+            )
+        }
+
         for actionState in state.actionStates {
             let button = makeActionButton(for: actionState)
             button.tag = actionIDs.count
             actionIDs.append(actionState.id)
             actionStackView.addArrangedSubview(button)
         }
+    }
+
+    private func makeSummaryLabel(text: String) -> UILabel {
+        let label = UILabel()
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.font = .systemFont(ofSize: 12, weight: .medium)
+        label.textColor = .secondaryLabel
+        label.text = text
+        label.numberOfLines = 1
+        label.lineBreakMode = .byTruncatingTail
+        label.heightAnchor.constraint(greaterThanOrEqualToConstant: 24).isActive = true
+        return label
     }
 
     private func makeActionButton(
@@ -368,12 +387,30 @@ final class BoardListActionPanelHostView: NSView {
             arrangedSubview.removeFromSuperview()
         }
 
+        if let summaryText = state.summaryText,
+           summaryText.isEmpty == false {
+            actionStackView.addArrangedSubview(
+                makeSummaryLabel(text: summaryText)
+            )
+        }
+
         for actionState in state.actionStates {
             let button = makeActionButton(for: actionState)
             button.tag = actionIDs.count
             actionIDs.append(actionState.id)
             actionStackView.addArrangedSubview(button)
         }
+    }
+
+    private func makeSummaryLabel(text: String) -> NSTextField {
+        let label = NSTextField(labelWithString: text)
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.font = .systemFont(ofSize: 12, weight: .medium)
+        label.textColor = .secondaryLabelColor
+        label.lineBreakMode = .byTruncatingTail
+        label.maximumNumberOfLines = 1
+        label.heightAnchor.constraint(greaterThanOrEqualToConstant: 22).isActive = true
+        return label
     }
 
     private func makeActionButton(

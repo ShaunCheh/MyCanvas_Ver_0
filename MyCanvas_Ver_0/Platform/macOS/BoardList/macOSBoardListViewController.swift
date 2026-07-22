@@ -977,6 +977,13 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
         availableBoards.first(where: { $0.boardID == boardID })?.title
     }
 
+    private func boardStorageSizeSummaryText(for boardID: UUID) -> String {
+        availableBoards.first { $0.boardID == boardID }?
+            .storageSizeSummary
+            .displayText
+            ?? BoardStorageSizeSummary.unavailable.displayText
+    }
+
     private func normalizedBoardTitle(_ title: String) -> String {
         let normalizedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard normalizedTitle.isEmpty == false else {
@@ -1086,7 +1093,8 @@ final class macOSBoardListViewController: NSViewController, NSCollectionViewData
         syncCollectionSelection()
         actionPanelState = .renameMenu(
             boardID: boardID,
-            anchorPoint: anchorPoint
+            anchorPoint: anchorPoint,
+            summaryText: boardStorageSizeSummaryText(for: boardID)
         )
     }
 

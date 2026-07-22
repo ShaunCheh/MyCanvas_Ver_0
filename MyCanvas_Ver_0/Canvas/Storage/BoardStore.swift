@@ -8,9 +8,27 @@ struct BoardDocumentCatalogEntry {
     let documentURL: URL
     let assetsDirectoryURL: URL
     let document: BoardDocument
+    let storageSizeSummary: BoardStorageSizeSummary
 
     var summary: BoardSummary {
         document.summary
+    }
+}
+
+struct BoardStorageSizeSummary: Hashable, Sendable {
+    let byteCount: Int64?
+
+    static let unavailable = BoardStorageSizeSummary(byteCount: nil)
+
+    var displayText: String {
+        guard let byteCount else {
+            return "Size unavailable"
+        }
+
+        let formatter = ByteCountFormatter()
+        formatter.allowedUnits = [.useBytes, .useKB, .useMB, .useGB]
+        formatter.countStyle = .file
+        return "Size: \(formatter.string(fromByteCount: byteCount))"
     }
 }
 
@@ -535,6 +553,9 @@ enum BoardStore {
         }
 
         let document = try readBoardDocument(at: boardDocumentURL)
+        let storageSizeSummary = BoardStorageSizeSummary(
+            byteCount: try? boardDirectoryStorageByteCount(at: boardDirectoryURL)
+        )
         return BoardDocumentCatalogEntry(
             boardDirectoryURL: boardDirectoryURL,
             documentURL: boardDocumentURL,
@@ -542,8 +563,39 @@ enum BoardStore {
                 assetsDirectoryName,
                 isDirectory: true
             ),
-            document: document
+            document: document,
+            storageSizeSummary: storageSizeSummary
         )
+    }
+
+    private static func boardDirectoryStorageByteCount(
+        at boardDirectoryURL: URL,
+        fileManager: FileManager = .default
+    ) throws -> Int64 {
+        let resourceKeys: Set<URLResourceKey> = [
+            .isRegularFileKey,
+            .fileSizeKey
+        ]
+        guard let enumerator = fileManager.enumerator(
+            at: boardDirectoryURL,
+            includingPropertiesForKeys: Array(resourceKeys),
+            options: [],
+            errorHandler: nil
+        ) else {
+            return 0
+        }
+
+        var byteCount: Int64 = 0
+        for case let fileURL as URL in enumerator {
+            let resourceValues = try fileURL.resourceValues(forKeys: resourceKeys)
+            guard resourceValues.isRegularFile == true else {
+                continue
+            }
+
+            byteCount += Int64(max(resourceValues.fileSize ?? 0, 0))
+        }
+
+        return byteCount
     }
 
     private static func makeDocumentData(

@@ -46,6 +46,7 @@ struct BoardListActionState: Hashable, Sendable {
 struct BoardListActionPanelState: Hashable, Sendable {
     let boardID: UUID
     let layoutAnchorPoint: CGPoint
+    let summaryText: String?
     let actionStates: [BoardListActionState]
 
     var isEmpty: Bool {
@@ -55,12 +56,14 @@ struct BoardListActionPanelState: Hashable, Sendable {
     static func renameMenu(
         boardID: UUID,
         anchorPoint: CGPoint,
+        summaryText: String? = nil,
         isRenameEnabled: Bool = true,
         isDeleteEnabled: Bool = true
     ) -> BoardListActionPanelState {
         BoardListActionPanelState(
             boardID: boardID,
             layoutAnchorPoint: anchorPoint,
+            summaryText: summaryText,
             actionStates: [
                 .rename(isEnabled: isRenameEnabled),
                 .delete(isEnabled: isDeleteEnabled)

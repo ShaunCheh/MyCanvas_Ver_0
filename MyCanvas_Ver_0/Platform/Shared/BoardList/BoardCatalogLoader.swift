@@ -42,6 +42,7 @@ struct BoardCatalogLoader {
                 forBoardDirectoryURL: entry.boardDirectoryURL
             ),
             assetsDirectoryURL: entry.assetsDirectoryURL,
+            storageSizeSummary: entry.storageSizeSummary,
             previewSeed: geometryPreviewBuilder.makeSeed(from: entry.document)
         )
     }

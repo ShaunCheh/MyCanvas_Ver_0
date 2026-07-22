@@ -136,6 +136,54 @@ final class BoardVideoStorageTests: XCTestCase {
         }
     }
 
+    func testBoardCatalogEntryExposesStorageSizeSummary() throws {
+        try withTemporaryBoardWorkspace { _, userDefaults in
+            let boardID = UUID()
+            let sourceVideoFilename = "source-video.mov"
+            let posterImage = try makeSolidColorImage(red: 0.2, green: 0.4, blue: 1)
+            let item = makeVideoItem(
+                id: UUID(),
+                posterAsset: .transientStaticImage(
+                    cgImage: posterImage,
+                    assetID: UUID()
+                ),
+                sourceVideoFilename: sourceVideoFilename,
+                posterTimeSeconds: 4.5
+            )
+            let runtimeState = makeRuntimeState(
+                boardID: boardID,
+                now: Date(timeIntervalSince1970: 1_710_000_300),
+                item: item
+            )
+
+            let assetsDirectoryURL = try BoardStore.ensureAssetsDirectoryURL(
+                for: boardID,
+                userDefaults: userDefaults
+            )
+            try writeDummyVideoAsset(
+                to: assetsDirectoryURL.appendingPathComponent(sourceVideoFilename)
+            )
+            try BoardStore.saveBoard(runtimeState, userDefaults: userDefaults)
+
+            let entry = try XCTUnwrap(
+                BoardStore.listBoardDocumentEntries(userDefaults: userDefaults).first
+            )
+            let byteCount = try XCTUnwrap(entry.storageSizeSummary.byteCount)
+
+            XCTAssertGreaterThan(byteCount, 0)
+            XCTAssertTrue(entry.storageSizeSummary.displayText.hasPrefix("Size: "))
+
+            let catalogItem = try XCTUnwrap(
+                try BoardCatalogLoader(userDefaults: userDefaults)
+                    .loadCatalogItem(boardID: boardID)
+            )
+            XCTAssertEqual(
+                catalogItem.storageSizeSummary.byteCount,
+                entry.storageSizeSummary.byteCount
+            )
+        }
+    }
+
     func testBoardStoreRefreshesPersistedThumbnailWhenVideoPosterChanges() throws {
         try withTemporaryBoardWorkspace { _, userDefaults in
             let boardID = UUID()
