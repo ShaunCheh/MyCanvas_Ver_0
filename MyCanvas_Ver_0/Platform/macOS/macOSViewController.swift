@@ -2696,16 +2696,11 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
                 return nil
             }
 
-            let collapsedFrame = CanvasToolbarTransitionGeometry.collapsedFrame(
-                from: visibleFrame
-            )
-            let offscreenFrame = CanvasToolbarTransitionGeometry.hiddenFrame(
-                for: visibleState.placement,
-                visibleFrame: visibleFrame,
+            let collapsedFrame = visibleFrame
+            let offscreenFrame = CanvasToolbarTransitionGeometry.offscreenFrame(
+                from: collapsedFrame,
                 safeBounds: toolbarLayoutSafeBounds(),
-                scale: toolbarPlacementScale(),
-                baseChromeBlockers: baseChromeBlockersForToolbarLayout(),
-                solver: toolbarPlacementSolver
+                placement: visibleState.placement
             )
 
             let context = CanvasToolbarTransitionContext(
@@ -2734,16 +2729,11 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             }
 
             let visibleFrame = resolvedSteadyToolbarFrame(for: visibleState)
-            let collapsedFrame = CanvasToolbarTransitionGeometry.collapsedFrame(
-                from: visibleFrame
-            )
-            let offscreenFrame = CanvasToolbarTransitionGeometry.hiddenFrame(
-                for: visibleState.placement,
-                visibleFrame: visibleFrame,
+            let collapsedFrame = visibleFrame
+            let offscreenFrame = CanvasToolbarTransitionGeometry.offscreenFrame(
+                from: collapsedFrame,
                 safeBounds: toolbarLayoutSafeBounds(),
-                scale: toolbarPlacementScale(),
-                baseChromeBlockers: baseChromeBlockersForToolbarLayout(),
-                solver: toolbarPlacementSolver
+                placement: visibleState.placement
             )
 
             let context = CanvasToolbarTransitionContext(
@@ -2824,7 +2814,12 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         case .toEditing:
             targetStage = .entering(progress: 1)
             completion = { [weak self] in
-                self?.runToolbarCollapsePhase()
+                guard let self else {
+                    return
+                }
+                self.finishToolbarModeTransition(
+                    applying: runtime.context.settledState
+                )
             }
         }
 
@@ -2971,7 +2966,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         guard let currentPresentation = toolbarTransitionRuntime?.currentPresentation else {
             switch direction {
             case .toReading:
-                return .collapsing(progress: 0)
+                return .exiting(progress: 0)
             case .toEditing:
                 return .entering(progress: 0)
             }
@@ -2988,40 +2983,22 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
 
         switch direction {
         case .toReading:
-            let isCollapsed = currentFrame.height <= (collapsedFrame.height + 0.5)
-            if isCollapsed {
-                return .exiting(
-                    progress: toolbarLinearProgress(
-                        from: collapsedFrame.minX,
-                        to: context.frames.offscreenFrame.minX,
-                        current: currentFrame.minX
-                    )
+            return .exiting(
+                progress: toolbarLinearProgress(
+                    from: collapsedFrame.minX,
+                    to: context.frames.offscreenFrame.minX,
+                    current: currentFrame.minX
                 )
-            }
-
-            return .collapsing(progress: 0)
+            )
 
         case .toEditing:
-            if currentFrame.height > (collapsedFrame.height + 0.5) {
-                let expandingProgress = toolbarLinearProgress(
-                    from: collapsedFrame.height,
-                    to: context.frames.visibleFrame.height,
-                    current: currentFrame.height
-                )
-                if expandingProgress >= 0.999 {
-                    return .steadyVisible
-                }
-
-                return .expanding(progress: expandingProgress)
-            }
-
             let enteringProgress = toolbarLinearProgress(
                 from: context.frames.offscreenFrame.minX,
                 to: collapsedFrame.minX,
                 current: currentFrame.minX
             )
             if enteringProgress >= 0.999 {
-                return .expanding(progress: 0)
+                return .steadyVisible
             }
 
             return .entering(progress: enteringProgress)

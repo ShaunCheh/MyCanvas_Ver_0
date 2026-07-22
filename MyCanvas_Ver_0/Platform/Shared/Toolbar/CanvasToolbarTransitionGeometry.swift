@@ -170,8 +170,8 @@ enum CanvasToolbarTransitionGeometry {
                 ),
                 itemStates: visibleState.items,
                 showsBackground: visibleState.showsBackground,
-                contentAlpha: 0,
-                contentScale: minimumScale,
+                contentAlpha: 1,
+                contentScale: 1,
                 keepsHostVisible: true,
                 isInteractive: false
             )
@@ -197,8 +197,8 @@ enum CanvasToolbarTransitionGeometry {
                 ),
                 itemStates: visibleState.items,
                 showsBackground: visibleState.showsBackground,
-                contentAlpha: 0,
-                contentScale: minimumScale,
+                contentAlpha: 1,
+                contentScale: 1,
                 keepsHostVisible: true,
                 isInteractive: false
             )

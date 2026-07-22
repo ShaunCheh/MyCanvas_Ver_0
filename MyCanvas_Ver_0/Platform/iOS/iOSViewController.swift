@@ -2815,9 +2815,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
                 return nil
             }
 
-            let collapsedFrame = CanvasToolbarTransitionGeometry.collapsedFrame(
-                from: visibleFrame
-            )
+            let collapsedFrame = visibleFrame
             let offscreenFrame = CanvasToolbarTransitionGeometry.offscreenFrame(
                 from: collapsedFrame,
                 safeBounds: toolbarLayoutSafeBounds(),
@@ -2848,9 +2846,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             }
 
             let visibleFrame = resolvedSteadyToolbarFrame(for: visibleState)
-            let collapsedFrame = CanvasToolbarTransitionGeometry.collapsedFrame(
-                from: visibleFrame
-            )
+            let collapsedFrame = visibleFrame
             let offscreenFrame = CanvasToolbarTransitionGeometry.offscreenFrame(
                 from: collapsedFrame,
                 safeBounds: toolbarLayoutSafeBounds(),
@@ -2933,7 +2929,12 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         case .toEditing:
             targetStage = .entering(progress: 1)
             completion = { [weak self] in
-                self?.runToolbarCollapsePhase()
+                guard let self else {
+                    return
+                }
+                self.finishToolbarModeTransition(
+                    applying: runtime.context.settledState
+                )
             }
         }
 
@@ -3076,7 +3077,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         guard let currentPresentation = toolbarTransitionRuntime?.currentPresentation else {
             switch direction {
             case .toReading:
-                return .collapsing(progress: 0)
+                return .exiting(progress: 0)
             case .toEditing:
                 return .entering(progress: 0)
             }
@@ -3094,49 +3095,25 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
 
         switch direction {
         case .toReading:
-            let isCollapsed = toolbarExpansionExtent(
-                currentFrame,
-                for: placement
-            ) <= (toolbarExpansionExtent(collapsedFrame, for: placement) + 0.5)
-            if isCollapsed {
-                return .exiting(
-                    progress: toolbarLinearProgress(
-                        from: toolbarSlideCoordinate(collapsedFrame, for: placement),
-                        to: toolbarSlideCoordinate(
-                            context.frames.offscreenFrame,
-                            for: placement
-                        ),
-                        current: toolbarSlideCoordinate(currentFrame, for: placement)
-                    )
+            return .exiting(
+                progress: toolbarLinearProgress(
+                    from: toolbarSlideCoordinate(collapsedFrame, for: placement),
+                    to: toolbarSlideCoordinate(
+                        context.frames.offscreenFrame,
+                        for: placement
+                    ),
+                    current: toolbarSlideCoordinate(currentFrame, for: placement)
                 )
-            }
-
-            return .collapsing(progress: 0)
+            )
 
         case .toEditing:
-            if toolbarExpansionExtent(
-                currentFrame,
-                for: placement
-            ) > (toolbarExpansionExtent(collapsedFrame, for: placement) + 0.5) {
-                let expandingProgress = toolbarLinearProgress(
-                    from: toolbarExpansionExtent(collapsedFrame, for: placement),
-                    to: toolbarExpansionExtent(context.frames.visibleFrame, for: placement),
-                    current: toolbarExpansionExtent(currentFrame, for: placement)
-                )
-                if expandingProgress >= 0.999 {
-                    return .steadyVisible
-                }
-
-                return .expanding(progress: expandingProgress)
-            }
-
             let enteringProgress = toolbarLinearProgress(
                 from: toolbarSlideCoordinate(context.frames.offscreenFrame, for: placement),
                 to: toolbarSlideCoordinate(collapsedFrame, for: placement),
                 current: toolbarSlideCoordinate(currentFrame, for: placement)
             )
             if enteringProgress >= 0.999 {
-                return .expanding(progress: 0)
+                return .steadyVisible
             }
 
             return .entering(progress: enteringProgress)
