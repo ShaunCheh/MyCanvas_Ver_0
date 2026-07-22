@@ -3523,25 +3523,25 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         }
 
         let itemCount = CGFloat(state.items.count)
-        let stackedLength = (itemCount * CanvasToolbarChromeMetrics.buttonEdge)
-            + (max(itemCount - 1, 0) * CanvasToolbarChromeMetrics.spacing)
+        let stackedLength = (itemCount * macOSCanvasToolbarChromeMetrics.buttonEdge)
+            + (max(itemCount - 1, 0) * macOSCanvasToolbarChromeMetrics.spacing)
         let measuredStackSize: CGSize
 
         switch state.preferredAxis {
         case .horizontal:
             measuredStackSize = CGSize(
                 width: stackedLength,
-                height: CanvasToolbarChromeMetrics.buttonEdge
+                height: macOSCanvasToolbarChromeMetrics.buttonEdge
             )
         case .vertical:
             measuredStackSize = CGSize(
-                width: CanvasToolbarChromeMetrics.buttonEdge,
+                width: macOSCanvasToolbarChromeMetrics.buttonEdge,
                 height: stackedLength
             )
         }
 
         return CanvasChromeLayoutGeometry.sanitizedSize(
-            CanvasToolbarMeasurement.measuredContentSize(
+            macOSCanvasToolbarChromeMetrics.measuredContentSize(
                 forMeasuredStackSize: measuredStackSize
             )
         )

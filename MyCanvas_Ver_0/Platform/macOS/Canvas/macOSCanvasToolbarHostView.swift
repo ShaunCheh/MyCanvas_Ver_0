@@ -2,19 +2,42 @@
 import AppKit
 import QuartzCore
 
+enum macOSCanvasToolbarChromeMetrics {
+    static let scale: CGFloat = 0.8
+    static let spacing = CanvasToolbarChromeMetrics.spacing * scale
+    static let horizontalInset = CanvasToolbarChromeMetrics.horizontalInset * scale
+    static let verticalInset = CanvasToolbarChromeMetrics.verticalInset * scale
+    static let buttonEdge = CanvasToolbarChromeMetrics.buttonEdge * scale
+
+    static func measuredContentSize(
+        forMeasuredStackSize stackSize: CGSize
+    ) -> CGSize {
+        CanvasChromeLayoutGeometry.sanitizedSize(
+            CGSize(
+                width: stackSize.width + (horizontalInset * 2),
+                height: stackSize.height + (verticalInset * 2)
+            )
+        )
+    }
+}
+
 final class macOSCanvasToolbarHostView: NSView {
     private enum Layout {
-        static let cornerRadius: CGFloat = 18
+        static let cornerRadius: CGFloat = 18 * macOSCanvasToolbarChromeMetrics.scale
         static let shadowOpacity: Float = 0.12
-        static let shadowRadius: CGFloat = 10
-        static let shadowOffset = CGSize(width: 0, height: 4)
+        static let shadowRadius: CGFloat = 10 * macOSCanvasToolbarChromeMetrics.scale
+        static let shadowOffset = CGSize(
+            width: 0,
+            height: 4 * macOSCanvasToolbarChromeMetrics.scale
+        )
+        static let buttonCornerRadius: CGFloat = 12 * macOSCanvasToolbarChromeMetrics.scale
         // AppRoot can force an early layout pass before the controller computes
         // the real toolbar frame. Bootstrap with a legal non-zero size so the
         // internal chrome insets do not conflict against a transient width == 0.
-        static let minimumBootstrapSize = CanvasToolbarMeasurement.measuredContentSize(
+        static let minimumBootstrapSize = macOSCanvasToolbarChromeMetrics.measuredContentSize(
             forMeasuredStackSize: CGSize(
-                width: CanvasToolbarChromeMetrics.buttonEdge,
-                height: CanvasToolbarChromeMetrics.buttonEdge
+                width: macOSCanvasToolbarChromeMetrics.buttonEdge,
+                height: macOSCanvasToolbarChromeMetrics.buttonEdge
             )
         )
     }
@@ -46,7 +69,7 @@ final class macOSCanvasToolbarHostView: NSView {
         stackView.orientation = .vertical
         stackView.alignment = .trailing
         stackView.distribution = .fill
-        stackView.spacing = CanvasToolbarChromeMetrics.spacing
+        stackView.spacing = macOSCanvasToolbarChromeMetrics.spacing
         return stackView
     }()
 
@@ -80,15 +103,15 @@ final class macOSCanvasToolbarHostView: NSView {
             contentClipView.bottomAnchor.constraint(equalTo: bottomAnchor),
             buttonsStackView.topAnchor.constraint(
                 equalTo: contentClipView.topAnchor,
-                constant: CanvasToolbarChromeMetrics.verticalInset
+                constant: macOSCanvasToolbarChromeMetrics.verticalInset
             ),
             buttonsStackView.leadingAnchor.constraint(
                 equalTo: contentClipView.leadingAnchor,
-                constant: CanvasToolbarChromeMetrics.horizontalInset
+                constant: macOSCanvasToolbarChromeMetrics.horizontalInset
             ),
             buttonsStackView.trailingAnchor.constraint(
                 equalTo: contentClipView.trailingAnchor,
-                constant: -CanvasToolbarChromeMetrics.horizontalInset
+                constant: -macOSCanvasToolbarChromeMetrics.horizontalInset
             )
         ])
         updateDockEdgeLayout()
@@ -192,7 +215,7 @@ final class macOSCanvasToolbarHostView: NSView {
         }
 
         let stackSize = buttonsStackView.fittingSize
-        return CanvasToolbarMeasurement.measuredContentSize(
+        return macOSCanvasToolbarChromeMetrics.measuredContentSize(
             forMeasuredStackSize: stackSize
         )
     }
@@ -341,7 +364,7 @@ final class macOSCanvasToolbarHostView: NSView {
         button.isBordered = false
         button.imagePosition = .imageOnly
         button.wantsLayer = true
-        button.layer?.cornerRadius = 12
+        button.layer?.cornerRadius = Layout.buttonCornerRadius
         button.layer?.borderWidth = 1
         PlatformLayerAppearance.performWithoutAnimations {
             updateLayerAppearance(
@@ -412,13 +435,13 @@ final class macOSCanvasToolbarHostView: NSView {
 
     private func ensureSquareSize(for button: NSButton) {
         if button.constraints.contains(where: { $0.identifier == "canvasToolbarHost.buttonWidth" }) == false {
-            let widthConstraint = button.widthAnchor.constraint(equalToConstant: CanvasToolbarChromeMetrics.buttonEdge)
+            let widthConstraint = button.widthAnchor.constraint(equalToConstant: macOSCanvasToolbarChromeMetrics.buttonEdge)
             widthConstraint.identifier = "canvasToolbarHost.buttonWidth"
             widthConstraint.isActive = true
         }
 
         if button.constraints.contains(where: { $0.identifier == "canvasToolbarHost.buttonHeight" }) == false {
-            let heightConstraint = button.heightAnchor.constraint(equalToConstant: CanvasToolbarChromeMetrics.buttonEdge)
+            let heightConstraint = button.heightAnchor.constraint(equalToConstant: macOSCanvasToolbarChromeMetrics.buttonEdge)
             heightConstraint.identifier = "canvasToolbarHost.buttonHeight"
             heightConstraint.isActive = true
         }
