@@ -142,6 +142,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     private static let isPointerHitTraceLoggingEnabled = true
     private static let observedKeyboardShortcutReuseWindow: TimeInterval = 0.45
     private static let continuousRawInputObservationInterval: TimeInterval = 0.32
+    private static let showsMiniMap = false
 
     private let miniMapLayoutSolver = CanvasOverlayLayoutSolver()
     private let alignmentGuideSolver = CanvasAlignmentGuideSolver()
@@ -1452,7 +1453,11 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     private func resolveMiniMapFrame(
         in layoutContext: CanvasChromeLayoutContext
     ) -> CGRect {
-        miniMapLayoutSolver.resolveMiniMapFrame(
+        guard Self.showsMiniMap else {
+            return .zero
+        }
+
+        return miniMapLayoutSolver.resolveMiniMapFrame(
             safeBounds: layoutContext.safeBounds,
             occupiedRects: layoutContext.occupiedRects,
             configuration: miniMapConfiguration
@@ -2466,6 +2471,11 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     }
 
     private func refreshMiniMap() {
+        guard Self.showsMiniMap else {
+            miniMapView.apply(.empty)
+            return
+        }
+
         let snapshot = editorSession.makeMiniMapSnapshot()
         miniMapView.apply(snapshot)
     }
