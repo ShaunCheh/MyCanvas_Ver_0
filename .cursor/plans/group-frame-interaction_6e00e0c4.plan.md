@@ -13,7 +13,7 @@ todos:
     status: completed
   - id: group-drag
     content: 在 iOS/macOS controller 接入 group frame 拖拽
-    status: pending
+    status: completed
   - id: group-resize
     content: 在 iOS/macOS controller 接入 group frame 缩放
     status: pending

@@ -43,6 +43,12 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         let rotationOffsetToPointerAngle: CGFloat
     }
 
+    private struct PointerGroupDragState {
+        let groupID: CanvasItemGroupID
+        let initialFrame: CGRect
+        let dragStartWorldLocation: CGPoint
+    }
+
     private enum PointerDragState {
         case idle
         case pressed(
@@ -56,6 +62,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         case rotatingSelection(CanvasSelectionRotateState)
         case draggingSelectedItem(CanvasSelectedItemDragState)
         case draggingSelection(CanvasSelectionDragState)
+        case draggingGroupFrame(PointerGroupDragState)
         case resizingSelectedItem(PointerResizeState)
         case adjustingArrowEndpoint(CanvasArrowEndpointDragState)
         case resizingSelection(CanvasSelectionResizeState)
@@ -2105,6 +2112,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
              .rotatingSelection,
              .draggingSelectedItem,
              .draggingSelection,
+             .draggingGroupFrame,
              .resizingSelectedItem,
              .adjustingArrowEndpoint,
              .resizingSelection,
@@ -2277,7 +2285,27 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
 
                     pointerDragState = .draggingSelectedItem(updatedDragState)
                 }
-            case .groupFrameBody, .groupFrameResizeHandle:
+            case .groupFrameBody:
+                guard
+                    let groupID = pressContext.targetGroupID,
+                    let groupDragState = makePointerGroupDragState(
+                        groupID: groupID,
+                        initialViewportLocation: pressedLocation
+                    )
+                else {
+                    pointerDragState = .idle
+                    return
+                }
+
+                editorSession.beginHistoryTransaction(reason: "move group frame")
+                guard moveGroupFrame(using: groupDragState, to: location) else {
+                    editorSession.cancelPendingHistoryTransaction()
+                    pointerDragState = .idle
+                    return
+                }
+
+                pointerDragState = .draggingGroupFrame(groupDragState)
+            case .groupFrameResizeHandle:
                 pointerDragState = .idle
             case .unselectedItemBody, .blank:
                 pointerDragState = .draggingCanvas
@@ -2309,6 +2337,12 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
                 return
             }
             pointerDragState = .draggingSelection(updatedDragState)
+        case let .draggingGroupFrame(groupDragState):
+            guard moveGroupFrame(using: groupDragState, to: location) else {
+                editorSession.cancelPendingHistoryTransaction()
+                pointerDragState = .idle
+                return
+            }
         case let .resizingSelectedItem(resizeState):
             resizeSelectedItem(using: resizeState, to: location)
         case let .adjustingArrowEndpoint(endpointState):
@@ -2409,6 +2443,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             clearAlignmentInteractionStateIfNeeded(
                 refreshReason: "finish move alignment interaction"
             )
+        case .draggingGroupFrame:
+            commitPendingPointerHistoryTransaction(autosaveReason: "move group frame")
         case .resizingSelectedItem:
             finalizeMarkdownResizeCommitIfNeeded(for: pointerDragState)
             commitPendingPointerHistoryTransaction(autosaveReason: "resize item")
@@ -2440,6 +2476,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             clearAlignmentInteractionStateIfNeeded(
                 refreshReason: "cancel move alignment interaction"
             )
+        case .draggingGroupFrame:
+            commitPendingPointerHistoryTransaction(autosaveReason: "move group frame")
         case .resizingSelectedItem:
             finalizeMarkdownResizeCommitIfNeeded(for: pointerDragState)
             commitPendingPointerHistoryTransaction(autosaveReason: "resize item")
@@ -4864,6 +4902,21 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         )
     }
 
+    private func makePointerGroupDragState(
+        groupID: CanvasItemGroupID,
+        initialViewportLocation: CGPoint
+    ) -> PointerGroupDragState? {
+        guard let initialFrame = editorSession.groupFrame(withID: groupID) else {
+            return nil
+        }
+
+        return PointerGroupDragState(
+            groupID: groupID,
+            initialFrame: initialFrame,
+            dragStartWorldLocation: camera.viewportToWorld(initialViewportLocation)
+        )
+    }
+
     private func moveSelectedItem(
         using dragState: CanvasSelectedItemDragState,
         to location: CGPoint
@@ -4903,6 +4956,33 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             reason: "move selected item by \(describe(point: resolvedDeltaInWorld))"
         )
         return dragState.replacingAlignmentLock(solveResult.lockState)
+    }
+
+    private func moveGroupFrame(
+        using dragState: PointerGroupDragState,
+        to location: CGPoint
+    ) -> Bool {
+        let currentWorldLocation = camera.viewportToWorld(location)
+        let translation = CGPoint(
+            x: currentWorldLocation.x - dragState.dragStartWorldLocation.x,
+            y: currentWorldLocation.y - dragState.dragStartWorldLocation.y
+        )
+        let proposedFrame = dragState.initialFrame.offsetBy(
+            dx: translation.x,
+            dy: translation.y
+        )
+        guard editorSession.updateGroupFrame(
+            withID: dragState.groupID,
+            to: proposedFrame
+        ) else {
+            return editorSession.groupFrame(withID: dragState.groupID)
+                == proposedFrame.standardized
+        }
+
+        refreshCanvas(
+            reason: "move group frame by \(describe(point: translation))"
+        )
+        return true
     }
 
     private func moveSelection(
@@ -5945,7 +6025,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             )
         case .idle, .pressed, .croppingSelectedItem, .movingCropFrame,
              .rotatingSelectedItem, .rotatingSelection, .draggingSelectedItem,
-             .draggingSelection, .adjustingArrowEndpoint, .draggingCanvas:
+             .draggingSelection, .draggingGroupFrame, .adjustingArrowEndpoint,
+             .draggingCanvas:
             return
         }
 
@@ -6718,6 +6799,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             return "draggingSelectedItem"
         case .draggingSelection:
             return "draggingSelection"
+        case .draggingGroupFrame:
+            return "draggingGroupFrame"
         case .resizingSelectedItem:
             return "resizingSelectedItem"
         case .adjustingArrowEndpoint:
