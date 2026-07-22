@@ -218,6 +218,32 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         }
         return button
     }()
+    private let groupListButton: NSButton = {
+        let button = NSButton()
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.isBordered = false
+        button.title = ""
+        button.toolTip = "Canvas groups"
+        button.wantsLayer = true
+        button.layer?.cornerRadius = 22
+        button.layer?.masksToBounds = true
+        button.layer?.borderWidth = 1
+        button.contentTintColor = .labelColor
+        if let image = NSImage(
+            systemSymbolName: "rectangle.3.group",
+            accessibilityDescription: "Canvas groups"
+        ) {
+            button.image = image
+            button.imagePosition = .imageOnly
+        }
+        return button
+    }()
+    private let groupListView: macOSCanvasGroupListView = {
+        let view = macOSCanvasGroupListView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.isHidden = true
+        return view
+    }()
     // Keep placement transient until persistence is designed; future NSPanGestureRecognizer
     // bridge code should write drag results back into this value.
     private var transientToolbarPlacement = CanvasToolbarPlacement(
@@ -336,6 +362,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         }
     }
     private var isTransitionInteractionFrozen = false
+    private var isGroupListVisible = false
     private var keyboardShortcutObservationMonitor: Any?
     private var observedKeyboardShortcuts: [ObservedKeyboardShortcut] = []
     private var lastContinuousRawInputObservationByKind: [ContinuousRawInputKind: Date] = [:]
@@ -479,6 +506,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         if let refreshReason = executionResult.refreshReason {
             refreshCanvas(reason: refreshReason)
         }
+        updateGroupListPresentation()
         if let followUp = executionResult.followUp {
             handleCommandFollowUp(followUp)
         }
@@ -1071,6 +1099,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         setupRedoButton()
         setupBackButton()
         setupWorkspaceModeButton()
+        setupGroupListButton()
         setupMiniMapView()
         setupContextMenuHostView()
         setupSelectionAccessoryHostView()
@@ -1106,7 +1135,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
                 .windowBackgroundColor,
                 for: appearance
             )
-            for button in [backButton, workspaceModeButton] {
+            for button in [backButton, workspaceModeButton, groupListButton] {
                 button.layer?.backgroundColor = PlatformLayerAppearance.resolvedCGColor(
                     chromeBackgroundColor,
                     for: appearance
@@ -1117,6 +1146,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
                 )
             }
         }
+        groupListView.updateAppearance()
+        updateGroupListPresentation()
     }
 
     override func viewWillAppear() {
@@ -1248,7 +1279,9 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         chromeOverlayView.addSubview(inputIndicatorHostView)
         chromeOverlayView.addSubview(contextMenuHostView)
         chromeOverlayView.addSubview(backButton)
+        chromeOverlayView.addSubview(groupListButton)
         chromeOverlayView.addSubview(workspaceModeButton)
+        chromeOverlayView.addSubview(groupListView)
         registerToolbarButtons()
     }
 
@@ -1256,6 +1289,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         let safeAreaLayoutGuide = chromeOverlayView.safeAreaLayoutGuide
         let preferredTextEditorWidth = textEditorOverlayView.widthAnchor.constraint(equalToConstant: 360)
         preferredTextEditorWidth.priority = .defaultHigh
+        let preferredGroupListWidth = groupListView.widthAnchor.constraint(equalToConstant: 280)
+        preferredGroupListWidth.priority = .defaultHigh
         NSLayoutConstraint.activate([
             canvasHostView.topAnchor.constraint(equalTo: view.topAnchor),
             canvasHostView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -1289,6 +1324,16 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             workspaceModeButton.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor, constant: 20),
             workspaceModeButton.widthAnchor.constraint(equalToConstant: 44),
             workspaceModeButton.heightAnchor.constraint(equalToConstant: 44),
+            groupListButton.trailingAnchor.constraint(equalTo: workspaceModeButton.leadingAnchor, constant: -12),
+            groupListButton.topAnchor.constraint(equalTo: workspaceModeButton.topAnchor),
+            groupListButton.widthAnchor.constraint(equalToConstant: 44),
+            groupListButton.heightAnchor.constraint(equalToConstant: 44),
+            groupListView.topAnchor.constraint(equalTo: groupListButton.bottomAnchor, constant: 8),
+            groupListView.trailingAnchor.constraint(equalTo: groupListButton.trailingAnchor),
+            groupListView.leadingAnchor.constraint(greaterThanOrEqualTo: safeAreaLayoutGuide.leadingAnchor, constant: 20),
+            groupListView.widthAnchor.constraint(lessThanOrEqualTo: safeAreaLayoutGuide.widthAnchor, constant: -40),
+            preferredGroupListWidth,
+            groupListView.heightAnchor.constraint(equalToConstant: 280),
             textEditorOverlayView.centerXAnchor.constraint(equalTo: safeAreaLayoutGuide.centerXAnchor),
             textEditorOverlayView.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor, constant: 76),
             textEditorOverlayView.leadingAnchor.constraint(greaterThanOrEqualTo: safeAreaLayoutGuide.leadingAnchor, constant: 20),
@@ -1445,6 +1490,16 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         appendChromeBlocker(
             kind: .modeToggle,
             for: workspaceModeButton,
+            to: &chromeBlockers
+        )
+        appendChromeBlocker(
+            kind: .groupList,
+            for: groupListButton,
+            to: &chromeBlockers
+        )
+        appendChromeBlocker(
+            kind: .groupList,
+            for: groupListView,
             to: &chromeBlockers
         )
         return chromeBlockers
@@ -1673,6 +1728,15 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         updateWorkspaceModeButtonAppearance()
     }
 
+    private func setupGroupListButton() {
+        groupListButton.target = self
+        groupListButton.action = #selector(handleGroupListButtonClick)
+        groupListView.onAddGroupRequested = { [weak self] in
+            self?.handleAddGroupRequested()
+        }
+        updateGroupListPresentation()
+    }
+
     private func updateWorkspaceModeButtonAppearance() {
         workspaceModeButton.toolTip = "\(workspaceMode.accessibilityLabel): \(workspaceMode.accessibilityValue)"
         if let image = NSImage(
@@ -1681,6 +1745,28 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         ) {
             workspaceModeButton.image = image
             workspaceModeButton.imagePosition = .imageOnly
+        }
+    }
+
+    private func updateGroupListPresentation() {
+        groupListView.render(groups: editorSession.groups)
+        groupListView.isHidden = isGroupListVisible == false
+        groupListButton.toolTip = isGroupListVisible
+            ? "Canvas groups: Expanded"
+            : "Canvas groups: Collapsed"
+
+        let appearance = view.effectiveAppearance
+        PlatformLayerAppearance.performWithoutAnimations {
+            groupListButton.layer?.backgroundColor = PlatformLayerAppearance.resolvedCGColor(
+                isGroupListVisible
+                    ? NSColor.tertiaryLabelColor.withAlphaComponent(0.18)
+                    : NSColor.controlBackgroundColor.withAlphaComponent(0.92),
+                for: appearance
+            )
+            groupListButton.layer?.borderColor = PlatformLayerAppearance.resolvedCGColor(
+                NSColor.separatorColor.withAlphaComponent(0.35),
+                for: appearance
+            )
         }
     }
 
@@ -2608,6 +2694,20 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     @objc
     private func handleArrowButtonClick() {
         performCommand(.addArrowItem)
+    }
+
+    @objc
+    private func handleGroupListButtonClick() {
+        isGroupListVisible.toggle()
+        updateGroupListPresentation()
+        updateChromeOverlayLayout()
+    }
+
+    private func handleAddGroupRequested() {
+        _ = editorSession.appendGroup(recordHistory: true)
+        updateGroupListPresentation()
+        updateInlineEditButtonsAppearance()
+        refreshCanvas(reason: "add group")
     }
 
     @objc
@@ -5599,6 +5699,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         }
         updateWorkspaceModeButtonAppearance()
         updateInlineEditButtonsAppearance()
+        updateGroupListPresentation()
         print(
             "[Canvas macOS][RuntimeRestore] " +
             "action=controllerLoadBoard.end " +
@@ -5621,6 +5722,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         editorSession.startNewBoard()
         updateWorkspaceModeButtonAppearance()
         updateInlineEditButtonsAppearance()
+        updateGroupListPresentation()
         print(
             "[Canvas macOS][RuntimeRestore] " +
             "action=controllerStartNewBoard.end " +
@@ -5642,6 +5744,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         editorSession.restorePersistedBoardIfPossible()
         updateWorkspaceModeButtonAppearance()
         updateInlineEditButtonsAppearance()
+        updateGroupListPresentation()
         print(
             "[Canvas macOS][RuntimeRestore] " +
             "action=controllerRestore.end " +
@@ -5665,6 +5768,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         editorSession.applyBoardRuntimeState(runtimeState)
         updateWorkspaceModeButtonAppearance()
         updateInlineEditButtonsAppearance()
+        updateGroupListPresentation()
         print(
             "[Canvas macOS][RuntimeRestore] " +
             "action=controllerApplyRuntimeState.end " +
@@ -6643,6 +6747,261 @@ private enum macOSGIFFrameImportFlowError: LocalizedError {
         case .presenterUnavailable:
             "The canvas editor is no longer available."
         }
+    }
+}
+
+private final class macOSCanvasGroupListView: NSView {
+    var onAddGroupRequested: (() -> Void)?
+
+    private var renderedGroups: [CanvasItemGroup] = []
+
+    private let scrollView: NSScrollView = {
+        let scrollView = NSScrollView()
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = false
+        scrollView.autohidesScrollers = true
+        return scrollView
+    }()
+    private let documentView: macOSCanvasChromeOverlayView = {
+        let view = macOSCanvasChromeOverlayView()
+        view.translatesAutoresizingMaskIntoConstraints = true
+        return view
+    }()
+    private let stackView: NSStackView = {
+        let stackView = NSStackView()
+        stackView.translatesAutoresizingMaskIntoConstraints = true
+        stackView.orientation = .vertical
+        stackView.alignment = .width
+        stackView.distribution = .gravityAreas
+        stackView.spacing = 10
+        return stackView
+    }()
+
+    override var isFlipped: Bool {
+        true
+    }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        setupView()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        setupView()
+    }
+
+    override func layout() {
+        super.layout()
+        updateDocumentLayout()
+    }
+
+    func render(groups: [CanvasItemGroup]) {
+        renderedGroups = groups
+        stackView.arrangedSubviews.forEach { view in
+            stackView.removeArrangedSubview(view)
+            view.removeFromSuperview()
+        }
+
+        stackView.addArrangedSubview(makeAddGroupRow())
+
+        if groups.isEmpty {
+            stackView.addArrangedSubview(makeEmptyStateLabel())
+        } else {
+            for group in groups {
+                stackView.addArrangedSubview(makeGroupRow(for: group))
+            }
+        }
+
+        updateDocumentLayout()
+    }
+
+    func updateAppearance() {
+        let appearance = effectiveAppearance
+        PlatformLayerAppearance.performWithoutAnimations {
+            layer?.backgroundColor = PlatformLayerAppearance.resolvedCGColor(
+                NSColor.controlBackgroundColor.withAlphaComponent(0.92),
+                for: appearance
+            )
+            layer?.borderColor = PlatformLayerAppearance.resolvedCGColor(
+                NSColor.separatorColor.withAlphaComponent(0.35),
+                for: appearance
+            )
+            layer?.shadowColor = PlatformLayerAppearance.resolvedCGColor(
+                NSColor.black.withAlphaComponent(0.35),
+                for: appearance
+            )
+        }
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateAppearance()
+        render(groups: renderedGroups)
+    }
+
+    private func setupView() {
+        wantsLayer = true
+        layer?.cornerRadius = 16
+        layer?.masksToBounds = false
+        layer?.borderWidth = 1
+        layer?.shadowOpacity = 0.16
+        layer?.shadowRadius = 18
+        layer?.shadowOffset = CGSize(width: 0, height: -8)
+
+        scrollView.documentView = documentView
+        addSubview(scrollView)
+        documentView.addSubview(stackView)
+
+        NSLayoutConstraint.activate([
+            scrollView.topAnchor.constraint(equalTo: topAnchor),
+            scrollView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: bottomAnchor)
+        ])
+
+        updateAppearance()
+    }
+
+    private func updateDocumentLayout() {
+        let contentWidth = max(scrollView.contentView.bounds.width, 0)
+        let stackWidth = max(contentWidth - 24, 0)
+        stackView.frame = CGRect(
+            x: 12,
+            y: 12,
+            width: stackWidth,
+            height: max(stackView.frame.height, 1)
+        )
+        stackView.layoutSubtreeIfNeeded()
+        let stackHeight = max(stackView.fittingSize.height, 0)
+
+        stackView.frame = CGRect(
+            x: 12,
+            y: 12,
+            width: stackWidth,
+            height: stackHeight
+        )
+
+        documentView.frame = CGRect(
+            x: 0,
+            y: 0,
+            width: contentWidth,
+            height: max(
+                stackView.frame.maxY + 12,
+                scrollView.contentView.bounds.height
+            )
+        )
+    }
+
+    private func makeAddGroupRow() -> NSButton {
+        let button = NSButton(title: "添加group", target: self, action: #selector(handleAddGroupButtonClick))
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.setButtonType(.momentaryPushIn)
+        button.isBordered = false
+        button.alignment = .left
+        button.font = .systemFont(ofSize: 13, weight: .semibold)
+        button.contentTintColor = .labelColor
+        button.image = NSImage(
+            systemSymbolName: "plus.circle.fill",
+            accessibilityDescription: "Add group"
+        )
+        button.imagePosition = .imageLeft
+        button.wantsLayer = true
+        button.layer?.cornerRadius = 12
+        button.layer?.borderWidth = 1
+
+        let appearance = effectiveAppearance
+        PlatformLayerAppearance.performWithoutAnimations {
+            button.layer?.backgroundColor = PlatformLayerAppearance.resolvedCGColor(
+                .windowBackgroundColor,
+                for: appearance
+            )
+            button.layer?.borderColor = PlatformLayerAppearance.resolvedCGColor(
+                .separatorColor,
+                for: appearance
+            )
+        }
+
+        button.heightAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
+        return button
+    }
+
+    @objc
+    private func handleAddGroupButtonClick() {
+        onAddGroupRequested?()
+    }
+
+    private func makeEmptyStateLabel() -> NSTextField {
+        let label = NSTextField(labelWithString: "No groups yet")
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.font = .systemFont(ofSize: 13)
+        label.textColor = .secondaryLabelColor
+        label.lineBreakMode = .byWordWrapping
+        label.maximumNumberOfLines = 0
+        return label
+    }
+
+    private func makeGroupRow(for group: CanvasItemGroup) -> NSView {
+        let container = macOSCanvasChromeOverlayView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.wantsLayer = true
+        container.layer?.cornerRadius = 12
+
+        let rowStack = NSStackView()
+        rowStack.translatesAutoresizingMaskIntoConstraints = false
+        rowStack.orientation = .vertical
+        rowStack.alignment = .leading
+        rowStack.spacing = 4
+
+        let titleLabel = NSTextField(labelWithString: group.displayTitle)
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        titleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
+        titleLabel.textColor = .labelColor
+        titleLabel.lineBreakMode = .byWordWrapping
+        titleLabel.maximumNumberOfLines = 2
+
+        let itemCount = group.itemIDs.count
+        let metadataLabel = NSTextField(
+            labelWithString: "\(itemCount) item\(itemCount == 1 ? "" : "s")"
+        )
+        metadataLabel.translatesAutoresizingMaskIntoConstraints = false
+        metadataLabel.font = .systemFont(ofSize: 11)
+        metadataLabel.textColor = .secondaryLabelColor
+
+        rowStack.addArrangedSubview(titleLabel)
+        rowStack.addArrangedSubview(metadataLabel)
+
+        let descriptionText = group.description
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if descriptionText.isEmpty == false {
+            let descriptionLabel = NSTextField(labelWithString: descriptionText)
+            descriptionLabel.translatesAutoresizingMaskIntoConstraints = false
+            descriptionLabel.font = .systemFont(ofSize: 12)
+            descriptionLabel.textColor = .secondaryLabelColor
+            descriptionLabel.lineBreakMode = .byWordWrapping
+            descriptionLabel.maximumNumberOfLines = 3
+            rowStack.addArrangedSubview(descriptionLabel)
+        }
+
+        container.addSubview(rowStack)
+        NSLayoutConstraint.activate([
+            rowStack.topAnchor.constraint(equalTo: container.topAnchor, constant: 10),
+            rowStack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 10),
+            rowStack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -10),
+            rowStack.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -10)
+        ])
+
+        PlatformLayerAppearance.performWithoutAnimations {
+            container.layer?.backgroundColor = PlatformLayerAppearance.resolvedCGColor(
+                NSColor.tertiaryLabelColor.withAlphaComponent(0.10),
+                for: effectiveAppearance
+            )
+        }
+
+        return container
     }
 }
 #endif
