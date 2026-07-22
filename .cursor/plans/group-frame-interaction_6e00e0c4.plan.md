@@ -19,7 +19,7 @@ todos:
     status: completed
   - id: membership-reconcile
     content: 实现 group frame 与 itemIDs 的自动归组重算
-    status: pending
+    status: completed
   - id: history-autosave
     content: 统一 group 拖拽/缩放/membership 的 history 与 autosave 提交
     status: pending

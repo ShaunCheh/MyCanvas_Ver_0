@@ -697,6 +697,7 @@ Write here.
         groups.append(group)
         if let frame {
             expandBoardIfNeeded(toInclude: frame)
+            _ = reconcileItemMembership(forGroupID: group.id)
         }
 
         if let beforeSnapshot {
@@ -707,7 +708,7 @@ Write here.
             )
         }
 
-        return group
+        return self.group(withID: group.id) ?? group
     }
 
     @discardableResult
@@ -812,6 +813,7 @@ Write here.
         let beforeSnapshot = recordHistory ? currentBoardHistorySnapshot() : nil
         groups[groupIndex].frame = standardizedFrame
         expandBoardIfNeeded(toInclude: standardizedFrame)
+        _ = reconcileItemMembership(forGroupID: groupID)
 
         if let beforeSnapshot {
             _ = recordImmediateHistoryChange(
@@ -822,6 +824,58 @@ Write here.
         }
 
         return true
+    }
+
+    @discardableResult
+    func reconcileItemMembership(forGroupID groupID: CanvasItemGroupID) -> Bool {
+        guard
+            let groupIndex = groups.firstIndex(where: { $0.id == groupID }),
+            let rawFrame = groups[groupIndex].frame
+        else {
+            return false
+        }
+
+        let frame = rawFrame.standardized
+        guard frame.isNull == false,
+              frame.isInfinite == false,
+              frame.width > 0,
+              frame.height > 0
+        else {
+            return false
+        }
+
+        let memberIDs = scene.orderedBoardItems().compactMap { item -> CanvasItemID? in
+            let bounds = item.worldBounds.standardized
+            guard bounds.isNull == false,
+                  bounds.isInfinite == false,
+                  bounds.width > 0,
+                  bounds.height > 0
+            else {
+                return nil
+            }
+
+            let center = CGPoint(x: bounds.midX, y: bounds.midY)
+            return frame.contains(center) ? item.id : nil
+        }
+
+        guard groups[groupIndex].itemIDs != memberIDs else {
+            return false
+        }
+
+        groups[groupIndex].itemIDs = memberIDs
+        return true
+    }
+
+    @discardableResult
+    func reconcileFrameGroupMemberships() -> Bool {
+        let groupIDs = groups.compactMap { group in
+            group.frame == nil ? nil : group.id
+        }
+        var didChange = false
+        for groupID in groupIDs {
+            didChange = reconcileItemMembership(forGroupID: groupID) || didChange
+        }
+        return didChange
     }
 
     func canBeginTextEdit(withID itemID: CanvasItemID) -> Bool {

@@ -6204,6 +6204,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     private func commitPendingPointerHistoryTransaction(
         autosaveReason: String
     ) {
+        _ = editorSession.reconcileFrameGroupMemberships()
         guard editorSession.commitPendingHistoryTransaction(
             autosaveReason: autosaveReason
         ) else {

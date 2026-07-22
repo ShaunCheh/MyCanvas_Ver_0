@@ -5850,6 +5850,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     private func commitPendingPointerHistoryTransaction(
         autosaveReason: String
     ) {
+        _ = editorSession.reconcileFrameGroupMemberships()
         guard editorSession.commitPendingHistoryTransaction(
             autosaveReason: autosaveReason
         ) else {
