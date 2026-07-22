@@ -6,6 +6,7 @@ enum CanvasCommandID: String {
     case addMarkdownItem
     case addHandDrawingItem
     case addArrowItem
+    case addGroup
     case beginTextEdit
     case commitTextEdit
     case decreaseTextFontSize
@@ -38,6 +39,7 @@ enum CanvasCommandID: String {
              .addMarkdownItem,
              .addHandDrawingItem,
              .addArrowItem,
+             .addGroup,
              .beginTextEdit,
              .commitTextEdit,
              .decreaseTextFontSize,
@@ -72,6 +74,7 @@ enum CanvasCommand {
     case addMarkdownItem(markdownSource: String?)
     case addHandDrawingItem(paper: CanvasHandDrawingPaperSpec)
     case addArrowItem
+    case addGroup
     case beginTextEdit(itemID: CanvasItemID)
     case commitTextEdit
     case decreaseTextFontSize
@@ -118,6 +121,8 @@ enum CanvasCommand {
             return .addHandDrawingItem
         case .addArrowItem:
             return .addArrowItem
+        case .addGroup:
+            return .addGroup
         case .beginTextEdit:
             return .beginTextEdit
         case .commitTextEdit:
@@ -199,6 +204,7 @@ enum CanvasCommand {
              .addMarkdownItem,
              .addHandDrawingItem,
              .addArrowItem,
+             .addGroup,
              .beginTextEdit,
              .beginMarkdownEdit,
              .crop,
@@ -233,6 +239,7 @@ enum CanvasCommand {
              .addMarkdownItem,
              .addHandDrawingItem,
              .addArrowItem,
+             .addGroup,
              .beginTextEdit,
              .commitTextEdit,
              .decreaseTextFontSize,

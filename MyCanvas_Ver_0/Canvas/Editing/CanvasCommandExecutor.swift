@@ -27,6 +27,8 @@ final class CanvasCommandExecutor {
             return session.canAddHandDrawingItem
         case .addArrowItem:
             return session.canAddArrowItem
+        case .addGroup:
+            return session.canAddGroup
         case let .beginTextEdit(itemID):
             return session.canBeginTextEdit(withID: itemID)
         case let .beginMarkdownEdit(itemID):
@@ -150,6 +152,14 @@ final class CanvasCommandExecutor {
 
             return CanvasCommandExecutionResult(
                 refreshReason: "add arrow item \(addedArrowItem.id.uuidString)"
+            )
+        case .addGroup:
+            guard let addedGroup = session.addGroup() else {
+                return nil
+            }
+
+            return CanvasCommandExecutionResult(
+                refreshReason: "add group \(addedGroup.id.uuidString)"
             )
         case let .beginTextEdit(itemID):
             guard session.beginTextEdit(withID: itemID) else {

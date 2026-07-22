@@ -322,6 +322,11 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         button.translatesAutoresizingMaskIntoConstraints = false
         return button
     }()
+    private let groupButton: NSButton = {
+        let button = NSButton()
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }()
     private let undoButton: NSButton = {
         let button = NSButton()
         button.translatesAutoresizingMaskIntoConstraints = false
@@ -344,6 +349,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             .markdown: markdownButton,
             .handDrawing: handDrawingButton,
             .arrow: arrowButton,
+            .group: groupButton,
             .importMedia: importButton
         ]
     }
@@ -889,6 +895,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             }
         case .addArrowItem:
             performCommand(.addArrowItem)
+        case .addGroup:
+            performCommand(.addGroup)
         case .beginTextEdit:
             if let selectedItemID = interactionState.selectedItemID {
                 performCommand(.beginTextEdit(itemID: selectedItemID))
@@ -1095,6 +1103,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         setupMarkdownButton()
         setupHandDrawingButton()
         setupArrowButton()
+        setupGroupButton()
         setupUndoButton()
         setupRedoButton()
         setupBackButton()
@@ -1702,6 +1711,12 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     private func setupArrowButton() {
         arrowButton.target = self
         arrowButton.action = #selector(handleArrowButtonClick)
+        renderToolbar()
+    }
+
+    private func setupGroupButton() {
+        groupButton.target = self
+        groupButton.action = #selector(handleGroupButtonClick)
         renderToolbar()
     }
 
@@ -2694,6 +2709,11 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     @objc
     private func handleArrowButtonClick() {
         performCommand(.addArrowItem)
+    }
+
+    @objc
+    private func handleGroupButtonClick() {
+        performCommand(.addGroup)
     }
 
     @objc

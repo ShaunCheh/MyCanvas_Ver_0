@@ -41,6 +41,7 @@ Write here.
     // New markdown items still bootstrap from a fixed world-space layout width.
     private static let defaultMarkdownMaxLayoutWidth: CGFloat = 320
     private static let defaultArrowSize = CGSize(width: 220, height: 80)
+    private static let defaultGroupFrameSize = CGSize(width: 360, height: 240)
 
     let scene = CanvasScene()
     var groups: [CanvasItemGroup] = []
@@ -161,6 +162,10 @@ Write here.
     }
 
     var canAddArrowItem: Bool {
+        inlineEditState == nil
+    }
+
+    var canAddGroup: Bool {
         inlineEditState == nil
     }
 
@@ -352,6 +357,7 @@ Write here.
     func makeCanvasSnapshot() -> CanvasRenderSnapshot {
         let snapshot = renderer.makeSnapshot(
             scene: scene,
+            groups: groups,
             boardState: boardState,
             camera: camera,
             interactionState: presentationInteractionState,
@@ -629,6 +635,7 @@ Write here.
         title: String? = nil,
         description: String = "",
         itemIDs: [CanvasItemID] = [],
+        frame: CGRect? = nil,
         recordHistory: Bool = false
     ) -> CanvasItemGroup {
         let beforeSnapshot = recordHistory ? currentBoardHistorySnapshot() : nil
@@ -636,9 +643,13 @@ Write here.
         let group = CanvasItemGroup(
             title: title ?? "group \(nextGroupIndex)",
             description: description,
-            itemIDs: itemIDs
+            itemIDs: itemIDs,
+            frame: frame
         )
         groups.append(group)
+        if let frame {
+            expandBoardIfNeeded(toInclude: frame)
+        }
 
         if let beforeSnapshot {
             _ = recordImmediateHistoryChange(
@@ -649,6 +660,24 @@ Write here.
         }
 
         return group
+    }
+
+    @discardableResult
+    func addGroup() -> CanvasItemGroup? {
+        guard canAddGroup else {
+            return nil
+        }
+
+        let frame = CGRect(
+            x: camera.center.x - Self.defaultGroupFrameSize.width / 2,
+            y: camera.center.y - Self.defaultGroupFrameSize.height / 2,
+            width: Self.defaultGroupFrameSize.width,
+            height: Self.defaultGroupFrameSize.height
+        )
+        return appendGroup(
+            frame: frame,
+            recordHistory: true
+        )
     }
 
     func canBeginTextEdit(withID itemID: CanvasItemID) -> Bool {

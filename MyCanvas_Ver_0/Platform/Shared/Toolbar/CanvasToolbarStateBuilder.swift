@@ -47,6 +47,7 @@ struct CanvasToolbarStateBuilder {
             itemStates.append(handDrawingItemState(session: session))
         }
         itemStates.append(arrowItemState(session: session))
+        itemStates.append(groupItemState(session: session))
         itemStates.append(importItemState(isEnabled: isImportEnabled))
 
         return CanvasToolbarState(
@@ -222,6 +223,21 @@ struct CanvasToolbarStateBuilder {
             isEnabled: descriptor.isEnabled,
             isActive: descriptor.isActive,
             accessibilityLabel: "Add arrow",
+            visualRole: .accent
+        )
+    }
+
+    func groupItemState(session: CanvasEditorSession) -> CanvasToolbarItemState {
+        let descriptor = commandCatalog.descriptor(
+            for: .addGroup,
+            session: session
+        )
+        return CanvasToolbarItemState(
+            id: .group,
+            systemImageName: descriptor.systemImageName,
+            isEnabled: descriptor.isEnabled,
+            isActive: descriptor.isActive,
+            accessibilityLabel: "Add group",
             visualRole: .accent
         )
     }

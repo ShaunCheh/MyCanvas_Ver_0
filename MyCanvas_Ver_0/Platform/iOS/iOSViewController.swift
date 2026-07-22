@@ -340,6 +340,11 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         button.translatesAutoresizingMaskIntoConstraints = false
         return button
     }()
+    private let groupButton: UIButton = {
+        let button = UIButton(type: .system)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }()
     private let undoButton: UIButton = {
         let button = UIButton(type: .system)
         button.translatesAutoresizingMaskIntoConstraints = false
@@ -362,6 +367,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             .markdown: markdownButton,
             .handDrawing: handDrawingButton,
             .arrow: arrowButton,
+            .group: groupButton,
             .importMedia: importButton
         ]
     }
@@ -998,6 +1004,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         setupMarkdownButton()
         setupHandDrawingButton()
         setupArrowButton()
+        setupGroupButton()
         setupUndoButton()
         setupRedoButton()
         setupBackButton()
@@ -1447,6 +1454,15 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         arrowButton.addTarget(
             self,
             action: #selector(handleArrowButtonTap),
+            for: .touchUpInside
+        )
+        renderToolbar()
+    }
+
+    private func setupGroupButton() {
+        groupButton.addTarget(
+            self,
+            action: #selector(handleGroupButtonTap),
             for: .touchUpInside
         )
         renderToolbar()
@@ -2593,6 +2609,11 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     @objc
     private func handleArrowButtonTap() {
         performCommand(.addArrowItem)
+    }
+
+    @objc
+    private func handleGroupButtonTap() {
+        performCommand(.addGroup)
     }
 
     @objc

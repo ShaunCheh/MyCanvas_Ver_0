@@ -50,6 +50,14 @@ struct CanvasCommandCatalog {
                 isEnabled: session.canAddArrowItem,
                 isActive: false
             )
+        case .addGroup:
+            descriptor = CanvasCommandDescriptor(
+                id: .addGroup,
+                title: "Add Group",
+                systemImageName: "rectangle.dashed",
+                isEnabled: session.canAddGroup,
+                isActive: false
+            )
         case .beginTextEdit:
             let resolvedTargetItemID = singleEffectiveItemID(
                 in: context,

@@ -20,6 +20,7 @@ struct CanvasRenderer {
 
     func makeSnapshot(
         scene: CanvasScene,
+        groups: [CanvasItemGroup] = [],
         boardState: CanvasBoardState? = nil,
         camera: CanvasCamera,
         interactionState: CanvasInteractionState = CanvasInteractionState(),
@@ -43,6 +44,14 @@ struct CanvasRenderer {
                 camera: camera,
                 inlineEditState: inlineEditState,
                 rotationPreviewState: rotationPreviewState
+            )
+        }
+
+        let renderGroups = groups.compactMap { group in
+            makeGroupRenderItem(
+                for: group,
+                visibleWorldRect: visibleWorldRect,
+                camera: camera
             )
         }
 
@@ -91,10 +100,37 @@ struct CanvasRenderer {
             viewportBounds: camera.viewportBounds,
             visibleWorldRect: visibleWorldRect,
             workspaceOverlay: workspaceOverlay,
+            groups: renderGroups,
             items: renderItems,
             selectionHighlights: selectionHighlights,
             editOverlay: editOverlay,
             interactionOverlay: interactionOverlay
+        )
+    }
+
+    private func makeGroupRenderItem(
+        for group: CanvasItemGroup,
+        visibleWorldRect: CGRect,
+        camera: CanvasCamera
+    ) -> CanvasGroupRenderItem? {
+        guard let rawFrame = group.frame else {
+            return nil
+        }
+
+        let worldFrame = rawFrame.standardized
+        guard worldFrame.isNull == false,
+              worldFrame.isInfinite == false,
+              worldFrame.width > 0,
+              worldFrame.height > 0,
+              worldFrame.intersects(visibleWorldRect)
+        else {
+            return nil
+        }
+
+        return CanvasGroupRenderItem(
+            id: group.id,
+            screenFrame: camera.worldToViewport(worldFrame).standardized,
+            worldFrame: worldFrame
         )
     }
 

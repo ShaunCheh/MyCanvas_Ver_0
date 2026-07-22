@@ -70,6 +70,12 @@ struct CanvasRenderItem {
     let payload: CanvasRenderPayload
 }
 
+struct CanvasGroupRenderItem {
+    let id: CanvasItemGroupID
+    let screenFrame: CGRect
+    let worldFrame: CGRect
+}
+
 // Workspace chrome is now the shared source of truth for board surface and
 // background grid geometry across macOS and iOS viewports.
 struct CanvasWorkspaceGridLineSegment {
@@ -398,6 +404,7 @@ struct CanvasRenderSnapshot {
     let viewportBounds: CGRect
     let visibleWorldRect: CGRect
     let workspaceOverlay: CanvasWorkspaceRenderOverlay?
+    let groups: [CanvasGroupRenderItem]
     let items: [CanvasRenderItem]
     let selectionHighlights: [CanvasSelectionHighlight]
     let editOverlay: CanvasEditRenderOverlay?
@@ -407,6 +414,7 @@ struct CanvasRenderSnapshot {
         viewportBounds: .zero,
         visibleWorldRect: .zero,
         workspaceOverlay: nil,
+        groups: [],
         items: [],
         selectionHighlights: [],
         editOverlay: nil,

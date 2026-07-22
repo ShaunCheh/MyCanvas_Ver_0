@@ -90,17 +90,20 @@ struct CanvasItemGroup: Equatable, Hashable, Sendable {
     var title: String
     var description: String
     var itemIDs: [CanvasItemID]
+    var frame: CGRect?
 
     init(
         id: CanvasItemGroupID = UUID(),
         title: String,
         description: String = "",
-        itemIDs: [CanvasItemID]
+        itemIDs: [CanvasItemID],
+        frame: CGRect? = nil
     ) {
         self.id = id
         self.title = title
         self.description = description
         self.itemIDs = Self.normalizedItemIDs(itemIDs)
+        self.frame = frame?.standardized
     }
 
     var displayTitle: String {
@@ -120,9 +123,9 @@ struct CanvasItemGroup: Equatable, Hashable, Sendable {
 
 struct BoardDocument: Codable {
     // Board schema now evolves independently from image asset internals.
-    // Format version 12 adds board-level item groups with descriptions so
-    // semantic relationships can be stored independently from individual items.
-    static let currentFormatVersion = 12
+    // Format version 13 lets groups carry an optional canvas-space frame so
+    // semantic groups can also have a persisted visual background.
+    static let currentFormatVersion = 13
     static let defaultTitle = "Untitled Board"
 
     let formatVersion: Int
@@ -463,17 +466,20 @@ struct BoardGroupRecord: Codable, Equatable {
     var title: String
     var description: String
     var itemIDs: [UUID]
+    var frame: BoardRectRecord?
 
     init(
         id: UUID,
         title: String,
         description: String,
-        itemIDs: [UUID]
+        itemIDs: [UUID],
+        frame: BoardRectRecord? = nil
     ) {
         self.id = id
         self.title = title
         self.description = description
         self.itemIDs = Self.normalizedItemIDs(itemIDs)
+        self.frame = frame
     }
 
     private static func normalizedItemIDs(_ itemIDs: [UUID]) -> [UUID] {

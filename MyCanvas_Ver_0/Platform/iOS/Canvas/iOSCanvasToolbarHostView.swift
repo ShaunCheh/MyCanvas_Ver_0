@@ -610,7 +610,7 @@ final class iOSCanvasToolbarHostView: UIView, UIScrollViewDelegate {
             return UIImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
         case .importMedia:
             return UIImage.SymbolConfiguration(pointSize: 20, weight: .bold)
-        case .crop, .multiSelect, .deleteSelection, .text, .markdown, .handDrawing, .arrow:
+        case .crop, .multiSelect, .deleteSelection, .text, .markdown, .handDrawing, .arrow, .group:
             return UIImage.SymbolConfiguration(pointSize: 17, weight: .semibold)
         }
     }

@@ -8,6 +8,9 @@ final class macOSCanvasViewportView: NSView {
     private static let workspaceMinorGridLineWidth: CGFloat = 1
     private static let workspaceMajorGridLineWidth: CGFloat = 1
     private static let boardSurfaceFillColor = CanvasWorkspacePalette.boardSurfaceFillColor
+    private static let groupFrameFillColor = CGColor(gray: 0.55, alpha: 0.18)
+    private static let groupFrameStrokeColor = CGColor(gray: 0.45, alpha: 0.32)
+    private static let groupFrameCornerRadius: CGFloat = 14
     private static let selectionStrokeColor = CGColor(
         red: 0,
         green: 122.0 / 255.0,
@@ -56,6 +59,7 @@ final class macOSCanvasViewportView: NSView {
     private let workspaceMinorGridLayer = CAShapeLayer()
     private let workspaceMajorGridLayer = CAShapeLayer()
     private let boardSurfaceLayer = CAShapeLayer()
+    private let groupFramesLayer = CALayer()
     private let itemsLayer = CALayer()
     private let overlayLayer = CALayer()
     private let selectionHighlightsLayer = CAShapeLayer()
@@ -79,6 +83,7 @@ final class macOSCanvasViewportView: NSView {
     private var textLayers: [CanvasItemID: CanvasTextLayer] = [:]
     private var markdownLayers: [CanvasItemID: CanvasMarkdownItemLayer] = [:]
     private var arrowLayers: [CanvasItemID: CanvasArrowLayer] = [:]
+    private var groupFrameLayers: [CanvasItemGroupID: CAShapeLayer] = [:]
     private var lastReportedViewportSize: CGSize?
     private var snapshot: CanvasRenderSnapshot = .empty
     private var lastPrimaryPointerLocation: CGPoint?
@@ -161,6 +166,7 @@ final class macOSCanvasViewportView: NSView {
         #endif
         updateBackgroundAppearance()
         performWithoutLayerActions {
+            refreshGroupFrameLayers()
             refreshItemLayers()
             refreshWorkspaceChrome()
             refreshEditOverlay()
@@ -181,6 +187,7 @@ final class macOSCanvasViewportView: NSView {
         )
         performWithoutLayerActions {
             updateLayerFrames()
+            refreshGroupFrameLayers()
             refreshItemLayers()
             refreshWorkspaceChrome()
             refreshEditOverlay()
@@ -195,6 +202,7 @@ final class macOSCanvasViewportView: NSView {
         workspaceGridLayer.addSublayer(workspaceMinorGridLayer)
         workspaceGridLayer.addSublayer(workspaceMajorGridLayer)
         layer?.addSublayer(boardSurfaceLayer)
+        layer?.addSublayer(groupFramesLayer)
         layer?.addSublayer(itemsLayer)
         layer?.addSublayer(overlayLayer)
         overlayLayer.addSublayer(selectionHighlightsLayer)
@@ -253,6 +261,10 @@ final class macOSCanvasViewportView: NSView {
             boardSurfaceLayer.frame = bounds
         }
 
+        if groupFramesLayer.frame != bounds {
+            groupFramesLayer.frame = bounds
+        }
+
         if itemsLayer.frame != bounds {
             itemsLayer.frame = bounds
         }
@@ -298,6 +310,48 @@ final class macOSCanvasViewportView: NSView {
 
     private func updateBackgroundAppearance() {
         backgroundLayer.backgroundColor = Self.workspaceBackgroundColor
+    }
+
+    private func refreshGroupFrameLayers() {
+        let incomingGroupIDs = Set(snapshot.groups.map(\.id))
+        let existingGroupIDs = Set(groupFrameLayers.keys)
+
+        for removedID in existingGroupIDs.subtracting(incomingGroupIDs) {
+            groupFrameLayers[removedID]?.removeFromSuperlayer()
+            groupFrameLayers[removedID] = nil
+        }
+
+        let contentsScale = window?.backingScaleFactor
+            ?? NSScreen.main?.backingScaleFactor
+            ?? 2
+        for group in snapshot.groups {
+            let layer = groupFrameLayer(for: group.id)
+            layer.frame = group.screenFrame
+            layer.path = CGPath(
+                roundedRect: CGRect(origin: .zero, size: group.screenFrame.size),
+                cornerWidth: Self.groupFrameCornerRadius,
+                cornerHeight: Self.groupFrameCornerRadius,
+                transform: nil
+            )
+            layer.lineWidth = 1 / max(contentsScale, 1)
+            layer.contentsScale = contentsScale
+        }
+    }
+
+    private func groupFrameLayer(
+        for groupID: CanvasItemGroupID
+    ) -> CAShapeLayer {
+        if let layer = groupFrameLayers[groupID] {
+            return layer
+        }
+
+        let layer = CAShapeLayer()
+        layer.fillColor = Self.groupFrameFillColor
+        layer.strokeColor = Self.groupFrameStrokeColor
+        layer.lineJoin = .round
+        groupFramesLayer.addSublayer(layer)
+        groupFrameLayers[groupID] = layer
+        return layer
     }
 
     private func refreshItemLayers() {

@@ -85,6 +85,8 @@ struct CanvasContextMenuActionResolver {
             return .addHandDrawingItem(paper: .square)
         case .addArrowItem:
             return .addArrowItem
+        case .addGroup:
+            return .addGroup
         case .beginTextEdit:
             guard let itemID = context.singleEffectiveItemID else {
                 return nil

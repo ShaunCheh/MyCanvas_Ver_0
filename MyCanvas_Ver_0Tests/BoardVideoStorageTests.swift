@@ -84,12 +84,14 @@ final class BoardVideoStorageTests: XCTestCase {
             item: item
         )
         let groupID = UUID()
+        let groupFrame = CGRect(x: -120, y: 80, width: 360, height: 240)
         runtimeState.groups = [
             CanvasItemGroup(
                 id: groupID,
                 title: "Question Evidence",
                 description: "Image answers the markdown question.",
-                itemIDs: [itemID]
+                itemIDs: [itemID],
+                frame: groupFrame
             )
         ]
 
@@ -100,6 +102,7 @@ final class BoardVideoStorageTests: XCTestCase {
         XCTAssertEqual(groupRecord.title, "Question Evidence")
         XCTAssertEqual(groupRecord.description, "Image answers the markdown question.")
         XCTAssertEqual(groupRecord.itemIDs, [itemID])
+        XCTAssertEqual(groupRecord.frame?.cgRect, groupFrame)
 
         let roundTrippedState = try BoardDocumentMapper.makeRuntimeState(
             from: document,
@@ -113,6 +116,7 @@ final class BoardVideoStorageTests: XCTestCase {
         XCTAssertEqual(roundTrippedGroup.title, "Question Evidence")
         XCTAssertEqual(roundTrippedGroup.description, "Image answers the markdown question.")
         XCTAssertEqual(roundTrippedGroup.itemIDs, [itemID])
+        XCTAssertEqual(roundTrippedGroup.frame, groupFrame)
     }
 
     func testBoardStoreSaveLoadAndCleanupPreservesVideoPosterAndSourceAssets() throws {
