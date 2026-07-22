@@ -3,7 +3,7 @@ import AppKit
 import QuartzCore
 
 enum macOSCanvasToolbarChromeMetrics {
-    static let scale: CGFloat = 0.8
+    static let scale: CGFloat = 0.5
     static let spacing = CanvasToolbarChromeMetrics.spacing * scale
     static let horizontalInset = CanvasToolbarChromeMetrics.horizontalInset * scale
     static let verticalInset = CanvasToolbarChromeMetrics.verticalInset * scale
