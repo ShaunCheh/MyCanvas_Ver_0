@@ -6,6 +6,7 @@ struct BoardHistorySnapshot {
     var groups: [CanvasItemGroup] = []
     var boardState: CanvasBoardState?
     var interactionState: CanvasInteractionState
+    var groupInteractionState: CanvasGroupInteractionState = CanvasGroupInteractionState()
 }
 
 extension BoardHistorySnapshot: Equatable {
@@ -13,7 +14,8 @@ extension BoardHistorySnapshot: Equatable {
         itemsMatch(lhs.items, rhs.items) &&
         lhs.groups == rhs.groups &&
         boardStatesMatch(lhs.boardState, rhs.boardState) &&
-        lhs.interactionState == rhs.interactionState
+            lhs.interactionState == rhs.interactionState &&
+            lhs.groupInteractionState == rhs.groupInteractionState
     }
 
     private static func itemsMatch(
@@ -70,7 +72,8 @@ extension BoardRuntimeState {
             items: items,
             groups: groups,
             boardState: boardState,
-            interactionState: interactionState
+            interactionState: interactionState,
+            groupInteractionState: CanvasGroupInteractionState()
         )
     }
 

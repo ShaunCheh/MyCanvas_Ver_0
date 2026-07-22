@@ -17,6 +17,14 @@ struct CanvasVideoPosterUpdateResult {
     let refreshReason: String
 }
 
+struct CanvasGroupInteractionState: Equatable {
+    var selectedGroupID: CanvasItemGroupID?
+
+    init(selectedGroupID: CanvasItemGroupID? = nil) {
+        self.selectedGroupID = selectedGroupID
+    }
+}
+
 private struct CanvasPreparedImportItem {
     let asset: CanvasImageAsset
     let transientPayload: CanvasTransientImageAssetPayload?
@@ -48,6 +56,7 @@ Write here.
     var camera = CanvasCamera()
     var boardState: CanvasBoardState?
     var interactionState = CanvasInteractionState()
+    var groupInteractionState = CanvasGroupInteractionState()
     var workspaceMode: CanvasWorkspaceMode = .editing
     var inlineEditState: CanvasInlineEditState?
     var rotationPreviewState: CanvasRotationPreviewState?
@@ -169,6 +178,18 @@ Write here.
         inlineEditState == nil
     }
 
+    var selectedGroupID: CanvasItemGroupID? {
+        groupInteractionState.selectedGroupID
+    }
+
+    var hasGroupSelection: Bool {
+        selectedGroupID != nil
+    }
+
+    var selectedGroup: CanvasItemGroup? {
+        selectedGroupID.flatMap(group(withID:))
+    }
+
     var hasSelection: Bool {
         interactionState.hasSelection
     }
@@ -187,6 +208,22 @@ Write here.
 
     var singleSelectedItemID: CanvasItemID? {
         interactionState.singleSelectedItemID
+    }
+
+    func group(withID groupID: CanvasItemGroupID) -> CanvasItemGroup? {
+        groups.first(where: { $0.id == groupID })
+    }
+
+    func groupFrame(withID groupID: CanvasItemGroupID) -> CGRect? {
+        group(withID: groupID)?.frame
+    }
+
+    func canSelectGroup(withID groupID: CanvasItemGroupID) -> Bool {
+        inlineEditState == nil && group(withID: groupID) != nil
+    }
+
+    func canUpdateGroupFrame(withID groupID: CanvasItemGroupID) -> Bool {
+        inlineEditState == nil && group(withID: groupID) != nil
     }
 
     var canBeginCropMode: Bool {
@@ -234,7 +271,7 @@ Write here.
     }
 
     var canClearSelection: Bool {
-        hasSelection
+        hasSelection || hasGroupSelection
     }
 
     var canDeleteSelection: Bool {
@@ -523,6 +560,7 @@ Write here.
         boardState = runtimeState.boardState
         camera = runtimeState.camera
         interactionState = runtimeState.interactionState
+        groupInteractionState = CanvasGroupInteractionState()
         workspaceMode = runtimeState.workspaceMode
         inlineEditState = nil
         rotationPreviewState = nil
@@ -540,7 +578,10 @@ Write here.
             items: scene.orderedBoardItems(),
             groups: groups,
             boardState: boardState,
-            interactionState: interactionState
+            interactionState: interactionState,
+            groupInteractionState: normalizedGroupInteractionState(
+                groupInteractionState
+            )
         )
     }
 
@@ -550,11 +591,17 @@ Write here.
                 runtimeState.replacingDocumentState(with: snapshot),
                 preserveTransientImageAssetPayloads: true
             )
+            groupInteractionState = normalizedGroupInteractionState(
+                snapshot.groupInteractionState
+            )
         } else {
             scene.setItems(snapshot.items)
             groups = snapshot.groups
             boardState = snapshot.boardState
             interactionState = snapshot.interactionState
+            groupInteractionState = normalizedGroupInteractionState(
+                snapshot.groupInteractionState
+            )
             inlineEditState = nil
             rotationPreviewState = nil
             rotationInteractionState = nil
@@ -678,6 +725,102 @@ Write here.
             frame: frame,
             recordHistory: true
         )
+    }
+
+    @discardableResult
+    func selectGroup(
+        withID groupID: CanvasItemGroupID,
+        recordHistory: Bool = false
+    ) -> Bool {
+        guard canSelectGroup(withID: groupID) else {
+            return false
+        }
+
+        let nextGroupInteractionState = CanvasGroupInteractionState(
+            selectedGroupID: groupID
+        )
+        guard groupInteractionState != nextGroupInteractionState || hasSelection else {
+            return false
+        }
+
+        let beforeSnapshot = recordHistory ? currentBoardHistorySnapshot() : nil
+        groupInteractionState = nextGroupInteractionState
+        applySelectionState(
+            CanvasNormalizedSelectionState(
+                selectedItemIDs: [],
+                primarySelectedItemID: nil
+            ),
+            clearsGroupSelection: false
+        )
+
+        if let beforeSnapshot {
+            _ = recordImmediateHistoryChange(
+                from: beforeSnapshot,
+                reason: "select group"
+            )
+        }
+
+        return true
+    }
+
+    @discardableResult
+    func clearGroupSelection(recordHistory: Bool = false) -> Bool {
+        guard groupInteractionState.selectedGroupID != nil else {
+            return false
+        }
+
+        let beforeSnapshot = recordHistory ? currentBoardHistorySnapshot() : nil
+        groupInteractionState = CanvasGroupInteractionState()
+
+        if let beforeSnapshot {
+            _ = recordImmediateHistoryChange(
+                from: beforeSnapshot,
+                reason: "clear group selection"
+            )
+        }
+
+        return true
+    }
+
+    @discardableResult
+    func updateGroupFrame(
+        withID groupID: CanvasItemGroupID,
+        to frame: CGRect,
+        recordHistory: Bool = false
+    ) -> Bool {
+        guard
+            canUpdateGroupFrame(withID: groupID),
+            let groupIndex = groups.firstIndex(where: { $0.id == groupID })
+        else {
+            return false
+        }
+
+        let standardizedFrame = frame.standardized
+        guard standardizedFrame.width > 0,
+              standardizedFrame.height > 0,
+              standardizedFrame.isNull == false,
+              standardizedFrame.isInfinite == false
+        else {
+            return false
+        }
+
+        guard groups[groupIndex].frame != standardizedFrame else {
+            return false
+        }
+
+        let beforeSnapshot = recordHistory ? currentBoardHistorySnapshot() : nil
+        groups[groupIndex].frame = standardizedFrame
+        expandBoardIfNeeded(toInclude: standardizedFrame)
+
+        if let beforeSnapshot {
+            _ = recordImmediateHistoryChange(
+                from: beforeSnapshot,
+                reason: "update group frame",
+                autosaveReason: "update group frame"
+            )
+        }
+
+        return true
     }
 
     func canBeginTextEdit(withID itemID: CanvasItemID) -> Bool {
@@ -1489,7 +1632,28 @@ Write here.
 
     @discardableResult
     func clearSelection(recordHistory: Bool = false) -> Bool {
-        replaceSelection(with: [], recordHistory: recordHistory)
+        guard hasSelection || hasGroupSelection else {
+            return false
+        }
+
+        let beforeSnapshot = recordHistory ? currentBoardHistorySnapshot() : nil
+        applySelectionState(
+            CanvasNormalizedSelectionState(
+                selectedItemIDs: [],
+                primarySelectedItemID: nil
+            ),
+            clearsGroupSelection: false
+        )
+        groupInteractionState = CanvasGroupInteractionState()
+
+        if let beforeSnapshot {
+            _ = recordImmediateHistoryChange(
+                from: beforeSnapshot,
+                reason: "clear selection"
+            )
+        }
+
+        return true
     }
 
     @discardableResult
@@ -3114,7 +3278,9 @@ Write here.
             updatedGroup.itemIDs.removeAll { itemID in
                 deletedItemIDs.contains(itemID)
             }
-            return updatedGroup.itemIDs.isEmpty ? nil : updatedGroup
+            return updatedGroup.itemIDs.isEmpty && updatedGroup.frame == nil
+                ? nil
+                : updatedGroup
         }
     }
 
@@ -3140,13 +3306,30 @@ Write here.
         )
     }
 
+    private func normalizedGroupInteractionState(
+        _ groupInteractionState: CanvasGroupInteractionState
+    ) -> CanvasGroupInteractionState {
+        guard
+            let selectedGroupID = groupInteractionState.selectedGroupID,
+            group(withID: selectedGroupID) != nil
+        else {
+            return CanvasGroupInteractionState()
+        }
+
+        return groupInteractionState
+    }
+
     private func applySelectionState(
-        _ selectionState: CanvasNormalizedSelectionState<CanvasItemID>
+        _ selectionState: CanvasNormalizedSelectionState<CanvasItemID>,
+        clearsGroupSelection: Bool = true
     ) {
         interactionState = CanvasInteractionState(
             selectedItemIDs: selectionState.selectedItemIDs,
             primarySelectedItemID: selectionState.primarySelectedItemID
         )
+        if clearsGroupSelection, selectionState.selectedItemIDs.isEmpty == false {
+            groupInteractionState = CanvasGroupInteractionState()
+        }
         syncInlineEditStateWithSelection()
     }
 }
