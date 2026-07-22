@@ -165,6 +165,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     private static let geometryComparisonEpsilon: CGFloat = 0.0001
     private static let markdownScrollHistoryCommitDelay: TimeInterval = 0.25
     private static let continuousRawInputObservationInterval: TimeInterval = 0.32
+    private static let showsMiniMap = false
     private let miniMapLayoutSolver = CanvasOverlayLayoutSolver()
     private let alignmentGuideSolver = CanvasAlignmentGuideSolver()
     var miniMapConfiguration = CanvasMiniMapConfiguration()
@@ -243,7 +244,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     // Keep placement transient until persistence is designed; future UIPanGestureRecognizer
     // bridge code should write drag results back into this value.
     private var transientToolbarPlacement = CanvasToolbarPlacement(
-        preferredEdge: .trailing
+        preferredEdge: .bottom
     ) {
         didSet {
             guard isViewLoaded else {
@@ -1182,7 +1183,11 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     private func resolveMiniMapFrame(
         in layoutContext: CanvasChromeLayoutContext
     ) -> CGRect {
-        miniMapLayoutSolver.resolveMiniMapFrame(
+        guard Self.showsMiniMap else {
+            return .zero
+        }
+
+        return miniMapLayoutSolver.resolveMiniMapFrame(
             safeBounds: layoutContext.safeBounds,
             occupiedRects: layoutContext.occupiedRects,
             configuration: miniMapConfiguration
@@ -2396,6 +2401,11 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     }
 
     private func refreshMiniMap() {
+        guard Self.showsMiniMap else {
+            miniMapView.apply(.empty)
+            return
+        }
+
         let snapshot = editorSession.makeMiniMapSnapshot()
         miniMapView.apply(snapshot)
     }
