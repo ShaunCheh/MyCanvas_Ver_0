@@ -2939,6 +2939,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         runManualToolbarTransition(
             from: sourcePresentation,
             to: targetPresentation,
+            targetStage: targetStage,
             duration: duration
         ) { [weak self] in
             guard let self else {
@@ -2958,6 +2959,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     private func runManualToolbarTransition(
         from sourcePresentation: CanvasToolbarTransitionPresentation,
         to targetPresentation: CanvasToolbarTransitionPresentation,
+        targetStage: CanvasToolbarTransitionStage,
         duration: TimeInterval,
         completion: @escaping () -> Void
     ) {
@@ -2967,6 +2969,19 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         toolbarManualTransitionID = transitionID
         let startTime = CACurrentMediaTime()
         let sanitizedDuration = max(duration, 0)
+        let locksFrameToHorizontalSlide = locksToolbarFrameToHorizontalSlide(
+            for: targetStage
+        )
+        let initialPresentation = initialManualToolbarPresentation(
+            from: sourcePresentation,
+            to: targetPresentation,
+            locksFrameToHorizontalSlide: locksFrameToHorizontalSlide
+        )
+
+        toolbarHostView.renderTransition(
+            initialPresentation,
+            animated: false
+        )
 
         let timer = Timer(
             timeInterval: 1.0 / 60.0,
@@ -2988,9 +3003,10 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
                 : min(max(CGFloat(elapsed / sanitizedDuration), 0), 1)
             let easedProgress = self.easeInOutToolbarProgress(linearProgress)
             let presentation = self.interpolatedToolbarPresentation(
-                from: sourcePresentation,
+                from: initialPresentation,
                 to: targetPresentation,
-                progress: easedProgress
+                progress: easedProgress,
+                locksFrameToHorizontalSlide: locksFrameToHorizontalSlide
             )
 
             self.toolbarHostView.renderTransition(
@@ -3024,17 +3040,49 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         toolbarManualTransitionTimer = nil
     }
 
+    private func locksToolbarFrameToHorizontalSlide(
+        for targetStage: CanvasToolbarTransitionStage
+    ) -> Bool {
+        switch targetStage {
+        case .entering, .exiting:
+            return true
+        case .steadyVisible, .hidden, .collapsing, .expanding:
+            return false
+        }
+    }
+
+    private func initialManualToolbarPresentation(
+        from sourcePresentation: CanvasToolbarTransitionPresentation,
+        to targetPresentation: CanvasToolbarTransitionPresentation,
+        locksFrameToHorizontalSlide: Bool
+    ) -> CanvasToolbarTransitionPresentation {
+        guard locksFrameToHorizontalSlide else {
+            return sourcePresentation
+        }
+
+        var presentation = sourcePresentation
+        presentation.frame = CGRect(
+            x: sourcePresentation.frame.minX,
+            y: targetPresentation.frame.minY,
+            width: targetPresentation.frame.width,
+            height: targetPresentation.frame.height
+        ).standardized
+        return presentation
+    }
+
     private func interpolatedToolbarPresentation(
         from sourcePresentation: CanvasToolbarTransitionPresentation,
         to targetPresentation: CanvasToolbarTransitionPresentation,
-        progress: CGFloat
+        progress: CGFloat,
+        locksFrameToHorizontalSlide: Bool
     ) -> CanvasToolbarTransitionPresentation {
         let t = min(max(progress, 0), 1)
         return CanvasToolbarTransitionPresentation(
             frame: interpolatedToolbarFrame(
                 from: sourcePresentation.frame,
                 to: targetPresentation.frame,
-                progress: t
+                progress: t,
+                locksFrameToHorizontalSlide: locksFrameToHorizontalSlide
             ),
             itemStates: targetPresentation.itemStates,
             showsBackground: targetPresentation.showsBackground,
@@ -3057,9 +3105,23 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     private func interpolatedToolbarFrame(
         from sourceFrame: CGRect,
         to targetFrame: CGRect,
-        progress: CGFloat
+        progress: CGFloat,
+        locksFrameToHorizontalSlide: Bool
     ) -> CGRect {
-        CGRect(
+        if locksFrameToHorizontalSlide {
+            return CGRect(
+                x: interpolatedToolbarValue(
+                    from: sourceFrame.minX,
+                    to: targetFrame.minX,
+                    progress: progress
+                ),
+                y: targetFrame.minY,
+                width: targetFrame.width,
+                height: targetFrame.height
+            ).standardized
+        }
+
+        return CGRect(
             x: interpolatedToolbarValue(
                 from: sourceFrame.minX,
                 to: targetFrame.minX,
