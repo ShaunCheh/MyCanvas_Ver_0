@@ -218,6 +218,16 @@ Write here.
         group(withID: groupID)?.frame
     }
 
+    func groupMemberGeometries(withID groupID: CanvasItemGroupID) -> [CanvasBoardItemGeometry] {
+        guard let group = group(withID: groupID) else {
+            return []
+        }
+
+        return group.itemIDs.compactMap { itemID in
+            scene.boardItem(withID: itemID).map(CanvasBoardItemGeometry.init(item:))
+        }
+    }
+
     func canSelectGroup(withID groupID: CanvasItemGroupID) -> Bool {
         inlineEditState == nil && group(withID: groupID) != nil
     }
@@ -838,6 +848,74 @@ Write here.
         let beforeSnapshot = recordHistory ? currentBoardHistorySnapshot() : nil
         groups[groupIndex].frame = standardizedFrame
         expandBoardIfNeeded(toInclude: standardizedFrame)
+        if reconcileMembership {
+            _ = reconcileItemMembership(forGroupID: groupID)
+        }
+
+        if let beforeSnapshot {
+            _ = recordImmediateHistoryChange(
+                from: beforeSnapshot,
+                reason: "update group frame",
+                autosaveReason: "update group frame"
+            )
+        }
+
+        return true
+    }
+
+    @discardableResult
+    func updateGroupFrameAndMemberGeometries(
+        withID groupID: CanvasItemGroupID,
+        to frame: CGRect,
+        memberGeometries: [CanvasBoardItemGeometry],
+        recordHistory: Bool = false,
+        reconcileMembership: Bool = true
+    ) -> Bool {
+        guard
+            canUpdateGroupFrame(withID: groupID),
+            let groupIndex = groups.firstIndex(where: { $0.id == groupID })
+        else {
+            return false
+        }
+
+        let standardizedFrame = frame.standardized
+        guard standardizedFrame.width > 0,
+              standardizedFrame.height > 0,
+              standardizedFrame.isNull == false,
+              standardizedFrame.isInfinite == false
+        else {
+            return false
+        }
+
+        let existingMemberGeometries = memberGeometries.filter { geometry in
+            scene.boardItem(withID: geometry.itemID) != nil
+        }
+        let didFrameChange = groups[groupIndex].frame != standardizedFrame
+        let didMemberGeometryChange = existingMemberGeometries.contains { geometry in
+            guard let item = scene.boardItem(withID: geometry.itemID) else {
+                return false
+            }
+
+            return CanvasBoardItemGeometry(item: item) != geometry
+        }
+        guard didFrameChange || didMemberGeometryChange || reconcileMembership else {
+            return true
+        }
+
+        let beforeSnapshot = recordHistory ? currentBoardHistorySnapshot() : nil
+        if didMemberGeometryChange {
+            guard let updatedItems = scene.applyBoardItemGeometries(existingMemberGeometries) else {
+                return false
+            }
+            for updatedItem in updatedItems {
+                expandBoardIfNeeded(toInclude: updatedItem.worldBounds)
+            }
+        }
+
+        if didFrameChange {
+            groups[groupIndex].frame = standardizedFrame
+            expandBoardIfNeeded(toInclude: standardizedFrame)
+        }
         if reconcileMembership {
             _ = reconcileItemMembership(forGroupID: groupID)
         }

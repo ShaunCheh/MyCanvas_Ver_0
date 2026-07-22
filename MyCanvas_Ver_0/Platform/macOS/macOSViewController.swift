@@ -46,6 +46,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     private struct PointerGroupDragState {
         let groupID: CanvasItemGroupID
         let initialFrame: CGRect
+        let initialMemberGeometries: [CanvasBoardItemGeometry]
         let dragStartWorldLocation: CGPoint
     }
 
@@ -4954,6 +4955,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         return PointerGroupDragState(
             groupID: groupID,
             initialFrame: initialFrame,
+            initialMemberGeometries: editorSession.groupMemberGeometries(withID: groupID),
             dragStartWorldLocation: camera.viewportToWorld(initialViewportLocation)
         )
     }
@@ -5037,9 +5039,21 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             dx: translation.x,
             dy: translation.y
         )
-        guard editorSession.updateGroupFrame(
+        let proposedMemberGeometries = dragState.initialMemberGeometries.map { geometry in
+            CanvasBoardItemGeometry(
+                itemID: geometry.itemID,
+                center: CGPoint(
+                    x: geometry.center.x + translation.x,
+                    y: geometry.center.y + translation.y
+                ),
+                size: geometry.size,
+                rotationRadians: geometry.rotationRadians
+            )
+        }
+        guard editorSession.updateGroupFrameAndMemberGeometries(
             withID: dragState.groupID,
             to: proposedFrame,
+            memberGeometries: proposedMemberGeometries,
             reconcileMembership: false
         ) else {
             return editorSession.groupFrame(withID: dragState.groupID)

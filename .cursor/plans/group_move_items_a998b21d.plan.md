@@ -4,19 +4,19 @@ overview: 调整 group frame 的两种交互语义：拖动 group 本体时移�
 todos:
   - id: shared-move-api
     content: 在 CanvasEditorSession 增加同步移动 group frame 和成员 item 的共享 API
-    status: pending
+    status: completed
   - id: ios-group-move
     content: iOS group drag state 保存成员几何并调用共享移动 API
-    status: pending
+    status: completed
   - id: macos-group-move
     content: macOS group drag state 保存成员几何并调用共享移动 API
-    status: pending
+    status: completed
   - id: resize-unchanged
     content: 确认 group resize 路径保持只改 frame 不动 item
-    status: pending
+    status: completed
   - id: validate-builds
     content: 运行 lints 和 iOS/macOS build 验证
-    status: pending
+    status: completed
 isProject: false
 ---
 
