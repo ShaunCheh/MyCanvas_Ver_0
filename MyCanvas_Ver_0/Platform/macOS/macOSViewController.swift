@@ -49,6 +49,15 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         let dragStartWorldLocation: CGPoint
     }
 
+    private struct PointerGroupResizeState {
+        let groupID: CanvasItemGroupID
+        let handleRole: CanvasSelectionHandleRole
+        let initialFrame: CGRect
+        let initialDraggedAnchor: CGPoint
+        let dragStartWorldLocation: CGPoint
+        let minimumSize: CGSize
+    }
+
     private enum PointerDragState {
         case idle
         case pressed(
@@ -63,6 +72,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         case draggingSelectedItem(CanvasSelectedItemDragState)
         case draggingSelection(CanvasSelectionDragState)
         case draggingGroupFrame(PointerGroupDragState)
+        case resizingGroupFrame(PointerGroupResizeState)
         case resizingSelectedItem(PointerResizeState)
         case adjustingArrowEndpoint(CanvasArrowEndpointDragState)
         case resizingSelection(CanvasSelectionResizeState)
@@ -139,6 +149,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     private static let selectionHandleHitTargetSize: CGFloat = 18
     private static let selectionOutlineHitTargetWidth: CGFloat = 14
     private static let minimumResizeViewportDimension: CGFloat = 20
+    private static let minimumGroupFrameSize = CGSize(width: 80, height: 60)
     private static let cropHandleHitTargetSize: CGFloat = 18
     private static let cropOutlineHitTargetWidth: CGFloat = 14
     private static let minimumCropViewportDimension: CGFloat = 20
@@ -2113,6 +2124,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
              .draggingSelectedItem,
              .draggingSelection,
              .draggingGroupFrame,
+             .resizingGroupFrame,
              .resizingSelectedItem,
              .adjustingArrowEndpoint,
              .resizingSelection,
@@ -2305,8 +2317,27 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
                 }
 
                 pointerDragState = .draggingGroupFrame(groupDragState)
-            case .groupFrameResizeHandle:
-                pointerDragState = .idle
+            case let .groupFrameResizeHandle(handleRole):
+                guard
+                    let groupID = pressContext.targetGroupID,
+                    let groupResizeState = makePointerGroupResizeState(
+                        groupID: groupID,
+                        handleRole: handleRole,
+                        initialViewportLocation: pressedLocation
+                    )
+                else {
+                    pointerDragState = .idle
+                    return
+                }
+
+                editorSession.beginHistoryTransaction(reason: "resize group frame")
+                guard resizeGroupFrame(using: groupResizeState, to: location) else {
+                    editorSession.cancelPendingHistoryTransaction()
+                    pointerDragState = .idle
+                    return
+                }
+
+                pointerDragState = .resizingGroupFrame(groupResizeState)
             case .unselectedItemBody, .blank:
                 pointerDragState = .draggingCanvas
                 panCanvas(from: pressedLocation, to: location)
@@ -2339,6 +2370,12 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             pointerDragState = .draggingSelection(updatedDragState)
         case let .draggingGroupFrame(groupDragState):
             guard moveGroupFrame(using: groupDragState, to: location) else {
+                editorSession.cancelPendingHistoryTransaction()
+                pointerDragState = .idle
+                return
+            }
+        case let .resizingGroupFrame(groupResizeState):
+            guard resizeGroupFrame(using: groupResizeState, to: location) else {
                 editorSession.cancelPendingHistoryTransaction()
                 pointerDragState = .idle
                 return
@@ -2445,6 +2482,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             )
         case .draggingGroupFrame:
             commitPendingPointerHistoryTransaction(autosaveReason: "move group frame")
+        case .resizingGroupFrame:
+            commitPendingPointerHistoryTransaction(autosaveReason: "resize group frame")
         case .resizingSelectedItem:
             finalizeMarkdownResizeCommitIfNeeded(for: pointerDragState)
             commitPendingPointerHistoryTransaction(autosaveReason: "resize item")
@@ -2478,6 +2517,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             )
         case .draggingGroupFrame:
             commitPendingPointerHistoryTransaction(autosaveReason: "move group frame")
+        case .resizingGroupFrame:
+            commitPendingPointerHistoryTransaction(autosaveReason: "resize group frame")
         case .resizingSelectedItem:
             finalizeMarkdownResizeCommitIfNeeded(for: pointerDragState)
             commitPendingPointerHistoryTransaction(autosaveReason: "resize item")
@@ -4917,6 +4958,31 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         )
     }
 
+    private func makePointerGroupResizeState(
+        groupID: CanvasItemGroupID,
+        handleRole: CanvasSelectionHandleRole,
+        initialViewportLocation: CGPoint
+    ) -> PointerGroupResizeState? {
+        guard let initialFrame = editorSession.groupFrame(withID: groupID)?.standardized,
+              initialFrame.width > 0,
+              initialFrame.height > 0
+        else {
+            return nil
+        }
+
+        return PointerGroupResizeState(
+            groupID: groupID,
+            handleRole: handleRole,
+            initialFrame: initialFrame,
+            initialDraggedAnchor: groupResizeDraggedAnchor(
+                for: handleRole,
+                in: initialFrame
+            ),
+            dragStartWorldLocation: camera.viewportToWorld(initialViewportLocation),
+            minimumSize: Self.minimumGroupFrameSize
+        )
+    }
+
     private func moveSelectedItem(
         using dragState: CanvasSelectedItemDragState,
         to location: CGPoint
@@ -4983,6 +5049,146 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             reason: "move group frame by \(describe(point: translation))"
         )
         return true
+    }
+
+    private func resizeGroupFrame(
+        using resizeState: PointerGroupResizeState,
+        to location: CGPoint
+    ) -> Bool {
+        let currentWorldLocation = camera.viewportToWorld(location)
+        let pointerTranslation = CGPoint(
+            x: currentWorldLocation.x - resizeState.dragStartWorldLocation.x,
+            y: currentWorldLocation.y - resizeState.dragStartWorldLocation.y
+        )
+        let draggedAnchor = CGPoint(
+            x: resizeState.initialDraggedAnchor.x + pointerTranslation.x,
+            y: resizeState.initialDraggedAnchor.y + pointerTranslation.y
+        )
+        let proposedFrame = groupFrame(
+            from: resizeState.initialFrame,
+            handleRole: resizeState.handleRole,
+            draggedAnchor: draggedAnchor,
+            minimumSize: resizeState.minimumSize
+        )
+        guard editorSession.updateGroupFrame(
+            withID: resizeState.groupID,
+            to: proposedFrame
+        ) else {
+            return editorSession.groupFrame(withID: resizeState.groupID)
+                == proposedFrame.standardized
+        }
+
+        refreshCanvas(
+            reason: "resize group frame \(String(describing: resizeState.handleRole))"
+        )
+        return true
+    }
+
+    private func groupResizeDraggedAnchor(
+        for handleRole: CanvasSelectionHandleRole,
+        in frame: CGRect
+    ) -> CGPoint {
+        let frame = frame.standardized
+        switch handleRole {
+        case .topLeading:
+            return CGPoint(x: frame.minX, y: frame.minY)
+        case .top:
+            return CGPoint(x: frame.midX, y: frame.minY)
+        case .topTrailing:
+            return CGPoint(x: frame.maxX, y: frame.minY)
+        case .trailing:
+            return CGPoint(x: frame.maxX, y: frame.midY)
+        case .bottomTrailing:
+            return CGPoint(x: frame.maxX, y: frame.maxY)
+        case .bottom:
+            return CGPoint(x: frame.midX, y: frame.maxY)
+        case .bottomLeading:
+            return CGPoint(x: frame.minX, y: frame.maxY)
+        case .leading:
+            return CGPoint(x: frame.minX, y: frame.midY)
+        }
+    }
+
+    private func groupFrame(
+        from initialFrame: CGRect,
+        handleRole: CanvasSelectionHandleRole,
+        draggedAnchor: CGPoint,
+        minimumSize: CGSize
+    ) -> CGRect {
+        let frame = initialFrame.standardized
+        let minimumWidth = max(minimumSize.width, 1)
+        let minimumHeight = max(minimumSize.height, 1)
+
+        switch handleRole {
+        case .topLeading:
+            let minX = min(draggedAnchor.x, frame.maxX - minimumWidth)
+            let minY = min(draggedAnchor.y, frame.maxY - minimumHeight)
+            return CGRect(
+                x: minX,
+                y: minY,
+                width: frame.maxX - minX,
+                height: frame.maxY - minY
+            ).standardized
+        case .top:
+            let minY = min(draggedAnchor.y, frame.maxY - minimumHeight)
+            return CGRect(
+                x: frame.minX,
+                y: minY,
+                width: frame.width,
+                height: frame.maxY - minY
+            ).standardized
+        case .topTrailing:
+            let maxX = max(draggedAnchor.x, frame.minX + minimumWidth)
+            let minY = min(draggedAnchor.y, frame.maxY - minimumHeight)
+            return CGRect(
+                x: frame.minX,
+                y: minY,
+                width: maxX - frame.minX,
+                height: frame.maxY - minY
+            ).standardized
+        case .trailing:
+            let maxX = max(draggedAnchor.x, frame.minX + minimumWidth)
+            return CGRect(
+                x: frame.minX,
+                y: frame.minY,
+                width: maxX - frame.minX,
+                height: frame.height
+            ).standardized
+        case .bottomTrailing:
+            let maxX = max(draggedAnchor.x, frame.minX + minimumWidth)
+            let maxY = max(draggedAnchor.y, frame.minY + minimumHeight)
+            return CGRect(
+                x: frame.minX,
+                y: frame.minY,
+                width: maxX - frame.minX,
+                height: maxY - frame.minY
+            ).standardized
+        case .bottom:
+            let maxY = max(draggedAnchor.y, frame.minY + minimumHeight)
+            return CGRect(
+                x: frame.minX,
+                y: frame.minY,
+                width: frame.width,
+                height: maxY - frame.minY
+            ).standardized
+        case .bottomLeading:
+            let minX = min(draggedAnchor.x, frame.maxX - minimumWidth)
+            let maxY = max(draggedAnchor.y, frame.minY + minimumHeight)
+            return CGRect(
+                x: minX,
+                y: frame.minY,
+                width: frame.maxX - minX,
+                height: maxY - frame.minY
+            ).standardized
+        case .leading:
+            let minX = min(draggedAnchor.x, frame.maxX - minimumWidth)
+            return CGRect(
+                x: minX,
+                y: frame.minY,
+                width: frame.maxX - minX,
+                height: frame.height
+            ).standardized
+        }
     }
 
     private func moveSelection(
@@ -6025,8 +6231,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             )
         case .idle, .pressed, .croppingSelectedItem, .movingCropFrame,
              .rotatingSelectedItem, .rotatingSelection, .draggingSelectedItem,
-             .draggingSelection, .draggingGroupFrame, .adjustingArrowEndpoint,
-             .draggingCanvas:
+             .draggingSelection, .draggingGroupFrame, .resizingGroupFrame,
+             .adjustingArrowEndpoint, .draggingCanvas:
             return
         }
 
@@ -6801,6 +7007,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             return "draggingSelection"
         case .draggingGroupFrame:
             return "draggingGroupFrame"
+        case .resizingGroupFrame:
+            return "resizingGroupFrame"
         case .resizingSelectedItem:
             return "resizingSelectedItem"
         case .adjustingArrowEndpoint:

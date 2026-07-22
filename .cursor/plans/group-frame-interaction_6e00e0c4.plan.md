@@ -16,7 +16,7 @@ todos:
     status: completed
   - id: group-resize
     content: 在 iOS/macOS controller 接入 group frame 缩放
-    status: pending
+    status: completed
   - id: membership-reconcile
     content: 实现 group frame 与 itemIDs 的自动归组重算
     status: pending
