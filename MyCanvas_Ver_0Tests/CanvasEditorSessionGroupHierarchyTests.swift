@@ -436,6 +436,72 @@ final class CanvasEditorSessionGroupHierarchyTests: XCTestCase {
         }
         XCTAssertEqual(pressContext.targetGroupID, childID)
     }
+
+    func testNestedGroupClickSelectionSelectsChildFrameOnly() {
+        let parentID = CanvasItemGroupID()
+        let childID = CanvasItemGroupID()
+        let session = makeGroupHierarchyRenderOrderSession(
+            parentID: parentID,
+            childID: childID
+        )
+
+        let decision = makeGroupHierarchyClickDecision(
+            session: session,
+            worldPoint: CGPoint(x: 75, y: 75)
+        )
+
+        XCTAssertEqual(decision.action, .selectGroup(groupID: childID))
+        if case let .selectGroup(groupID) = decision.action {
+            XCTAssertTrue(session.selectGroup(withID: groupID))
+        }
+        XCTAssertEqual(session.selectedGroupID, childID)
+    }
+
+    func testNestedGroupClickSelectionSelectsParentEmptyFrameArea() {
+        let parentID = CanvasItemGroupID()
+        let childID = CanvasItemGroupID()
+        let session = makeGroupHierarchyRenderOrderSession(
+            parentID: parentID,
+            childID: childID
+        )
+
+        let decision = makeGroupHierarchyClickDecision(
+            session: session,
+            worldPoint: CGPoint(x: 20, y: 20)
+        )
+
+        XCTAssertEqual(decision.action, .selectGroup(groupID: parentID))
+        if case let .selectGroup(groupID) = decision.action {
+            XCTAssertTrue(session.selectGroup(withID: groupID))
+        }
+        XCTAssertEqual(session.selectedGroupID, parentID)
+    }
+
+    func testBlankClickSelectionClearsNestedSelectedGroup() {
+        let parentID = CanvasItemGroupID()
+        let childID = CanvasItemGroupID()
+        let session = makeGroupHierarchyRenderOrderSession(
+            parentID: parentID,
+            childID: childID
+        )
+        XCTAssertTrue(session.selectGroup(withID: childID))
+
+        let decision = CanvasClickSelectionResolver().resolve(
+            pressTargetKind: .blank,
+            pressedItemID: nil,
+            releasedItemID: nil,
+            selection: CanvasClickSelectionState(
+                selectedGroupID: session.selectedGroupID
+            ),
+            isPersistentMultiSelectModeEnabled: false,
+            pressedModifiers: .none,
+            releasedModifiers: .none
+        )
+
+        XCTAssertEqual(decision.action, .clearSelection)
+        XCTAssertTrue(session.clearSelection())
+        XCTAssertNil(session.selectedGroupID)
+    }
 }
 
 private enum CanvasEditorSessionGroupHierarchyTestRetainer {
@@ -626,5 +692,32 @@ private func makeGroupHierarchyContextResolverMetrics() -> CanvasContextResolver
         cropHandleHitTargetSize: 44,
         cropOutlineHitTargetWidth: 8,
         rotateHandleHitTargetSize: 44
+    )
+}
+
+private func makeGroupHierarchyClickDecision(
+    session: CanvasEditorSession,
+    worldPoint: CGPoint
+) -> CanvasClickSelectionDecision {
+    _ = session.makeCanvasSnapshot()
+    let viewportPoint = session.camera.worldToViewport(worldPoint)
+    let pressContext = session.resolvePointerTarget(
+        at: viewportPoint,
+        interactionMetrics: makeGroupHierarchyContextResolverMetrics()
+    )
+
+    return CanvasClickSelectionResolver().resolve(
+        pressTargetKind: pressContext.targetKind,
+        pressedItemID: pressContext.targetItemID,
+        releasedItemID: pressContext.targetItemID,
+        pressedGroupID: pressContext.targetGroupID,
+        releasedGroupID: pressContext.targetGroupID,
+        selection: CanvasClickSelectionState(
+            itemSelection: session.interactionState,
+            selectedGroupID: session.selectedGroupID
+        ),
+        isPersistentMultiSelectModeEnabled: false,
+        pressedModifiers: .none,
+        releasedModifiers: .none
     )
 }

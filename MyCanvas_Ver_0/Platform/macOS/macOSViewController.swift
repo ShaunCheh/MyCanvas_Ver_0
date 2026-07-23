@@ -2475,31 +2475,12 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             let releasedItemID = releasedContext.targetItemID
             let previousInteractionState = interactionState
             let previousClickSelectionState = currentClickSelectionState()
-            if let groupClickResult = executeGroupFrameClickSelectionIfMatched(
-                pressContext: pressContext,
-                releasedContext: releasedContext
-            ) {
-                logClickResult(
-                    target: "group_frame",
-                    result: groupClickResult.result,
-                    pressedItemID: pressedItemID,
-                    releasedItemID: releasedItemID,
-                    previousInteractionState: previousInteractionState,
-                    currentInteractionState: interactionState,
-                    affectedItemID: nil
-                )
-                if clearedAlignmentInteractionState,
-                   groupClickResult.didTriggerPressedRefresh == false
-                {
-                    refreshCanvas(reason: "clear alignment interaction on pointer up")
-                }
-                editorSession.cancelPendingHistoryTransaction()
-                return
-            }
             let clickDecision = clickSelectionResolver.resolve(
                 pressTargetKind: pressContext.targetKind,
                 pressedItemID: pressContext.targetItemID,
                 releasedItemID: releasedItemID,
+                pressedGroupID: pressContext.targetGroupID,
+                releasedGroupID: releasedContext.targetGroupID,
                 selection: previousClickSelectionState,
                 isPersistentMultiSelectModeEnabled: isMultiSelectModeActive,
                 pressedModifiers: pressedModifiers,
@@ -4640,31 +4621,6 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         )
     }
 
-    private func executeGroupFrameClickSelectionIfMatched(
-        pressContext: CanvasPointerPressContext,
-        releasedContext: CanvasPointerPressContext
-    ) -> (result: String, didTriggerPressedRefresh: Bool)? {
-        guard
-            case .groupFrameBody = pressContext.targetKind,
-            case .groupFrameBody = releasedContext.targetKind,
-            let groupID = pressContext.targetGroupID,
-            releasedContext.targetGroupID == groupID
-        else {
-            return nil
-        }
-
-        let didSelectGroup = editorSession.selectGroup(
-            withID: groupID,
-            recordHistory: true
-        )
-        guard didSelectGroup else {
-            return ("selection_unchanged", false)
-        }
-
-        refreshCanvas(reason: "select group frame")
-        return ("group_selected", true)
-    }
-
     private func executeClickSelectionDecision(
         _ decision: CanvasClickSelectionDecision
     ) -> (result: String, didTriggerPressedRefresh: Bool) {
@@ -4680,6 +4636,17 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
                 didChangeSelection ? "item_selected" : "selection_unchanged",
                 didChangeSelection
             )
+        case let .selectGroup(groupID):
+            let didSelectGroup = editorSession.selectGroup(
+                withID: groupID,
+                recordHistory: true
+            )
+            guard didSelectGroup else {
+                return ("selection_unchanged", false)
+            }
+
+            refreshCanvas(reason: "select group frame")
+            return ("group_selected", true)
         case let .toggleMembership(itemID):
             let wasSelected = selectionStateBefore.itemSelection.selectedItemIDs.contains(itemID)
             toggleSelectionMembership(of: itemID, recordHistory: true)

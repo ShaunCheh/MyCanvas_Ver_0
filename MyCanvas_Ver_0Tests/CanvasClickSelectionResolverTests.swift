@@ -130,6 +130,57 @@ final class CanvasClickSelectionResolverTests: XCTestCase {
         )
     }
 
+    func testResolveSelectsGroupFrameWhenPressAndReleaseMatch() {
+        let groupID = CanvasItemGroupID()
+
+        let decision = resolver.resolve(
+            pressTargetKind: .groupFrameBody,
+            pressedItemID: nil,
+            releasedItemID: nil,
+            pressedGroupID: groupID,
+            releasedGroupID: groupID,
+            selection: CanvasClickSelectionState(),
+            isPersistentMultiSelectModeEnabled: false,
+            pressedModifiers: .none,
+            releasedModifiers: .none
+        )
+
+        XCTAssertEqual(
+            decision,
+            CanvasClickSelectionDecision(
+                target: "group_frame_body",
+                affectedItemID: nil,
+                action: .selectGroup(groupID: groupID)
+            )
+        )
+    }
+
+    func testResolveDoesNotSelectGroupFrameWhenReleaseHitsDifferentGroup() {
+        let pressedGroupID = CanvasItemGroupID()
+        let releasedGroupID = CanvasItemGroupID()
+
+        let decision = resolver.resolve(
+            pressTargetKind: .groupFrameBody,
+            pressedItemID: nil,
+            releasedItemID: nil,
+            pressedGroupID: pressedGroupID,
+            releasedGroupID: releasedGroupID,
+            selection: CanvasClickSelectionState(),
+            isPersistentMultiSelectModeEnabled: false,
+            pressedModifiers: .none,
+            releasedModifiers: .none
+        )
+
+        XCTAssertEqual(
+            decision,
+            CanvasClickSelectionDecision(
+                target: "mismatched_group_hit_test",
+                affectedItemID: nil,
+                action: .none
+            )
+        )
+    }
+
     func testResolveReentersSoleSelectedItem() {
         let tappedItemID = CanvasItemID()
 

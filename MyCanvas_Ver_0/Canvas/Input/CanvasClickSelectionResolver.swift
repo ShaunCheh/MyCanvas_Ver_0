@@ -22,6 +22,7 @@ struct CanvasPointerModifiers: Equatable, Sendable {
 enum CanvasClickSelectionAction: Equatable {
     case none
     case selectSingle(itemID: CanvasItemID)
+    case selectGroup(groupID: CanvasItemGroupID)
     case toggleMembership(itemID: CanvasItemID)
     case clearSelection
     case reenterSelectedItem(itemID: CanvasItemID)
@@ -55,6 +56,8 @@ struct CanvasClickSelectionResolver: Sendable {
         pressTargetKind: CanvasPointerTargetKind,
         pressedItemID: CanvasItemID?,
         releasedItemID: CanvasItemID?,
+        pressedGroupID: CanvasItemGroupID? = nil,
+        releasedGroupID: CanvasItemGroupID? = nil,
         selection: CanvasClickSelectionState,
         isPersistentMultiSelectModeEnabled: Bool,
         pressedModifiers: CanvasPointerModifiers,
@@ -110,10 +113,21 @@ struct CanvasClickSelectionResolver: Sendable {
                 action: .none
             )
         case .groupFrameBody:
+            guard
+                let groupID = pressedGroupID,
+                releasedGroupID == groupID
+            else {
+                return CanvasClickSelectionDecision(
+                    target: "mismatched_group_hit_test",
+                    affectedItemID: nil,
+                    action: .none
+                )
+            }
+
             return CanvasClickSelectionDecision(
                 target: "group_frame_body",
                 affectedItemID: nil,
-                action: .none
+                action: .selectGroup(groupID: groupID)
             )
         case .groupFrameResizeHandle:
             return CanvasClickSelectionDecision(
