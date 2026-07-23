@@ -10,7 +10,7 @@ todos:
     status: completed
   - id: ios-rename-flow
     content: iOS controller 接入编辑状态、focus 和提交刷新流程
-    status: pending
+    status: completed
   - id: macos-row-edit-ui
     content: macOS group list 每行增加圆形编辑图标和 inline NSTextField
     status: pending

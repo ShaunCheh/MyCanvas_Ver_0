@@ -1520,6 +1520,12 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         groupListView.onAddGroupRequested = { [weak self] in
             self?.handleAddGroupRequested()
         }
+        groupListView.onEditGroupTitleRequested = { [weak self] groupID in
+            self?.beginGroupTitleEditing(groupID: groupID)
+        }
+        groupListView.onGroupTitleSubmitted = { [weak self] groupID, title in
+            self?.commitGroupTitleEditing(groupID: groupID, title: title)
+        }
         updateGroupListPresentation()
     }
 
@@ -2874,6 +2880,37 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
 
     private func handleAddGroupRequested() {
         _ = editorSession.appendGroup(recordHistory: true)
+        updateGroupListPresentation()
+        updateChromeOverlayLayout()
+    }
+
+    private func beginGroupTitleEditing(groupID: CanvasItemGroupID) {
+        guard editorSession.group(withID: groupID) != nil else {
+            editingGroupTitleID = nil
+            updateGroupListPresentation()
+            updateChromeOverlayLayout()
+            return
+        }
+
+        editingGroupTitleID = groupID
+        updateGroupListPresentation()
+        updateChromeOverlayLayout()
+    }
+
+    private func commitGroupTitleEditing(
+        groupID: CanvasItemGroupID,
+        title: String
+    ) {
+        guard editingGroupTitleID == groupID else {
+            return
+        }
+
+        editingGroupTitleID = nil
+        _ = editorSession.renameGroup(
+            withID: groupID,
+            to: title,
+            recordHistory: true
+        )
         updateGroupListPresentation()
         updateChromeOverlayLayout()
     }
