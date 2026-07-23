@@ -326,6 +326,8 @@ final class macOSCanvasViewportView: NSView {
             ?? 2
         for group in snapshot.groups {
             let layer = groupFrameLayer(for: group.id)
+            layer.removeFromSuperlayer()
+            groupFramesLayer.addSublayer(layer)
             layer.frame = group.screenFrame
             layer.path = CGPath(
                 roundedRect: CGRect(origin: .zero, size: group.screenFrame.size),

@@ -133,6 +133,141 @@ struct CanvasItemGroup: Equatable, Hashable, Sendable {
     }
 }
 
+struct CanvasGroupHierarchyRow: Equatable {
+    let group: CanvasItemGroup
+    let depth: Int
+}
+
+enum CanvasGroupHierarchy {
+    private struct NormalizedTree {
+        let childGroupIDsByParent: [CanvasItemGroupID: [CanvasItemGroupID]]
+        let parentGroupIDByChild: [CanvasItemGroupID: CanvasItemGroupID]
+        let groupByID: [CanvasItemGroupID: CanvasItemGroup]
+    }
+
+    static func rows(from groups: [CanvasItemGroup]) -> [CanvasGroupHierarchyRow] {
+        let tree = normalizedTree(from: groups)
+        var rows: [CanvasGroupHierarchyRow] = []
+        var visitedGroupIDs = Set<CanvasItemGroupID>()
+
+        func appendRows(
+            from groupID: CanvasItemGroupID,
+            depth: Int
+        ) {
+            guard
+                visitedGroupIDs.insert(groupID).inserted,
+                let group = tree.groupByID[groupID]
+            else {
+                return
+            }
+
+            rows.append(
+                CanvasGroupHierarchyRow(
+                    group: group,
+                    depth: depth
+                )
+            )
+
+            for childGroupID in tree.childGroupIDsByParent[groupID] ?? [] {
+                appendRows(from: childGroupID, depth: depth + 1)
+            }
+        }
+
+        for group in groups where tree.parentGroupIDByChild[group.id] == nil {
+            appendRows(from: group.id, depth: 0)
+        }
+
+        for group in groups where visitedGroupIDs.contains(group.id) == false {
+            appendRows(from: group.id, depth: 0)
+        }
+
+        return rows
+    }
+
+    static func renderOrderedGroups(
+        from groups: [CanvasItemGroup]
+    ) -> [CanvasItemGroup] {
+        rows(from: groups).map(\.group)
+    }
+
+    static func depthByGroupID(
+        from groups: [CanvasItemGroup]
+    ) -> [CanvasItemGroupID: Int] {
+        Dictionary(
+            uniqueKeysWithValues: rows(from: groups).map { row in
+                (row.group.id, row.depth)
+            }
+        )
+    }
+
+    private static func normalizedTree(
+        from groups: [CanvasItemGroup]
+    ) -> NormalizedTree {
+        var groupByID: [CanvasItemGroupID: CanvasItemGroup] = [:]
+        for group in groups where groupByID[group.id] == nil {
+            groupByID[group.id] = group
+        }
+
+        let existingGroupIDs = Set(groupByID.keys)
+        var childGroupIDsByParent: [CanvasItemGroupID: [CanvasItemGroupID]] = [:]
+        for group in groups where childGroupIDsByParent[group.id] == nil {
+            childGroupIDsByParent[group.id] = []
+        }
+        var parentGroupIDByChild: [CanvasItemGroupID: CanvasItemGroupID] = [:]
+
+        for group in groups {
+            var seenChildGroupIDs = Set<CanvasItemGroupID>()
+            for childGroupID in group.childGroupIDs {
+                guard
+                    existingGroupIDs.contains(childGroupID),
+                    childGroupID != group.id,
+                    seenChildGroupIDs.insert(childGroupID).inserted,
+                    parentGroupIDByChild[childGroupID] == nil,
+                    wouldCreateCycle(
+                        parentGroupID: group.id,
+                        childGroupID: childGroupID,
+                        parentGroupIDByChild: parentGroupIDByChild
+                    ) == false
+                else {
+                    continue
+                }
+
+                childGroupIDsByParent[group.id, default: []].append(childGroupID)
+                parentGroupIDByChild[childGroupID] = group.id
+            }
+        }
+
+        return NormalizedTree(
+            childGroupIDsByParent: childGroupIDsByParent,
+            parentGroupIDByChild: parentGroupIDByChild,
+            groupByID: groupByID
+        )
+    }
+
+    private static func wouldCreateCycle(
+        parentGroupID: CanvasItemGroupID,
+        childGroupID: CanvasItemGroupID,
+        parentGroupIDByChild: [CanvasItemGroupID: CanvasItemGroupID]
+    ) -> Bool {
+        var currentGroupID: CanvasItemGroupID? = parentGroupID
+        var visitedGroupIDs = Set<CanvasItemGroupID>()
+
+        while let groupID = currentGroupID {
+            guard visitedGroupIDs.insert(groupID).inserted else {
+                return true
+            }
+
+            if groupID == childGroupID {
+                return true
+            }
+
+            currentGroupID = parentGroupIDByChild[groupID]
+        }
+
+        return false
+    }
+}
+
 struct BoardDocument: Codable {
     // Board schema now evolves independently from image asset internals.
     // Format version 14 lets groups persist direct child group IDs for nested

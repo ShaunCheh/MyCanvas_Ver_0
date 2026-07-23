@@ -384,6 +384,58 @@ final class CanvasEditorSessionGroupHierarchyTests: XCTestCase {
             fixture.parentDirectItem.center
         )
     }
+
+    func testGroupHierarchyRowsPlaceParentBeforeChildrenWithDepth() {
+        let parentID = CanvasItemGroupID()
+        let childID = CanvasItemGroupID()
+        let siblingID = CanvasItemGroupID()
+        let child = CanvasItemGroup(id: childID, title: "A", itemIDs: [])
+        let parent = CanvasItemGroup(
+            id: parentID,
+            title: "C",
+            itemIDs: [],
+            childGroupIDs: [childID]
+        )
+        let sibling = CanvasItemGroup(id: siblingID, title: "B", itemIDs: [])
+
+        let rows = CanvasGroupHierarchy.rows(from: [child, parent, sibling])
+
+        XCTAssertEqual(rows.map(\.group.id), [parentID, childID, siblingID])
+        XCTAssertEqual(rows.map(\.depth), [0, 1, 0])
+    }
+
+    func testCanvasRendererOrdersParentGroupFramesBeforeChildFrames() {
+        let parentID = CanvasItemGroupID()
+        let childID = CanvasItemGroupID()
+        let session = makeGroupHierarchyRenderOrderSession(
+            parentID: parentID,
+            childID: childID
+        )
+        let snapshot = session.makeCanvasSnapshot()
+
+        XCTAssertEqual(snapshot.groups.map(\.id), [parentID, childID])
+    }
+
+    func testCanvasContextResolverHitsChildGroupFrameBeforeParentFrame() {
+        let parentID = CanvasItemGroupID()
+        let childID = CanvasItemGroupID()
+        let session = makeGroupHierarchyRenderOrderSession(
+            parentID: parentID,
+            childID: childID
+        )
+        _ = session.makeCanvasSnapshot()
+
+        let pressContext = session.resolvePointerTarget(
+            at: session.camera.worldToViewport(CGPoint(x: 75, y: 75)),
+            interactionMetrics: makeGroupHierarchyContextResolverMetrics()
+        )
+
+        guard case .groupFrameBody = pressContext.targetKind else {
+            XCTFail("Expected child group frame body hit.")
+            return
+        }
+        XCTAssertEqual(pressContext.targetGroupID, childID)
+    }
 }
 
 private enum CanvasEditorSessionGroupHierarchyTestRetainer {
@@ -523,4 +575,56 @@ private extension CGPoint {
             y: y + translation.y
         )
     }
+}
+
+private func makeGroupHierarchyRenderOrderGroups(
+    parentID: CanvasItemGroupID,
+    childID: CanvasItemGroupID
+) -> [CanvasItemGroup] {
+    [
+        CanvasItemGroup(
+            id: childID,
+            title: "Child",
+            itemIDs: [],
+            frame: CGRect(x: 50, y: 50, width: 80, height: 80)
+        ),
+        CanvasItemGroup(
+            id: parentID,
+            title: "Parent",
+            itemIDs: [],
+            childGroupIDs: [childID],
+            frame: CGRect(x: 0, y: 0, width: 220, height: 220)
+        )
+    ]
+}
+
+private func makeGroupHierarchyRenderOrderSession(
+    parentID: CanvasItemGroupID,
+    childID: CanvasItemGroupID
+) -> CanvasEditorSession {
+    let session = makeGroupHierarchyTestSession()
+    session.camera = makeGroupHierarchyRenderOrderCamera()
+    session.groups = makeGroupHierarchyRenderOrderGroups(
+        parentID: parentID,
+        childID: childID
+    )
+    return session
+}
+
+private func makeGroupHierarchyRenderOrderCamera() -> CanvasCamera {
+    CanvasCamera(
+        center: CGPoint(x: 100, y: 100),
+        zoomScale: 1,
+        viewportSize: CGSize(width: 400, height: 400)
+    )
+}
+
+private func makeGroupHierarchyContextResolverMetrics() -> CanvasContextResolverMetrics {
+    CanvasContextResolverMetrics(
+        selectionHandleHitTargetSize: 44,
+        selectionOutlineHitTargetWidth: 8,
+        cropHandleHitTargetSize: 44,
+        cropOutlineHitTargetWidth: 8,
+        rotateHandleHitTargetSize: 44
+    )
 }

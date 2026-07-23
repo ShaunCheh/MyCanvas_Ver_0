@@ -6781,11 +6781,13 @@ private final class iOSCanvasGroupListView: UIView, UITextFieldDelegate {
             return
         }
 
-        for group in groups {
+        for row in CanvasGroupHierarchy.rows(from: groups) {
+            let group = row.group
             let isEditingTitle = group.id == editingGroupTitleID
             stackView.addArrangedSubview(
                 makeGroupRow(
                     for: group,
+                    depth: row.depth,
                     isEditingTitle: isEditingTitle,
                     focusedTitleTextField: &focusedTitleTextField
                 )
@@ -6880,6 +6882,7 @@ private final class iOSCanvasGroupListView: UIView, UITextFieldDelegate {
 
     private func makeGroupRow(
         for group: CanvasItemGroup,
+        depth: Int,
         isEditingTitle: Bool,
         focusedTitleTextField: inout UITextField?
     ) -> UIView {
@@ -6953,9 +6956,10 @@ private final class iOSCanvasGroupListView: UIView, UITextFieldDelegate {
         outerStack.addArrangedSubview(editButton)
 
         container.addSubview(outerStack)
+        let leadingIndent = 10 + CGFloat(max(depth, 0)) * 18
         NSLayoutConstraint.activate([
             outerStack.topAnchor.constraint(equalTo: container.topAnchor, constant: 10),
-            outerStack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 10),
+            outerStack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: leadingIndent),
             outerStack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -10),
             outerStack.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -10),
             editButton.widthAnchor.constraint(equalToConstant: 32),

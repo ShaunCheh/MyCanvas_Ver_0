@@ -48,7 +48,7 @@ struct CanvasRenderer {
             )
         }
 
-        let renderGroups = groups.compactMap { group in
+        let renderGroups = CanvasGroupHierarchy.renderOrderedGroups(from: groups).compactMap { group in
             makeGroupRenderItem(
                 for: group,
                 visibleWorldRect: visibleWorldRect,

@@ -471,6 +471,8 @@ final class iOSCanvasViewportView: UIView {
         let contentsScale = window?.screen.scale ?? UIScreen.main.scale
         for group in snapshot.groups {
             let layer = groupFrameLayer(for: group.id)
+            layer.removeFromSuperlayer()
+            groupFramesLayer.addSublayer(layer)
             layer.frame = group.screenFrame
             layer.path = CGPath(
                 roundedRect: CGRect(origin: .zero, size: group.screenFrame.size),
