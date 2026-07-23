@@ -1793,6 +1793,9 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         groupListView.onAddGroupRequested = { [weak self] in
             self?.handleAddGroupRequested()
         }
+        groupListView.onGroupSelected = { [weak self] groupID in
+            self?.navigateToGroup(withID: groupID)
+        }
         groupListView.onEditGroupTitleRequested = { [weak self] groupID in
             self?.beginGroupTitleEditing(groupID: groupID)
         }
@@ -2884,6 +2887,28 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         updateGroupListPresentation()
         updateInlineEditButtonsAppearance()
         refreshCanvas(reason: "add group")
+    }
+
+    private func navigateToGroup(withID groupID: CanvasItemGroupID) {
+        guard let groupFrame = editorSession.groupFrame(withID: groupID) else {
+            return
+        }
+
+        let targetCenter = CGPoint(x: groupFrame.midX, y: groupFrame.midY)
+        guard
+            targetCenter.x.isFinite,
+            targetCenter.y.isFinite,
+            camera.center != targetCenter
+        else {
+            return
+        }
+
+        camera.center = targetCenter
+        refreshCanvas(reason: "navigate group list to \(groupID.uuidString)")
+        scheduleAutosave(
+            reason: "navigate canvas via group list",
+            updateKind: .viewStateOnly
+        )
     }
 
     private func beginGroupTitleEditing(groupID: CanvasItemGroupID) {
@@ -7282,6 +7307,7 @@ private enum macOSGIFFrameImportFlowError: LocalizedError {
 
 private final class macOSCanvasGroupListView: NSView, NSTextFieldDelegate {
     var onAddGroupRequested: (() -> Void)?
+    var onGroupSelected: ((CanvasItemGroupID) -> Void)?
     var onEditGroupTitleRequested: ((CanvasItemGroupID) -> Void)?
     var onGroupTitleSubmitted: ((CanvasItemGroupID, String) -> Void)?
 
@@ -7561,6 +7587,15 @@ private final class macOSCanvasGroupListView: NSView, NSTextFieldDelegate {
         rowStack.alignment = .leading
         rowStack.spacing = 4
         rowStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        if isEditingTitle == false {
+            rowStack.addGestureRecognizer(
+                macOSCanvasGroupClickGestureRecognizer(
+                    groupID: group.id,
+                    target: self,
+                    action: #selector(handleGroupRowClick(_:))
+                )
+            )
+        }
 
         if isEditingTitle {
             let titleTextField = macOSCanvasGroupTitleTextField(groupID: group.id)
@@ -7626,6 +7661,11 @@ private final class macOSCanvasGroupListView: NSView, NSTextFieldDelegate {
         }
 
         return container
+    }
+
+    @objc
+    private func handleGroupRowClick(_ sender: macOSCanvasGroupClickGestureRecognizer) {
+        onGroupSelected?(sender.groupID)
     }
 
     private func makeEditGroupTitleButton(for group: CanvasItemGroup) -> NSButton {
@@ -7760,6 +7800,23 @@ private final class macOSCanvasGroupEditButton: NSButton {
     init(groupID: CanvasItemGroupID) {
         self.groupID = groupID
         super.init(frame: .zero)
+    }
+
+    required init?(coder: NSCoder) {
+        return nil
+    }
+}
+
+private final class macOSCanvasGroupClickGestureRecognizer: NSClickGestureRecognizer {
+    let groupID: CanvasItemGroupID
+
+    init(
+        groupID: CanvasItemGroupID,
+        target: Any?,
+        action: Selector?
+    ) {
+        self.groupID = groupID
+        super.init(target: target, action: action)
     }
 
     required init?(coder: NSCoder) {

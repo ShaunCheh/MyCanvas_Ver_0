@@ -1520,6 +1520,9 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         groupListView.onAddGroupRequested = { [weak self] in
             self?.handleAddGroupRequested()
         }
+        groupListView.onGroupSelected = { [weak self] groupID in
+            self?.navigateToGroup(withID: groupID)
+        }
         groupListView.onEditGroupTitleRequested = { [weak self] groupID in
             self?.beginGroupTitleEditing(groupID: groupID)
         }
@@ -2886,6 +2889,29 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         _ = editorSession.appendGroup(recordHistory: true)
         updateGroupListPresentation()
         updateChromeOverlayLayout()
+    }
+
+    private func navigateToGroup(withID groupID: CanvasItemGroupID) {
+        syncCameraViewportSizeFromCurrentBoundsIfPossible()
+        guard let groupFrame = editorSession.groupFrame(withID: groupID) else {
+            return
+        }
+
+        let targetCenter = CGPoint(x: groupFrame.midX, y: groupFrame.midY)
+        guard
+            targetCenter.x.isFinite,
+            targetCenter.y.isFinite,
+            camera.center != targetCenter
+        else {
+            return
+        }
+
+        camera.center = targetCenter
+        requestCanvasRefresh(reason: "navigate group list to \(groupID.uuidString)")
+        scheduleAutosave(
+            reason: "navigate canvas via group list",
+            updateKind: .viewStateOnly
+        )
     }
 
     private func beginGroupTitleEditing(groupID: CanvasItemGroupID) {
@@ -6582,6 +6608,7 @@ private enum iOSVideoEditorFlowError: LocalizedError {
 
 private final class iOSCanvasGroupListView: UIView, UITextFieldDelegate {
     var onAddGroupRequested: (() -> Void)?
+    var onGroupSelected: ((CanvasItemGroupID) -> Void)?
     var onEditGroupTitleRequested: ((CanvasItemGroupID) -> Void)?
     var onGroupTitleSubmitted: ((CanvasItemGroupID, String) -> Void)?
 
@@ -6751,6 +6778,15 @@ private final class iOSCanvasGroupListView: UIView, UITextFieldDelegate {
         rowStack.alignment = .fill
         rowStack.spacing = 4
         rowStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        if isEditingTitle == false {
+            let rowTapGesture = iOSCanvasGroupTapGestureRecognizer(
+                groupID: group.id,
+                target: self,
+                action: #selector(handleGroupRowTap(_:))
+            )
+            rowTapGesture.cancelsTouchesInView = false
+            rowStack.addGestureRecognizer(rowTapGesture)
+        }
 
         if isEditingTitle {
             let titleTextField = iOSCanvasGroupTitleTextField(groupID: group.id)
@@ -6807,6 +6843,11 @@ private final class iOSCanvasGroupListView: UIView, UITextFieldDelegate {
         return container
     }
 
+    @objc
+    private func handleGroupRowTap(_ sender: iOSCanvasGroupTapGestureRecognizer) {
+        onGroupSelected?(sender.groupID)
+    }
+
     private func makeEditGroupTitleButton(for group: CanvasItemGroup) -> UIButton {
         let button = UIButton(type: .system)
         button.translatesAutoresizingMaskIntoConstraints = false
@@ -6855,6 +6896,19 @@ private final class iOSCanvasGroupListView: UIView, UITextFieldDelegate {
             titleTextField.groupID,
             titleTextField.text ?? ""
         )
+    }
+}
+
+private final class iOSCanvasGroupTapGestureRecognizer: UITapGestureRecognizer {
+    let groupID: CanvasItemGroupID
+
+    init(
+        groupID: CanvasItemGroupID,
+        target: Any?,
+        action: Selector?
+    ) {
+        self.groupID = groupID
+        super.init(target: target, action: action)
     }
 }
 
