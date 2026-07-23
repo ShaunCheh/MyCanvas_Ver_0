@@ -13,10 +13,10 @@ todos:
     status: completed
   - id: macos-row-edit-ui
     content: macOS group list 每行增加圆形编辑图标和 inline NSTextField
-    status: pending
+    status: completed
   - id: macos-rename-flow
     content: macOS controller 接入编辑状态、focus 和提交刷新流程
-    status: pending
+    status: completed
   - id: validate-builds
     content: 运行 lints 和 iOS/macOS build 验证
     status: pending

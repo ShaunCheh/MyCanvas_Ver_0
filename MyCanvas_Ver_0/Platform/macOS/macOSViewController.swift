@@ -388,6 +388,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     }
     private var isTransitionInteractionFrozen = false
     private var isGroupListVisible = false
+    private var editingGroupTitleID: CanvasItemGroupID?
     private var keyboardShortcutObservationMonitor: Any?
     private var observedKeyboardShortcuts: [ObservedKeyboardShortcut] = []
     private var lastContinuousRawInputObservationByKind: [ContinuousRawInputKind: Date] = [:]
@@ -1768,6 +1769,12 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         groupListView.onAddGroupRequested = { [weak self] in
             self?.handleAddGroupRequested()
         }
+        groupListView.onEditGroupTitleRequested = { [weak self] groupID in
+            self?.beginGroupTitleEditing(groupID: groupID)
+        }
+        groupListView.onGroupTitleSubmitted = { [weak self] groupID, title in
+            self?.commitGroupTitleEditing(groupID: groupID, title: title)
+        }
         updateGroupListPresentation()
     }
 
@@ -1783,7 +1790,10 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     }
 
     private func updateGroupListPresentation() {
-        groupListView.render(groups: editorSession.groups)
+        groupListView.render(
+            groups: editorSession.groups,
+            editingGroupTitleID: editingGroupTitleID
+        )
         groupListView.isHidden = isGroupListVisible == false
         groupListButton.toolTip = isGroupListVisible
             ? "Canvas groups: Expanded"
@@ -2831,6 +2841,37 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         updateGroupListPresentation()
         updateInlineEditButtonsAppearance()
         refreshCanvas(reason: "add group")
+    }
+
+    private func beginGroupTitleEditing(groupID: CanvasItemGroupID) {
+        guard editorSession.group(withID: groupID) != nil else {
+            editingGroupTitleID = nil
+            updateGroupListPresentation()
+            updateChromeOverlayLayout()
+            return
+        }
+
+        editingGroupTitleID = groupID
+        updateGroupListPresentation()
+        updateChromeOverlayLayout()
+    }
+
+    private func commitGroupTitleEditing(
+        groupID: CanvasItemGroupID,
+        title: String
+    ) {
+        guard editingGroupTitleID == groupID else {
+            return
+        }
+
+        editingGroupTitleID = nil
+        _ = editorSession.renameGroup(
+            withID: groupID,
+            to: title,
+            recordHistory: true
+        )
+        updateGroupListPresentation()
+        updateChromeOverlayLayout()
     }
 
     @objc
@@ -7129,10 +7170,13 @@ private enum macOSGIFFrameImportFlowError: LocalizedError {
     }
 }
 
-private final class macOSCanvasGroupListView: NSView {
+private final class macOSCanvasGroupListView: NSView, NSTextFieldDelegate {
     var onAddGroupRequested: (() -> Void)?
+    var onEditGroupTitleRequested: ((CanvasItemGroupID) -> Void)?
+    var onGroupTitleSubmitted: ((CanvasItemGroupID, String) -> Void)?
 
     private var renderedGroups: [CanvasItemGroup] = []
+    private var renderedEditingGroupTitleID: CanvasItemGroupID?
 
     private let scrollView: NSScrollView = {
         let scrollView = NSScrollView()
@@ -7178,8 +7222,13 @@ private final class macOSCanvasGroupListView: NSView {
         updateDocumentLayout()
     }
 
-    func render(groups: [CanvasItemGroup]) {
+    func render(
+        groups: [CanvasItemGroup],
+        editingGroupTitleID: CanvasItemGroupID?
+    ) {
         renderedGroups = groups
+        renderedEditingGroupTitleID = editingGroupTitleID
+        var focusedTitleTextField: NSTextField?
         stackView.arrangedSubviews.forEach { view in
             stackView.removeArrangedSubview(view)
             view.removeFromSuperview()
@@ -7191,11 +7240,27 @@ private final class macOSCanvasGroupListView: NSView {
             stackView.addArrangedSubview(makeEmptyStateLabel())
         } else {
             for group in groups {
-                stackView.addArrangedSubview(makeGroupRow(for: group))
+                stackView.addArrangedSubview(
+                    makeGroupRow(
+                        for: group,
+                        isEditingTitle: group.id == editingGroupTitleID,
+                        focusedTitleTextField: &focusedTitleTextField
+                    )
+                )
             }
         }
 
         updateDocumentLayout()
+        if let focusedTitleTextField {
+            DispatchQueue.main.async { [weak self, weak focusedTitleTextField] in
+                guard let self, let focusedTitleTextField else {
+                    return
+                }
+
+                self.window?.makeFirstResponder(focusedTitleTextField)
+                focusedTitleTextField.selectText(nil)
+            }
+        }
     }
 
     func updateAppearance() {
@@ -7219,7 +7284,10 @@ private final class macOSCanvasGroupListView: NSView {
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         updateAppearance()
-        render(groups: renderedGroups)
+        render(
+            groups: renderedGroups,
+            editingGroupTitleID: renderedEditingGroupTitleID
+        )
     }
 
     private func setupView() {
@@ -7323,24 +7391,49 @@ private final class macOSCanvasGroupListView: NSView {
         return label
     }
 
-    private func makeGroupRow(for group: CanvasItemGroup) -> NSView {
+    private func makeGroupRow(
+        for group: CanvasItemGroup,
+        isEditingTitle: Bool,
+        focusedTitleTextField: inout NSTextField?
+    ) -> NSView {
         let container = macOSCanvasChromeOverlayView()
         container.translatesAutoresizingMaskIntoConstraints = false
         container.wantsLayer = true
         container.layer?.cornerRadius = 12
+
+        let outerStack = NSStackView()
+        outerStack.translatesAutoresizingMaskIntoConstraints = false
+        outerStack.orientation = .horizontal
+        outerStack.alignment = .top
+        outerStack.distribution = .fill
+        outerStack.spacing = 8
 
         let rowStack = NSStackView()
         rowStack.translatesAutoresizingMaskIntoConstraints = false
         rowStack.orientation = .vertical
         rowStack.alignment = .leading
         rowStack.spacing = 4
+        rowStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
-        let titleLabel = NSTextField(labelWithString: group.displayTitle)
-        titleLabel.translatesAutoresizingMaskIntoConstraints = false
-        titleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
-        titleLabel.textColor = .labelColor
-        titleLabel.lineBreakMode = .byWordWrapping
-        titleLabel.maximumNumberOfLines = 2
+        if isEditingTitle {
+            let titleTextField = macOSCanvasGroupTitleTextField(groupID: group.id)
+            titleTextField.translatesAutoresizingMaskIntoConstraints = false
+            titleTextField.font = .systemFont(ofSize: 13, weight: .semibold)
+            titleTextField.textColor = .labelColor
+            titleTextField.stringValue = group.title
+            titleTextField.delegate = self
+            titleTextField.lineBreakMode = .byTruncatingTail
+            rowStack.addArrangedSubview(titleTextField)
+            focusedTitleTextField = titleTextField
+        } else {
+            let titleLabel = NSTextField(labelWithString: group.displayTitle)
+            titleLabel.translatesAutoresizingMaskIntoConstraints = false
+            titleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
+            titleLabel.textColor = .labelColor
+            titleLabel.lineBreakMode = .byWordWrapping
+            titleLabel.maximumNumberOfLines = 2
+            rowStack.addArrangedSubview(titleLabel)
+        }
 
         let itemCount = group.itemIDs.count
         let metadataLabel = NSTextField(
@@ -7350,7 +7443,6 @@ private final class macOSCanvasGroupListView: NSView {
         metadataLabel.font = .systemFont(ofSize: 11)
         metadataLabel.textColor = .secondaryLabelColor
 
-        rowStack.addArrangedSubview(titleLabel)
         rowStack.addArrangedSubview(metadataLabel)
 
         let descriptionText = group.description
@@ -7365,12 +7457,18 @@ private final class macOSCanvasGroupListView: NSView {
             rowStack.addArrangedSubview(descriptionLabel)
         }
 
-        container.addSubview(rowStack)
+        let editButton = makeEditGroupTitleButton(for: group)
+        outerStack.addArrangedSubview(rowStack)
+        outerStack.addArrangedSubview(editButton)
+
+        container.addSubview(outerStack)
         NSLayoutConstraint.activate([
-            rowStack.topAnchor.constraint(equalTo: container.topAnchor, constant: 10),
-            rowStack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 10),
-            rowStack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -10),
-            rowStack.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -10)
+            outerStack.topAnchor.constraint(equalTo: container.topAnchor, constant: 10),
+            outerStack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 10),
+            outerStack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -10),
+            outerStack.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -10),
+            editButton.widthAnchor.constraint(equalToConstant: 32),
+            editButton.heightAnchor.constraint(equalToConstant: 32)
         ])
 
         PlatformLayerAppearance.performWithoutAnimations {
@@ -7381,6 +7479,106 @@ private final class macOSCanvasGroupListView: NSView {
         }
 
         return container
+    }
+
+    private func makeEditGroupTitleButton(for group: CanvasItemGroup) -> NSButton {
+        let button = macOSCanvasGroupEditButton(groupID: group.id)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.isBordered = false
+        button.title = ""
+        button.toolTip = "Edit group name"
+        button.image = NSImage(
+            systemSymbolName: "pencil",
+            accessibilityDescription: "Edit group name"
+        )
+        button.imagePosition = .imageOnly
+        button.contentTintColor = .labelColor
+        button.target = self
+        button.action = #selector(handleEditGroupTitleButtonClick(_:))
+        button.wantsLayer = true
+        button.layer?.cornerRadius = 16
+        button.layer?.borderWidth = 1
+
+        PlatformLayerAppearance.performWithoutAnimations {
+            button.layer?.backgroundColor = PlatformLayerAppearance.resolvedCGColor(
+                .windowBackgroundColor,
+                for: effectiveAppearance
+            )
+            button.layer?.borderColor = PlatformLayerAppearance.resolvedCGColor(
+                .separatorColor,
+                for: effectiveAppearance
+            )
+        }
+        return button
+    }
+
+    @objc
+    private func handleEditGroupTitleButtonClick(_ sender: macOSCanvasGroupEditButton) {
+        onEditGroupTitleRequested?(sender.groupID)
+    }
+
+    func controlTextDidEndEditing(_ obj: Notification) {
+        guard let textField = obj.object as? NSTextField else {
+            return
+        }
+
+        submitGroupTitle(from: textField)
+    }
+
+    func control(
+        _ control: NSControl,
+        textView: NSTextView,
+        doCommandBy commandSelector: Selector
+    ) -> Bool {
+        guard commandSelector == #selector(NSResponder.insertNewline(_:)) else {
+            return false
+        }
+
+        submitGroupTitle(from: control)
+        window?.makeFirstResponder(nil)
+        return true
+    }
+
+    private func submitGroupTitle(from control: NSControl) {
+        guard let titleTextField = control as? macOSCanvasGroupTitleTextField else {
+            return
+        }
+
+        onGroupTitleSubmitted?(
+            titleTextField.groupID,
+            titleTextField.stringValue
+        )
+    }
+}
+
+private final class macOSCanvasGroupEditButton: NSButton {
+    let groupID: CanvasItemGroupID
+
+    init(groupID: CanvasItemGroupID) {
+        self.groupID = groupID
+        super.init(frame: .zero)
+    }
+
+    required init?(coder: NSCoder) {
+        return nil
+    }
+}
+
+private final class macOSCanvasGroupTitleTextField: NSTextField {
+    let groupID: CanvasItemGroupID
+
+    init(groupID: CanvasItemGroupID) {
+        self.groupID = groupID
+        super.init(frame: .zero)
+        isEditable = true
+        isSelectable = true
+        isBordered = true
+        drawsBackground = true
+        focusRingType = .default
+    }
+
+    required init?(coder: NSCoder) {
+        return nil
     }
 }
 #endif
