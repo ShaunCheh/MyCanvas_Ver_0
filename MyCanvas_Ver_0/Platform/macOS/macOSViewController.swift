@@ -11,6 +11,30 @@ import AppKit
 import QuartzCore
 import UniformTypeIdentifiers
 
+private func macOSGroupTitleEditTrace(
+    _ phase: String,
+    groupID: CanvasItemGroupID? = nil,
+    editingGroupTitleID: CanvasItemGroupID? = nil,
+    title: String? = nil,
+    firstResponder: NSResponder? = nil,
+    detail: String? = nil
+) {
+    let groupIDDescription = groupID?.uuidString ?? "nil"
+    let editingGroupIDDescription = editingGroupTitleID?.uuidString ?? "nil"
+    let titleDescription = title.map { "\"\($0)\"" } ?? "nil"
+    let responderDescription = firstResponder.map { String(describing: type(of: $0)) } ?? "nil"
+    let detailDescription = detail ?? "nil"
+    print(
+        "[Canvas macOS][GroupTitleEdit] " +
+        "phase=\(phase) " +
+        "groupID=\(groupIDDescription) " +
+        "editingGroupTitleID=\(editingGroupIDDescription) " +
+        "title=\(titleDescription) " +
+        "firstResponder=\(responderDescription) " +
+        "detail=\(detailDescription)"
+    )
+}
+
 final class macOSViewController: NSViewController, NSUserInterfaceValidations, NSTextViewDelegate, macOSBoardListCanvasTransitionInteractionControlling {
     private struct PointerResizeState {
         let itemID: CanvasItemID
@@ -1790,6 +1814,11 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     }
 
     private func updateGroupListPresentation() {
+        macOSGroupTitleEditTrace(
+            "controller.updateGroupListPresentation",
+            editingGroupTitleID: editingGroupTitleID,
+            firstResponder: view.window?.firstResponder
+        )
         groupListView.render(
             groups: editorSession.groups,
             editingGroupTitleID: editingGroupTitleID
@@ -2831,9 +2860,19 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
 
     @objc
     private func handleGroupListButtonClick() {
+        macOSGroupTitleEditTrace(
+            "controller.groupListButtonClick.start",
+            editingGroupTitleID: editingGroupTitleID,
+            firstResponder: view.window?.firstResponder
+        )
         if isGroupListVisible {
             view.window?.makeFirstResponder(nil)
             editingGroupTitleID = nil
+            macOSGroupTitleEditTrace(
+                "controller.groupListButtonClick.clearEditing",
+                editingGroupTitleID: editingGroupTitleID,
+                firstResponder: view.window?.firstResponder
+            )
         }
         isGroupListVisible.toggle()
         updateGroupListPresentation()
@@ -2848,19 +2887,43 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     }
 
     private func beginGroupTitleEditing(groupID: CanvasItemGroupID) {
+        macOSGroupTitleEditTrace(
+            "controller.begin.start",
+            groupID: groupID,
+            editingGroupTitleID: editingGroupTitleID,
+            firstResponder: view.window?.firstResponder
+        )
         if let editingGroupTitleID,
            editingGroupTitleID != groupID {
             view.window?.makeFirstResponder(nil)
+            macOSGroupTitleEditTrace(
+                "controller.begin.endedPreviousResponder",
+                groupID: groupID,
+                editingGroupTitleID: editingGroupTitleID,
+                firstResponder: view.window?.firstResponder
+            )
         }
 
         guard editorSession.group(withID: groupID) != nil else {
             editingGroupTitleID = nil
+            macOSGroupTitleEditTrace(
+                "controller.begin.missingGroup",
+                groupID: groupID,
+                editingGroupTitleID: editingGroupTitleID,
+                firstResponder: view.window?.firstResponder
+            )
             updateGroupListPresentation()
             updateChromeOverlayLayout()
             return
         }
 
         editingGroupTitleID = groupID
+        macOSGroupTitleEditTrace(
+            "controller.begin.setEditing",
+            groupID: groupID,
+            editingGroupTitleID: editingGroupTitleID,
+            firstResponder: view.window?.firstResponder
+        )
         updateGroupListPresentation()
         updateChromeOverlayLayout()
     }
@@ -2869,12 +2932,33 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         groupID: CanvasItemGroupID,
         title: String
     ) {
+        macOSGroupTitleEditTrace(
+            "controller.commit.start",
+            groupID: groupID,
+            editingGroupTitleID: editingGroupTitleID,
+            title: title,
+            firstResponder: view.window?.firstResponder
+        )
         guard editingGroupTitleID == groupID else {
+            macOSGroupTitleEditTrace(
+                "controller.commit.ignoredMismatchedEditingID",
+                groupID: groupID,
+                editingGroupTitleID: editingGroupTitleID,
+                title: title,
+                firstResponder: view.window?.firstResponder
+            )
             return
         }
 
         editingGroupTitleID = nil
         guard editorSession.group(withID: groupID) != nil else {
+            macOSGroupTitleEditTrace(
+                "controller.commit.missingGroup",
+                groupID: groupID,
+                editingGroupTitleID: editingGroupTitleID,
+                title: title,
+                firstResponder: view.window?.firstResponder
+            )
             updateGroupListPresentation()
             updateChromeOverlayLayout()
             return
@@ -2884,6 +2968,13 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             withID: groupID,
             to: title,
             recordHistory: true
+        )
+        macOSGroupTitleEditTrace(
+            "controller.commit.renamed",
+            groupID: groupID,
+            editingGroupTitleID: editingGroupTitleID,
+            title: title,
+            firstResponder: view.window?.firstResponder
         )
         updateGroupListPresentation()
         updateChromeOverlayLayout()
@@ -7196,6 +7287,7 @@ private final class macOSCanvasGroupListView: NSView, NSTextFieldDelegate {
 
     private var renderedGroups: [CanvasItemGroup] = []
     private var renderedEditingGroupTitleID: CanvasItemGroupID?
+    private var programmaticFocusGroupTitleID: CanvasItemGroupID?
 
     private let scrollView: NSScrollView = {
         let scrollView = NSScrollView()
@@ -7245,6 +7337,11 @@ private final class macOSCanvasGroupListView: NSView, NSTextFieldDelegate {
         groups: [CanvasItemGroup],
         editingGroupTitleID: CanvasItemGroupID?
     ) {
+        macOSGroupTitleEditTrace(
+            "list.render.start",
+            editingGroupTitleID: editingGroupTitleID,
+            firstResponder: window?.firstResponder
+        )
         renderedGroups = groups
         renderedEditingGroupTitleID = editingGroupTitleID
         var focusedTitleTextField: NSTextField?
@@ -7271,13 +7368,44 @@ private final class macOSCanvasGroupListView: NSView, NSTextFieldDelegate {
 
         updateDocumentLayout()
         if let focusedTitleTextField {
+            macOSGroupTitleEditTrace(
+                "list.render.scheduleFocus",
+                groupID: (focusedTitleTextField as? macOSCanvasGroupTitleTextField)?.groupID,
+                editingGroupTitleID: editingGroupTitleID,
+                title: focusedTitleTextField.stringValue,
+                firstResponder: window?.firstResponder
+            )
             DispatchQueue.main.async { [weak self, weak focusedTitleTextField] in
                 guard let self, let focusedTitleTextField else {
                     return
                 }
 
-                self.window?.makeFirstResponder(focusedTitleTextField)
+                let focusedGroupID = (focusedTitleTextField as? macOSCanvasGroupTitleTextField)?.groupID
+                self.programmaticFocusGroupTitleID = focusedGroupID
+                macOSGroupTitleEditTrace(
+                    "list.render.focus.before",
+                    groupID: focusedGroupID,
+                    editingGroupTitleID: self.renderedEditingGroupTitleID,
+                    title: focusedTitleTextField.stringValue,
+                    firstResponder: self.window?.firstResponder
+                )
+                let didFocus = self.window?.makeFirstResponder(focusedTitleTextField) ?? false
                 focusedTitleTextField.selectText(nil)
+                macOSGroupTitleEditTrace(
+                    "list.render.focus.after",
+                    groupID: focusedGroupID,
+                    editingGroupTitleID: self.renderedEditingGroupTitleID,
+                    title: focusedTitleTextField.stringValue,
+                    firstResponder: self.window?.firstResponder,
+                    detail: "didFocus=\(didFocus)"
+                )
+                DispatchQueue.main.async { [weak self] in
+                    guard self?.programmaticFocusGroupTitleID == focusedGroupID else {
+                        return
+                    }
+
+                    self?.programmaticFocusGroupTitleID = nil
+                }
             }
         }
     }
@@ -7533,11 +7661,36 @@ private final class macOSCanvasGroupListView: NSView, NSTextFieldDelegate {
 
     @objc
     private func handleEditGroupTitleButtonClick(_ sender: macOSCanvasGroupEditButton) {
+        macOSGroupTitleEditTrace(
+            "list.editButton.click",
+            groupID: sender.groupID,
+            editingGroupTitleID: renderedEditingGroupTitleID,
+            firstResponder: window?.firstResponder
+        )
         onEditGroupTitleRequested?(sender.groupID)
     }
 
     func controlTextDidEndEditing(_ obj: Notification) {
         guard let textField = obj.object as? NSTextField else {
+            return
+        }
+
+        macOSGroupTitleEditTrace(
+            "list.controlTextDidEndEditing",
+            groupID: (textField as? macOSCanvasGroupTitleTextField)?.groupID,
+            editingGroupTitleID: renderedEditingGroupTitleID,
+            title: textField.stringValue,
+            firstResponder: window?.firstResponder
+        )
+        if let titleTextField = textField as? macOSCanvasGroupTitleTextField,
+           programmaticFocusGroupTitleID == titleTextField.groupID {
+            macOSGroupTitleEditTrace(
+                "list.controlTextDidEndEditing.ignoredProgrammaticFocus",
+                groupID: titleTextField.groupID,
+                editingGroupTitleID: renderedEditingGroupTitleID,
+                title: titleTextField.stringValue,
+                firstResponder: window?.firstResponder
+            )
             return
         }
 
@@ -7553,6 +7706,13 @@ private final class macOSCanvasGroupListView: NSView, NSTextFieldDelegate {
             return false
         }
 
+        macOSGroupTitleEditTrace(
+            "list.control.insertNewline",
+            groupID: (control as? macOSCanvasGroupTitleTextField)?.groupID,
+            editingGroupTitleID: renderedEditingGroupTitleID,
+            title: control.stringValue,
+            firstResponder: window?.firstResponder
+        )
         submitGroupTitle(from: control)
         window?.makeFirstResponder(nil)
         return true
@@ -7560,9 +7720,33 @@ private final class macOSCanvasGroupListView: NSView, NSTextFieldDelegate {
 
     private func submitGroupTitle(from control: NSControl) {
         guard let titleTextField = control as? macOSCanvasGroupTitleTextField else {
+            macOSGroupTitleEditTrace(
+                "list.submit.ignoredNonGroupTitleField",
+                editingGroupTitleID: renderedEditingGroupTitleID,
+                title: control.stringValue,
+                firstResponder: window?.firstResponder
+            )
             return
         }
 
+        guard renderedEditingGroupTitleID == titleTextField.groupID else {
+            macOSGroupTitleEditTrace(
+                "list.submit.ignoredStaleEditingID",
+                groupID: titleTextField.groupID,
+                editingGroupTitleID: renderedEditingGroupTitleID,
+                title: titleTextField.stringValue,
+                firstResponder: window?.firstResponder
+            )
+            return
+        }
+
+        macOSGroupTitleEditTrace(
+            "list.submit",
+            groupID: titleTextField.groupID,
+            editingGroupTitleID: renderedEditingGroupTitleID,
+            title: titleTextField.stringValue,
+            firstResponder: window?.firstResponder
+        )
         onGroupTitleSubmitted?(
             titleTextField.groupID,
             titleTextField.stringValue
