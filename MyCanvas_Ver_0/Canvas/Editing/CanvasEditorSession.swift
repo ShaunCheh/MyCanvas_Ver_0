@@ -218,6 +218,51 @@ Write here.
         group(withID: groupID)?.frame
     }
 
+    func directItemIDs(withID groupID: CanvasItemGroupID) -> [CanvasItemID] {
+        group(withID: groupID)?.itemIDs ?? []
+    }
+
+    func directChildGroupIDs(withID groupID: CanvasItemGroupID) -> [CanvasItemGroupID] {
+        normalizedChildGroupIDsByParent()[groupID] ?? []
+    }
+
+    func parentGroupID(for groupID: CanvasItemGroupID) -> CanvasItemGroupID? {
+        normalizedParentGroupIDsByChild()[groupID]
+    }
+
+    func descendantGroupIDs(withID groupID: CanvasItemGroupID) -> [CanvasItemGroupID] {
+        guard group(withID: groupID) != nil else {
+            return []
+        }
+
+        let childrenByParent = normalizedChildGroupIDsByParent()
+        var descendants: [CanvasItemGroupID] = []
+        var visitedGroupIDs = Set<CanvasItemGroupID>()
+
+        func visitChildren(of parentID: CanvasItemGroupID) {
+            for childGroupID in childrenByParent[parentID] ?? [] {
+                guard visitedGroupIDs.insert(childGroupID).inserted else {
+                    continue
+                }
+
+                descendants.append(childGroupID)
+                visitChildren(of: childGroupID)
+            }
+        }
+
+        visitChildren(of: groupID)
+        return descendants
+    }
+
+    func descendantItemIDs(withID groupID: CanvasItemGroupID) -> [CanvasItemID] {
+        var seenItemIDs = Set<CanvasItemID>()
+        return descendantGroupIDs(withID: groupID).flatMap { descendantGroupID in
+            directItemIDs(withID: descendantGroupID).filter { itemID in
+                seenItemIDs.insert(itemID).inserted
+            }
+        }
+    }
+
     func groupMemberGeometries(withID groupID: CanvasItemGroupID) -> [CanvasBoardItemGeometry] {
         guard let group = group(withID: groupID) else {
             return []
@@ -820,6 +865,80 @@ Write here.
         }
 
         return true
+    }
+
+    @discardableResult
+    func setChildGroups(
+        forGroupID groupID: CanvasItemGroupID,
+        to childGroupIDs: [CanvasItemGroupID],
+        recordHistory: Bool = false
+    ) -> Bool {
+        guard groups.contains(where: { $0.id == groupID }) else {
+            return false
+        }
+
+        let validChildGroupIDs = normalizedSettableChildGroupIDs(
+            childGroupIDs,
+            forParentGroupID: groupID
+        )
+        let beforeSnapshot = recordHistory ? currentBoardHistorySnapshot() : nil
+        var didChange = false
+        let requestedChildGroupIDSet = Set(validChildGroupIDs)
+
+        for index in groups.indices {
+            guard groups[index].id != groupID else {
+                continue
+            }
+
+            let filteredChildGroupIDs = groups[index].childGroupIDs.filter { childGroupID in
+                requestedChildGroupIDSet.contains(childGroupID) == false
+            }
+            if groups[index].childGroupIDs != filteredChildGroupIDs {
+                groups[index].childGroupIDs = filteredChildGroupIDs
+                didChange = true
+            }
+        }
+
+        if let groupIndex = groups.firstIndex(where: { $0.id == groupID }),
+           groups[groupIndex].childGroupIDs != validChildGroupIDs
+        {
+            groups[groupIndex].childGroupIDs = validChildGroupIDs
+            didChange = true
+        }
+
+        didChange = normalizeGroupHierarchy() || didChange
+        guard didChange else {
+            return false
+        }
+
+        if let beforeSnapshot {
+            _ = recordImmediateHistoryChange(
+                from: beforeSnapshot,
+                reason: "update group hierarchy",
+                autosaveReason: "update group hierarchy"
+            )
+        }
+
+        return true
+    }
+
+    @discardableResult
+    func normalizeGroupHierarchy() -> Bool {
+        let normalizedChildGroupIDs = normalizedChildGroupIDsByParent()
+        var didChange = false
+
+        for index in groups.indices {
+            let groupID = groups[index].id
+            let nextChildGroupIDs = normalizedChildGroupIDs[groupID] ?? []
+            guard groups[index].childGroupIDs != nextChildGroupIDs else {
+                continue
+            }
+
+            groups[index].childGroupIDs = nextChildGroupIDs
+            didChange = true
+        }
+
+        return didChange
     }
 
     @discardableResult
@@ -3513,6 +3632,117 @@ Write here.
         }
 
         return groupInteractionState
+    }
+
+    private func normalizedSettableChildGroupIDs(
+        _ childGroupIDs: [CanvasItemGroupID],
+        forParentGroupID parentGroupID: CanvasItemGroupID
+    ) -> [CanvasItemGroupID] {
+        let existingGroupIDs = Set(groups.map(\.id))
+        let existingDescendantIDsByGroup = normalizedDescendantGroupIDSetByGroup()
+        var seenGroupIDs = Set<CanvasItemGroupID>()
+
+        return childGroupIDs.filter { childGroupID in
+            guard
+                childGroupID != parentGroupID,
+                existingGroupIDs.contains(childGroupID),
+                seenGroupIDs.insert(childGroupID).inserted,
+                existingDescendantIDsByGroup[childGroupID, default: []]
+                    .contains(parentGroupID) == false
+            else {
+                return false
+            }
+
+            return true
+        }
+    }
+
+    private func normalizedParentGroupIDsByChild() -> [CanvasItemGroupID: CanvasItemGroupID] {
+        var parentGroupIDsByChild: [CanvasItemGroupID: CanvasItemGroupID] = [:]
+        for (parentGroupID, childGroupIDs) in normalizedChildGroupIDsByParent() {
+            for childGroupID in childGroupIDs {
+                parentGroupIDsByChild[childGroupID] = parentGroupID
+            }
+        }
+        return parentGroupIDsByChild
+    }
+
+    private func normalizedChildGroupIDsByParent() -> [CanvasItemGroupID: [CanvasItemGroupID]] {
+        let existingGroupIDs = Set(groups.map(\.id))
+        var parentGroupIDsByChild: [CanvasItemGroupID: CanvasItemGroupID] = [:]
+        var childGroupIDsByParent: [CanvasItemGroupID: [CanvasItemGroupID]] =
+            Dictionary(uniqueKeysWithValues: groups.map { ($0.id, [CanvasItemGroupID]()) })
+
+        for group in groups {
+            var seenChildGroupIDs = Set<CanvasItemGroupID>()
+            for childGroupID in group.childGroupIDs {
+                guard
+                    existingGroupIDs.contains(childGroupID),
+                    childGroupID != group.id,
+                    seenChildGroupIDs.insert(childGroupID).inserted,
+                    parentGroupIDsByChild[childGroupID] == nil,
+                    wouldCreateGroupHierarchyCycle(
+                        parentGroupID: group.id,
+                        childGroupID: childGroupID,
+                        parentGroupIDsByChild: parentGroupIDsByChild
+                    ) == false
+                else {
+                    continue
+                }
+
+                parentGroupIDsByChild[childGroupID] = group.id
+                childGroupIDsByParent[group.id, default: []].append(childGroupID)
+            }
+        }
+
+        return childGroupIDsByParent
+    }
+
+    private func normalizedDescendantGroupIDSetByGroup() -> [CanvasItemGroupID: Set<CanvasItemGroupID>] {
+        let childGroupIDsByParent = normalizedChildGroupIDsByParent()
+        var memoizedDescendants: [CanvasItemGroupID: Set<CanvasItemGroupID>] = [:]
+
+        func descendants(of groupID: CanvasItemGroupID) -> Set<CanvasItemGroupID> {
+            if let memoized = memoizedDescendants[groupID] {
+                return memoized
+            }
+
+            var descendantIDs = Set<CanvasItemGroupID>()
+            for childGroupID in childGroupIDsByParent[groupID] ?? [] {
+                descendantIDs.insert(childGroupID)
+                descendantIDs.formUnion(descendants(of: childGroupID))
+            }
+            memoizedDescendants[groupID] = descendantIDs
+            return descendantIDs
+        }
+
+        for group in groups {
+            _ = descendants(of: group.id)
+        }
+        return memoizedDescendants
+    }
+
+    private func wouldCreateGroupHierarchyCycle(
+        parentGroupID: CanvasItemGroupID,
+        childGroupID: CanvasItemGroupID,
+        parentGroupIDsByChild: [CanvasItemGroupID: CanvasItemGroupID]
+    ) -> Bool {
+        var currentGroupID: CanvasItemGroupID? = parentGroupID
+        var visitedGroupIDs = Set<CanvasItemGroupID>()
+
+        while let groupID = currentGroupID {
+            guard visitedGroupIDs.insert(groupID).inserted else {
+                return true
+            }
+
+            if groupID == childGroupID {
+                return true
+            }
+
+            currentGroupID = parentGroupIDsByChild[groupID]
+        }
+
+        return false
     }
 
     private func applySelectionState(
