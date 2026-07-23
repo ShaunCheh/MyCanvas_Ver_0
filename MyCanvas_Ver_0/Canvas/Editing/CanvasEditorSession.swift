@@ -780,7 +780,7 @@ Write here.
         groups.append(group)
         if let frame {
             expandBoardIfNeeded(toInclude: frame)
-            _ = reconcileItemMembership(forGroupID: group.id)
+            _ = reconcileGroupMembership(forGroupID: group.id)
         }
 
         if let beforeSnapshot {
@@ -1004,7 +1004,7 @@ Write here.
         groups[groupIndex].frame = standardizedFrame
         expandBoardIfNeeded(toInclude: standardizedFrame)
         if reconcileMembership {
-            _ = reconcileItemMembership(forGroupID: groupID)
+            _ = reconcileGroupMembership(forGroupID: groupID)
         }
 
         if let beforeSnapshot {
@@ -1072,7 +1072,7 @@ Write here.
             expandBoardIfNeeded(toInclude: standardizedFrame)
         }
         if reconcileMembership {
-            _ = reconcileItemMembership(forGroupID: groupID)
+            _ = reconcileGroupMembership(forGroupID: groupID)
         }
 
         if let beforeSnapshot {
@@ -1087,24 +1087,20 @@ Write here.
     }
 
     @discardableResult
-    func reconcileItemMembership(forGroupID groupID: CanvasItemGroupID) -> Bool {
+    func reconcileDirectItemMembership(forGroupID groupID: CanvasItemGroupID) -> Bool {
         guard
             let groupIndex = groups.firstIndex(where: { $0.id == groupID }),
-            let rawFrame = groups[groupIndex].frame
+            let frame = validGroupFrame(withID: groupID)
         else {
             return false
         }
 
-        let frame = rawFrame.standardized
-        guard frame.isNull == false,
-              frame.isInfinite == false,
-              frame.width > 0,
-              frame.height > 0
-        else {
-            return false
-        }
-
+        let descendantMemberIDs = Set(descendantItemIDs(withID: groupID))
         let memberIDs = scene.orderedBoardItems().compactMap { item -> CanvasItemID? in
+            guard descendantMemberIDs.contains(item.id) == false else {
+                return nil
+            }
+
             let bounds = item.worldBounds.standardized
             guard bounds.isNull == false,
                   bounds.isInfinite == false,
@@ -1127,14 +1123,60 @@ Write here.
     }
 
     @discardableResult
-    func reconcileFrameGroupMemberships() -> Bool {
-        let groupIDs = groups.compactMap { group in
-            group.frame == nil ? nil : group.id
+    func reconcileDirectChildGroupMembership(forGroupID groupID: CanvasItemGroupID) -> Bool {
+        guard validGroupFrame(withID: groupID) != nil else {
+            return false
         }
+
+        let groupFrameByID = validGroupFramesByID()
+        let childGroupIDs = groups.compactMap { group -> CanvasItemGroupID? in
+            guard
+                group.id != groupID,
+                groupFrameByID[group.id] != nil,
+                automaticParentGroupID(
+                    forChildGroupID: group.id,
+                    groupFrameByID: groupFrameByID
+                ) == groupID
+            else {
+                return nil
+            }
+
+            return group.id
+        }
+
+        return setChildGroups(forGroupID: groupID, to: childGroupIDs)
+    }
+
+    @discardableResult
+    func reconcileGroupMembership(forGroupID groupID: CanvasItemGroupID) -> Bool {
+        guard validGroupFrame(withID: groupID) != nil else {
+            return false
+        }
+
         var didChange = false
-        for groupID in groupIDs {
-            didChange = reconcileItemMembership(forGroupID: groupID) || didChange
+        didChange = reconcileDirectChildGroupMembership(forGroupID: groupID) || didChange
+        didChange = normalizeGroupHierarchy() || didChange
+        didChange = reconcileDirectItemMembershipsInTreeOrder(
+            groupIDs: [groupID] + descendantGroupIDs(withID: groupID)
+        ) || didChange
+        didChange = normalizeGroupHierarchy() || didChange
+        return didChange
+    }
+
+    @discardableResult
+    func reconcileFrameGroupMemberships() -> Bool {
+        var didChange = false
+        didChange = normalizeGroupHierarchy() || didChange
+
+        let groupIDs = groups.compactMap { group in
+            validGroupFrame(withID: group.id) == nil ? nil : group.id
         }
+        for groupID in groupIDs {
+            didChange = reconcileDirectChildGroupMembership(forGroupID: groupID) || didChange
+        }
+        didChange = normalizeGroupHierarchy() || didChange
+        didChange = reconcileDirectItemMembershipsInTreeOrder(groupIDs: groupIDs) || didChange
+        didChange = normalizeGroupHierarchy() || didChange
         return didChange
     }
 
@@ -3632,6 +3674,119 @@ Write here.
         }
 
         return groupInteractionState
+    }
+
+    private func validGroupFrame(withID groupID: CanvasItemGroupID) -> CGRect? {
+        guard let frame = group(withID: groupID)?.frame?.standardized,
+              frame.isNull == false,
+              frame.isInfinite == false,
+              frame.width > 0,
+              frame.height > 0
+        else {
+            return nil
+        }
+
+        return frame
+    }
+
+    private func validGroupFramesByID() -> [CanvasItemGroupID: CGRect] {
+        var groupFrameByID: [CanvasItemGroupID: CGRect] = [:]
+        for group in groups {
+            guard let frame = validGroupFrame(withID: group.id) else {
+                continue
+            }
+
+            groupFrameByID[group.id] = frame
+        }
+        return groupFrameByID
+    }
+
+    private func automaticParentGroupID(
+        forChildGroupID childGroupID: CanvasItemGroupID,
+        groupFrameByID: [CanvasItemGroupID: CGRect]
+    ) -> CanvasItemGroupID? {
+        guard let childFrame = groupFrameByID[childGroupID] else {
+            return nil
+        }
+
+        let childCenter = CGPoint(x: childFrame.midX, y: childFrame.midY)
+        let childFrameArea = childFrame.width * childFrame.height
+        let descendantGroupIDsByGroup = normalizedDescendantGroupIDSetByGroup()
+        let groupOrderByID = Dictionary(
+            uniqueKeysWithValues: groups.enumerated().map { offset, group in
+                (group.id, offset)
+            }
+        )
+
+        return groups.compactMap { group -> (groupID: CanvasItemGroupID, area: CGFloat, order: Int)? in
+            guard
+                group.id != childGroupID,
+                let parentFrame = groupFrameByID[group.id],
+                parentFrame.contains(childCenter),
+                parentFrame.width * parentFrame.height > childFrameArea,
+                descendantGroupIDsByGroup[childGroupID, default: []].contains(group.id) == false
+            else {
+                return nil
+            }
+
+            return (
+                groupID: group.id,
+                area: parentFrame.width * parentFrame.height,
+                order: groupOrderByID[group.id] ?? Int.max
+            )
+        }
+        .sorted { lhs, rhs in
+            if lhs.area == rhs.area {
+                return lhs.order < rhs.order
+            }
+            return lhs.area < rhs.area
+        }
+        .first?
+        .groupID
+    }
+
+    private func reconcileDirectItemMembershipsInTreeOrder(
+        groupIDs: [CanvasItemGroupID]
+    ) -> Bool {
+        let parentGroupIDsByChild = normalizedParentGroupIDsByChild()
+        let originalOrderByID = Dictionary(
+            uniqueKeysWithValues: groupIDs.enumerated().map { offset, groupID in
+                (groupID, offset)
+            }
+        )
+        var uniqueGroupIDs: [CanvasItemGroupID] = []
+        var seenGroupIDs = Set<CanvasItemGroupID>()
+        for groupID in groupIDs where seenGroupIDs.insert(groupID).inserted {
+            uniqueGroupIDs.append(groupID)
+        }
+
+        func hierarchyDepth(for groupID: CanvasItemGroupID) -> Int {
+            var depth = 0
+            var currentGroupID = parentGroupIDsByChild[groupID]
+            var visitedGroupIDs = Set<CanvasItemGroupID>()
+            while let parentGroupID = currentGroupID,
+                  visitedGroupIDs.insert(parentGroupID).inserted
+            {
+                depth += 1
+                currentGroupID = parentGroupIDsByChild[parentGroupID]
+            }
+            return depth
+        }
+
+        let sortedGroupIDs = uniqueGroupIDs.sorted { lhs, rhs in
+            let lhsDepth = hierarchyDepth(for: lhs)
+            let rhsDepth = hierarchyDepth(for: rhs)
+            if lhsDepth == rhsDepth {
+                return (originalOrderByID[lhs] ?? Int.max) < (originalOrderByID[rhs] ?? Int.max)
+            }
+            return lhsDepth > rhsDepth
+        }
+
+        var didChange = false
+        for groupID in sortedGroupIDs {
+            didChange = reconcileDirectItemMembership(forGroupID: groupID) || didChange
+        }
+        return didChange
     }
 
     private func normalizedSettableChildGroupIDs(
