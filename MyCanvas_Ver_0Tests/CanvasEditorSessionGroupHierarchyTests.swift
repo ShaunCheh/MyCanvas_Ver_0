@@ -502,6 +502,108 @@ final class CanvasEditorSessionGroupHierarchyTests: XCTestCase {
         XCTAssertTrue(session.clearSelection())
         XCTAssertNil(session.selectedGroupID)
     }
+
+    func testUndoRedoRestoresAutomaticChildGroupMembershipTransaction() {
+        let parentID = CanvasItemGroupID()
+        let childAID = CanvasItemGroupID()
+        let childBID = CanvasItemGroupID()
+        let session = makeGroupHierarchyAutomaticMembershipHistorySession(
+            parentID: parentID,
+            childAID: childAID,
+            childBID: childBID
+        )
+
+        session.beginHistoryTransaction(reason: "test automatic group membership")
+        XCTAssertTrue(
+            session.updateGroupFrame(
+                withID: parentID,
+                to: CGRect(x: 0, y: 0, width: 260, height: 140)
+            )
+        )
+        XCTAssertTrue(session.commitPendingHistoryTransaction())
+        XCTAssertEqual(session.directChildGroupIDs(withID: parentID), [childAID, childBID])
+
+        XCTAssertTrue(applyGroupHierarchyUndo(in: session))
+        XCTAssertEqual(session.directChildGroupIDs(withID: parentID), [])
+        XCTAssertNil(session.parentGroupID(for: childAID))
+        XCTAssertNil(session.parentGroupID(for: childBID))
+
+        XCTAssertTrue(applyGroupHierarchyRedo(in: session))
+        XCTAssertEqual(session.directChildGroupIDs(withID: parentID), [childAID, childBID])
+        XCTAssertEqual(session.parentGroupID(for: childAID), parentID)
+        XCTAssertEqual(session.parentGroupID(for: childBID), parentID)
+    }
+
+    func testUndoRedoRestoresParentSubtreeDragTransaction() throws {
+        let fixture = makeGroupHierarchySubtreeMoveFixture()
+        let session = fixture.session
+        XCTAssertTrue(session.reconcileFrameGroupMemberships())
+
+        let translation = CGPoint(x: 18, y: 26)
+        let parentSnapshot = session.groupSubtreeGeometries(withID: fixture.parentID)
+        let movedParentFrame = fixture.parentFrame.offsetBy(
+            dx: translation.x,
+            dy: translation.y
+        )
+        let movedSubtreeGeometries = translatedGroupHierarchySubtreeGeometries(
+            parentSnapshot,
+            by: translation
+        )
+
+        session.beginHistoryTransaction(reason: "test move group subtree")
+        XCTAssertTrue(
+            session.updateGroupFrameAndSubtreeGeometries(
+                withID: fixture.parentID,
+                to: movedParentFrame,
+                subtreeGeometries: movedSubtreeGeometries,
+                reconcileMembership: false
+            )
+        )
+        XCTAssertTrue(session.commitPendingHistoryTransaction())
+        XCTAssertEqual(session.groupFrame(withID: fixture.parentID), movedParentFrame)
+        try assertGroupHierarchySubtreeMoveFixture(
+            fixture,
+            translation: translation
+        )
+
+        XCTAssertTrue(applyGroupHierarchyUndo(in: session))
+        XCTAssertEqual(session.groupFrame(withID: fixture.parentID), fixture.parentFrame)
+        try assertGroupHierarchySubtreeMoveFixture(fixture, translation: .zero)
+
+        XCTAssertTrue(applyGroupHierarchyRedo(in: session))
+        XCTAssertEqual(session.groupFrame(withID: fixture.parentID), movedParentFrame)
+        try assertGroupHierarchySubtreeMoveFixture(
+            fixture,
+            translation: translation
+        )
+    }
+
+    func testUndoRedoRestoresParentResizeWithoutMovingChildSubtree() throws {
+        let fixture = makeGroupHierarchySubtreeMoveFixture()
+        let session = fixture.session
+        XCTAssertTrue(session.reconcileFrameGroupMemberships())
+
+        let resizedParentFrame = CGRect(x: -20, y: -10, width: 340, height: 190)
+        session.beginHistoryTransaction(reason: "test resize group frame")
+        XCTAssertTrue(
+            session.updateGroupFrame(
+                withID: fixture.parentID,
+                to: resizedParentFrame,
+                reconcileMembership: false
+            )
+        )
+        XCTAssertTrue(session.commitPendingHistoryTransaction())
+        XCTAssertEqual(session.groupFrame(withID: fixture.parentID), resizedParentFrame)
+        try assertGroupHierarchySubtreeMoveFixture(fixture, translation: .zero)
+
+        XCTAssertTrue(applyGroupHierarchyUndo(in: session))
+        XCTAssertEqual(session.groupFrame(withID: fixture.parentID), fixture.parentFrame)
+        try assertGroupHierarchySubtreeMoveFixture(fixture, translation: .zero)
+
+        XCTAssertTrue(applyGroupHierarchyRedo(in: session))
+        XCTAssertEqual(session.groupFrame(withID: fixture.parentID), resizedParentFrame)
+        try assertGroupHierarchySubtreeMoveFixture(fixture, translation: .zero)
+    }
 }
 
 private enum CanvasEditorSessionGroupHierarchyTestRetainer {
@@ -677,6 +779,35 @@ private func makeGroupHierarchyRenderOrderSession(
     return session
 }
 
+private func makeGroupHierarchyAutomaticMembershipHistorySession(
+    parentID: CanvasItemGroupID,
+    childAID: CanvasItemGroupID,
+    childBID: CanvasItemGroupID
+) -> CanvasEditorSession {
+    let session = makeGroupHierarchyTestSession()
+    session.groups = [
+        CanvasItemGroup(
+            id: childAID,
+            title: "A",
+            itemIDs: [],
+            frame: CGRect(x: 20, y: 20, width: 80, height: 60)
+        ),
+        CanvasItemGroup(
+            id: childBID,
+            title: "B",
+            itemIDs: [],
+            frame: CGRect(x: 140, y: 40, width: 80, height: 60)
+        ),
+        CanvasItemGroup(
+            id: parentID,
+            title: "C",
+            itemIDs: [],
+            frame: CGRect(x: 360, y: 40, width: 80, height: 60)
+        )
+    ]
+    return session
+}
+
 private func makeGroupHierarchyRenderOrderCamera() -> CanvasCamera {
     CanvasCamera(
         center: CGPoint(x: 100, y: 100),
@@ -720,4 +851,71 @@ private func makeGroupHierarchyClickDecision(
         pressedModifiers: .none,
         releasedModifiers: .none
     )
+}
+
+private func assertGroupHierarchySubtreeMoveFixture(
+    _ fixture: GroupHierarchySubtreeMoveFixture,
+    translation: CGPoint,
+    file: StaticString = #filePath,
+    line: UInt = #line
+) throws {
+    let session = fixture.session
+    XCTAssertEqual(
+        session.groupFrame(withID: fixture.childAID),
+        fixture.childAFrame.offsetBy(dx: translation.x, dy: translation.y),
+        file: file,
+        line: line
+    )
+    XCTAssertEqual(
+        session.groupFrame(withID: fixture.childBID),
+        fixture.childBFrame.offsetBy(dx: translation.x, dy: translation.y),
+        file: file,
+        line: line
+    )
+    XCTAssertEqual(
+        session.groupFrame(withID: fixture.siblingID),
+        fixture.siblingFrame,
+        file: file,
+        line: line
+    )
+    XCTAssertEqual(
+        try XCTUnwrap(session.scene.textItem(withID: fixture.childAItem.id)).center,
+        fixture.childAItem.center.translated(by: translation),
+        file: file,
+        line: line
+    )
+    XCTAssertEqual(
+        try XCTUnwrap(session.scene.textItem(withID: fixture.childBItem.id)).center,
+        fixture.childBItem.center.translated(by: translation),
+        file: file,
+        line: line
+    )
+    XCTAssertEqual(
+        try XCTUnwrap(session.scene.textItem(withID: fixture.parentDirectItem.id)).center,
+        fixture.parentDirectItem.center.translated(by: translation),
+        file: file,
+        line: line
+    )
+}
+
+private func applyGroupHierarchyUndo(
+    in session: CanvasEditorSession
+) -> Bool {
+    guard let snapshot = session.undoHistorySnapshot() else {
+        return false
+    }
+
+    session.applyBoardHistorySnapshot(snapshot)
+    return true
+}
+
+private func applyGroupHierarchyRedo(
+    in session: CanvasEditorSession
+) -> Bool {
+    guard let snapshot = session.redoHistorySnapshot() else {
+        return false
+    }
+
+    session.applyBoardHistorySnapshot(snapshot)
+    return true
 }

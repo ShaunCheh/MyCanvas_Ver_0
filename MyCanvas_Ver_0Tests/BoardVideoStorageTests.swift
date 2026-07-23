@@ -143,6 +143,65 @@ final class BoardVideoStorageTests: XCTestCase {
         XCTAssertEqual(roundTrippedChildGroup.frame, childGroupFrame)
     }
 
+    func testBoardDocumentMapperRoundTripsNestedGroupTreeStructure() throws {
+        let rootID = UUID()
+        let childID = UUID()
+        let grandchildID = UUID()
+        var runtimeState = BoardRuntimeState.makeEmpty(
+            now: Date(timeIntervalSince1970: 1_710_000_500)
+        )
+        runtimeState.groups = [
+            CanvasItemGroup(
+                id: rootID,
+                title: "Root",
+                itemIDs: [],
+                childGroupIDs: [childID],
+                frame: CGRect(x: 0, y: 0, width: 360, height: 240)
+            ),
+            CanvasItemGroup(
+                id: childID,
+                title: "Child",
+                itemIDs: [],
+                childGroupIDs: [grandchildID],
+                frame: CGRect(x: 40, y: 40, width: 180, height: 120)
+            ),
+            CanvasItemGroup(
+                id: grandchildID,
+                title: "Grandchild",
+                itemIDs: [],
+                frame: CGRect(x: 70, y: 70, width: 80, height: 60)
+            )
+        ]
+
+        let document = BoardDocumentMapper.makeDocument(from: runtimeState)
+        let restoredRuntimeState = try BoardDocumentMapper.makeRuntimeState(
+            from: document,
+            imageLoader: { _ in
+                throw NSError(
+                    domain: "BoardDocumentMapperGroupTreeTest",
+                    code: 1
+                )
+            }
+        )
+
+        XCTAssertEqual(
+            restoredRuntimeState.groups.map(\.id),
+            [rootID, childID, grandchildID]
+        )
+        XCTAssertEqual(
+            restoredRuntimeState.groups.first(where: { $0.id == rootID })?.childGroupIDs,
+            [childID]
+        )
+        XCTAssertEqual(
+            restoredRuntimeState.groups.first(where: { $0.id == childID })?.childGroupIDs,
+            [grandchildID]
+        )
+        XCTAssertEqual(
+            restoredRuntimeState.groups.first(where: { $0.id == grandchildID })?.childGroupIDs,
+            []
+        )
+    }
+
     func testBoardGroupRecordDecodesLegacyDocumentWithoutChildGroupIDs() throws {
         let groupID = UUID(uuidString: "43B7E100-0838-48F5-94A0-1041013FDC39")!
         let itemID = UUID(uuidString: "BA5108F1-D004-4B74-9E07-2CCB3D1F1BC8")!
