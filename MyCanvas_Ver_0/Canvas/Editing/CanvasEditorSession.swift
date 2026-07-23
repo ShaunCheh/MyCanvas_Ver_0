@@ -236,6 +236,10 @@ Write here.
         inlineEditState == nil && group(withID: groupID) != nil
     }
 
+    func canRenameGroup(withID groupID: CanvasItemGroupID) -> Bool {
+        inlineEditState == nil && group(withID: groupID) != nil
+    }
+
     var canBeginCropMode: Bool {
         guard inlineEditState == nil else {
             return false
@@ -812,6 +816,38 @@ Write here.
             _ = recordImmediateHistoryChange(
                 from: beforeSnapshot,
                 reason: "clear group selection"
+            )
+        }
+
+        return true
+    }
+
+    @discardableResult
+    func renameGroup(
+        withID groupID: CanvasItemGroupID,
+        to title: String,
+        recordHistory: Bool = false
+    ) -> Bool {
+        guard
+            canRenameGroup(withID: groupID),
+            let groupIndex = groups.firstIndex(where: { $0.id == groupID })
+        else {
+            return false
+        }
+
+        let normalizedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard groups[groupIndex].title != normalizedTitle else {
+            return false
+        }
+
+        let beforeSnapshot = recordHistory ? currentBoardHistorySnapshot() : nil
+        groups[groupIndex].title = normalizedTitle
+
+        if let beforeSnapshot {
+            _ = recordImmediateHistoryChange(
+                from: beforeSnapshot,
+                reason: "rename group",
+                autosaveReason: "rename group"
             )
         }
 

@@ -4,7 +4,7 @@ overview: 为右上角 group 列表增加每行圆形图标编辑按钮，点击
 todos:
   - id: session-rename-api
     content: 在 CanvasEditorSession 增加 group rename API 并接入 history/autosave
-    status: pending
+    status: completed
   - id: ios-row-edit-ui
     content: iOS group list 每行增加圆形编辑图标和 inline text field
     status: pending
