@@ -2873,6 +2873,10 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
 
     @objc
     private func handleGroupListButtonTap() {
+        if isGroupListVisible {
+            groupListView.endEditing(true)
+            editingGroupTitleID = nil
+        }
         isGroupListVisible.toggle()
         updateGroupListPresentation()
         updateChromeOverlayLayout()
@@ -2885,6 +2889,11 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     }
 
     private func beginGroupTitleEditing(groupID: CanvasItemGroupID) {
+        if let editingGroupTitleID,
+           editingGroupTitleID != groupID {
+            groupListView.endEditing(true)
+        }
+
         guard editorSession.group(withID: groupID) != nil else {
             editingGroupTitleID = nil
             updateGroupListPresentation()
@@ -2906,6 +2915,12 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         }
 
         editingGroupTitleID = nil
+        guard editorSession.group(withID: groupID) != nil else {
+            updateGroupListPresentation()
+            updateChromeOverlayLayout()
+            return
+        }
+
         _ = editorSession.renameGroup(
             withID: groupID,
             to: title,
@@ -5789,6 +5804,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     }
 
     private func restoreBoard(withID boardID: UUID) {
+        editingGroupTitleID = nil
         do {
             try editorSession.loadBoard(id: boardID)
         } catch {
@@ -5805,6 +5821,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     }
 
     private func startNewBoard() {
+        editingGroupTitleID = nil
         editorSession.startNewBoard()
         updateWorkspaceModeButtonAppearance()
         updateInlineEditButtonsAppearance()
@@ -5812,6 +5829,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     }
 
     private func restorePersistedBoardIfPossible() {
+        editingGroupTitleID = nil
         editorSession.restorePersistedBoardIfPossible()
         updateWorkspaceModeButtonAppearance()
         updateInlineEditButtonsAppearance()
@@ -5820,6 +5838,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
 
     private func applyBoardRuntimeState(_ runtimeState: BoardRuntimeState) {
         cancelRotationInteractionIfNeeded(resetPointerDragState: true)
+        editingGroupTitleID = nil
         editorSession.applyBoardRuntimeState(runtimeState)
         updateWorkspaceModeButtonAppearance()
         updateInlineEditButtonsAppearance()

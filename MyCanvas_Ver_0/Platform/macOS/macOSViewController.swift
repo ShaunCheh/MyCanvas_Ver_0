@@ -2831,6 +2831,10 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
 
     @objc
     private func handleGroupListButtonClick() {
+        if isGroupListVisible {
+            view.window?.makeFirstResponder(nil)
+            editingGroupTitleID = nil
+        }
         isGroupListVisible.toggle()
         updateGroupListPresentation()
         updateChromeOverlayLayout()
@@ -2844,6 +2848,11 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     }
 
     private func beginGroupTitleEditing(groupID: CanvasItemGroupID) {
+        if let editingGroupTitleID,
+           editingGroupTitleID != groupID {
+            view.window?.makeFirstResponder(nil)
+        }
+
         guard editorSession.group(withID: groupID) != nil else {
             editingGroupTitleID = nil
             updateGroupListPresentation()
@@ -2865,6 +2874,12 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         }
 
         editingGroupTitleID = nil
+        guard editorSession.group(withID: groupID) != nil else {
+            updateGroupListPresentation()
+            updateChromeOverlayLayout()
+            return
+        }
+
         _ = editorSession.renameGroup(
             withID: groupID,
             to: title,
@@ -6090,6 +6105,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     }
 
     private func restoreBoard(withID boardID: UUID) {
+        editingGroupTitleID = nil
         print(
             "[Canvas macOS][RuntimeRestore] " +
             "action=controllerLoadBoard.begin " +
@@ -6131,6 +6147,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             "selectedItemID=\(describe(itemID: interactionState.selectedItemID))"
         )
         editorSession.startNewBoard()
+        editingGroupTitleID = nil
         updateWorkspaceModeButtonAppearance()
         updateInlineEditButtonsAppearance()
         updateGroupListPresentation()
@@ -6153,6 +6170,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             "selectedItemID=\(describe(itemID: interactionState.selectedItemID))"
         )
         editorSession.restorePersistedBoardIfPossible()
+        editingGroupTitleID = nil
         updateWorkspaceModeButtonAppearance()
         updateInlineEditButtonsAppearance()
         updateGroupListPresentation()
@@ -6177,6 +6195,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             "runtimeSelectedItemID=\(describe(itemID: runtimeState.interactionState.selectedItemID))"
         )
         editorSession.applyBoardRuntimeState(runtimeState)
+        editingGroupTitleID = nil
         updateWorkspaceModeButtonAppearance()
         updateInlineEditButtonsAppearance()
         updateGroupListPresentation()
