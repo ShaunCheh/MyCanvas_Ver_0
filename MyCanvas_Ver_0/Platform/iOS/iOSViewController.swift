@@ -407,6 +407,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     private var isTransitionInteractionFrozen = false
     private var transitionChromeHidden = false
     private var isGroupListVisible = false
+    private var editingGroupTitleID: CanvasItemGroupID?
     private var lastPinchDispatchTimestamp: TimeInterval?
     private var lastZoomRefreshTimestamp: TimeInterval?
     private var didMutateCameraDuringPinchGesture = false
@@ -1531,7 +1532,10 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     }
 
     private func updateGroupListPresentation() {
-        groupListView.render(groups: editorSession.groups)
+        groupListView.render(
+            groups: editorSession.groups,
+            editingGroupTitleID: editingGroupTitleID
+        )
         groupListView.isHidden = isGroupListVisible == false
         groupListButton.isSelected = isGroupListVisible
         groupListButton.accessibilityValue = isGroupListVisible ? "Expanded" : "Collapsed"
@@ -6520,8 +6524,10 @@ private enum iOSVideoEditorFlowError: LocalizedError {
     }
 }
 
-private final class iOSCanvasGroupListView: UIView {
+private final class iOSCanvasGroupListView: UIView, UITextFieldDelegate {
     var onAddGroupRequested: (() -> Void)?
+    var onEditGroupTitleRequested: ((CanvasItemGroupID) -> Void)?
+    var onGroupTitleSubmitted: ((CanvasItemGroupID, String) -> Void)?
 
     private let scrollView: UIScrollView = {
         let scrollView = UIScrollView()
@@ -6551,7 +6557,11 @@ private final class iOSCanvasGroupListView: UIView {
         setupView()
     }
 
-    func render(groups: [CanvasItemGroup]) {
+    func render(
+        groups: [CanvasItemGroup],
+        editingGroupTitleID: CanvasItemGroupID?
+    ) {
+        var focusedTitleTextField: UITextField?
         stackView.arrangedSubviews.forEach { view in
             stackView.removeArrangedSubview(view)
             view.removeFromSuperview()
@@ -6567,9 +6577,21 @@ private final class iOSCanvasGroupListView: UIView {
         }
 
         for group in groups {
+            let isEditingTitle = group.id == editingGroupTitleID
             stackView.addArrangedSubview(
-                makeGroupRow(for: group)
+                makeGroupRow(
+                    for: group,
+                    isEditingTitle: isEditingTitle,
+                    focusedTitleTextField: &focusedTitleTextField
+                )
             )
+        }
+
+        if let focusedTitleTextField {
+            DispatchQueue.main.async { [weak focusedTitleTextField] in
+                focusedTitleTextField?.becomeFirstResponder()
+                focusedTitleTextField?.selectAll(nil)
+            }
         }
     }
 
@@ -6651,30 +6673,54 @@ private final class iOSCanvasGroupListView: UIView {
         return label
     }
 
-    private func makeGroupRow(for group: CanvasItemGroup) -> UIView {
+    private func makeGroupRow(
+        for group: CanvasItemGroup,
+        isEditingTitle: Bool,
+        focusedTitleTextField: inout UITextField?
+    ) -> UIView {
         let container = UIView()
         container.backgroundColor = .tertiarySystemBackground
         container.layer.cornerRadius = 12
         container.layer.cornerCurve = .continuous
+
+        let outerStack = UIStackView()
+        outerStack.translatesAutoresizingMaskIntoConstraints = false
+        outerStack.axis = .horizontal
+        outerStack.alignment = .top
+        outerStack.spacing = 8
 
         let rowStack = UIStackView()
         rowStack.translatesAutoresizingMaskIntoConstraints = false
         rowStack.axis = .vertical
         rowStack.alignment = .fill
         rowStack.spacing = 4
+        rowStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
-        let titleLabel = UILabel()
-        titleLabel.font = .preferredFont(forTextStyle: .headline)
-        titleLabel.textColor = .label
-        titleLabel.numberOfLines = 2
-        titleLabel.text = group.displayTitle
+        if isEditingTitle {
+            let titleTextField = iOSCanvasGroupTitleTextField(groupID: group.id)
+            titleTextField.font = .preferredFont(forTextStyle: .headline)
+            titleTextField.textColor = .label
+            titleTextField.borderStyle = .roundedRect
+            titleTextField.returnKeyType = .done
+            titleTextField.clearButtonMode = .never
+            titleTextField.text = group.title
+            titleTextField.delegate = self
+            rowStack.addArrangedSubview(titleTextField)
+            focusedTitleTextField = titleTextField
+        } else {
+            let titleLabel = UILabel()
+            titleLabel.font = .preferredFont(forTextStyle: .headline)
+            titleLabel.textColor = .label
+            titleLabel.numberOfLines = 2
+            titleLabel.text = group.displayTitle
+            rowStack.addArrangedSubview(titleLabel)
+        }
 
         let metadataLabel = UILabel()
         metadataLabel.font = .preferredFont(forTextStyle: .caption1)
         metadataLabel.textColor = .secondaryLabel
         metadataLabel.text = "\(group.itemIDs.count) item\(group.itemIDs.count == 1 ? "" : "s")"
 
-        rowStack.addArrangedSubview(titleLabel)
         rowStack.addArrangedSubview(metadataLabel)
 
         let descriptionText = group.description
@@ -6688,15 +6734,85 @@ private final class iOSCanvasGroupListView: UIView {
             rowStack.addArrangedSubview(descriptionLabel)
         }
 
-        container.addSubview(rowStack)
+        let editButton = makeEditGroupTitleButton(for: group)
+        outerStack.addArrangedSubview(rowStack)
+        outerStack.addArrangedSubview(editButton)
+
+        container.addSubview(outerStack)
         NSLayoutConstraint.activate([
-            rowStack.topAnchor.constraint(equalTo: container.topAnchor, constant: 10),
-            rowStack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 10),
-            rowStack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -10),
-            rowStack.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -10)
+            outerStack.topAnchor.constraint(equalTo: container.topAnchor, constant: 10),
+            outerStack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 10),
+            outerStack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -10),
+            outerStack.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -10),
+            editButton.widthAnchor.constraint(equalToConstant: 32),
+            editButton.heightAnchor.constraint(equalToConstant: 32)
         ])
 
         return container
+    }
+
+    private func makeEditGroupTitleButton(for group: CanvasItemGroup) -> UIButton {
+        let button = UIButton(type: .system)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.backgroundColor = .systemBackground
+        button.layer.cornerRadius = 16
+        button.layer.cornerCurve = .continuous
+        button.layer.borderWidth = 1
+        button.layer.borderColor = UIColor.separator.cgColor
+        button.accessibilityLabel = "Edit group name"
+
+        var configuration = UIButton.Configuration.plain()
+        configuration.image = UIImage(systemName: "pencil")
+        configuration.baseForegroundColor = .label
+        configuration.contentInsets = NSDirectionalEdgeInsets(
+            top: 6,
+            leading: 6,
+            bottom: 6,
+            trailing: 6
+        )
+        button.configuration = configuration
+        button.addAction(
+            UIAction { [weak self] _ in
+                self?.onEditGroupTitleRequested?(group.id)
+            },
+            for: .touchUpInside
+        )
+        return button
+    }
+
+    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+        submitGroupTitle(from: textField)
+        textField.resignFirstResponder()
+        return true
+    }
+
+    func textFieldDidEndEditing(_ textField: UITextField) {
+        submitGroupTitle(from: textField)
+    }
+
+    private func submitGroupTitle(from textField: UITextField) {
+        guard let titleTextField = textField as? iOSCanvasGroupTitleTextField else {
+            return
+        }
+
+        onGroupTitleSubmitted?(
+            titleTextField.groupID,
+            titleTextField.text ?? ""
+        )
+    }
+}
+
+private final class iOSCanvasGroupTitleTextField: UITextField {
+    let groupID: CanvasItemGroupID
+
+    init(groupID: CanvasItemGroupID) {
+        self.groupID = groupID
+        super.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
+    }
+
+    required init?(coder: NSCoder) {
+        return nil
     }
 }
 

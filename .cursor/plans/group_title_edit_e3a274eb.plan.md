@@ -7,7 +7,7 @@ todos:
     status: completed
   - id: ios-row-edit-ui
     content: iOS group list 每行增加圆形编辑图标和 inline text field
-    status: pending
+    status: completed
   - id: ios-rename-flow
     content: iOS controller 接入编辑状态、focus 和提交刷新流程
     status: pending
