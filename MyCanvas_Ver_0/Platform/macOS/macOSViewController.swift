@@ -7384,6 +7384,7 @@ private final class macOSCanvasGroupListView: NSView, NSTextFieldDelegate {
     private var renderedGroups: [CanvasItemGroup] = []
     private var renderedEditingGroupTitleID: CanvasItemGroupID?
     private var programmaticFocusGroupTitleID: CanvasItemGroupID?
+    private var arrangedSubviewWidthConstraints: [NSLayoutConstraint] = []
 
     private let scrollView: NSScrollView = {
         let scrollView = NSScrollView()
@@ -7441,6 +7442,10 @@ private final class macOSCanvasGroupListView: NSView, NSTextFieldDelegate {
         renderedGroups = groups
         renderedEditingGroupTitleID = editingGroupTitleID
         var focusedTitleTextField: NSTextField?
+        arrangedSubviewWidthConstraints.forEach { constraint in
+            constraint.isActive = false
+        }
+        arrangedSubviewWidthConstraints.removeAll()
         stackView.arrangedSubviews.forEach { view in
             stackView.removeArrangedSubview(view)
             view.removeFromSuperview()
@@ -7567,6 +7572,7 @@ private final class macOSCanvasGroupListView: NSView, NSTextFieldDelegate {
             width: stackWidth,
             height: max(stackView.frame.height, 1)
         )
+        updateArrangedSubviewWidthConstraints(stackWidth: stackWidth)
         stackView.layoutSubtreeIfNeeded()
         let stackHeight = max(stackView.fittingSize.height, 0)
 
@@ -7586,6 +7592,16 @@ private final class macOSCanvasGroupListView: NSView, NSTextFieldDelegate {
                 scrollView.contentView.bounds.height
             )
         )
+    }
+
+    private func updateArrangedSubviewWidthConstraints(stackWidth: CGFloat) {
+        arrangedSubviewWidthConstraints.forEach { constraint in
+            constraint.isActive = false
+        }
+        arrangedSubviewWidthConstraints = stackView.arrangedSubviews.map { arrangedSubview in
+            arrangedSubview.widthAnchor.constraint(equalToConstant: stackWidth)
+        }
+        NSLayoutConstraint.activate(arrangedSubviewWidthConstraints)
     }
 
     private func makeAddGroupRow() -> NSButton {
@@ -7642,6 +7658,9 @@ private final class macOSCanvasGroupListView: NSView, NSTextFieldDelegate {
         isEditingTitle: Bool,
         focusedTitleTextField: inout NSTextField?
     ) -> NSView {
+        let rowContainer = macOSCanvasChromeOverlayView()
+        rowContainer.translatesAutoresizingMaskIntoConstraints = false
+
         let container = macOSCanvasChromeOverlayView()
         container.translatesAutoresizingMaskIntoConstraints = false
         container.wantsLayer = true
@@ -7716,11 +7735,16 @@ private final class macOSCanvasGroupListView: NSView, NSTextFieldDelegate {
         outerStack.addArrangedSubview(rowStack)
         outerStack.addArrangedSubview(editButton)
 
+        rowContainer.addSubview(container)
         container.addSubview(outerStack)
-        let leadingIndent = 10 + CGFloat(max(depth, 0)) * 18
+        let rowIndent = CGFloat(max(depth, 0)) * 18
         NSLayoutConstraint.activate([
+            container.topAnchor.constraint(equalTo: rowContainer.topAnchor),
+            container.leadingAnchor.constraint(equalTo: rowContainer.leadingAnchor, constant: rowIndent),
+            container.trailingAnchor.constraint(equalTo: rowContainer.trailingAnchor),
+            container.bottomAnchor.constraint(equalTo: rowContainer.bottomAnchor),
             outerStack.topAnchor.constraint(equalTo: container.topAnchor, constant: 10),
-            outerStack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: leadingIndent),
+            outerStack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 10),
             outerStack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -10),
             outerStack.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -10),
             editButton.widthAnchor.constraint(equalToConstant: 32),
@@ -7734,7 +7758,7 @@ private final class macOSCanvasGroupListView: NSView, NSTextFieldDelegate {
             )
         }
 
-        return container
+        return rowContainer
     }
 
     @objc
