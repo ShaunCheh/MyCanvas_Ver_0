@@ -135,6 +135,7 @@ enum BoardDocumentMapper {
             title: groupRecord.title,
             description: groupRecord.description,
             itemIDs: groupRecord.itemIDs,
+            childGroupIDs: groupRecord.childGroupIDs,
             frame: groupRecord.frame?.cgRect
         )
     }
@@ -147,6 +148,7 @@ enum BoardDocumentMapper {
             title: group.title,
             description: group.description,
             itemIDs: group.itemIDs,
+            childGroupIDs: group.childGroupIDs,
             frame: group.frame.map(BoardRectRecord.init)
         )
     }

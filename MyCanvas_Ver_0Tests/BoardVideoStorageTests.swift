@@ -84,25 +84,42 @@ final class BoardVideoStorageTests: XCTestCase {
             item: item
         )
         let groupID = UUID()
+        let childGroupID = UUID()
         let groupFrame = CGRect(x: -120, y: 80, width: 360, height: 240)
+        let childGroupFrame = CGRect(x: -40, y: 120, width: 120, height: 80)
         runtimeState.groups = [
             CanvasItemGroup(
                 id: groupID,
                 title: "Question Evidence",
                 description: "Image answers the markdown question.",
                 itemIDs: [itemID],
+                childGroupIDs: [childGroupID, childGroupID],
                 frame: groupFrame
+            ),
+            CanvasItemGroup(
+                id: childGroupID,
+                title: "Detail Evidence",
+                description: "Nested supporting group.",
+                itemIDs: [],
+                frame: childGroupFrame
             )
         ]
 
         let document = BoardDocumentMapper.makeDocument(from: runtimeState)
-        let groupRecord = try XCTUnwrap(document.groups.first)
+        let groupRecord = try XCTUnwrap(
+            document.groups.first(where: { $0.id == groupID })
+        )
 
         XCTAssertEqual(groupRecord.id, groupID)
         XCTAssertEqual(groupRecord.title, "Question Evidence")
         XCTAssertEqual(groupRecord.description, "Image answers the markdown question.")
         XCTAssertEqual(groupRecord.itemIDs, [itemID])
+        XCTAssertEqual(groupRecord.childGroupIDs, [childGroupID])
         XCTAssertEqual(groupRecord.frame?.cgRect, groupFrame)
+        XCTAssertEqual(
+            document.groups.first(where: { $0.id == childGroupID })?.frame?.cgRect,
+            childGroupFrame
+        )
 
         let roundTrippedState = try BoardDocumentMapper.makeRuntimeState(
             from: document,
@@ -110,13 +127,58 @@ final class BoardVideoStorageTests: XCTestCase {
                 posterImage
             }
         )
-        let roundTrippedGroup = try XCTUnwrap(roundTrippedState.groups.first)
+        let roundTrippedGroup = try XCTUnwrap(
+            roundTrippedState.groups.first(where: { $0.id == groupID })
+        )
+        let roundTrippedChildGroup = try XCTUnwrap(
+            roundTrippedState.groups.first(where: { $0.id == childGroupID })
+        )
 
         XCTAssertEqual(roundTrippedGroup.id, groupID)
         XCTAssertEqual(roundTrippedGroup.title, "Question Evidence")
         XCTAssertEqual(roundTrippedGroup.description, "Image answers the markdown question.")
         XCTAssertEqual(roundTrippedGroup.itemIDs, [itemID])
+        XCTAssertEqual(roundTrippedGroup.childGroupIDs, [childGroupID])
         XCTAssertEqual(roundTrippedGroup.frame, groupFrame)
+        XCTAssertEqual(roundTrippedChildGroup.frame, childGroupFrame)
+    }
+
+    func testBoardGroupRecordDecodesLegacyDocumentWithoutChildGroupIDs() throws {
+        let groupID = UUID(uuidString: "43B7E100-0838-48F5-94A0-1041013FDC39")!
+        let itemID = UUID(uuidString: "BA5108F1-D004-4B74-9E07-2CCB3D1F1BC8")!
+        let data = Data(
+            """
+            {
+              "id": "\(groupID.uuidString)",
+              "title": "Legacy Group",
+              "description": "No nested group field yet.",
+              "itemIDs": [
+                "\(itemID.uuidString)",
+                "\(itemID.uuidString)"
+              ],
+              "frame": {
+                "origin": {
+                  "x": 10,
+                  "y": 20
+                },
+                "size": {
+                  "width": 120,
+                  "height": 80
+                }
+              }
+            }
+            """.utf8
+        )
+
+        let groupRecord = try JSONDecoder().decode(BoardGroupRecord.self, from: data)
+
+        XCTAssertEqual(groupRecord.id, groupID)
+        XCTAssertEqual(groupRecord.itemIDs, [itemID])
+        XCTAssertEqual(groupRecord.childGroupIDs, [])
+        XCTAssertEqual(
+            groupRecord.frame?.cgRect,
+            CGRect(x: 10, y: 20, width: 120, height: 80)
+        )
     }
 
     func testBoardStoreSaveLoadAndCleanupPreservesVideoPosterAndSourceAssets() throws {

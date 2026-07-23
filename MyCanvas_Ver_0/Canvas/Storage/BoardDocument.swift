@@ -90,6 +90,7 @@ struct CanvasItemGroup: Equatable, Hashable, Sendable {
     var title: String
     var description: String
     var itemIDs: [CanvasItemID]
+    var childGroupIDs: [CanvasItemGroupID]
     var frame: CGRect?
 
     init(
@@ -97,12 +98,14 @@ struct CanvasItemGroup: Equatable, Hashable, Sendable {
         title: String,
         description: String = "",
         itemIDs: [CanvasItemID],
+        childGroupIDs: [CanvasItemGroupID] = [],
         frame: CGRect? = nil
     ) {
         self.id = id
         self.title = title
         self.description = description
         self.itemIDs = Self.normalizedItemIDs(itemIDs)
+        self.childGroupIDs = Self.normalizedChildGroupIDs(childGroupIDs)
         self.frame = frame?.standardized
     }
 
@@ -119,13 +122,22 @@ struct CanvasItemGroup: Equatable, Hashable, Sendable {
             seenItemIDs.insert(itemID).inserted
         }
     }
+
+    private static func normalizedChildGroupIDs(
+        _ childGroupIDs: [CanvasItemGroupID]
+    ) -> [CanvasItemGroupID] {
+        var seenGroupIDs = Set<CanvasItemGroupID>()
+        return childGroupIDs.filter { groupID in
+            seenGroupIDs.insert(groupID).inserted
+        }
+    }
 }
 
 struct BoardDocument: Codable {
     // Board schema now evolves independently from image asset internals.
-    // Format version 13 lets groups carry an optional canvas-space frame so
-    // semantic groups can also have a persisted visual background.
-    static let currentFormatVersion = 13
+    // Format version 14 lets groups persist direct child group IDs for nested
+    // semantic groups.
+    static let currentFormatVersion = 14
     static let defaultTitle = "Untitled Board"
 
     let formatVersion: Int
@@ -466,6 +478,7 @@ struct BoardGroupRecord: Codable, Equatable {
     var title: String
     var description: String
     var itemIDs: [UUID]
+    var childGroupIDs: [UUID]
     var frame: BoardRectRecord?
 
     init(
@@ -473,19 +486,51 @@ struct BoardGroupRecord: Codable, Equatable {
         title: String,
         description: String,
         itemIDs: [UUID],
+        childGroupIDs: [UUID] = [],
         frame: BoardRectRecord? = nil
     ) {
         self.id = id
         self.title = title
         self.description = description
         self.itemIDs = Self.normalizedItemIDs(itemIDs)
+        self.childGroupIDs = Self.normalizedChildGroupIDs(childGroupIDs)
         self.frame = frame
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case title
+        case description
+        case itemIDs
+        case childGroupIDs
+        case frame
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        title = try container.decode(String.self, forKey: .title)
+        description = try container.decode(String.self, forKey: .description)
+        itemIDs = Self.normalizedItemIDs(
+            try container.decode([UUID].self, forKey: .itemIDs)
+        )
+        childGroupIDs = Self.normalizedChildGroupIDs(
+            try container.decodeIfPresent([UUID].self, forKey: .childGroupIDs) ?? []
+        )
+        frame = try container.decodeIfPresent(BoardRectRecord.self, forKey: .frame)
     }
 
     private static func normalizedItemIDs(_ itemIDs: [UUID]) -> [UUID] {
         var seenItemIDs = Set<UUID>()
         return itemIDs.filter { itemID in
             seenItemIDs.insert(itemID).inserted
+        }
+    }
+
+    private static func normalizedChildGroupIDs(_ childGroupIDs: [UUID]) -> [UUID] {
+        var seenGroupIDs = Set<UUID>()
+        return childGroupIDs.filter { groupID in
+            seenGroupIDs.insert(groupID).inserted
         }
     }
 }
