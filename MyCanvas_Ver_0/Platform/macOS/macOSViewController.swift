@@ -19,20 +19,8 @@ private func macOSGroupTitleEditTrace(
     firstResponder: NSResponder? = nil,
     detail: String? = nil
 ) {
-    let groupIDDescription = groupID?.uuidString ?? "nil"
-    let editingGroupIDDescription = editingGroupTitleID?.uuidString ?? "nil"
-    let titleDescription = title.map { "\"\($0)\"" } ?? "nil"
-    let responderDescription = firstResponder.map { String(describing: type(of: $0)) } ?? "nil"
-    let detailDescription = detail ?? "nil"
-    print(
-        "[Canvas macOS][GroupTitleEdit] " +
-        "phase=\(phase) " +
-        "groupID=\(groupIDDescription) " +
-        "editingGroupTitleID=\(editingGroupIDDescription) " +
-        "title=\(titleDescription) " +
-        "firstResponder=\(responderDescription) " +
-        "detail=\(detailDescription)"
-    )
+    // Intentionally kept as a no-op hook: the verbose focus trace was useful
+    // for diagnosing inline title editing, but should not log during normal use.
 }
 
 final class macOSViewController: NSViewController, NSUserInterfaceValidations, NSTextViewDelegate, macOSBoardListCanvasTransitionInteractionControlling {

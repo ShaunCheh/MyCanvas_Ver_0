@@ -138,6 +138,44 @@ final class CanvasEditorSessionGroupHierarchyTests: XCTestCase {
         XCTAssertEqual(session.parentGroupID(for: childID), firstParentID)
     }
 
+    func testDeepGroupHierarchyQueriesStayStableAfterCacheNormalization() {
+        let session = makeGroupHierarchyTestSession()
+        let groupIDs = (0..<64).map { _ in CanvasItemGroupID() }
+        session.groups = groupIDs.enumerated().map { offset, groupID in
+            CanvasItemGroup(
+                id: groupID,
+                title: "group \(offset)",
+                itemIDs: [],
+                childGroupIDs: offset + 1 < groupIDs.count
+                    ? [groupIDs[offset + 1]]
+                    : []
+            )
+        }
+
+        XCTAssertEqual(
+            session.directChildGroupIDs(withID: groupIDs[0]),
+            [groupIDs[1]]
+        )
+        XCTAssertEqual(
+            session.descendantGroupIDs(withID: groupIDs[0]),
+            Array(groupIDs.dropFirst())
+        )
+        XCTAssertEqual(
+            session.parentGroupID(for: groupIDs[groupIDs.count - 1]),
+            groupIDs[groupIDs.count - 2]
+        )
+        XCTAssertFalse(
+            session.setChildGroups(
+                forGroupID: groupIDs[groupIDs.count - 1],
+                to: [groupIDs[0]]
+            )
+        )
+        XCTAssertEqual(
+            session.descendantGroupIDs(withID: groupIDs[0]),
+            Array(groupIDs.dropFirst())
+        )
+    }
+
     func testReconcileFrameGroupMembershipsAddsContainedGroupsAsDirectChildren() {
         let childAID = CanvasItemGroupID()
         let childBID = CanvasItemGroupID()
