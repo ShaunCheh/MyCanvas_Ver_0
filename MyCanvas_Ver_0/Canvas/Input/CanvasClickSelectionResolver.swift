@@ -33,12 +33,29 @@ struct CanvasClickSelectionDecision: Equatable {
     let action: CanvasClickSelectionAction
 }
 
+struct CanvasClickSelectionState: Equatable, Sendable {
+    let itemSelection: CanvasInteractionState
+    let selectedGroupID: CanvasItemGroupID?
+
+    init(
+        itemSelection: CanvasInteractionState = CanvasInteractionState(),
+        selectedGroupID: CanvasItemGroupID? = nil
+    ) {
+        self.itemSelection = itemSelection
+        self.selectedGroupID = selectedGroupID
+    }
+
+    var hasAnySelection: Bool {
+        itemSelection.hasSelection || selectedGroupID != nil
+    }
+}
+
 struct CanvasClickSelectionResolver: Sendable {
     func resolve(
         pressTargetKind: CanvasPointerTargetKind,
         pressedItemID: CanvasItemID?,
         releasedItemID: CanvasItemID?,
-        selection: CanvasInteractionState,
+        selection: CanvasClickSelectionState,
         isPersistentMultiSelectModeEnabled: Bool,
         pressedModifiers: CanvasPointerModifiers,
         releasedModifiers: CanvasPointerModifiers
@@ -129,7 +146,7 @@ struct CanvasClickSelectionResolver: Sendable {
             }
 
             if case .selectedItemBody = pressTargetKind,
-               selection.singleSelectedItemID == itemID
+               selection.itemSelection.singleSelectedItemID == itemID
             {
                 return CanvasClickSelectionDecision(
                     target: "item",
@@ -154,8 +171,8 @@ struct CanvasClickSelectionResolver: Sendable {
 
             return CanvasClickSelectionDecision(
                 target: "blank",
-                affectedItemID: selection.primarySelectedItemID,
-                action: selection.hasSelection ? .clearSelection : .none
+                affectedItemID: selection.itemSelection.primarySelectedItemID,
+                action: selection.hasAnySelection ? .clearSelection : .none
             )
         }
     }

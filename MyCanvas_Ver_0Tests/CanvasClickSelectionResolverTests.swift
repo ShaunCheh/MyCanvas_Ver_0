@@ -13,9 +13,11 @@ final class CanvasClickSelectionResolverTests: XCTestCase {
             pressTargetKind: .unselectedItemBody,
             pressedItemID: tappedItemID,
             releasedItemID: tappedItemID,
-            selection: CanvasInteractionState(
-                selectedItemIDs: [currentSelectionItemID],
-                primarySelectedItemID: currentSelectionItemID
+            selection: CanvasClickSelectionState(
+                itemSelection: CanvasInteractionState(
+                    selectedItemIDs: [currentSelectionItemID],
+                    primarySelectedItemID: currentSelectionItemID
+                )
             ),
             isPersistentMultiSelectModeEnabled: false,
             pressedModifiers: .none,
@@ -39,7 +41,7 @@ final class CanvasClickSelectionResolverTests: XCTestCase {
             pressTargetKind: .unselectedItemBody,
             pressedItemID: tappedItemID,
             releasedItemID: tappedItemID,
-            selection: CanvasInteractionState(),
+            selection: CanvasClickSelectionState(),
             isPersistentMultiSelectModeEnabled: true,
             pressedModifiers: .none,
             releasedModifiers: .none
@@ -58,9 +60,11 @@ final class CanvasClickSelectionResolverTests: XCTestCase {
             pressTargetKind: .selectedItemBody,
             pressedItemID: tappedItemID,
             releasedItemID: tappedItemID,
-            selection: CanvasInteractionState(
-                selectedItemIDs: [tappedItemID],
-                primarySelectedItemID: tappedItemID
+            selection: CanvasClickSelectionState(
+                itemSelection: CanvasInteractionState(
+                    selectedItemIDs: [tappedItemID],
+                    primarySelectedItemID: tappedItemID
+                )
             ),
             isPersistentMultiSelectModeEnabled: false,
             pressedModifiers: CanvasPointerModifiers(isCommandPressed: true),
@@ -80,9 +84,11 @@ final class CanvasClickSelectionResolverTests: XCTestCase {
             pressTargetKind: .blank,
             pressedItemID: nil,
             releasedItemID: nil,
-            selection: CanvasInteractionState(
-                selectedItemIDs: [selectedItemID],
-                primarySelectedItemID: selectedItemID
+            selection: CanvasClickSelectionState(
+                itemSelection: CanvasInteractionState(
+                    selectedItemIDs: [selectedItemID],
+                    primarySelectedItemID: selectedItemID
+                )
             ),
             isPersistentMultiSelectModeEnabled: true,
             pressedModifiers: .none,
@@ -99,6 +105,31 @@ final class CanvasClickSelectionResolverTests: XCTestCase {
         )
     }
 
+    func testResolveClearsGroupSelectionOnBlankClick() {
+        let selectedGroupID = CanvasItemGroupID()
+
+        let decision = resolver.resolve(
+            pressTargetKind: .blank,
+            pressedItemID: nil,
+            releasedItemID: nil,
+            selection: CanvasClickSelectionState(
+                selectedGroupID: selectedGroupID
+            ),
+            isPersistentMultiSelectModeEnabled: false,
+            pressedModifiers: .none,
+            releasedModifiers: .none
+        )
+
+        XCTAssertEqual(
+            decision,
+            CanvasClickSelectionDecision(
+                target: "blank",
+                affectedItemID: nil,
+                action: .clearSelection
+            )
+        )
+    }
+
     func testResolveReentersSoleSelectedItem() {
         let tappedItemID = CanvasItemID()
 
@@ -106,9 +137,11 @@ final class CanvasClickSelectionResolverTests: XCTestCase {
             pressTargetKind: .selectedItemBody,
             pressedItemID: tappedItemID,
             releasedItemID: tappedItemID,
-            selection: CanvasInteractionState(
-                selectedItemIDs: [tappedItemID],
-                primarySelectedItemID: tappedItemID
+            selection: CanvasClickSelectionState(
+                itemSelection: CanvasInteractionState(
+                    selectedItemIDs: [tappedItemID],
+                    primarySelectedItemID: tappedItemID
+                )
             ),
             isPersistentMultiSelectModeEnabled: false,
             pressedModifiers: .none,
@@ -128,9 +161,11 @@ final class CanvasClickSelectionResolverTests: XCTestCase {
             pressTargetKind: .selectionTranslationArea,
             pressedItemID: tappedItemID,
             releasedItemID: tappedItemID,
-            selection: CanvasInteractionState(
-                selectedItemIDs: [tappedItemID],
-                primarySelectedItemID: tappedItemID
+            selection: CanvasClickSelectionState(
+                itemSelection: CanvasInteractionState(
+                    selectedItemIDs: [tappedItemID],
+                    primarySelectedItemID: tappedItemID
+                )
             ),
             isPersistentMultiSelectModeEnabled: false,
             pressedModifiers: .none,
@@ -155,9 +190,11 @@ final class CanvasClickSelectionResolverTests: XCTestCase {
             pressTargetKind: .selectedItemBody,
             pressedItemID: tappedItemID,
             releasedItemID: tappedItemID,
-            selection: CanvasInteractionState(
-                selectedItemIDs: [tappedItemID, otherSelectedItemID],
-                primarySelectedItemID: otherSelectedItemID
+            selection: CanvasClickSelectionState(
+                itemSelection: CanvasInteractionState(
+                    selectedItemIDs: [tappedItemID, otherSelectedItemID],
+                    primarySelectedItemID: otherSelectedItemID
+                )
             ),
             isPersistentMultiSelectModeEnabled: false,
             pressedModifiers: .none,

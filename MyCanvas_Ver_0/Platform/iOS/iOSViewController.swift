@@ -2150,6 +2150,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             let releasedContext = resolvePointerPressContext(at: location)
             let releasedItemID = releasedContext.targetItemID
             let previousInteractionState = interactionState
+            let previousClickSelectionState = currentClickSelectionState()
             if let groupClickResult = executeGroupFrameClickSelectionIfMatched(
                 pressContext: pressContext,
                 releasedContext: releasedContext
@@ -2177,7 +2178,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
                 pressTargetKind: pressContext.targetKind,
                 pressedItemID: pressContext.targetItemID,
                 releasedItemID: releasedItemID,
-                selection: previousInteractionState,
+                selection: previousClickSelectionState,
                 isPersistentMultiSelectModeEnabled: isMultiSelectModeActive,
                 pressedModifiers: pressedModifiers,
                 releasedModifiers: modifiers
@@ -4231,6 +4232,13 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         performCommand(.clearSelection(recordHistory: recordHistory))
     }
 
+    private func currentClickSelectionState() -> CanvasClickSelectionState {
+        CanvasClickSelectionState(
+            itemSelection: interactionState,
+            selectedGroupID: editorSession.selectedGroupID
+        )
+    }
+
     private func executeGroupFrameClickSelectionIfMatched(
         pressContext: CanvasPointerPressContext,
         releasedContext: CanvasPointerPressContext
@@ -4259,22 +4267,22 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     private func executeClickSelectionDecision(
         _ decision: CanvasClickSelectionDecision
     ) -> (result: String, didTriggerPressedRefresh: Bool) {
-        let interactionStateBefore = interactionState
+        let selectionStateBefore = currentClickSelectionState()
 
         switch decision.action {
         case .none:
             return ("selection_unchanged", false)
         case let .selectSingle(itemID):
             selectItem(withID: itemID, recordHistory: true)
-            let didChangeSelection = interactionStateBefore != interactionState
+            let didChangeSelection = selectionStateBefore != currentClickSelectionState()
             return (
                 didChangeSelection ? "item_selected" : "selection_unchanged",
                 didChangeSelection
             )
         case let .toggleMembership(itemID):
-            let wasSelected = interactionStateBefore.selectedItemIDs.contains(itemID)
+            let wasSelected = selectionStateBefore.itemSelection.selectedItemIDs.contains(itemID)
             toggleSelectionMembership(of: itemID, recordHistory: true)
-            let didChangeSelection = interactionStateBefore != interactionState
+            let didChangeSelection = selectionStateBefore != currentClickSelectionState()
             guard didChangeSelection else {
                 return ("selection_unchanged", false)
             }
@@ -4286,7 +4294,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             )
         case .clearSelection:
             clearSelectionIfNeeded(recordHistory: true)
-            let didChangeSelection = interactionStateBefore != interactionState
+            let didChangeSelection = selectionStateBefore != currentClickSelectionState()
             return (
                 didChangeSelection ? "selection_cleared" : "selection_unchanged",
                 didChangeSelection
