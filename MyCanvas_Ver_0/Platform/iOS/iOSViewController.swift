@@ -63,7 +63,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     private struct PointerGroupDragState {
         let groupID: CanvasItemGroupID
         let initialFrame: CGRect
-        let initialMemberGeometries: [CanvasBoardItemGeometry]
+        let initialSubtreeGeometries: CanvasGroupSubtreeGeometries
         let dragStartWorldLocation: CGPoint
     }
 
@@ -4816,7 +4816,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         return PointerGroupDragState(
             groupID: groupID,
             initialFrame: initialFrame,
-            initialMemberGeometries: editorSession.groupMemberGeometries(withID: groupID),
+            initialSubtreeGeometries: editorSession.groupSubtreeGeometries(withID: groupID),
             dragStartWorldLocation: camera.viewportToWorld(initialViewportLocation)
         )
     }
@@ -4900,21 +4900,14 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             dx: translation.x,
             dy: translation.y
         )
-        let proposedMemberGeometries = dragState.initialMemberGeometries.map { geometry in
-            CanvasBoardItemGeometry(
-                itemID: geometry.itemID,
-                center: CGPoint(
-                    x: geometry.center.x + translation.x,
-                    y: geometry.center.y + translation.y
-                ),
-                size: geometry.size,
-                rotationRadians: geometry.rotationRadians
-            )
-        }
-        guard editorSession.updateGroupFrameAndMemberGeometries(
+        let proposedSubtreeGeometries = translatedGroupSubtreeGeometries(
+            dragState.initialSubtreeGeometries,
+            by: translation
+        )
+        guard editorSession.updateGroupFrameAndSubtreeGeometries(
             withID: dragState.groupID,
             to: proposedFrame,
-            memberGeometries: proposedMemberGeometries,
+            subtreeGeometries: proposedSubtreeGeometries,
             reconcileMembership: false
         ) else {
             return editorSession.groupFrame(withID: dragState.groupID)
@@ -4925,6 +4918,34 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             reason: "move group frame by \(describe(point: translation))"
         )
         return true
+    }
+
+    private func translatedGroupSubtreeGeometries(
+        _ subtreeGeometries: CanvasGroupSubtreeGeometries,
+        by translation: CGPoint
+    ) -> CanvasGroupSubtreeGeometries {
+        CanvasGroupSubtreeGeometries(
+            descendantGroupFrames: subtreeGeometries.descendantGroupFrames.map { geometry in
+                CanvasGroupFrameGeometry(
+                    groupID: geometry.groupID,
+                    frame: geometry.frame.offsetBy(
+                        dx: translation.x,
+                        dy: translation.y
+                    )
+                )
+            },
+            itemGeometries: subtreeGeometries.itemGeometries.map { geometry in
+                CanvasBoardItemGeometry(
+                    itemID: geometry.itemID,
+                    center: CGPoint(
+                        x: geometry.center.x + translation.x,
+                        y: geometry.center.y + translation.y
+                    ),
+                    size: geometry.size,
+                    rotationRadians: geometry.rotationRadians
+                )
+            }
+        )
     }
 
     private func resizeGroupFrame(

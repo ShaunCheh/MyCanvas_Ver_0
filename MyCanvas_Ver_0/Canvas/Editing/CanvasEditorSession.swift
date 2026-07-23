@@ -25,6 +25,32 @@ struct CanvasGroupInteractionState: Equatable {
     }
 }
 
+struct CanvasGroupFrameGeometry: Equatable {
+    let groupID: CanvasItemGroupID
+    let frame: CGRect
+
+    init(
+        groupID: CanvasItemGroupID,
+        frame: CGRect
+    ) {
+        self.groupID = groupID
+        self.frame = frame.standardized
+    }
+}
+
+struct CanvasGroupSubtreeGeometries: Equatable {
+    let descendantGroupFrames: [CanvasGroupFrameGeometry]
+    let itemGeometries: [CanvasBoardItemGeometry]
+
+    init(
+        descendantGroupFrames: [CanvasGroupFrameGeometry],
+        itemGeometries: [CanvasBoardItemGeometry]
+    ) {
+        self.descendantGroupFrames = descendantGroupFrames
+        self.itemGeometries = itemGeometries
+    }
+}
+
 private struct CanvasPreparedImportItem {
     let asset: CanvasImageAsset
     let transientPayload: CanvasTransientImageAssetPayload?
@@ -271,6 +297,28 @@ Write here.
         return group.itemIDs.compactMap { itemID in
             scene.boardItem(withID: itemID).map(CanvasBoardItemGeometry.init(item:))
         }
+    }
+
+    func groupSubtreeGeometries(withID groupID: CanvasItemGroupID) -> CanvasGroupSubtreeGeometries {
+        let descendantGroupIDs = descendantGroupIDs(withID: groupID)
+        let descendantGroupFrames = descendantGroupIDs.compactMap { descendantGroupID in
+            groupFrame(withID: descendantGroupID).map { frame in
+                CanvasGroupFrameGeometry(
+                    groupID: descendantGroupID,
+                    frame: frame
+                )
+            }
+        }
+
+        let subtreeItemIDs = normalizedSubtreeItemIDs(withID: groupID)
+        let itemGeometries = subtreeItemIDs.compactMap { itemID in
+            scene.boardItem(withID: itemID).map(CanvasBoardItemGeometry.init(item:))
+        }
+
+        return CanvasGroupSubtreeGeometries(
+            descendantGroupFrames: descendantGroupFrames,
+            itemGeometries: itemGeometries
+        )
     }
 
     func canSelectGroup(withID groupID: CanvasItemGroupID) -> Bool {
@@ -1064,6 +1112,107 @@ Write here.
             }
             for updatedItem in updatedItems {
                 expandBoardIfNeeded(toInclude: updatedItem.worldBounds)
+            }
+        }
+
+        if didFrameChange {
+            groups[groupIndex].frame = standardizedFrame
+            expandBoardIfNeeded(toInclude: standardizedFrame)
+        }
+        if reconcileMembership {
+            _ = reconcileGroupMembership(forGroupID: groupID)
+        }
+
+        if let beforeSnapshot {
+            _ = recordImmediateHistoryChange(
+                from: beforeSnapshot,
+                reason: "update group frame",
+                autosaveReason: "update group frame"
+            )
+        }
+
+        return true
+    }
+
+    @discardableResult
+    func updateGroupFrameAndSubtreeGeometries(
+        withID groupID: CanvasItemGroupID,
+        to frame: CGRect,
+        subtreeGeometries: CanvasGroupSubtreeGeometries,
+        recordHistory: Bool = false,
+        reconcileMembership: Bool = true
+    ) -> Bool {
+        guard
+            canUpdateGroupFrame(withID: groupID),
+            let groupIndex = groups.firstIndex(where: { $0.id == groupID })
+        else {
+            return false
+        }
+
+        let standardizedFrame = frame.standardized
+        guard isValidGroupFrame(standardizedFrame) else {
+            return false
+        }
+
+        var seenDescendantGroupIDs = Set<CanvasItemGroupID>()
+        let existingDescendantGroupFrames = subtreeGeometries.descendantGroupFrames.filter { geometry in
+            guard
+                geometry.groupID != groupID,
+                group(withID: geometry.groupID) != nil,
+                seenDescendantGroupIDs.insert(geometry.groupID).inserted
+            else {
+                return false
+            }
+
+            return true
+        }
+        guard existingDescendantGroupFrames.allSatisfy({ isValidGroupFrame($0.frame) }) else {
+            return false
+        }
+
+        let existingItemGeometries = subtreeGeometries.itemGeometries.filter { geometry in
+            scene.boardItem(withID: geometry.itemID) != nil
+        }
+        let didFrameChange = groups[groupIndex].frame != standardizedFrame
+        let didDescendantGroupFrameChange = existingDescendantGroupFrames.contains { geometry in
+            groupFrame(withID: geometry.groupID)?.standardized != geometry.frame.standardized
+        }
+        let didItemGeometryChange = existingItemGeometries.contains { geometry in
+            guard let item = scene.boardItem(withID: geometry.itemID) else {
+                return false
+            }
+
+            return CanvasBoardItemGeometry(item: item) != geometry
+        }
+        guard didFrameChange ||
+              didDescendantGroupFrameChange ||
+              didItemGeometryChange ||
+              reconcileMembership
+        else {
+            return true
+        }
+
+        let beforeSnapshot = recordHistory ? currentBoardHistorySnapshot() : nil
+        if didItemGeometryChange {
+            guard let updatedItems = scene.applyBoardItemGeometries(existingItemGeometries) else {
+                return false
+            }
+            for updatedItem in updatedItems {
+                expandBoardIfNeeded(toInclude: updatedItem.worldBounds)
+            }
+        }
+
+        if didDescendantGroupFrameChange {
+            for geometry in existingDescendantGroupFrames {
+                guard let descendantGroupIndex = groups.firstIndex(where: { $0.id == geometry.groupID }) else {
+                    return false
+                }
+
+                let descendantFrame = geometry.frame.standardized
+                if groups[descendantGroupIndex].frame != descendantFrame {
+                    groups[descendantGroupIndex].frame = descendantFrame
+                    expandBoardIfNeeded(toInclude: descendantFrame)
+                }
             }
         }
 
@@ -3678,15 +3827,26 @@ Write here.
 
     private func validGroupFrame(withID groupID: CanvasItemGroupID) -> CGRect? {
         guard let frame = group(withID: groupID)?.frame?.standardized,
-              frame.isNull == false,
-              frame.isInfinite == false,
-              frame.width > 0,
-              frame.height > 0
+              isValidGroupFrame(frame)
         else {
             return nil
         }
 
         return frame
+    }
+
+    private func isValidGroupFrame(_ frame: CGRect) -> Bool {
+        frame.isNull == false &&
+        frame.isInfinite == false &&
+        frame.width > 0 &&
+        frame.height > 0
+    }
+
+    private func normalizedSubtreeItemIDs(withID groupID: CanvasItemGroupID) -> [CanvasItemID] {
+        var seenItemIDs = Set<CanvasItemID>()
+        return (directItemIDs(withID: groupID) + descendantItemIDs(withID: groupID)).filter { itemID in
+            seenItemIDs.insert(itemID).inserted
+        }
     }
 
     private func validGroupFramesByID() -> [CanvasItemGroupID: CGRect] {
