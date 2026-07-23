@@ -6,6 +6,7 @@
 //
 #if os(iOS)
 import PhotosUI
+import QuartzCore
 import UIKit
 
 protocol CanvasTransitionLiveContentProviding: AnyObject {
@@ -73,6 +74,14 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         let initialDraggedAnchor: CGPoint
         let dragStartWorldLocation: CGPoint
         let minimumSize: CGSize
+    }
+
+    private struct CameraCenterAnimationState {
+        let startCenter: CGPoint
+        let targetCenter: CGPoint
+        let startTimestamp: CFTimeInterval
+        let refreshReason: String
+        let autosaveReason: String
     }
 
     private enum PointerDragState {
@@ -184,6 +193,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     private static let geometryComparisonEpsilon: CGFloat = 0.0001
     private static let markdownScrollHistoryCommitDelay: TimeInterval = 0.25
     private static let continuousRawInputObservationInterval: TimeInterval = 0.32
+    private static let groupListNavigationAnimationDuration: TimeInterval = 0.28
     private static let showsMiniMap = false
     private let miniMapLayoutSolver = CanvasOverlayLayoutSolver()
     private let alignmentGuideSolver = CanvasAlignmentGuideSolver()
@@ -408,6 +418,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     private var transitionChromeHidden = false
     private var isGroupListVisible = false
     private var editingGroupTitleID: CanvasItemGroupID?
+    private var groupListNavigationDisplayLink: CADisplayLink?
+    private var groupListNavigationAnimationState: CameraCenterAnimationState?
     private var lastPinchDispatchTimestamp: TimeInterval?
     private var lastZoomRefreshTimestamp: TimeInterval?
     private var didMutateCameraDuringPinchGesture = false
@@ -429,6 +441,10 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     }
     private var activeTextEditorItemID: CanvasItemID?
     private var isSyncingTextEditorContent = false
+
+    deinit {
+        cancelGroupListNavigationAnimation()
+    }
 
     private var scene: CanvasScene {
         editorSession.scene
@@ -1667,6 +1683,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     }
 
     private func handleZoomGestureBegan() {
+        cancelGroupListNavigationAnimation()
         didMutateCameraDuringPinchGesture = false
     }
 
@@ -2476,6 +2493,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             return
         }
 
+        cancelGroupListNavigationAnimation()
         let zoomBefore = camera.zoomScale
         camera.zoom(by: scaleDelta, around: anchor)
         let zoomAfter = camera.zoomScale
@@ -2520,6 +2538,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             return
         }
 
+        cancelGroupListNavigationAnimation()
         let cameraCenterBeforeTransform = camera.center
         let zoomBefore = camera.zoomScale
         camera.transform(
@@ -2622,6 +2641,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     }
 
     private func handleMiniMapNavigate(to miniMapPoint: CGPoint) {
+        cancelGroupListNavigationAnimation()
         syncCameraViewportSizeFromCurrentBoundsIfPossible()
         guard let worldPoint = miniMapView.worldPoint(atMiniMapPoint: miniMapPoint) else {
             return
@@ -2906,12 +2926,84 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             return
         }
 
-        camera.center = targetCenter
-        requestCanvasRefresh(reason: "navigate group list to \(groupID.uuidString)")
-        scheduleAutosave(
-            reason: "navigate canvas via group list",
-            updateKind: .viewStateOnly
+        beginGroupListNavigationAnimation(
+            to: targetCenter,
+            refreshReason: "navigate group list to \(groupID.uuidString)",
+            autosaveReason: "navigate canvas via group list"
         )
+    }
+
+    private func beginGroupListNavigationAnimation(
+        to targetCenter: CGPoint,
+        refreshReason: String,
+        autosaveReason: String
+    ) {
+        cancelGroupListNavigationAnimation()
+
+        let startCenter = camera.center
+        guard startCenter != targetCenter else {
+            return
+        }
+
+        groupListNavigationAnimationState = CameraCenterAnimationState(
+            startCenter: startCenter,
+            targetCenter: targetCenter,
+            startTimestamp: CACurrentMediaTime(),
+            refreshReason: refreshReason,
+            autosaveReason: autosaveReason
+        )
+        let displayLink = CADisplayLink(
+            target: self,
+            selector: #selector(handleGroupListNavigationDisplayLink(_:))
+        )
+        groupListNavigationDisplayLink = displayLink
+        displayLink.add(to: .main, forMode: .common)
+    }
+
+    @objc
+    private func handleGroupListNavigationDisplayLink(_ displayLink: CADisplayLink) {
+        guard let animationState = groupListNavigationAnimationState else {
+            displayLink.invalidate()
+            groupListNavigationDisplayLink = nil
+            return
+        }
+
+        let elapsed = max(0, CACurrentMediaTime() - animationState.startTimestamp)
+        let rawProgress = min(
+            CGFloat(elapsed / Self.groupListNavigationAnimationDuration),
+            1
+        )
+        if rawProgress >= 1 {
+            camera.center = animationState.targetCenter
+            cancelGroupListNavigationAnimation()
+            requestCanvasRefresh(reason: animationState.refreshReason)
+            scheduleAutosave(
+                reason: animationState.autosaveReason,
+                updateKind: .viewStateOnly
+            )
+            return
+        }
+
+        let easedProgress = Self.easeOutCubic(rawProgress)
+        camera.center = CGPoint(
+            x: animationState.startCenter.x +
+                (animationState.targetCenter.x - animationState.startCenter.x) * easedProgress,
+            y: animationState.startCenter.y +
+                (animationState.targetCenter.y - animationState.startCenter.y) * easedProgress
+        )
+        requestCanvasRefresh(reason: animationState.refreshReason)
+    }
+
+    private func cancelGroupListNavigationAnimation() {
+        groupListNavigationDisplayLink?.invalidate()
+        groupListNavigationDisplayLink = nil
+        groupListNavigationAnimationState = nil
+    }
+
+    private static func easeOutCubic(_ progress: CGFloat) -> CGFloat {
+        let clampedProgress = min(max(progress, 0), 1)
+        let inverseProgress = 1 - clampedProgress
+        return 1 - inverseProgress * inverseProgress * inverseProgress
     }
 
     private func beginGroupTitleEditing(groupID: CanvasItemGroupID) {
@@ -5796,6 +5888,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             return
         }
 
+        cancelGroupListNavigationAnimation()
         let cameraCenterBeforePan = camera.center
         camera.pan(by: translation)
         logPanDispatch(

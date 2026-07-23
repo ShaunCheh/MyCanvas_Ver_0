@@ -83,6 +83,14 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         let minimumSize: CGSize
     }
 
+    private struct CameraCenterAnimationState {
+        let startCenter: CGPoint
+        let targetCenter: CGPoint
+        let startTimestamp: CFTimeInterval
+        let refreshReason: String
+        let autosaveReason: String
+    }
+
     private enum PointerDragState {
         case idle
         case pressed(
@@ -185,6 +193,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     private static let isPointerHitTraceLoggingEnabled = true
     private static let observedKeyboardShortcutReuseWindow: TimeInterval = 0.45
     private static let continuousRawInputObservationInterval: TimeInterval = 0.32
+    private static let groupListNavigationAnimationDuration: TimeInterval = 0.28
     private static let showsMiniMap = false
 
     private let miniMapLayoutSolver = CanvasOverlayLayoutSolver()
@@ -305,6 +314,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     private var toolbarTransitionRuntime: CanvasToolbarTransitionRuntime?
     private var toolbarManualTransitionTimer: Timer?
     private var toolbarManualTransitionID = UUID()
+    private var groupListNavigationTimer: Timer?
+    private var groupListNavigationAnimationState: CameraCenterAnimationState?
     private var preservedHiddenToolbarFrame: CGRect?
     private var isToolbarTransitionActive: Bool {
         toolbarTransitionRuntime != nil
@@ -434,6 +445,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     private var isSyncingTextEditorContent = false
 
     deinit {
+        cancelGroupListNavigationAnimation()
         removeKeyboardShortcutObservationIfNeeded()
     }
 
@@ -2611,6 +2623,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             return
         }
 
+        cancelGroupListNavigationAnimation()
         camera.pan(by: remainingTranslation)
         refreshCanvas(reason: "indirect pan \(describe(point: remainingTranslation))")
         scheduleAutosave(
@@ -2672,6 +2685,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             return
         }
 
+        cancelGroupListNavigationAnimation()
         camera.zoom(by: scaleDelta, around: anchor)
         refreshCanvas()
         scheduleAutosave(
@@ -2727,6 +2741,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     }
 
     private func handleMiniMapNavigate(to miniMapPoint: CGPoint) {
+        cancelGroupListNavigationAnimation()
         guard let worldPoint = miniMapView.worldPoint(atMiniMapPoint: miniMapPoint) else {
             return
         }
@@ -2903,12 +2918,82 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             return
         }
 
-        camera.center = targetCenter
-        refreshCanvas(reason: "navigate group list to \(groupID.uuidString)")
-        scheduleAutosave(
-            reason: "navigate canvas via group list",
-            updateKind: .viewStateOnly
+        beginGroupListNavigationAnimation(
+            to: targetCenter,
+            refreshReason: "navigate group list to \(groupID.uuidString)",
+            autosaveReason: "navigate canvas via group list"
         )
+    }
+
+    private func beginGroupListNavigationAnimation(
+        to targetCenter: CGPoint,
+        refreshReason: String,
+        autosaveReason: String
+    ) {
+        cancelGroupListNavigationAnimation()
+
+        let startCenter = camera.center
+        guard startCenter != targetCenter else {
+            return
+        }
+
+        groupListNavigationAnimationState = CameraCenterAnimationState(
+            startCenter: startCenter,
+            targetCenter: targetCenter,
+            startTimestamp: CACurrentMediaTime(),
+            refreshReason: refreshReason,
+            autosaveReason: autosaveReason
+        )
+        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] timer in
+            self?.handleGroupListNavigationTimer(timer)
+        }
+        groupListNavigationTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    private func handleGroupListNavigationTimer(_ timer: Timer) {
+        guard let animationState = groupListNavigationAnimationState else {
+            timer.invalidate()
+            groupListNavigationTimer = nil
+            return
+        }
+
+        let elapsed = max(0, CACurrentMediaTime() - animationState.startTimestamp)
+        let rawProgress = min(
+            CGFloat(elapsed / Self.groupListNavigationAnimationDuration),
+            1
+        )
+        if rawProgress >= 1 {
+            camera.center = animationState.targetCenter
+            cancelGroupListNavigationAnimation()
+            refreshCanvas(reason: animationState.refreshReason)
+            scheduleAutosave(
+                reason: animationState.autosaveReason,
+                updateKind: .viewStateOnly
+            )
+            return
+        }
+
+        let easedProgress = Self.easeOutCubic(rawProgress)
+        camera.center = CGPoint(
+            x: animationState.startCenter.x +
+                (animationState.targetCenter.x - animationState.startCenter.x) * easedProgress,
+            y: animationState.startCenter.y +
+                (animationState.targetCenter.y - animationState.startCenter.y) * easedProgress
+        )
+        refreshCanvas(reason: animationState.refreshReason)
+    }
+
+    private func cancelGroupListNavigationAnimation() {
+        groupListNavigationTimer?.invalidate()
+        groupListNavigationTimer = nil
+        groupListNavigationAnimationState = nil
+    }
+
+    private static func easeOutCubic(_ progress: CGFloat) -> CGFloat {
+        let clampedProgress = min(max(progress, 0), 1)
+        let inverseProgress = 1 - clampedProgress
+        return 1 - inverseProgress * inverseProgress * inverseProgress
     }
 
     private func beginGroupTitleEditing(groupID: CanvasItemGroupID) {
@@ -6193,6 +6278,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             return
         }
 
+        cancelGroupListNavigationAnimation()
         camera.pan(by: translation)
         refreshCanvas()
         scheduleAutosave(
