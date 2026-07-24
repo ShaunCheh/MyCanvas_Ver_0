@@ -411,6 +411,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     }
     private var isTransitionInteractionFrozen = false
     private var isGroupListVisible = false
+    private var allowsGroupListOutsideClickDismissal = false
     private var editingGroupTitleID: CanvasItemGroupID?
     private var keyboardShortcutObservationMonitor: Any?
     private var observedKeyboardShortcuts: [ObservedKeyboardShortcut] = []
@@ -2099,6 +2100,8 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             return
         }
 
+        collapseGroupListForOutsidePointerIfNeeded(atViewportLocation: location)
+
         let pressContext = resolvePointerPressContext(at: location)
         logPointerHitResolution(
             phase: "down",
@@ -2865,6 +2868,35 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         isGroupListVisible.toggle()
         updateGroupListPresentation()
         updateChromeOverlayLayout()
+    }
+
+    @discardableResult
+    private func collapseGroupListForOutsidePointerIfNeeded(
+        atViewportLocation location: CGPoint
+    ) -> Bool {
+        guard
+            allowsGroupListOutsideClickDismissal,
+            isGroupListVisible
+        else {
+            return false
+        }
+
+        let pointInRootView = canvasViewportView.convert(location, to: view)
+        let pointInGroupList = groupListView.convert(pointInRootView, from: view)
+        let pointInGroupListButton = groupListButton.convert(pointInRootView, from: view)
+        guard
+            groupListView.bounds.contains(pointInGroupList) == false,
+            groupListButton.bounds.contains(pointInGroupListButton) == false
+        else {
+            return false
+        }
+
+        view.window?.makeFirstResponder(nil)
+        editingGroupTitleID = nil
+        isGroupListVisible = false
+        updateGroupListPresentation()
+        updateChromeOverlayLayout()
+        return true
     }
 
     private func handleAddGroupRequested() {

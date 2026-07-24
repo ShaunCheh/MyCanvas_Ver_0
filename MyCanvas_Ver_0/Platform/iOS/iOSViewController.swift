@@ -417,6 +417,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     private var isTransitionInteractionFrozen = false
     private var transitionChromeHidden = false
     private var isGroupListVisible = false
+    private var allowsGroupListOutsideClickDismissal = false
     private var editingGroupTitleID: CanvasItemGroupID?
     private var groupListNavigationDisplayLink: CADisplayLink?
     private var groupListNavigationAnimationState: CameraCenterAnimationState?
@@ -1773,6 +1774,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             return
         }
 
+        collapseGroupListForOutsidePointerIfNeeded(atViewportLocation: location)
+
         let pressContext = resolvePointerPressContext(at: location)
         pointerDragState = .pressed(
             pressedLocation: location,
@@ -2883,6 +2886,35 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         isGroupListVisible.toggle()
         updateGroupListPresentation()
         updateChromeOverlayLayout()
+    }
+
+    @discardableResult
+    private func collapseGroupListForOutsidePointerIfNeeded(
+        atViewportLocation location: CGPoint
+    ) -> Bool {
+        guard
+            allowsGroupListOutsideClickDismissal,
+            isGroupListVisible
+        else {
+            return false
+        }
+
+        let pointInRootView = canvasViewportView.convert(location, to: view)
+        let pointInGroupList = groupListView.convert(pointInRootView, from: view)
+        let pointInGroupListButton = groupListButton.convert(pointInRootView, from: view)
+        guard
+            groupListView.bounds.contains(pointInGroupList) == false,
+            groupListButton.bounds.contains(pointInGroupListButton) == false
+        else {
+            return false
+        }
+
+        groupListView.endEditing(true)
+        editingGroupTitleID = nil
+        isGroupListVisible = false
+        updateGroupListPresentation()
+        updateChromeOverlayLayout()
+        return true
     }
 
     private func handleAddGroupRequested() {
