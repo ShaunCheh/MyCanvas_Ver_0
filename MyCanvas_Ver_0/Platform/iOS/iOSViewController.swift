@@ -417,7 +417,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     private var isTransitionInteractionFrozen = false
     private var transitionChromeHidden = false
     private var isGroupListVisible = false
-    private var allowsGroupListOutsideClickDismissal = false
+    private var allowsGroupListOutsideClickDismissal = true
     private var editingGroupTitleID: CanvasItemGroupID?
     private var groupListNavigationDisplayLink: CADisplayLink?
     private var groupListNavigationAnimationState: CameraCenterAnimationState?

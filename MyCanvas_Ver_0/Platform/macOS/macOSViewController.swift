@@ -411,7 +411,7 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     }
     private var isTransitionInteractionFrozen = false
     private var isGroupListVisible = false
-    private var allowsGroupListOutsideClickDismissal = false
+    private var allowsGroupListOutsideClickDismissal = true
     private var editingGroupTitleID: CanvasItemGroupID?
     private var keyboardShortcutObservationMonitor: Any?
     private var observedKeyboardShortcuts: [ObservedKeyboardShortcut] = []
