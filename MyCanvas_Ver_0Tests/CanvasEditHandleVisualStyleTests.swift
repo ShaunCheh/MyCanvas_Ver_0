@@ -4,7 +4,7 @@ import XCTest
 
 @MainActor
 final class CanvasEditHandleVisualStyleTests: XCTestCase {
-    func testSelectionFamiliesUseWhiteAndBlueForNormalAndActiveStates() throws {
+    func testSelectionFamiliesKeepBlueStrokeWhenActive() throws {
         let selectionKinds: [CanvasEditHandleKind] = [
             .selectionResize(.topLeading),
             .rotate,
@@ -45,15 +45,15 @@ final class CanvasEditHandleVisualStyleTests: XCTestCase {
             )
             try assertColor(
                 activeStyle.strokeColor,
-                red: 1,
-                green: 1,
+                red: 0,
+                green: 122.0 / 255.0,
                 blue: 1,
                 alpha: 1
             )
         }
     }
 
-    func testCropUsesOrangeAccentWithoutLeakingSelectionBlue() throws {
+    func testCropKeepsOrangeStrokeWhenActive() throws {
         let normalStyle = CanvasEditHandleVisualStyleResolver.resolve(
             kind: .cropResize(.leading),
             visualState: .normal
@@ -87,8 +87,8 @@ final class CanvasEditHandleVisualStyleTests: XCTestCase {
         try assertColor(
             activeStyle.strokeColor,
             red: 1,
-            green: 1,
-            blue: 1,
+            green: 149.0 / 255.0,
+            blue: 0,
             alpha: 1
         )
     }
@@ -118,8 +118,8 @@ final class CanvasEditHandleVisualStyleTests: XCTestCase {
         try assertColor(
             style.strokeColor,
             red: 1,
-            green: 1,
-            blue: 1,
+            green: 149.0 / 255.0,
+            blue: 0,
             alpha: 1
         )
     }

@@ -43,7 +43,9 @@ enum CanvasEditHandleVisualStyleResolver {
         case .active:
             return CanvasEditHandleVisualStyle(
                 fillColor: accentColor,
-                strokeColor: neutralColor
+                // Active feedback changes the fill only; the family border
+                // color remains stable throughout the interaction.
+                strokeColor: accentColor
             )
         }
     }
