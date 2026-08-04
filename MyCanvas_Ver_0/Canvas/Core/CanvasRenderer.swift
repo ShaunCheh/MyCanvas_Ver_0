@@ -7,6 +7,17 @@ struct CanvasRenderer {
         let major: [CanvasWorkspaceGridLineSegment]
     }
 
+    private struct RotateAffordanceGeometry {
+        let guideScreenStart: CGPoint
+        let guideScreenEnd: CGPoint
+        let screenRotationRadians: CGFloat
+    }
+
+    private struct EditHandleDescriptor {
+        let role: CanvasEditHandleRole
+        let identity: CanvasEditHandleIdentity
+    }
+
     private static let rotateHandleScreenOffset: CGFloat = 28
     private static let rotationInteractionTickStepDegrees: CGFloat = 10
     private static let minimumRotationInteractionRingRadius: CGFloat = 48
@@ -174,9 +185,9 @@ struct CanvasRenderer {
             groupID: selectedGroupID,
             worldFrame: worldFrame,
             screenFrame: screenFrame,
-            handles: makeEditHandles(
+            handles: makeGroupFrameResizeHandles(
                 for: screenQuad,
-                roles: CanvasSelectionHandleRole.allCases.map(\.editHandleRole)
+                groupID: selectedGroupID
             )
         )
     }
@@ -404,6 +415,7 @@ struct CanvasRenderer {
         if selectedItems.count == 1,
            let effectiveItem = selectedItems.first
         {
+            let handleOwner = CanvasEditHandleOwner.item(effectiveItem.id)
             subject = .singleItem(itemID: effectiveItem.id)
             worldQuad = effectiveItem.worldQuad
             screenQuad = camera.worldToViewport(worldQuad)
@@ -411,7 +423,8 @@ struct CanvasRenderer {
             selectionHandles = selectionEditHandles(
                 forSingleSelectedItem: effectiveItem,
                 screenQuad: screenQuad,
-                camera: camera
+                camera: camera,
+                owner: handleOwner
             )
             if let arrowItem = effectiveItem.arrowItem {
                 let arrowScreenPath = makeArrowScreenPath(
@@ -426,10 +439,20 @@ struct CanvasRenderer {
                 selectionTranslationScreenPath = nil
                 rotateAffordance = makeRotateAffordance(
                     screenCenter: screenCenter,
-                    screenQuad: screenQuad
+                    screenQuad: screenQuad,
+                    identity: CanvasEditHandleIdentity(
+                        owner: handleOwner,
+                        kind: .rotate
+                    )
                 )
             }
         } else {
+            let handleOwner = CanvasEditHandleOwner.selection(
+                CanvasEditHandleSelectionIdentity(
+                    primaryItemID: resolvedPrimarySelectedItemID,
+                    memberItemIDs: selectedItems.map(\.id)
+                )
+            )
             let groupWorldBounds = groupSelectionWorldBounds(for: selectedItems)
             subject = .group(
                 primaryItemID: resolvedPrimarySelectedItemID,
@@ -442,13 +465,18 @@ struct CanvasRenderer {
             )
             selectionHandles = selectionEditHandles(
                 forGroupSelectedItems: selectedItems,
-                screenQuad: screenQuad
+                screenQuad: screenQuad,
+                owner: handleOwner
             )
             selectionOutlineScreenPath = nil
             selectionTranslationScreenPath = nil
             rotateAffordance = makeRotateAffordance(
                 screenCenter: screenCenter,
-                screenQuad: screenQuad
+                screenQuad: screenQuad,
+                identity: CanvasEditHandleIdentity(
+                    owner: handleOwner,
+                    kind: .rotate
+                )
             )
         }
         let selectionPayload = CanvasEditSelectionOverlayPayload(
@@ -519,7 +547,10 @@ struct CanvasRenderer {
             kind: .crop,
             activeWorldQuad: cropWorldQuad,
             activeScreenQuad: cropScreenQuad,
-            handles: makeCropEditHandles(for: cropScreenQuad),
+            handles: makeCropEditHandles(
+                for: cropScreenQuad,
+                itemID: presentation.itemID
+            ),
             payload: .crop(
                 CanvasEditCropOverlayPayload(
                     fullImageWorldQuad: fullImageWorldQuad,
@@ -624,7 +655,7 @@ struct CanvasRenderer {
             overlayItemID = rotationInteractionState.primaryItemID
         }
 
-        let rotateAffordance = makeRotateAffordance(
+        let rotateAffordanceGeometry = makeRotateAffordanceGeometry(
             screenCenter: screenCenter,
             screenQuad: screenQuad
         )
@@ -636,7 +667,7 @@ struct CanvasRenderer {
             Self.minimumRotationInteractionRingRadius,
             distance(
                 from: screenCenter,
-                to: rotateAffordance.handle.screenCenter
+                to: rotateAffordanceGeometry.guideScreenEnd
             )
         )
         let tickSegments = makeRotationInteractionTickSegments(
@@ -1082,30 +1113,34 @@ struct CanvasRenderer {
     }
 
     private func makeCornerEditHandles(
-        for screenQuad: CanvasQuad
+        for screenQuad: CanvasQuad,
+        owner: CanvasEditHandleOwner
     ) -> [CanvasEditHandleGeometry] {
-        makeEditHandles(
+        makeSelectionResizeHandles(
             for: screenQuad,
             roles: [
                 .topLeading,
                 .topTrailing,
                 .bottomLeading,
                 .bottomTrailing
-            ]
+            ],
+            owner: owner
         )
     }
 
     private func makeMarkdownEdgeEditHandles(
-        for screenQuad: CanvasQuad
+        for screenQuad: CanvasQuad,
+        owner: CanvasEditHandleOwner
     ) -> [CanvasEditHandleGeometry] {
-        makeEditHandles(
+        makeSelectionResizeHandles(
             for: screenQuad,
             roles: [
                 .top,
                 .trailing,
                 .bottom,
                 .leading,
-            ]
+            ],
+            owner: owner
         )
     }
 
@@ -1115,6 +1150,10 @@ struct CanvasRenderer {
     ) -> [CanvasEditHandleGeometry] {
         CanvasArrowEndpointRole.allCases.map { role in
             CanvasEditHandleGeometry(
+                identity: CanvasEditHandleIdentity(
+                    owner: .item(item.id),
+                    kind: .arrowEndpoint(role)
+                ),
                 role: role == .start ? .arrowStart : .arrowEnd,
                 screenCenter: camera.worldToViewport(
                     item.endpointWorldPoint(for: role)
@@ -1149,23 +1188,73 @@ struct CanvasRenderer {
     }
 
     private func makeCropEditHandles(
-        for screenQuad: CanvasQuad
+        for screenQuad: CanvasQuad,
+        itemID: CanvasItemID
     ) -> [CanvasEditHandleGeometry] {
         makeEditHandles(
             for: screenQuad,
-            roles: CanvasCropHandleRole.allCases.map(\.editHandleRole)
+            descriptors: CanvasCropHandleRole.allCases.map { role in
+                EditHandleDescriptor(
+                    role: role.editHandleRole,
+                    identity: CanvasEditHandleIdentity(
+                        owner: .item(itemID),
+                        kind: .cropResize(role)
+                    )
+                )
+            }
+        )
+    }
+
+    private func makeGroupFrameResizeHandles(
+        for screenQuad: CanvasQuad,
+        groupID: CanvasItemGroupID
+    ) -> [CanvasEditHandleGeometry] {
+        makeEditHandles(
+            for: screenQuad,
+            descriptors: CanvasSelectionHandleRole.allCases.map { role in
+                EditHandleDescriptor(
+                    role: role.editHandleRole,
+                    identity: CanvasEditHandleIdentity(
+                        owner: .group(groupID),
+                        kind: .groupFrameResize(role)
+                    )
+                )
+            }
+        )
+    }
+
+    private func makeSelectionResizeHandles(
+        for screenQuad: CanvasQuad,
+        roles: [CanvasSelectionHandleRole],
+        owner: CanvasEditHandleOwner
+    ) -> [CanvasEditHandleGeometry] {
+        makeEditHandles(
+            for: screenQuad,
+            descriptors: roles.map { role in
+                EditHandleDescriptor(
+                    role: role.editHandleRole,
+                    identity: CanvasEditHandleIdentity(
+                        owner: owner,
+                        kind: .selectionResize(role)
+                    )
+                )
+            }
         )
     }
 
     private func makeEditHandles(
         for screenQuad: CanvasQuad,
-        roles: [CanvasEditHandleRole]
+        descriptors: [EditHandleDescriptor]
     ) -> [CanvasEditHandleGeometry] {
         let rotationRadians = editHandleRotation(for: screenQuad)
-        return roles.map { role in
+        return descriptors.map { descriptor in
             CanvasEditHandleGeometry(
-                role: role,
-                screenCenter: editHandleCenter(for: role, in: screenQuad),
+                identity: descriptor.identity,
+                role: descriptor.role,
+                screenCenter: editHandleCenter(
+                    for: descriptor.role,
+                    in: screenQuad
+                ),
                 screenRotationRadians: rotationRadians
             )
         }
@@ -1215,13 +1304,17 @@ struct CanvasRenderer {
     private func selectionEditHandles(
         forSingleSelectedItem item: CanvasBoardItem,
         screenQuad: CanvasQuad,
-        camera: CanvasCamera
+        camera: CanvasCamera,
+        owner: CanvasEditHandleOwner
     ) -> [CanvasEditHandleGeometry] {
         switch item.kind {
         case .text:
             return []
         case .markdown:
-            return makeMarkdownEdgeEditHandles(for: screenQuad)
+            return makeMarkdownEdgeEditHandles(
+                for: screenQuad,
+                owner: owner
+            )
         case .arrow:
             guard let arrowItem = item.arrowItem else {
                 return []
@@ -1231,27 +1324,58 @@ struct CanvasRenderer {
                 camera: camera
             )
         case .image, .handDrawing:
-            return makeCornerEditHandles(for: screenQuad)
+            return makeCornerEditHandles(
+                for: screenQuad,
+                owner: owner
+            )
         }
     }
 
     private func selectionEditHandles(
         forGroupSelectedItems items: [CanvasBoardItem],
-        screenQuad: CanvasQuad
+        screenQuad: CanvasQuad,
+        owner: CanvasEditHandleOwner
     ) -> [CanvasEditHandleGeometry] {
         guard items.isEmpty == false else {
             return []
         }
         if items.allSatisfy({ $0.kind == .markdown }) {
-            return makeMarkdownEdgeEditHandles(for: screenQuad)
+            return makeMarkdownEdgeEditHandles(
+                for: screenQuad,
+                owner: owner
+            )
         }
-        return makeCornerEditHandles(for: screenQuad)
+        return makeCornerEditHandles(
+            for: screenQuad,
+            owner: owner
+        )
     }
 
     private func makeRotateAffordance(
         screenCenter: CGPoint,
-        screenQuad: CanvasQuad
+        screenQuad: CanvasQuad,
+        identity: CanvasEditHandleIdentity
     ) -> CanvasEditRotateOverlayPayload {
+        let geometry = makeRotateAffordanceGeometry(
+            screenCenter: screenCenter,
+            screenQuad: screenQuad
+        )
+        return CanvasEditRotateOverlayPayload(
+            guideScreenStart: geometry.guideScreenStart,
+            guideScreenEnd: geometry.guideScreenEnd,
+            handle: CanvasEditHandleGeometry(
+                identity: identity,
+                role: .rotate,
+                screenCenter: geometry.guideScreenEnd,
+                screenRotationRadians: geometry.screenRotationRadians
+            )
+        )
+    }
+
+    private func makeRotateAffordanceGeometry(
+        screenCenter: CGPoint,
+        screenQuad: CanvasQuad
+    ) -> RotateAffordanceGeometry {
         let guideScreenStart = screenQuad.topMidpoint
         let outwardDirection = normalizedDirection(
             from: screenCenter,
@@ -1261,15 +1385,10 @@ struct CanvasRenderer {
             x: guideScreenStart.x + (outwardDirection.x * Self.rotateHandleScreenOffset),
             y: guideScreenStart.y + (outwardDirection.y * Self.rotateHandleScreenOffset)
         )
-        let rotationRadians = editHandleRotation(for: screenQuad)
-        return CanvasEditRotateOverlayPayload(
+        return RotateAffordanceGeometry(
             guideScreenStart: guideScreenStart,
             guideScreenEnd: guideScreenEnd,
-            handle: CanvasEditHandleGeometry(
-                role: .rotate,
-                screenCenter: guideScreenEnd,
-                screenRotationRadians: rotationRadians
-            )
+            screenRotationRadians: editHandleRotation(for: screenQuad)
         )
     }
 

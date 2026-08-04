@@ -38,6 +38,7 @@ enum CanvasEditOverlayHitTargetKind {
 struct CanvasEditOverlayHitTarget {
     let kind: CanvasEditOverlayHitTargetKind
     let itemID: CanvasItemID
+    let targetHandleIdentity: CanvasEditHandleIdentity?
     let anchorRect: CGRect
 }
 
@@ -90,6 +91,7 @@ struct CanvasEditOverlayHitTester {
                 return CanvasEditOverlayHitTarget(
                     kind: .cropHandle(role: role),
                     itemID: editOverlay.itemID,
+                    targetHandleIdentity: handle.identity,
                     anchorRect: hitRect
                 )
             }
@@ -103,6 +105,7 @@ struct CanvasEditOverlayHitTester {
             return CanvasEditOverlayHitTarget(
                 kind: .cropTranslationArea,
                 itemID: editOverlay.itemID,
+                targetHandleIdentity: nil,
                 anchorRect: payload.cropScreenQuad.boundingRect.standardized
             )
         }
@@ -132,6 +135,7 @@ struct CanvasEditOverlayHitTester {
                 return CanvasEditOverlayHitTarget(
                     kind: rotateHitTargetKind,
                     itemID: editOverlay.itemID,
+                    targetHandleIdentity: rotateAffordance.handle.identity,
                     anchorRect: rotateHitRect
                 )
             }
@@ -147,6 +151,7 @@ struct CanvasEditOverlayHitTester {
                     return CanvasEditOverlayHitTarget(
                         kind: .arrowEndpointHandle(role: role),
                         itemID: editOverlay.itemID,
+                        targetHandleIdentity: handle.identity,
                         anchorRect: hitRect
                     )
                 }
@@ -167,6 +172,7 @@ struct CanvasEditOverlayHitTester {
                 return CanvasEditOverlayHitTarget(
                     kind: handleHitTargetKind,
                     itemID: editOverlay.itemID,
+                    targetHandleIdentity: handle.identity,
                     anchorRect: hitRect
                 )
             }
@@ -187,6 +193,7 @@ struct CanvasEditOverlayHitTester {
             return CanvasEditOverlayHitTarget(
                 kind: .selectionTranslationArea,
                 itemID: editOverlay.itemID,
+                targetHandleIdentity: nil,
                 anchorRect: editOverlay.activeScreenQuad.boundingRect.standardized
             )
         }

@@ -54,5 +54,6 @@ struct CanvasPointerPressContext {
     let targetKind: CanvasPointerTargetKind
     let targetItemID: CanvasItemID?
     let targetGroupID: CanvasItemGroupID?
+    let targetHandleIdentity: CanvasEditHandleIdentity?
     let anchorRect: CGRect?
 }

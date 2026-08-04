@@ -123,12 +123,28 @@ enum CanvasEditHandleRole: CaseIterable, Hashable, Sendable {
     case arrowEnd
 }
 
-// Unified edit handles carry both their anchor point and the current chrome
-// rotation so later stages can keep the resize squares visually aligned.
+// Handle identity remains stable while screen geometry changes, and visual
+// state stays semantic so platform views do not own interaction lifecycle.
 struct CanvasEditHandleGeometry {
+    let identity: CanvasEditHandleIdentity
     let role: CanvasEditHandleRole
     let screenCenter: CGPoint
     let screenRotationRadians: CGFloat
+    let visualState: CanvasEditHandleVisualState
+
+    init(
+        identity: CanvasEditHandleIdentity,
+        role: CanvasEditHandleRole,
+        screenCenter: CGPoint,
+        screenRotationRadians: CGFloat,
+        visualState: CanvasEditHandleVisualState = .normal
+    ) {
+        self.identity = identity
+        self.role = role
+        self.screenCenter = screenCenter
+        self.screenRotationRadians = screenRotationRadians
+        self.visualState = visualState
+    }
 }
 
 struct CanvasEditRotateOverlayPayload {

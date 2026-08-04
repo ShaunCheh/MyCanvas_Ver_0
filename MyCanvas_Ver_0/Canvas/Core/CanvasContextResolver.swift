@@ -223,6 +223,7 @@ struct CanvasContextResolver {
             pointerTargetKind: pointerTargetKind,
             editOverlayHitTargetKind: hitTarget.kind,
             targetItemID: hitTarget.itemID,
+            targetHandleIdentity: hitTarget.targetHandleIdentity,
             anchorRect: hitTarget.anchorRect
         )
     }
@@ -312,6 +313,7 @@ struct CanvasContextResolver {
             targetKind: resolvedTarget.pointerTargetKind,
             targetItemID: resolvedTarget.targetItemID,
             targetGroupID: resolvedTarget.targetGroupID,
+            targetHandleIdentity: resolvedTarget.targetHandleIdentity,
             anchorRect: resolvedTarget.anchorRect
         )
     }
@@ -374,6 +376,7 @@ struct CanvasContextResolver {
             return ResolvedTarget(
                 pointerTargetKind: .groupFrameResizeHandle(role: role),
                 targetGroupID: overlay.groupID,
+                targetHandleIdentity: handle.identity,
                 anchorRect: hitRect
             )
         }
@@ -416,6 +419,7 @@ struct CanvasContextResolver {
         var editOverlayHitTargetKind: CanvasEditOverlayHitTargetKind? = nil
         var targetItemID: CanvasItemID? = nil
         var targetGroupID: CanvasItemGroupID? = nil
+        var targetHandleIdentity: CanvasEditHandleIdentity? = nil
         var anchorRect: CGRect? = nil
     }
 
