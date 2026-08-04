@@ -298,6 +298,30 @@ final class CanvasEditHandleInteractionStateTests: XCTestCase {
         XCTAssertFalse(nilPressTransition.didChangeVisualState)
     }
 
+    func testInactiveBoundaryClearsAdapterAfterSessionStateWasReset() {
+        let identity = makeItemResizeIdentity()
+        var adapter = CanvasEditHandleControllerAdapter()
+        var state = CanvasEditHandleInteractionState()
+        _ = state.apply(adapter.event(for: .pressed(identity)))
+        _ = state.apply(adapter.event(for: .draggingHandle))
+
+        state = CanvasEditHandleInteractionState()
+        XCTAssertEqual(adapter.expectedDraggingIdentity, identity)
+        XCTAssertEqual(state.phase, .inactive)
+
+        let boundaryEvent = adapter.event(for: .inactive)
+        let boundaryTransition = state.apply(boundaryEvent)
+
+        XCTAssertEqual(boundaryEvent, .end)
+        XCTAssertNil(adapter.expectedDraggingIdentity)
+        XCTAssertFalse(boundaryTransition.didChangeState)
+        XCTAssertFalse(boundaryTransition.didChangeVisualState)
+        XCTAssertEqual(
+            adapter.event(for: .draggingHandle),
+            .cancel
+        )
+    }
+
     private func makeItemResizeIdentity(
         itemID: CanvasItemID = CanvasItemID(),
         role: CanvasSelectionHandleRole = .topLeading

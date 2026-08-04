@@ -546,6 +546,34 @@ final class CanvasCommandPolicyParityTests: XCTestCase {
         XCTAssertTrue(CanvasCommand.undo.shouldCommitActiveInlineTextBeforeExecuting)
     }
 
+    func testInlineAndHistoryCommandsResetEditHandleInteractionBoundary() {
+        let itemID = CanvasItemID()
+        let boundaryCommands: [CanvasCommand] = [
+            .beginTextEdit(itemID: itemID),
+            .commitTextEdit,
+            .beginMarkdownEdit(itemID: itemID),
+            .commitMarkdownEdit,
+            .crop,
+            .beginCropMode(itemID: itemID),
+            .undo,
+            .redo
+        ]
+
+        for command in boundaryCommands {
+            XCTAssertTrue(command.resetsEditHandleInteractionAfterExecution)
+        }
+
+        XCTAssertFalse(
+            CanvasCommand
+                .selectItem(itemID: itemID, recordHistory: false)
+                .resetsEditHandleInteractionAfterExecution
+        )
+        XCTAssertFalse(
+            CanvasCommand.addArrowItem
+                .resetsEditHandleInteractionAfterExecution
+        )
+    }
+
     func testInlineTextFontSizeDescriptorAndExecutorMatchPolicyInEditingMode() throws {
         let session = makeCommandPolicyParityTestSession(workspaceMode: .editing)
         let executor = CanvasCommandExecutor(session: session)

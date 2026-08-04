@@ -276,6 +276,48 @@ enum CanvasCommand {
     var shouldResetPointerDragStateWhenCancellingRotation: Bool {
         shouldCancelActiveRotation
     }
+
+    var resetsEditHandleInteractionAfterExecution: Bool {
+        switch self {
+        case .beginTextEdit,
+             .commitTextEdit,
+             .beginMarkdownEdit,
+             .commitMarkdownEdit,
+             .crop,
+             .beginCropMode,
+             .undo,
+             .redo:
+            return true
+        case .importMedia,
+             .addTextItem,
+             .addMarkdownItem,
+             .addHandDrawingItem,
+             .addArrowItem,
+             .addGroup,
+             .decreaseTextFontSize,
+             .increaseTextFontSize,
+             .decreaseMarkdownContentSize,
+             .increaseMarkdownContentSize,
+             .decreaseArrowThickness,
+             .increaseArrowThickness,
+             .selectItem,
+             .toggleSelectionMembership,
+             .clearSelection,
+             .duplicateItem,
+             .duplicateSelection,
+             .deleteItem,
+             .deleteSelection,
+             .bringItemForward,
+             .bringSelectionForward,
+             .sendItemBackward,
+             .sendSelectionBackward,
+             .bringItemToFront,
+             .bringSelectionToFront,
+             .sendItemToBack,
+             .sendSelectionToBack:
+            return false
+        }
+    }
 }
 
 enum CanvasCommandFollowUp: Equatable {
