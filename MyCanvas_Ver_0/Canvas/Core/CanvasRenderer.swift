@@ -36,6 +36,7 @@ struct CanvasRenderer {
         camera: CanvasCamera,
         interactionState: CanvasInteractionState = CanvasInteractionState(),
         groupInteractionState: CanvasGroupInteractionState = CanvasGroupInteractionState(),
+        editHandleInteractionState: CanvasEditHandleInteractionState = CanvasEditHandleInteractionState(),
         inlineEditState: CanvasInlineEditState? = nil,
         rotationPreviewState: CanvasRotationPreviewState? = nil,
         rotationInteractionState: CanvasRotationInteractionState? = nil,
@@ -84,18 +85,24 @@ struct CanvasRenderer {
             workspaceOverlay = nil
         }
 
-        let editOverlay = makeEditOverlay(
-            scene: scene,
-            camera: camera,
-            interactionState: interactionState,
-            inlineEditState: inlineEditState,
-            rotationPreviewState: rotationPreviewState
+        let editOverlay = applyingEditHandleVisualStates(
+            to: makeEditOverlay(
+                scene: scene,
+                camera: camera,
+                interactionState: interactionState,
+                inlineEditState: inlineEditState,
+                rotationPreviewState: rotationPreviewState
+            ),
+            editHandleInteractionState: editHandleInteractionState
         )
-        let groupEditOverlay = makeGroupEditOverlay(
-            groups: groups,
-            camera: camera,
-            groupInteractionState: groupInteractionState,
-            inlineEditState: inlineEditState
+        let groupEditOverlay = applyingEditHandleVisualStates(
+            to: makeGroupEditOverlay(
+                groups: groups,
+                camera: camera,
+                groupInteractionState: groupInteractionState,
+                inlineEditState: inlineEditState
+            ),
+            editHandleInteractionState: editHandleInteractionState
         )
         let selectionHighlights = makeSelectionHighlights(
             scene: scene,
@@ -124,6 +131,91 @@ struct CanvasRenderer {
             groupEditOverlay: groupEditOverlay,
             editOverlay: editOverlay,
             interactionOverlay: interactionOverlay
+        )
+    }
+
+    private func applyingEditHandleVisualStates(
+        to editOverlay: CanvasEditRenderOverlay?,
+        editHandleInteractionState: CanvasEditHandleInteractionState
+    ) -> CanvasEditRenderOverlay? {
+        guard let editOverlay else {
+            return nil
+        }
+
+        let payload: CanvasEditRenderOverlayPayload
+        switch editOverlay.payload {
+        case let .selection(selectionPayload):
+            let rotateAffordance = selectionPayload.rotateAffordance.map { affordance in
+                CanvasEditRotateOverlayPayload(
+                    guideScreenStart: affordance.guideScreenStart,
+                    guideScreenEnd: affordance.guideScreenEnd,
+                    handle: applyingEditHandleVisualState(
+                        to: affordance.handle,
+                        editHandleInteractionState: editHandleInteractionState
+                    )
+                )
+            }
+            payload = .selection(
+                CanvasEditSelectionOverlayPayload(
+                    subject: selectionPayload.subject,
+                    rotateAffordance: rotateAffordance,
+                    outlineScreenPath: selectionPayload.outlineScreenPath,
+                    translationScreenPath: selectionPayload.translationScreenPath
+                )
+            )
+
+        case let .crop(cropPayload):
+            payload = .crop(cropPayload)
+        }
+
+        return CanvasEditRenderOverlay(
+            itemID: editOverlay.itemID,
+            kind: editOverlay.kind,
+            activeWorldQuad: editOverlay.activeWorldQuad,
+            activeScreenQuad: editOverlay.activeScreenQuad,
+            handles: editOverlay.handles.map { handle in
+                applyingEditHandleVisualState(
+                    to: handle,
+                    editHandleInteractionState: editHandleInteractionState
+                )
+            },
+            payload: payload
+        )
+    }
+
+    private func applyingEditHandleVisualStates(
+        to groupEditOverlay: CanvasGroupEditOverlay?,
+        editHandleInteractionState: CanvasEditHandleInteractionState
+    ) -> CanvasGroupEditOverlay? {
+        guard let groupEditOverlay else {
+            return nil
+        }
+
+        return CanvasGroupEditOverlay(
+            groupID: groupEditOverlay.groupID,
+            worldFrame: groupEditOverlay.worldFrame,
+            screenFrame: groupEditOverlay.screenFrame,
+            handles: groupEditOverlay.handles.map { handle in
+                applyingEditHandleVisualState(
+                    to: handle,
+                    editHandleInteractionState: editHandleInteractionState
+                )
+            }
+        )
+    }
+
+    private func applyingEditHandleVisualState(
+        to handle: CanvasEditHandleGeometry,
+        editHandleInteractionState: CanvasEditHandleInteractionState
+    ) -> CanvasEditHandleGeometry {
+        CanvasEditHandleGeometry(
+            identity: handle.identity,
+            role: handle.role,
+            screenCenter: handle.screenCenter,
+            screenRotationRadians: handle.screenRotationRadians,
+            visualState: editHandleInteractionState.visualState(
+                for: handle.identity
+            )
         )
     }
 

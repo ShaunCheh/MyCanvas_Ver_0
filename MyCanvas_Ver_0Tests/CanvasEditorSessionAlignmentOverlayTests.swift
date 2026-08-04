@@ -122,6 +122,10 @@ final class CanvasEditorSessionAlignmentOverlayTests: XCTestCase {
         session.alignmentInteractionState = makeAlignmentOverlayTestState(
             itemID: item.id
         )
+        activateAlignmentOverlayTestHandle(
+            in: session,
+            itemID: item.id
+        )
 
         let historySnapshot = session.currentBoardHistorySnapshot()
 
@@ -142,6 +146,10 @@ final class CanvasEditorSessionAlignmentOverlayTests: XCTestCase {
         session.alignmentInteractionState = makeAlignmentOverlayTestState(
             itemID: currentItem.id
         )
+        activateAlignmentOverlayTestHandle(
+            in: session,
+            itemID: currentItem.id
+        )
 
         session.applyBoardRuntimeState(
             makeAlignmentOverlayTestRuntimeState(
@@ -152,6 +160,7 @@ final class CanvasEditorSessionAlignmentOverlayTests: XCTestCase {
 
         XCTAssertNil(session.rotationInteractionState)
         XCTAssertNil(session.alignmentInteractionState)
+        XCTAssertEqual(session.editHandleInteractionState.phase, .inactive)
         XCTAssertEqual(
             session.scene.boardItem(withID: replacementItem.id)?.id,
             replacementItem.id
@@ -173,6 +182,10 @@ final class CanvasEditorSessionAlignmentOverlayTests: XCTestCase {
         session.alignmentInteractionState = makeAlignmentOverlayTestState(
             itemID: currentItem.id
         )
+        activateAlignmentOverlayTestHandle(
+            in: session,
+            itemID: currentItem.id
+        )
 
         session.applyBoardHistorySnapshot(
             BoardHistorySnapshot(
@@ -186,6 +199,7 @@ final class CanvasEditorSessionAlignmentOverlayTests: XCTestCase {
 
         XCTAssertNil(session.rotationInteractionState)
         XCTAssertNil(session.alignmentInteractionState)
+        XCTAssertEqual(session.editHandleInteractionState.phase, .inactive)
         XCTAssertEqual(
             session.scene.boardItem(withID: replacementItem.id)?.id,
             replacementItem.id
@@ -213,6 +227,10 @@ final class CanvasEditorSessionAlignmentOverlayTests: XCTestCase {
         session.alignmentInteractionState = makeAlignmentOverlayTestState(
             itemID: currentItem.id
         )
+        activateAlignmentOverlayTestHandle(
+            in: session,
+            itemID: currentItem.id
+        )
 
         session.applyBoardHistorySnapshot(
             BoardHistorySnapshot(
@@ -226,6 +244,7 @@ final class CanvasEditorSessionAlignmentOverlayTests: XCTestCase {
 
         XCTAssertNil(session.rotationInteractionState)
         XCTAssertNil(session.alignmentInteractionState)
+        XCTAssertEqual(session.editHandleInteractionState.phase, .inactive)
         XCTAssertEqual(
             session.scene.boardItem(withID: replacementItem.id)?.id,
             replacementItem.id
@@ -806,6 +825,20 @@ private func makeAlignmentOverlayTestState(
             distanceInWorld: 0
         ),
         yMatch: nil
+    )
+}
+
+private func activateAlignmentOverlayTestHandle(
+    in session: CanvasEditorSession,
+    itemID: CanvasItemID
+) {
+    _ = session.editHandleInteractionState.apply(
+        .press(
+            CanvasEditHandleIdentity(
+                owner: .item(itemID),
+                kind: .rotate
+            )
+        )
     )
 }
 

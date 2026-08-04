@@ -421,6 +421,160 @@ final class CanvasEditHandleIdentityPipelineTests: XCTestCase {
         }
         XCTAssertNil(groupBodyContext.targetHandleIdentity)
     }
+
+    func testSessionProjectsOnlyExactSelectionOrRotateIdentityAsActive() throws {
+        let item = try makeHandleIdentityTestImageItem()
+        let session = makeHandleIdentityTestSession(
+            items: [.image(item)],
+            interactionState: CanvasInteractionState(selectedItemID: item.id)
+        )
+        let resizeIdentity = CanvasEditHandleIdentity(
+            owner: .item(item.id),
+            kind: .selectionResize(.topLeading)
+        )
+        _ = session.editHandleInteractionState.apply(.press(resizeIdentity))
+
+        let resizeSnapshot = session.makeCanvasSnapshot()
+        let resizeOverlay = try XCTUnwrap(resizeSnapshot.editOverlay)
+        XCTAssertEqual(
+            resizeOverlay.handles.filter { $0.visualState == .active }.map(\.identity),
+            [resizeIdentity]
+        )
+        guard case let .selection(resizePayload) = resizeOverlay.payload else {
+            XCTFail("Expected a selection overlay.")
+            return
+        }
+        XCTAssertEqual(
+            resizePayload.rotateAffordance?.handle.visualState,
+            .normal
+        )
+
+        let rotateIdentity = CanvasEditHandleIdentity(
+            owner: .item(item.id),
+            kind: .rotate
+        )
+        _ = session.editHandleInteractionState.apply(.press(rotateIdentity))
+
+        let rotateSnapshot = session.makeCanvasSnapshot()
+        let rotateOverlay = try XCTUnwrap(rotateSnapshot.editOverlay)
+        guard case let .selection(rotatePayload) = rotateOverlay.payload else {
+            XCTFail("Expected a selection overlay.")
+            return
+        }
+        XCTAssertTrue(
+            rotateOverlay.handles.allSatisfy { $0.visualState == .normal }
+        )
+        XCTAssertEqual(
+            rotatePayload.rotateAffordance?.handle.identity,
+            rotateIdentity
+        )
+        XCTAssertEqual(
+            rotatePayload.rotateAffordance?.handle.visualState,
+            .active
+        )
+    }
+
+    func testInlineCropActivatesOnlyMatchingCropIdentity() throws {
+        let item = try makeHandleIdentityTestImageItem()
+        let session = makeHandleIdentityTestSession(
+            items: [.image(item)],
+            interactionState: CanvasInteractionState(selectedItemID: item.id)
+        )
+        let selectionIdentity = CanvasEditHandleIdentity(
+            owner: .item(item.id),
+            kind: .selectionResize(.topLeading)
+        )
+        _ = session.editHandleInteractionState.apply(.press(selectionIdentity))
+        session.inlineEditState = CanvasInlineEditState(item: item)
+
+        let unmatchedSnapshot = session.makeCanvasSnapshot()
+        let unmatchedOverlay = try XCTUnwrap(unmatchedSnapshot.editOverlay)
+        XCTAssertTrue(
+            unmatchedOverlay.handles.allSatisfy { $0.visualState == .normal }
+        )
+
+        let cropIdentity = CanvasEditHandleIdentity(
+            owner: .item(item.id),
+            kind: .cropResize(.topLeading)
+        )
+        _ = session.editHandleInteractionState.apply(.press(cropIdentity))
+
+        let cropSnapshot = session.makeCanvasSnapshot()
+        let cropOverlay = try XCTUnwrap(cropSnapshot.editOverlay)
+        XCTAssertEqual(
+            cropOverlay.handles.filter { $0.visualState == .active }.map(\.identity),
+            [cropIdentity]
+        )
+    }
+
+    func testReadingModeSuppressesActiveGroupHandleWithoutMutatingRawState() throws {
+        let groupID = CanvasItemGroupID()
+        let activeIdentity = CanvasEditHandleIdentity(
+            owner: .group(groupID),
+            kind: .groupFrameResize(.topLeading)
+        )
+        let session = makeHandleIdentityTestSession(
+            groups: [
+                CanvasItemGroup(
+                    id: groupID,
+                    title: "Group",
+                    itemIDs: [],
+                    frame: CGRect(x: -120, y: -90, width: 240, height: 180)
+                )
+            ],
+            groupInteractionState: CanvasGroupInteractionState(
+                selectedGroupID: groupID
+            )
+        )
+        _ = session.editHandleInteractionState.apply(.press(activeIdentity))
+
+        let editingSnapshot = session.makeCanvasSnapshot()
+        let editingOverlay = try XCTUnwrap(editingSnapshot.groupEditOverlay)
+        XCTAssertEqual(
+            editingOverlay.handles.filter { $0.visualState == .active }.map(\.identity),
+            [activeIdentity]
+        )
+
+        session.workspaceMode = .reading
+        let readingSnapshot = session.makeCanvasSnapshot()
+        let readingOverlay = try XCTUnwrap(readingSnapshot.groupEditOverlay)
+        XCTAssertTrue(
+            readingOverlay.handles.allSatisfy { $0.visualState == .normal }
+        )
+        XCTAssertEqual(
+            session.editHandleInteractionState.phase,
+            .pressed(activeIdentity)
+        )
+    }
+
+    func testInlineTextSuppressesActiveFeedbackWithoutMutatingRawState() {
+        let item = CanvasTextItem(
+            text: "editable",
+            center: .zero,
+            size: CGSize(width: 160, height: 80)
+        )
+        let activeIdentity = CanvasEditHandleIdentity(
+            owner: .item(item.id),
+            kind: .rotate
+        )
+        let session = makeHandleIdentityTestSession(
+            items: [.text(item)],
+            interactionState: CanvasInteractionState(selectedItemID: item.id)
+        )
+        _ = session.editHandleInteractionState.apply(.press(activeIdentity))
+        session.inlineEditState = CanvasInlineEditState(item: item)
+
+        XCTAssertEqual(
+            session.presentationEditHandleInteractionState.phase,
+            .inactive
+        )
+        let snapshot = session.makeCanvasSnapshot()
+        XCTAssertNil(snapshot.editOverlay)
+        XCTAssertEqual(
+            session.editHandleInteractionState.phase,
+            .pressed(activeIdentity)
+        )
+    }
 }
 
 private enum CanvasEditHandleIdentityPipelineTestRetainer {

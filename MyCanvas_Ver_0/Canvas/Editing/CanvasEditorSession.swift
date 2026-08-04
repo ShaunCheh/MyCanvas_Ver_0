@@ -88,6 +88,7 @@ Write here.
     var rotationPreviewState: CanvasRotationPreviewState?
     var rotationInteractionState: CanvasRotationInteractionState?
     var alignmentInteractionState: CanvasAlignmentInteractionState?
+    var editHandleInteractionState = CanvasEditHandleInteractionState()
 
     private(set) var lastRenderSnapshot: CanvasRenderSnapshot = .empty
     private(set) var activeBoardID: UUID?
@@ -446,6 +447,19 @@ Write here.
         isReadingModeActive ? nil : alignmentInteractionState
     }
 
+    var presentationEditHandleInteractionState: CanvasEditHandleInteractionState {
+        guard
+            isReadingModeActive == false,
+            inlineEditState?.mode != .text
+        else {
+            return CanvasEditHandleInteractionState()
+        }
+
+        // Inline crop owns visible crop handles, so it must retain active
+        // feedback. Inline text has no interactive handle chrome.
+        return editHandleInteractionState
+    }
+
     var selectedBoardItem: CanvasBoardItem? {
         guard let selectedItemID = singleSelectedItemID else {
             return nil
@@ -503,6 +517,7 @@ Write here.
             camera: camera,
             interactionState: presentationInteractionState,
             groupInteractionState: groupInteractionState,
+            editHandleInteractionState: presentationEditHandleInteractionState,
             inlineEditState: presentationInlineEditState,
             rotationPreviewState: presentationRotationPreviewState,
             rotationInteractionState: presentationRotationInteractionState,
@@ -667,10 +682,7 @@ Write here.
         interactionState = runtimeState.interactionState
         groupInteractionState = CanvasGroupInteractionState()
         workspaceMode = runtimeState.workspaceMode
-        inlineEditState = nil
-        rotationPreviewState = nil
-        rotationInteractionState = nil
-        alignmentInteractionState = nil
+        resetTransientEditingState()
         if preserveTransientImageAssetPayloads == false {
             transientImageAssetPayloads.removeAll()
             transientHandDrawingAssetPayloads.removeAll()
@@ -707,12 +719,17 @@ Write here.
             groupInteractionState = normalizedGroupInteractionState(
                 snapshot.groupInteractionState
             )
-            inlineEditState = nil
-            rotationPreviewState = nil
-            rotationInteractionState = nil
-            alignmentInteractionState = nil
+            resetTransientEditingState()
             lastRenderSnapshot = .empty
         }
+    }
+
+    private func resetTransientEditingState() {
+        inlineEditState = nil
+        rotationPreviewState = nil
+        rotationInteractionState = nil
+        alignmentInteractionState = nil
+        editHandleInteractionState = CanvasEditHandleInteractionState()
     }
 
     func resetHistory() {
