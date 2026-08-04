@@ -104,6 +104,33 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         case resizingSelection(CanvasSelectionResizeState)
         case scrollingMarkdownItem(PointerMarkdownScrollState)
         case draggingCanvas
+
+        var editHandlePointerLifecycleState:
+            CanvasEditHandlePointerLifecycleState
+        {
+            switch self {
+            case let .pressed(_, pressContext, _):
+                return .pressed(pressContext.targetHandleIdentity)
+
+            case .croppingSelectedItem,
+                 .rotatingSelectedItem,
+                 .rotatingSelection,
+                 .resizingGroupFrame,
+                 .resizingSelectedItem,
+                 .adjustingArrowEndpoint,
+                 .resizingSelection:
+                return .draggingHandle
+
+            case .idle,
+                 .movingCropFrame,
+                 .draggingSelectedItem,
+                 .draggingSelection,
+                 .draggingGroupFrame,
+                 .scrollingMarkdownItem,
+                 .draggingCanvas:
+                return .inactive
+            }
+        }
     }
 
     private enum TransferEntryDeliverySource {
@@ -403,7 +430,15 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     private let canvasViewportView = iOSCanvasViewportView()
     private var canvasContentView: UIView?
     private var pendingRefreshReason: String?
-    private var pointerDragState: PointerDragState = .idle
+    private var editHandleControllerAdapter =
+        CanvasEditHandleControllerAdapter()
+    private var pointerDragState: PointerDragState = .idle {
+        didSet {
+            synchronizeEditHandleInteractionState(
+                for: pointerDragState.editHandlePointerLifecycleState
+            )
+        }
+    }
     private var isMultiSelectModeActive = false {
         didSet {
             guard oldValue != isMultiSelectModeActive else {
@@ -1783,6 +1818,20 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             pointerModifiers: modifiers
         )
         beginPointerHistoryTransactionIfNeeded(for: pressContext)
+    }
+
+    private func synchronizeEditHandleInteractionState(
+        for pointerState: CanvasEditHandlePointerLifecycleState
+    ) {
+        let event = editHandleControllerAdapter.event(for: pointerState)
+        let transition = editorSession.editHandleInteractionState.apply(event)
+        guard transition.didChangeVisualState else {
+            return
+        }
+
+        requestCanvasRefresh(
+            reason: "edit handle interaction visual state changed"
+        )
     }
 
     private func handleLongPress(at location: CGPoint) {

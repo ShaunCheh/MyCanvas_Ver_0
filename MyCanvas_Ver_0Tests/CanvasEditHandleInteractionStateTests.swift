@@ -226,6 +226,78 @@ final class CanvasEditHandleInteractionStateTests: XCTestCase {
         XCTAssertEqual(state.phase, .inactive)
     }
 
+    func testControllerAdapterKeepsPressedIdentityThroughDragActivation() {
+        let identity = makeItemResizeIdentity()
+        var adapter = CanvasEditHandleControllerAdapter()
+        var state = CanvasEditHandleInteractionState()
+
+        let pressEvent = adapter.event(for: .pressed(identity))
+        let pressTransition = state.apply(pressEvent)
+
+        XCTAssertEqual(pressEvent, .press(identity))
+        XCTAssertEqual(adapter.expectedDraggingIdentity, identity)
+        XCTAssertTrue(pressTransition.didChangeVisualState)
+        XCTAssertEqual(state.phase, .pressed(identity))
+
+        let dragEvent = adapter.event(for: .draggingHandle)
+        let dragTransition = state.apply(dragEvent)
+
+        XCTAssertEqual(
+            dragEvent,
+            .beginDragging(expectedIdentity: identity)
+        )
+        XCTAssertEqual(adapter.expectedDraggingIdentity, identity)
+        XCTAssertTrue(dragTransition.didChangeState)
+        XCTAssertFalse(dragTransition.didChangeVisualState)
+        XCTAssertEqual(state.phase, .dragging(identity))
+    }
+
+    func testControllerAdapterInactiveClearsIdentityAndVisualState() {
+        let identity = makeItemResizeIdentity()
+        var adapter = CanvasEditHandleControllerAdapter()
+        var state = CanvasEditHandleInteractionState()
+        _ = state.apply(adapter.event(for: .pressed(identity)))
+        _ = state.apply(adapter.event(for: .draggingHandle))
+
+        let endEvent = adapter.event(for: .inactive)
+        let endTransition = state.apply(endEvent)
+
+        XCTAssertEqual(endEvent, .end)
+        XCTAssertNil(adapter.expectedDraggingIdentity)
+        XCTAssertTrue(endTransition.didChangeState)
+        XCTAssertTrue(endTransition.didChangeVisualState)
+        XCTAssertEqual(state.phase, .inactive)
+
+        let repeatedEndTransition = state.apply(
+            adapter.event(for: .inactive)
+        )
+        XCTAssertFalse(repeatedEndTransition.didChangeState)
+        XCTAssertFalse(repeatedEndTransition.didChangeVisualState)
+    }
+
+    func testControllerAdapterNilPressAndOrphanDragCannotActivateHandle() {
+        let staleIdentity = makeItemResizeIdentity()
+        var adapter = CanvasEditHandleControllerAdapter()
+        var state = CanvasEditHandleInteractionState()
+        _ = state.apply(.press(staleIdentity))
+
+        let orphanDragEvent = adapter.event(for: .draggingHandle)
+        let orphanDragTransition = state.apply(orphanDragEvent)
+
+        XCTAssertEqual(orphanDragEvent, .cancel)
+        XCTAssertNil(adapter.expectedDraggingIdentity)
+        XCTAssertTrue(orphanDragTransition.didChangeVisualState)
+        XCTAssertEqual(state.phase, .inactive)
+
+        let nilPressEvent = adapter.event(for: .pressed(nil))
+        let nilPressTransition = state.apply(nilPressEvent)
+
+        XCTAssertEqual(nilPressEvent, .press(nil))
+        XCTAssertNil(adapter.expectedDraggingIdentity)
+        XCTAssertFalse(nilPressTransition.didChangeState)
+        XCTAssertFalse(nilPressTransition.didChangeVisualState)
+    }
+
     private func makeItemResizeIdentity(
         itemID: CanvasItemID = CanvasItemID(),
         role: CanvasSelectionHandleRole = .topLeading

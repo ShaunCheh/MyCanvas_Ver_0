@@ -98,6 +98,32 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         case adjustingArrowEndpoint(CanvasArrowEndpointDragState)
         case resizingSelection(CanvasSelectionResizeState)
         case draggingCanvas
+
+        var editHandlePointerLifecycleState:
+            CanvasEditHandlePointerLifecycleState
+        {
+            switch self {
+            case let .pressed(_, pressContext, _):
+                return .pressed(pressContext.targetHandleIdentity)
+
+            case .croppingSelectedItem,
+                 .rotatingSelectedItem,
+                 .rotatingSelection,
+                 .resizingGroupFrame,
+                 .resizingSelectedItem,
+                 .adjustingArrowEndpoint,
+                 .resizingSelection:
+                return .draggingHandle
+
+            case .idle,
+                 .movingCropFrame,
+                 .draggingSelectedItem,
+                 .draggingSelection,
+                 .draggingGroupFrame,
+                 .draggingCanvas:
+                return .inactive
+            }
+        }
     }
 
     private enum TransferEntryDeliverySource {
@@ -398,7 +424,15 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
     private let canvasViewportView = macOSCanvasViewportView()
     private var canvasContentView: NSView?
     private var pendingRefreshReason: String?
-    private var pointerDragState: PointerDragState = .idle
+    private var editHandleControllerAdapter =
+        CanvasEditHandleControllerAdapter()
+    private var pointerDragState: PointerDragState = .idle {
+        didSet {
+            synchronizeEditHandleInteractionState(
+                for: pointerDragState.editHandlePointerLifecycleState
+            )
+        }
+    }
     private var isMultiSelectModeActive = false {
         didSet {
             guard oldValue != isMultiSelectModeActive else {
@@ -2114,6 +2148,20 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             pointerModifiers: modifiers
         )
         beginPointerHistoryTransactionIfNeeded(for: pressContext)
+    }
+
+    private func synchronizeEditHandleInteractionState(
+        for pointerState: CanvasEditHandlePointerLifecycleState
+    ) {
+        let event = editHandleControllerAdapter.event(for: pointerState)
+        let transition = editorSession.editHandleInteractionState.apply(event)
+        guard transition.didChangeVisualState else {
+            return
+        }
+
+        refreshCanvas(
+            reason: "edit handle interaction visual state changed"
+        )
     }
 
     private func handleSecondaryClick(at location: CGPoint) {
