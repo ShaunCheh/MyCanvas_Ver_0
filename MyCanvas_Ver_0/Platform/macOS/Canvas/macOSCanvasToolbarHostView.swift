@@ -21,6 +21,33 @@ enum macOSCanvasToolbarChromeMetrics {
     }
 }
 
+private final class macOSCanvasToolbarButtonSlotView: NSView {
+    let button: NSButton
+
+    init(button: NSButton) {
+        self.button = button
+        super.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
+        wantsLayer = true
+
+        // Keep AppKit's NSButton alignment rect out of stack geometry. The slot
+        // owns the visible chrome, while the button fills the exact slot frame
+        // only for image drawing and event delivery.
+        button.translatesAutoresizingMaskIntoConstraints = true
+        button.autoresizingMask = [.width, .height]
+        addSubview(button)
+    }
+
+    required init?(coder: NSCoder) {
+        return nil
+    }
+
+    override func layout() {
+        super.layout()
+        button.frame = bounds
+    }
+}
+
 final class macOSCanvasToolbarHostView: NSView {
     private enum Layout {
         static let cornerRadius: CGFloat = 18 * macOSCanvasToolbarChromeMetrics.scale
@@ -74,6 +101,7 @@ final class macOSCanvasToolbarHostView: NSView {
     }()
 
     private var registeredButtons: [CanvasToolbarItemID: NSButton] = [:]
+    private var registeredButtonSlots: [CanvasToolbarItemID: macOSCanvasToolbarButtonSlotView] = [:]
     private var preferredAxisOverride: CanvasToolbarAxis?
     private var isTransitionRendering = false
     private var transitionInteractivity = true
@@ -144,8 +172,10 @@ final class macOSCanvasToolbarHostView: NSView {
 
     func registerButtons(_ buttons: [CanvasToolbarItemID: NSButton]) {
         registeredButtons = buttons
-        buttons.values.forEach { button in
-            ensureSquareSize(for: button)
+        registeredButtonSlots = buttons.mapValues { button in
+            let slot = macOSCanvasToolbarButtonSlotView(button: button)
+            ensureSquareSize(for: slot)
+            return slot
         }
     }
 
@@ -240,12 +270,12 @@ final class macOSCanvasToolbarHostView: NSView {
                 for: appearance
             )
             for itemState in latestItemStates {
-                guard let button = registeredButtons[itemState.id] else {
+                guard let slot = registeredButtonSlots[itemState.id] else {
                     continue
                 }
                 updateLayerAppearance(
                     itemState,
-                    on: button,
+                    on: slot,
                     for: appearance
                 )
             }
@@ -254,12 +284,15 @@ final class macOSCanvasToolbarHostView: NSView {
 
     private func syncButtons(with itemStates: [CanvasToolbarItemState]) {
         latestItemStates = itemStates
-        let orderedButtons: [NSButton] = itemStates.compactMap { itemState in
-            guard let button = registeredButtons[itemState.id] else {
+        let orderedButtonSlots: [macOSCanvasToolbarButtonSlotView] = itemStates.compactMap { itemState in
+            guard
+                let button = registeredButtons[itemState.id],
+                let slot = registeredButtonSlots[itemState.id]
+            else {
                 return nil
             }
-            applyAppearance(itemState, to: button)
-            return button
+            applyAppearance(itemState, to: button, in: slot)
+            return slot
         }
 
         buttonsStackView.arrangedSubviews.forEach { arrangedSubview in
@@ -267,8 +300,8 @@ final class macOSCanvasToolbarHostView: NSView {
             arrangedSubview.removeFromSuperview()
         }
 
-        orderedButtons.forEach { button in
-            buttonsStackView.addArrangedSubview(button)
+        orderedButtonSlots.forEach { slot in
+            buttonsStackView.addArrangedSubview(slot)
         }
     }
 
@@ -347,7 +380,8 @@ final class macOSCanvasToolbarHostView: NSView {
 
     private func applyAppearance(
         _ itemState: CanvasToolbarItemState,
-        to button: NSButton
+        to button: NSButton,
+        in slot: macOSCanvasToolbarButtonSlotView
     ) {
         let preservesVisualRole = itemState.isEnabled || itemState.preservesVisualRoleWhenDisabled
         let foregroundColor: NSColor = preservesVisualRole
@@ -364,12 +398,14 @@ final class macOSCanvasToolbarHostView: NSView {
         button.isBordered = false
         button.imagePosition = .imageOnly
         button.wantsLayer = true
-        button.layer?.cornerRadius = Layout.buttonCornerRadius
-        button.layer?.borderWidth = 1
+        button.layer?.backgroundColor = NSColor.clear.cgColor
+        button.layer?.borderWidth = 0
+        slot.layer?.cornerRadius = Layout.buttonCornerRadius
+        slot.layer?.borderWidth = 1
         PlatformLayerAppearance.performWithoutAnimations {
             updateLayerAppearance(
                 itemState,
-                on: button,
+                on: slot,
                 for: effectiveAppearance
             )
         }
@@ -384,7 +420,7 @@ final class macOSCanvasToolbarHostView: NSView {
 
     private func updateLayerAppearance(
         _ itemState: CanvasToolbarItemState,
-        on button: NSButton,
+        on slot: macOSCanvasToolbarButtonSlotView,
         for appearance: NSAppearance
     ) {
         let preservesVisualRole =
@@ -392,11 +428,11 @@ final class macOSCanvasToolbarHostView: NSView {
         let resolvedBackgroundColor = preservesVisualRole
             ? backgroundColor(for: itemState.visualRole)
             : NSColor.quaternaryLabelColor.withAlphaComponent(0.35)
-        button.layer?.borderColor = PlatformLayerAppearance.resolvedCGColor(
+        slot.layer?.borderColor = PlatformLayerAppearance.resolvedCGColor(
             NSColor.separatorColor.withAlphaComponent(0.24),
             for: appearance
         )
-        button.layer?.backgroundColor = PlatformLayerAppearance.resolvedCGColor(
+        slot.layer?.backgroundColor = PlatformLayerAppearance.resolvedCGColor(
             resolvedBackgroundColor,
             for: appearance
         )
@@ -433,15 +469,15 @@ final class macOSCanvasToolbarHostView: NSView {
         }
     }
 
-    private func ensureSquareSize(for button: NSButton) {
-        if button.constraints.contains(where: { $0.identifier == "canvasToolbarHost.buttonWidth" }) == false {
-            let widthConstraint = button.widthAnchor.constraint(equalToConstant: macOSCanvasToolbarChromeMetrics.buttonEdge)
+    private func ensureSquareSize(for slot: macOSCanvasToolbarButtonSlotView) {
+        if slot.constraints.contains(where: { $0.identifier == "canvasToolbarHost.buttonWidth" }) == false {
+            let widthConstraint = slot.widthAnchor.constraint(equalToConstant: macOSCanvasToolbarChromeMetrics.buttonEdge)
             widthConstraint.identifier = "canvasToolbarHost.buttonWidth"
             widthConstraint.isActive = true
         }
 
-        if button.constraints.contains(where: { $0.identifier == "canvasToolbarHost.buttonHeight" }) == false {
-            let heightConstraint = button.heightAnchor.constraint(equalToConstant: macOSCanvasToolbarChromeMetrics.buttonEdge)
+        if slot.constraints.contains(where: { $0.identifier == "canvasToolbarHost.buttonHeight" }) == false {
+            let heightConstraint = slot.heightAnchor.constraint(equalToConstant: macOSCanvasToolbarChromeMetrics.buttonEdge)
             heightConstraint.identifier = "canvasToolbarHost.buttonHeight"
             heightConstraint.isActive = true
         }
