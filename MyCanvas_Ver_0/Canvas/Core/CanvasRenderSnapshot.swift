@@ -93,7 +93,7 @@ struct CanvasWorkspaceRenderOverlay {
     let majorGridSegments: [CanvasWorkspaceGridLineSegment]
 }
 
-enum CanvasSelectionHandleRole: CaseIterable {
+enum CanvasSelectionHandleRole: CaseIterable, Hashable, Sendable {
     case topLeading
     case top
     case topTrailing
@@ -109,7 +109,7 @@ enum CanvasEditOverlayKind {
     case crop
 }
 
-enum CanvasEditHandleRole: CaseIterable {
+enum CanvasEditHandleRole: CaseIterable, Hashable, Sendable {
     case topLeading
     case top
     case topTrailing
@@ -265,7 +265,7 @@ struct CanvasInteractionRenderOverlay {
     let payload: CanvasInteractionRenderOverlayPayload
 }
 
-enum CanvasCropHandleRole: CaseIterable {
+enum CanvasCropHandleRole: CaseIterable, Hashable, Sendable {
     case topLeading
     case top
     case topTrailing

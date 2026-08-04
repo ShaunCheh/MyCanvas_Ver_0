@@ -6,7 +6,7 @@ private let canvasArrowHeadLengthToHeadWidthRatio: CGFloat = 0.95
 private let canvasArrowMinimumVisibleLength: CGFloat = 1
 private let canvasArrowMinimumVisibleHeight: CGFloat = 1
 
-enum CanvasArrowEndpointRole: CaseIterable {
+enum CanvasArrowEndpointRole: CaseIterable, Hashable, Sendable {
     case start
     case end
 }
