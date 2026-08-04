@@ -23,6 +23,9 @@ enum macOSCanvasToolbarChromeMetrics {
 
 private final class macOSCanvasToolbarButtonSlotView: NSView {
     let button: NSButton
+    var onHoverChange: ((Bool) -> Void)?
+    private(set) var isHovered = false
+    private var hoverTrackingArea: NSTrackingArea?
 
     init(button: NSButton) {
         self.button = button
@@ -46,6 +49,51 @@ private final class macOSCanvasToolbarButtonSlotView: NSView {
         super.layout()
         button.frame = bounds
     }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverTrackingArea {
+            removeTrackingArea(hoverTrackingArea)
+        }
+
+        let trackingArea = NSTrackingArea(
+            rect: .zero,
+            options: [
+                .mouseEnteredAndExited,
+                .activeInKeyWindow,
+                .inVisibleRect
+            ],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(trackingArea)
+        hoverTrackingArea = trackingArea
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        super.mouseEntered(with: event)
+        setHovered(true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        setHovered(false)
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil {
+            setHovered(false)
+        }
+    }
+
+    private func setHovered(_ hovered: Bool) {
+        guard isHovered != hovered else {
+            return
+        }
+        isHovered = hovered
+        onHoverChange?(hovered)
+    }
 }
 
 final class macOSCanvasToolbarHostView: NSView {
@@ -58,6 +106,7 @@ final class macOSCanvasToolbarHostView: NSView {
             height: 4 * macOSCanvasToolbarChromeMetrics.scale
         )
         static let buttonCornerRadius: CGFloat = 12 * macOSCanvasToolbarChromeMetrics.scale
+        static let buttonHoverDarkeningFraction: CGFloat = 0.16
         // AppRoot can force an early layout pass before the controller computes
         // the real toolbar frame. Bootstrap with a legal non-zero size so the
         // internal chrome insets do not conflict against a transient width == 0.
@@ -172,11 +221,17 @@ final class macOSCanvasToolbarHostView: NSView {
 
     func registerButtons(_ buttons: [CanvasToolbarItemID: NSButton]) {
         registeredButtons = buttons
-        registeredButtonSlots = buttons.mapValues { button in
+        registeredButtonSlots = Dictionary(uniqueKeysWithValues: buttons.map { itemID, button in
             let slot = macOSCanvasToolbarButtonSlotView(button: button)
             ensureSquareSize(for: slot)
-            return slot
-        }
+            slot.onHoverChange = { [weak self, weak slot] _ in
+                guard let self, let slot else {
+                    return
+                }
+                self.updateHoverAppearance(for: itemID, on: slot)
+            }
+            return (itemID, slot)
+        })
     }
 
     func render(_ state: CanvasToolbarState) {
@@ -425,9 +480,16 @@ final class macOSCanvasToolbarHostView: NSView {
     ) {
         let preservesVisualRole =
             itemState.isEnabled || itemState.preservesVisualRoleWhenDisabled
-        let resolvedBackgroundColor = preservesVisualRole
+        let baseBackgroundColor = preservesVisualRole
             ? backgroundColor(for: itemState.visualRole)
             : NSColor.quaternaryLabelColor.withAlphaComponent(0.35)
+        let resolvedBackgroundColor =
+            itemState.isEnabled && slot.isHovered
+                ? darkenedBackgroundColor(
+                    baseBackgroundColor,
+                    for: appearance
+                )
+                : baseBackgroundColor
         slot.layer?.borderColor = PlatformLayerAppearance.resolvedCGColor(
             NSColor.separatorColor.withAlphaComponent(0.24),
             for: appearance
@@ -436,6 +498,36 @@ final class macOSCanvasToolbarHostView: NSView {
             resolvedBackgroundColor,
             for: appearance
         )
+    }
+
+    private func updateHoverAppearance(
+        for itemID: CanvasToolbarItemID,
+        on slot: macOSCanvasToolbarButtonSlotView
+    ) {
+        guard let itemState = latestItemStates.first(where: { $0.id == itemID }) else {
+            return
+        }
+        PlatformLayerAppearance.performWithoutAnimations {
+            updateLayerAppearance(
+                itemState,
+                on: slot,
+                for: effectiveAppearance
+            )
+        }
+    }
+
+    private func darkenedBackgroundColor(
+        _ color: NSColor,
+        for appearance: NSAppearance
+    ) -> NSColor {
+        var resolvedColor = color
+        appearance.performAsCurrentDrawingAppearance {
+            resolvedColor = color.usingColorSpace(.deviceRGB) ?? color
+        }
+        return resolvedColor.blended(
+            withFraction: Layout.buttonHoverDarkeningFraction,
+            of: .black
+        ) ?? resolvedColor
     }
 
     private func foregroundColor(

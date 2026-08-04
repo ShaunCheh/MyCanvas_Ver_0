@@ -74,5 +74,108 @@ final class macOSCanvasToolbarHostViewTests: XCTestCase {
             )
         }
     }
+
+    func testEnabledButtonDarkensOnHoverAndRestoresOnExit() throws {
+        let button = NSButton()
+        let hostView = macOSCanvasToolbarHostView()
+        hostView.registerButtons([.save: button])
+        hostView.render(
+            CanvasToolbarState(
+                placement: CanvasToolbarPlacement(preferredEdge: .trailing),
+                items: [
+                    CanvasToolbarItemState(
+                        id: .save,
+                        systemImageName: "square.and.arrow.down",
+                        accessibilityLabel: "Save",
+                        visualRole: .accent
+                    )
+                ]
+            )
+        )
+
+        hostView.frame = CGRect(
+            origin: .zero,
+            size: hostView.measuredContentSize()
+        )
+        hostView.layoutSubtreeIfNeeded()
+
+        let slot = try XCTUnwrap(button.superview)
+        let regularBackgroundColor = try XCTUnwrap(slot.layer?.backgroundColor)
+        let enteredEvent = try XCTUnwrap(makeToolbarHoverTestEvent(type: .mouseEntered))
+        slot.mouseEntered(with: enteredEvent)
+        let hoveredBackgroundColor = try XCTUnwrap(slot.layer?.backgroundColor)
+
+        XCTAssertLessThan(
+            toolbarHoverTestLuminance(hoveredBackgroundColor),
+            toolbarHoverTestLuminance(regularBackgroundColor)
+        )
+
+        let exitedEvent = try XCTUnwrap(makeToolbarHoverTestEvent(type: .mouseExited))
+        slot.mouseExited(with: exitedEvent)
+        let restoredBackgroundColor = try XCTUnwrap(slot.layer?.backgroundColor)
+        XCTAssertEqual(restoredBackgroundColor, regularBackgroundColor)
+    }
+
+    func testDisabledButtonDoesNotChangeBackgroundOnHover() throws {
+        let button = NSButton()
+        let hostView = macOSCanvasToolbarHostView()
+        hostView.registerButtons([.undo: button])
+        hostView.render(
+            CanvasToolbarState(
+                placement: CanvasToolbarPlacement(preferredEdge: .trailing),
+                items: [
+                    CanvasToolbarItemState(
+                        id: .undo,
+                        systemImageName: "arrow.uturn.backward",
+                        isEnabled: false,
+                        accessibilityLabel: "Undo",
+                        visualRole: .accent
+                    )
+                ]
+            )
+        )
+
+        hostView.frame = CGRect(
+            origin: .zero,
+            size: hostView.measuredContentSize()
+        )
+        hostView.layoutSubtreeIfNeeded()
+
+        let slot = try XCTUnwrap(button.superview)
+        let regularBackgroundColor = try XCTUnwrap(slot.layer?.backgroundColor)
+        let enteredEvent = try XCTUnwrap(makeToolbarHoverTestEvent(type: .mouseEntered))
+        slot.mouseEntered(with: enteredEvent)
+        let hoveredBackgroundColor = try XCTUnwrap(slot.layer?.backgroundColor)
+
+        XCTAssertEqual(hoveredBackgroundColor, regularBackgroundColor)
+    }
+}
+
+private func makeToolbarHoverTestEvent(
+    type: NSEvent.EventType
+) -> NSEvent? {
+    NSEvent.enterExitEvent(
+        with: type,
+        location: .zero,
+        modifierFlags: [],
+        timestamp: 0,
+        windowNumber: 0,
+        context: nil,
+        eventNumber: 0,
+        trackingNumber: 0,
+        userData: nil
+    )
+}
+
+private func toolbarHoverTestLuminance(_ color: CGColor) -> CGFloat {
+    guard let components = color.components else {
+        return 0
+    }
+    if components.count >= 3 {
+        return (components[0] * 0.2126)
+            + (components[1] * 0.7152)
+            + (components[2] * 0.0722)
+    }
+    return components[0]
 }
 #endif
