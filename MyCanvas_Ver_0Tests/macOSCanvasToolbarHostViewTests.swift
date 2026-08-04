@@ -149,6 +149,49 @@ final class macOSCanvasToolbarHostViewTests: XCTestCase {
 
         XCTAssertEqual(hoveredBackgroundColor, regularBackgroundColor)
     }
+
+    func testCircularChromeSlotIgnoresButtonAlignmentRectInsets() throws {
+        let button = macOSCanvasAlignmentInsetTestButton()
+        let slot = macOSCanvasChromeButtonSlotView(
+            button: button,
+            cornerStyle: .circular
+        )
+        slot.frame = CGRect(x: 0, y: 0, width: 44, height: 44)
+
+        slot.layoutSubtreeIfNeeded()
+
+        XCTAssertEqual(slot.bounds.size, CGSize(width: 44, height: 44))
+        XCTAssertEqual(button.frame, slot.bounds)
+        XCTAssertEqual(
+            try XCTUnwrap(slot.layer?.cornerRadius),
+            22,
+            accuracy: 0.001
+        )
+    }
+
+    func testFixedChromeSlotKeepsToolbarCornerRadius() throws {
+        let button = NSButton()
+        let slot = macOSCanvasChromeButtonSlotView(
+            button: button,
+            cornerStyle: .fixed(6)
+        )
+        slot.frame = CGRect(x: 0, y: 0, width: 32, height: 32)
+
+        slot.layoutSubtreeIfNeeded()
+
+        XCTAssertEqual(button.frame, slot.bounds)
+        XCTAssertEqual(
+            try XCTUnwrap(slot.layer?.cornerRadius),
+            6,
+            accuracy: 0.001
+        )
+    }
+}
+
+private final class macOSCanvasAlignmentInsetTestButton: NSButton {
+    override var alignmentRectInsets: NSEdgeInsets {
+        NSEdgeInsets(top: 5, left: 7, bottom: 6, right: 9)
+    }
 }
 
 private func makeToolbarHoverTestEvent(

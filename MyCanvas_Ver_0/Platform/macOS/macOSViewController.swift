@@ -243,16 +243,11 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         return view
     }()
     private let transitionInteractionShieldView = macOSTransitionInteractionShieldView()
-    private let backButton: NSButton = {
+    private let backButtonSlot: macOSCanvasChromeButtonSlotView = {
         let button = NSButton()
-        button.translatesAutoresizingMaskIntoConstraints = false
         button.isBordered = false
         button.title = ""
         button.toolTip = "Back to board list"
-        button.wantsLayer = true
-        button.layer?.cornerRadius = 22
-        button.layer?.masksToBounds = true
-        button.layer?.borderWidth = 1
         button.contentTintColor = .labelColor
         if let image = NSImage(
             systemSymbolName: "chevron.left",
@@ -263,17 +258,18 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         } else {
             button.title = "<"
         }
-        return button
+        let slot = macOSCanvasChromeButtonSlotView(
+            button: button,
+            cornerStyle: .circular
+        )
+        slot.layer?.masksToBounds = true
+        slot.layer?.borderWidth = 1
+        return slot
     }()
-    private let workspaceModeButton: NSButton = {
+    private let workspaceModeButtonSlot: macOSCanvasChromeButtonSlotView = {
         let button = NSButton()
-        button.translatesAutoresizingMaskIntoConstraints = false
         button.isBordered = false
         button.title = ""
-        button.wantsLayer = true
-        button.layer?.cornerRadius = 22
-        button.layer?.masksToBounds = true
-        button.layer?.borderWidth = 1
         button.contentTintColor = .labelColor
         if let image = NSImage(
             systemSymbolName: CanvasWorkspaceMode.editing.systemImageName,
@@ -282,18 +278,19 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             button.image = image
             button.imagePosition = .imageOnly
         }
-        return button
+        let slot = macOSCanvasChromeButtonSlotView(
+            button: button,
+            cornerStyle: .circular
+        )
+        slot.layer?.masksToBounds = true
+        slot.layer?.borderWidth = 1
+        return slot
     }()
-    private let groupListButton: NSButton = {
+    private let groupListButtonSlot: macOSCanvasChromeButtonSlotView = {
         let button = NSButton()
-        button.translatesAutoresizingMaskIntoConstraints = false
         button.isBordered = false
         button.title = ""
         button.toolTip = "Canvas groups"
-        button.wantsLayer = true
-        button.layer?.cornerRadius = 22
-        button.layer?.masksToBounds = true
-        button.layer?.borderWidth = 1
         button.contentTintColor = .labelColor
         if let image = NSImage(
             systemSymbolName: "rectangle.3.group",
@@ -302,8 +299,23 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             button.image = image
             button.imagePosition = .imageOnly
         }
-        return button
+        let slot = macOSCanvasChromeButtonSlotView(
+            button: button,
+            cornerStyle: .circular
+        )
+        slot.layer?.masksToBounds = true
+        slot.layer?.borderWidth = 1
+        return slot
     }()
+    private var backButton: NSButton {
+        backButtonSlot.button
+    }
+    private var workspaceModeButton: NSButton {
+        workspaceModeButtonSlot.button
+    }
+    private var groupListButton: NSButton {
+        groupListButtonSlot.button
+    }
     private let groupListView: macOSCanvasGroupListView = {
         let view = macOSCanvasGroupListView()
         view.translatesAutoresizingMaskIntoConstraints = false
@@ -1228,12 +1240,16 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
                 .windowBackgroundColor,
                 for: appearance
             )
-            for button in [backButton, workspaceModeButton, groupListButton] {
-                button.layer?.backgroundColor = PlatformLayerAppearance.resolvedCGColor(
+            for buttonSlot in [
+                backButtonSlot,
+                workspaceModeButtonSlot,
+                groupListButtonSlot
+            ] {
+                buttonSlot.layer?.backgroundColor = PlatformLayerAppearance.resolvedCGColor(
                     chromeBackgroundColor,
                     for: appearance
                 )
-                button.layer?.borderColor = PlatformLayerAppearance.resolvedCGColor(
+                buttonSlot.layer?.borderColor = PlatformLayerAppearance.resolvedCGColor(
                     chromeBorderColor,
                     for: appearance
                 )
@@ -1371,9 +1387,9 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         chromeOverlayView.addSubview(selectionAccessoryHostView)
         chromeOverlayView.addSubview(inputIndicatorHostView)
         chromeOverlayView.addSubview(contextMenuHostView)
-        chromeOverlayView.addSubview(backButton)
-        chromeOverlayView.addSubview(groupListButton)
-        chromeOverlayView.addSubview(workspaceModeButton)
+        chromeOverlayView.addSubview(backButtonSlot)
+        chromeOverlayView.addSubview(groupListButtonSlot)
+        chromeOverlayView.addSubview(workspaceModeButtonSlot)
         chromeOverlayView.addSubview(groupListView)
         registerToolbarButtons()
     }
@@ -1409,20 +1425,36 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             contextMenuHostView.leadingAnchor.constraint(equalTo: chromeOverlayView.leadingAnchor),
             contextMenuHostView.trailingAnchor.constraint(equalTo: chromeOverlayView.trailingAnchor),
             contextMenuHostView.bottomAnchor.constraint(equalTo: chromeOverlayView.bottomAnchor),
-            backButton.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor, constant: 20),
-            backButton.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor, constant: 20),
-            backButton.widthAnchor.constraint(equalToConstant: 44),
-            backButton.heightAnchor.constraint(equalToConstant: 44),
-            workspaceModeButton.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -20),
-            workspaceModeButton.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor, constant: 20),
-            workspaceModeButton.widthAnchor.constraint(equalToConstant: 44),
-            workspaceModeButton.heightAnchor.constraint(equalToConstant: 44),
-            groupListButton.trailingAnchor.constraint(equalTo: workspaceModeButton.leadingAnchor, constant: -12),
-            groupListButton.topAnchor.constraint(equalTo: workspaceModeButton.topAnchor),
-            groupListButton.widthAnchor.constraint(equalToConstant: 44),
-            groupListButton.heightAnchor.constraint(equalToConstant: 44),
-            groupListView.topAnchor.constraint(equalTo: groupListButton.bottomAnchor, constant: 8),
-            groupListView.trailingAnchor.constraint(equalTo: groupListButton.trailingAnchor),
+            backButtonSlot.leadingAnchor.constraint(equalTo: safeAreaLayoutGuide.leadingAnchor, constant: 20),
+            backButtonSlot.topAnchor.constraint(equalTo: safeAreaLayoutGuide.topAnchor, constant: 20),
+            backButtonSlot.widthAnchor.constraint(equalToConstant: 44),
+            backButtonSlot.heightAnchor.constraint(equalToConstant: 44),
+            workspaceModeButtonSlot.trailingAnchor.constraint(
+                equalTo: safeAreaLayoutGuide.trailingAnchor,
+                constant: -20
+            ),
+            workspaceModeButtonSlot.topAnchor.constraint(
+                equalTo: safeAreaLayoutGuide.topAnchor,
+                constant: 20
+            ),
+            workspaceModeButtonSlot.widthAnchor.constraint(equalToConstant: 44),
+            workspaceModeButtonSlot.heightAnchor.constraint(equalToConstant: 44),
+            groupListButtonSlot.trailingAnchor.constraint(
+                equalTo: workspaceModeButtonSlot.leadingAnchor,
+                constant: -12
+            ),
+            groupListButtonSlot.topAnchor.constraint(
+                equalTo: workspaceModeButtonSlot.topAnchor
+            ),
+            groupListButtonSlot.widthAnchor.constraint(equalToConstant: 44),
+            groupListButtonSlot.heightAnchor.constraint(equalToConstant: 44),
+            groupListView.topAnchor.constraint(
+                equalTo: groupListButtonSlot.bottomAnchor,
+                constant: 8
+            ),
+            groupListView.trailingAnchor.constraint(
+                equalTo: groupListButtonSlot.trailingAnchor
+            ),
             groupListView.leadingAnchor.constraint(greaterThanOrEqualTo: safeAreaLayoutGuide.leadingAnchor, constant: 20),
             groupListView.widthAnchor.constraint(lessThanOrEqualTo: safeAreaLayoutGuide.widthAnchor, constant: -40),
             preferredGroupListWidth,
@@ -1577,17 +1609,17 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         var chromeBlockers: [CanvasChromeBlocker] = []
         appendChromeBlocker(
             kind: .backButton,
-            for: backButton,
+            for: backButtonSlot,
             to: &chromeBlockers
         )
         appendChromeBlocker(
             kind: .modeToggle,
-            for: workspaceModeButton,
+            for: workspaceModeButtonSlot,
             to: &chromeBlockers
         )
         appendChromeBlocker(
             kind: .groupList,
-            for: groupListButton,
+            for: groupListButtonSlot,
             to: &chromeBlockers
         )
         appendChromeBlocker(
@@ -1873,13 +1905,13 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
 
         let appearance = view.effectiveAppearance
         PlatformLayerAppearance.performWithoutAnimations {
-            groupListButton.layer?.backgroundColor = PlatformLayerAppearance.resolvedCGColor(
+            groupListButtonSlot.layer?.backgroundColor = PlatformLayerAppearance.resolvedCGColor(
                 isGroupListVisible
                     ? NSColor.tertiaryLabelColor.withAlphaComponent(0.18)
                     : NSColor.controlBackgroundColor.withAlphaComponent(0.92),
                 for: appearance
             )
-            groupListButton.layer?.borderColor = PlatformLayerAppearance.resolvedCGColor(
+            groupListButtonSlot.layer?.borderColor = PlatformLayerAppearance.resolvedCGColor(
                 NSColor.separatorColor.withAlphaComponent(0.35),
                 for: appearance
             )
@@ -3013,10 +3045,13 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
 
         let pointInRootView = canvasViewportView.convert(location, to: view)
         let pointInGroupList = groupListView.convert(pointInRootView, from: view)
-        let pointInGroupListButton = groupListButton.convert(pointInRootView, from: view)
+        let pointInGroupListButton = groupListButtonSlot.convert(
+            pointInRootView,
+            from: view
+        )
         guard
             groupListView.bounds.contains(pointInGroupList) == false,
-            groupListButton.bounds.contains(pointInGroupListButton) == false
+            groupListButtonSlot.bounds.contains(pointInGroupListButton) == false
         else {
             return false
         }
@@ -4433,10 +4468,10 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
         animation.duration = 0.36
         animation.isAdditive = true
         animation.calculationMode = .linear
-        workspaceModeButton.layer?.removeAnimation(
+        workspaceModeButtonSlot.layer?.removeAnimation(
             forKey: "CanvasWorkspaceModeButtonShake"
         )
-        workspaceModeButton.layer?.add(
+        workspaceModeButtonSlot.layer?.add(
             animation,
             forKey: "CanvasWorkspaceModeButtonShake"
         )
@@ -7365,10 +7400,10 @@ final class macOSViewController: NSViewController, NSUserInterfaceValidations, N
             miniMapFrame
         ) ?? .zero
         let sanitizedBackButtonFrame = CanvasChromeLayoutGeometry.sanitizedRect(
-            backButton.frame
+            backButtonSlot.frame
         ) ?? .zero
         let sanitizedModeToggleFrame = CanvasChromeLayoutGeometry.sanitizedRect(
-            workspaceModeButton.frame
+            workspaceModeButtonSlot.frame
         ) ?? .zero
         let sanitizedToolbarFrame = chromeLayoutContext.chromeBlockers
             .first(where: { $0.kind == .toolbar })?.rect ?? .zero

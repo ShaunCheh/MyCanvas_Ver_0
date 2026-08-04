@@ -21,81 +21,6 @@ enum macOSCanvasToolbarChromeMetrics {
     }
 }
 
-private final class macOSCanvasToolbarButtonSlotView: NSView {
-    let button: NSButton
-    var onHoverChange: ((Bool) -> Void)?
-    private(set) var isHovered = false
-    private var hoverTrackingArea: NSTrackingArea?
-
-    init(button: NSButton) {
-        self.button = button
-        super.init(frame: .zero)
-        translatesAutoresizingMaskIntoConstraints = false
-        wantsLayer = true
-
-        // Keep AppKit's NSButton alignment rect out of stack geometry. The slot
-        // owns the visible chrome, while the button fills the exact slot frame
-        // only for image drawing and event delivery.
-        button.translatesAutoresizingMaskIntoConstraints = true
-        button.autoresizingMask = [.width, .height]
-        addSubview(button)
-    }
-
-    required init?(coder: NSCoder) {
-        return nil
-    }
-
-    override func layout() {
-        super.layout()
-        button.frame = bounds
-    }
-
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        if let hoverTrackingArea {
-            removeTrackingArea(hoverTrackingArea)
-        }
-
-        let trackingArea = NSTrackingArea(
-            rect: .zero,
-            options: [
-                .mouseEnteredAndExited,
-                .activeInKeyWindow,
-                .inVisibleRect
-            ],
-            owner: self,
-            userInfo: nil
-        )
-        addTrackingArea(trackingArea)
-        hoverTrackingArea = trackingArea
-    }
-
-    override func mouseEntered(with event: NSEvent) {
-        super.mouseEntered(with: event)
-        setHovered(true)
-    }
-
-    override func mouseExited(with event: NSEvent) {
-        super.mouseExited(with: event)
-        setHovered(false)
-    }
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        if window == nil {
-            setHovered(false)
-        }
-    }
-
-    private func setHovered(_ hovered: Bool) {
-        guard isHovered != hovered else {
-            return
-        }
-        isHovered = hovered
-        onHoverChange?(hovered)
-    }
-}
-
 final class macOSCanvasToolbarHostView: NSView {
     private enum Layout {
         static let cornerRadius: CGFloat = 18 * macOSCanvasToolbarChromeMetrics.scale
@@ -150,7 +75,7 @@ final class macOSCanvasToolbarHostView: NSView {
     }()
 
     private var registeredButtons: [CanvasToolbarItemID: NSButton] = [:]
-    private var registeredButtonSlots: [CanvasToolbarItemID: macOSCanvasToolbarButtonSlotView] = [:]
+    private var registeredButtonSlots: [CanvasToolbarItemID: macOSCanvasChromeButtonSlotView] = [:]
     private var preferredAxisOverride: CanvasToolbarAxis?
     private var isTransitionRendering = false
     private var transitionInteractivity = true
@@ -222,7 +147,10 @@ final class macOSCanvasToolbarHostView: NSView {
     func registerButtons(_ buttons: [CanvasToolbarItemID: NSButton]) {
         registeredButtons = buttons
         registeredButtonSlots = Dictionary(uniqueKeysWithValues: buttons.map { itemID, button in
-            let slot = macOSCanvasToolbarButtonSlotView(button: button)
+            let slot = macOSCanvasChromeButtonSlotView(
+                button: button,
+                cornerStyle: .fixed(Layout.buttonCornerRadius)
+            )
             ensureSquareSize(for: slot)
             slot.onHoverChange = { [weak self, weak slot] _ in
                 guard let self, let slot else {
@@ -339,7 +267,7 @@ final class macOSCanvasToolbarHostView: NSView {
 
     private func syncButtons(with itemStates: [CanvasToolbarItemState]) {
         latestItemStates = itemStates
-        let orderedButtonSlots: [macOSCanvasToolbarButtonSlotView] = itemStates.compactMap { itemState in
+        let orderedButtonSlots: [macOSCanvasChromeButtonSlotView] = itemStates.compactMap { itemState in
             guard
                 let button = registeredButtons[itemState.id],
                 let slot = registeredButtonSlots[itemState.id]
@@ -436,7 +364,7 @@ final class macOSCanvasToolbarHostView: NSView {
     private func applyAppearance(
         _ itemState: CanvasToolbarItemState,
         to button: NSButton,
-        in slot: macOSCanvasToolbarButtonSlotView
+        in slot: macOSCanvasChromeButtonSlotView
     ) {
         let preservesVisualRole = itemState.isEnabled || itemState.preservesVisualRoleWhenDisabled
         let foregroundColor: NSColor = preservesVisualRole
@@ -455,7 +383,6 @@ final class macOSCanvasToolbarHostView: NSView {
         button.wantsLayer = true
         button.layer?.backgroundColor = NSColor.clear.cgColor
         button.layer?.borderWidth = 0
-        slot.layer?.cornerRadius = Layout.buttonCornerRadius
         slot.layer?.borderWidth = 1
         PlatformLayerAppearance.performWithoutAnimations {
             updateLayerAppearance(
@@ -475,7 +402,7 @@ final class macOSCanvasToolbarHostView: NSView {
 
     private func updateLayerAppearance(
         _ itemState: CanvasToolbarItemState,
-        on slot: macOSCanvasToolbarButtonSlotView,
+        on slot: macOSCanvasChromeButtonSlotView,
         for appearance: NSAppearance
     ) {
         let preservesVisualRole =
@@ -502,7 +429,7 @@ final class macOSCanvasToolbarHostView: NSView {
 
     private func updateHoverAppearance(
         for itemID: CanvasToolbarItemID,
-        on slot: macOSCanvasToolbarButtonSlotView
+        on slot: macOSCanvasChromeButtonSlotView
     ) {
         guard let itemState = latestItemStates.first(where: { $0.id == itemID }) else {
             return
@@ -561,7 +488,7 @@ final class macOSCanvasToolbarHostView: NSView {
         }
     }
 
-    private func ensureSquareSize(for slot: macOSCanvasToolbarButtonSlotView) {
+    private func ensureSquareSize(for slot: macOSCanvasChromeButtonSlotView) {
         if slot.constraints.contains(where: { $0.identifier == "canvasToolbarHost.buttonWidth" }) == false {
             let widthConstraint = slot.widthAnchor.constraint(equalToConstant: macOSCanvasToolbarChromeMetrics.buttonEdge)
             widthConstraint.identifier = "canvasToolbarHost.buttonWidth"
