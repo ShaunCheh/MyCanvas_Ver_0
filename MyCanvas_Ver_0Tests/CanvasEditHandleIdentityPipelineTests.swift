@@ -376,6 +376,25 @@ final class CanvasEditHandleIdentityPipelineTests: XCTestCase {
         }
         XCTAssertNil(blankContext.targetHandleIdentity)
 
+        let unselectedItem = CanvasTextItem(
+            text: "unselected",
+            center: CGPoint(x: 120, y: -80),
+            size: CGSize(width: 140, height: 72)
+        )
+        let unselectedSession = makeHandleIdentityTestSession(
+            items: [.text(unselectedItem)]
+        )
+        _ = unselectedSession.makeCanvasSnapshot()
+        let unselectedBodyContext = unselectedSession.resolvePointerTarget(
+            at: unselectedSession.camera.worldToViewport(unselectedItem.center),
+            interactionMetrics: metrics
+        )
+        guard case .unselectedItemBody = unselectedBodyContext.targetKind else {
+            XCTFail("Expected the unselected item body.")
+            return
+        }
+        XCTAssertNil(unselectedBodyContext.targetHandleIdentity)
+
         let imageItem = try makeHandleIdentityTestImageItem()
         let cropSession = makeHandleIdentityTestSession(
             items: [.image(imageItem)]
@@ -420,6 +439,209 @@ final class CanvasEditHandleIdentityPipelineTests: XCTestCase {
             return
         }
         XCTAssertNil(groupBodyContext.targetHandleIdentity)
+    }
+
+    func testContextResolverPreservesEverySingleSelectionHandleIdentity() throws {
+        let item = try makeHandleIdentityTestImageItem()
+        let session = makeHandleIdentityTestSession(
+            items: [.image(item)],
+            interactionState: CanvasInteractionState(selectedItemID: item.id)
+        )
+        let metrics = makeHandleIdentityTestMetrics()
+        let snapshot = session.makeCanvasSnapshot()
+        let overlay = try XCTUnwrap(snapshot.editOverlay)
+
+        for handle in overlay.handles {
+            let expectedRole = try XCTUnwrap(
+                handle.role.selectionHandleRole
+            )
+            let pressContext = try assertEditOverlayHandleIdentityHit(
+                session: session,
+                snapshot: snapshot,
+                handle: handle,
+                metrics: metrics
+            )
+            guard case let .selectionHandle(role) = pressContext.targetKind else {
+                XCTFail("Expected a single-selection resize handle.")
+                return
+            }
+            XCTAssertEqual(role, expectedRole)
+        }
+
+        guard case let .selection(payload) = overlay.payload else {
+            XCTFail("Expected a single-selection overlay.")
+            return
+        }
+        let rotateHandle = try XCTUnwrap(payload.rotateAffordance?.handle)
+        let rotatePressContext = try assertEditOverlayHandleIdentityHit(
+            session: session,
+            snapshot: snapshot,
+            handle: rotateHandle,
+            metrics: metrics
+        )
+        guard case .rotateHandle = rotatePressContext.targetKind else {
+            XCTFail("Expected a single-selection rotate handle.")
+            return
+        }
+    }
+
+    func testContextResolverPreservesEveryCropHandleIdentity() throws {
+        let item = try makeHandleIdentityTestImageItem()
+        let session = makeHandleIdentityTestSession(
+            items: [.image(item)]
+        )
+        session.inlineEditState = CanvasInlineEditState(item: item)
+        let metrics = makeHandleIdentityTestMetrics()
+        let snapshot = session.makeCanvasSnapshot()
+        let overlay = try XCTUnwrap(snapshot.editOverlay)
+
+        for handle in overlay.handles {
+            let expectedRole = try XCTUnwrap(handle.role.cropHandleRole)
+            let pressContext = try assertEditOverlayHandleIdentityHit(
+                session: session,
+                snapshot: snapshot,
+                handle: handle,
+                metrics: metrics
+            )
+            guard case let .cropHandle(role) = pressContext.targetKind else {
+                XCTFail("Expected a crop resize handle.")
+                return
+            }
+            XCTAssertEqual(role, expectedRole)
+        }
+    }
+
+    func testContextResolverPreservesEveryGroupSelectionHandleIdentity() throws {
+        let firstItem = CanvasTextItem(
+            text: "first",
+            center: CGPoint(x: -80, y: -20),
+            size: CGSize(width: 90, height: 48)
+        )
+        let secondItem = CanvasTextItem(
+            text: "second",
+            center: CGPoint(x: 90, y: 40),
+            size: CGSize(width: 120, height: 56)
+        )
+        let session = makeHandleIdentityTestSession(
+            items: [.text(firstItem), .text(secondItem)],
+            interactionState: CanvasInteractionState(
+                selectedItemIDs: [firstItem.id, secondItem.id],
+                primarySelectedItemID: secondItem.id
+            )
+        )
+        let metrics = makeHandleIdentityTestMetrics()
+        let snapshot = session.makeCanvasSnapshot()
+        let overlay = try XCTUnwrap(snapshot.editOverlay)
+
+        for handle in overlay.handles {
+            let expectedRole = try XCTUnwrap(
+                handle.role.selectionHandleRole
+            )
+            let pressContext = try assertEditOverlayHandleIdentityHit(
+                session: session,
+                snapshot: snapshot,
+                handle: handle,
+                metrics: metrics
+            )
+            guard case let .groupSelectionHandle(role) =
+                pressContext.targetKind
+            else {
+                XCTFail("Expected a group-selection resize handle.")
+                return
+            }
+            XCTAssertEqual(role, expectedRole)
+        }
+
+        guard case let .selection(payload) = overlay.payload else {
+            XCTFail("Expected a group-selection overlay.")
+            return
+        }
+        let rotateHandle = try XCTUnwrap(payload.rotateAffordance?.handle)
+        let rotatePressContext = try assertEditOverlayHandleIdentityHit(
+            session: session,
+            snapshot: snapshot,
+            handle: rotateHandle,
+            metrics: metrics
+        )
+        guard case .groupRotateHandle = rotatePressContext.targetKind else {
+            XCTFail("Expected a group-selection rotate handle.")
+            return
+        }
+    }
+
+    func testContextResolverPreservesEveryArrowEndpointIdentity() throws {
+        let arrow = CanvasArrowItem(
+            center: CGPoint(x: 20, y: 10),
+            size: CGSize(width: 180, height: 72),
+            rotationRadians: .pi / 8
+        )
+        let session = makeHandleIdentityTestSession(
+            items: [.arrow(arrow)],
+            interactionState: CanvasInteractionState(selectedItemID: arrow.id)
+        )
+        let metrics = makeHandleIdentityTestMetrics()
+        let snapshot = session.makeCanvasSnapshot()
+        let overlay = try XCTUnwrap(snapshot.editOverlay)
+
+        for handle in overlay.handles {
+            let expectedRole = try XCTUnwrap(handle.role.arrowEndpointRole)
+            let pressContext = try assertEditOverlayHandleIdentityHit(
+                session: session,
+                snapshot: snapshot,
+                handle: handle,
+                metrics: metrics
+            )
+            guard case let .arrowEndpointHandle(role) =
+                pressContext.targetKind
+            else {
+                XCTFail("Expected an arrow endpoint handle.")
+                return
+            }
+            XCTAssertEqual(role, expectedRole)
+        }
+    }
+
+    func testContextResolverPreservesEveryGroupFrameHandleIdentity() throws {
+        let groupID = CanvasItemGroupID()
+        let session = makeHandleIdentityTestSession(
+            groups: [
+                CanvasItemGroup(
+                    id: groupID,
+                    title: "Group",
+                    itemIDs: [],
+                    frame: CGRect(x: -120, y: -90, width: 240, height: 180)
+                )
+            ],
+            groupInteractionState: CanvasGroupInteractionState(
+                selectedGroupID: groupID
+            )
+        )
+        let metrics = makeHandleIdentityTestMetrics()
+        let snapshot = session.makeCanvasSnapshot()
+        let overlay = try XCTUnwrap(snapshot.groupEditOverlay)
+
+        for handle in overlay.handles {
+            let expectedRole = try XCTUnwrap(
+                handle.role.selectionHandleRole
+            )
+            let pressContext = session.resolvePointerTarget(
+                at: handle.screenCenter,
+                interactionMetrics: metrics
+            )
+            guard case let .groupFrameResizeHandle(role) =
+                pressContext.targetKind
+            else {
+                XCTFail("Expected a canvas group frame resize handle.")
+                return
+            }
+            XCTAssertEqual(role, expectedRole)
+            XCTAssertEqual(pressContext.targetGroupID, groupID)
+            XCTAssertNil(pressContext.targetItemID)
+            XCTAssertEqual(
+                pressContext.targetHandleIdentity,
+                handle.identity
+            )
+        }
     }
 
     func testSessionProjectsOnlyExactSelectionOrRotateIdentityAsActive() throws {
@@ -604,6 +826,44 @@ private func makeHandleIdentityTestSession(
         groupInteractionState ?? CanvasGroupInteractionState()
     CanvasEditHandleIdentityPipelineTestRetainer.sessions.append(session)
     return session
+}
+
+@MainActor
+private func assertEditOverlayHandleIdentityHit(
+    session: CanvasEditorSession,
+    snapshot: CanvasRenderSnapshot,
+    handle: CanvasEditHandleGeometry,
+    metrics: CanvasContextResolverMetrics,
+    file: StaticString = #filePath,
+    line: UInt = #line
+) throws -> CanvasPointerPressContext {
+    let hitTarget = try XCTUnwrap(
+        CanvasEditOverlayHitTester().resolve(
+            at: handle.screenCenter,
+            renderSnapshot: snapshot,
+            metrics: metrics
+        ),
+        file: file,
+        line: line
+    )
+    XCTAssertEqual(
+        hitTarget.targetHandleIdentity,
+        handle.identity,
+        file: file,
+        line: line
+    )
+
+    let pressContext = session.resolvePointerTarget(
+        at: handle.screenCenter,
+        interactionMetrics: metrics
+    )
+    XCTAssertEqual(
+        pressContext.targetHandleIdentity,
+        handle.identity,
+        file: file,
+        line: line
+    )
+    return pressContext
 }
 
 private func makeHandleIdentityTestMetrics() -> CanvasContextResolverMetrics {

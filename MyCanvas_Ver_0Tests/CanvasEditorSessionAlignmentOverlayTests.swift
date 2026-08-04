@@ -132,7 +132,7 @@ final class CanvasEditorSessionAlignmentOverlayTests: XCTestCase {
         XCTAssertEqual(historySnapshot, baselineSnapshot)
     }
 
-    func testApplyBoardRuntimeStateClearsTransientAlignmentState() {
+    func testApplyBoardRuntimeStateClearsTransientAlignmentState() throws {
         let currentItem = makeAlignmentOverlayTestItem()
         let replacementItem = CanvasTextItem(
             text: "restored",
@@ -166,9 +166,12 @@ final class CanvasEditorSessionAlignmentOverlayTests: XCTestCase {
             replacementItem.id
         )
         XCTAssertNil(session.scene.boardItem(withID: currentItem.id))
+        try assertAlignmentOverlayTestSnapshotHasNoActiveHandles(
+            session: session
+        )
     }
 
-    func testApplyBoardHistorySnapshotClearsTransientAlignmentStateWithoutActiveBoard() {
+    func testApplyBoardHistorySnapshotClearsTransientAlignmentStateWithoutActiveBoard() throws {
         let currentItem = makeAlignmentOverlayTestItem()
         let replacementItem = CanvasTextItem(
             text: "undo target",
@@ -205,9 +208,12 @@ final class CanvasEditorSessionAlignmentOverlayTests: XCTestCase {
             replacementItem.id
         )
         XCTAssertNil(session.scene.boardItem(withID: currentItem.id))
+        try assertAlignmentOverlayTestSnapshotHasNoActiveHandles(
+            session: session
+        )
     }
 
-    func testApplyBoardHistorySnapshotClearsTransientAlignmentStateWithActiveBoard() {
+    func testApplyBoardHistorySnapshotClearsTransientAlignmentStateWithActiveBoard() throws {
         let currentItem = makeAlignmentOverlayTestItem()
         let replacementItem = CanvasTextItem(
             text: "redo target",
@@ -250,6 +256,9 @@ final class CanvasEditorSessionAlignmentOverlayTests: XCTestCase {
             replacementItem.id
         )
         XCTAssertNil(session.scene.boardItem(withID: currentItem.id))
+        try assertAlignmentOverlayTestSnapshotHasNoActiveHandles(
+            session: session
+        )
     }
 
     func testMakeCanvasSnapshotProducesSelectionHighlightsAndGroupOverlayForMultiSelection() {
@@ -839,6 +848,31 @@ private func activateAlignmentOverlayTestHandle(
                 kind: .rotate
             )
         )
+    )
+}
+
+@MainActor
+private func assertAlignmentOverlayTestSnapshotHasNoActiveHandles(
+    session: CanvasEditorSession,
+    file: StaticString = #filePath,
+    line: UInt = #line
+) throws {
+    let snapshot = session.makeCanvasSnapshot()
+    let overlay = try XCTUnwrap(
+        snapshot.editOverlay,
+        file: file,
+        line: line
+    )
+    var handles = overlay.handles
+    if case let .selection(payload) = overlay.payload,
+       let rotateHandle = payload.rotateAffordance?.handle
+    {
+        handles.append(rotateHandle)
+    }
+    XCTAssertTrue(
+        handles.allSatisfy { $0.visualState == .normal },
+        file: file,
+        line: line
     )
 }
 

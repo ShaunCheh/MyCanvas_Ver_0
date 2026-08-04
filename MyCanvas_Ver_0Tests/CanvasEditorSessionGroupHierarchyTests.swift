@@ -642,6 +642,166 @@ final class CanvasEditorSessionGroupHierarchyTests: XCTestCase {
         XCTAssertEqual(session.groupFrame(withID: fixture.parentID), resizedParentFrame)
         try assertGroupHierarchySubtreeMoveFixture(fixture, translation: .zero)
     }
+
+    func testMakeCanvasSnapshotProjectsOnlyExactGroupFrameHandleIdentityAsActive() throws {
+        let groupID = CanvasItemGroupID()
+        let group = CanvasItemGroup(
+            id: groupID,
+            title: "Selected Group",
+            itemIDs: [],
+            frame: CGRect(x: -120, y: -80, width: 240, height: 160)
+        )
+        let session = makeGroupHierarchyHandleStateTestSession(
+            groups: [group],
+            selectedGroupID: groupID
+        )
+        let activeIdentity = CanvasEditHandleIdentity(
+            owner: .group(groupID),
+            kind: .groupFrameResize(.bottomTrailing)
+        )
+        _ = session.editHandleInteractionState.apply(
+            .press(activeIdentity)
+        )
+
+        let activeSnapshot = session.makeCanvasSnapshot()
+        let activeOverlay = try XCTUnwrap(activeSnapshot.groupEditOverlay)
+        XCTAssertEqual(
+            activeOverlay.handles
+                .filter { $0.visualState == .active }
+                .map(\.identity),
+            [activeIdentity]
+        )
+
+        _ = session.editHandleInteractionState.apply(
+            .press(
+                CanvasEditHandleIdentity(
+                    owner: .group(CanvasItemGroupID()),
+                    kind: .groupFrameResize(.bottomTrailing)
+                )
+            )
+        )
+        let mismatchedSnapshot = session.makeCanvasSnapshot()
+        let mismatchedOverlay = try XCTUnwrap(
+            mismatchedSnapshot.groupEditOverlay
+        )
+        XCTAssertTrue(
+            mismatchedOverlay.handles.allSatisfy {
+                $0.visualState == .normal
+            }
+        )
+    }
+
+    func testCurrentBoardHistorySnapshotIgnoresActiveGroupFrameHandleState() {
+        let groupID = CanvasItemGroupID()
+        let group = CanvasItemGroup(
+            id: groupID,
+            title: "History Group",
+            itemIDs: [],
+            frame: CGRect(x: -100, y: -70, width: 200, height: 140)
+        )
+        let session = makeGroupHierarchyHandleStateTestSession(
+            groups: [group],
+            selectedGroupID: groupID
+        )
+        let baselineSnapshot = session.currentBoardHistorySnapshot()
+
+        _ = session.editHandleInteractionState.apply(
+            .press(
+                CanvasEditHandleIdentity(
+                    owner: .group(groupID),
+                    kind: .groupFrameResize(.topLeading)
+                )
+            )
+        )
+
+        XCTAssertEqual(
+            session.currentBoardHistorySnapshot(),
+            baselineSnapshot
+        )
+    }
+
+    func testApplyBoardRuntimeStateClearsActiveGroupFrameHandleState() {
+        let currentGroupID = CanvasItemGroupID()
+        let replacementGroupID = CanvasItemGroupID()
+        let currentGroup = CanvasItemGroup(
+            id: currentGroupID,
+            title: "Current",
+            itemIDs: [],
+            frame: CGRect(x: -100, y: -70, width: 200, height: 140)
+        )
+        let replacementGroup = CanvasItemGroup(
+            id: replacementGroupID,
+            title: "Restored",
+            itemIDs: [],
+            frame: CGRect(x: 80, y: 40, width: 220, height: 150)
+        )
+        let session = makeGroupHierarchyHandleStateTestSession(
+            groups: [currentGroup],
+            selectedGroupID: currentGroupID
+        )
+        _ = session.editHandleInteractionState.apply(
+            .press(
+                CanvasEditHandleIdentity(
+                    owner: .group(currentGroupID),
+                    kind: .groupFrameResize(.leading)
+                )
+            )
+        )
+
+        session.applyBoardRuntimeState(
+            makeGroupHierarchyHandleStateRuntimeState(
+                groups: [replacementGroup]
+            )
+        )
+
+        XCTAssertEqual(session.editHandleInteractionState.phase, .inactive)
+        XCTAssertNil(session.selectedGroupID)
+        XCTAssertEqual(session.groups, [replacementGroup])
+        XCTAssertNil(session.makeCanvasSnapshot().groupEditOverlay)
+    }
+
+    func testApplyBoardHistorySnapshotRestoresGroupSelectionWithoutActiveHandle() throws {
+        let groupID = CanvasItemGroupID()
+        let group = CanvasItemGroup(
+            id: groupID,
+            title: "History Restore",
+            itemIDs: [],
+            frame: CGRect(x: -110, y: -75, width: 220, height: 150)
+        )
+        let session = makeGroupHierarchyHandleStateTestSession()
+        session.applyBoardRuntimeState(
+            makeGroupHierarchyHandleStateRuntimeState(groups: [group])
+        )
+        XCTAssertTrue(session.selectGroup(withID: groupID))
+        _ = session.editHandleInteractionState.apply(
+            .press(
+                CanvasEditHandleIdentity(
+                    owner: .group(groupID),
+                    kind: .groupFrameResize(.trailing)
+                )
+            )
+        )
+
+        session.applyBoardHistorySnapshot(
+            BoardHistorySnapshot(
+                items: [],
+                groups: [group],
+                boardState: nil,
+                interactionState: CanvasInteractionState(),
+                groupInteractionState: CanvasGroupInteractionState(
+                    selectedGroupID: groupID
+                )
+            )
+        )
+
+        XCTAssertEqual(session.editHandleInteractionState.phase, .inactive)
+        XCTAssertEqual(session.selectedGroupID, groupID)
+        let snapshot = session.makeCanvasSnapshot()
+        let overlay = try XCTUnwrap(snapshot.groupEditOverlay)
+        XCTAssertTrue(
+            overlay.handles.allSatisfy { $0.visualState == .normal }
+        )
+    }
 }
 
 private enum CanvasEditorSessionGroupHierarchyTestRetainer {
@@ -670,6 +830,48 @@ private func makeGroupHierarchyTestSession() -> CanvasEditorSession {
     )
     CanvasEditorSessionGroupHierarchyTestRetainer.sessions.append(session)
     return session
+}
+
+@MainActor
+private func makeGroupHierarchyHandleStateTestSession(
+    groups: [CanvasItemGroup] = [],
+    selectedGroupID: CanvasItemGroupID? = nil
+) -> CanvasEditorSession {
+    let session = makeGroupHierarchyTestSession()
+    session.camera = CanvasCamera(
+        center: .zero,
+        zoomScale: 1,
+        viewportSize: CGSize(width: 800, height: 600)
+    )
+    session.groups = groups
+    session.groupInteractionState = CanvasGroupInteractionState(
+        selectedGroupID: selectedGroupID
+    )
+    return session
+}
+
+@MainActor
+private func makeGroupHierarchyHandleStateRuntimeState(
+    groups: [CanvasItemGroup]
+) -> BoardRuntimeState {
+    let now = Date(timeIntervalSince1970: 0)
+    return BoardRuntimeState(
+        boardID: UUID(),
+        title: "Group Handle State Test",
+        createdAt: now,
+        contentUpdatedAt: now,
+        viewStateUpdatedAt: now,
+        items: [],
+        groups: groups,
+        boardState: nil,
+        camera: CanvasCamera(
+            center: .zero,
+            zoomScale: 1,
+            viewportSize: CGSize(width: 800, height: 600)
+        ),
+        interactionState: CanvasInteractionState(),
+        workspaceMode: .editing
+    )
 }
 
 private func makeGroupHierarchyTextItem(
