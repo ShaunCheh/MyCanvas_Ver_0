@@ -23,7 +23,10 @@ final class macOSCanvasViewportView: NSView {
         blue: 1,
         alpha: 0.35
     )
-    private static let selectionHandleFillColor = CGColor(gray: 1, alpha: 1)
+    private static let rotationTextBackgroundFillColor = CGColor(
+        gray: 1,
+        alpha: 1
+    )
     private static let selectionHighlightLineWidth: CGFloat = 1.5
     private static let selectionOutlineLineWidth: CGFloat = 2
     private static let selectionHandleLineWidth: CGFloat = 2
@@ -37,7 +40,6 @@ final class macOSCanvasViewportView: NSView {
         blue: 0,
         alpha: 1
     )
-    private static let cropHandleFillColor = CGColor(gray: 1, alpha: 1)
     private static let cropOutlineLineWidth: CGFloat = 2
     private static let cropHandleLineWidth: CGFloat = 2
     private static let cropHandleSize: CGFloat = 10
@@ -654,7 +656,8 @@ final class macOSCanvasViewportView: NSView {
     }
 
     private func configureRotationTextBackgroundLayer() {
-        rotationTextBackgroundLayer.fillColor = Self.selectionHandleFillColor
+        rotationTextBackgroundLayer.fillColor =
+            Self.rotationTextBackgroundFillColor
         rotationTextBackgroundLayer.strokeColor = Self.selectionStrokeColor
         rotationTextBackgroundLayer.lineWidth = Self.selectionHandleLineWidth
         rotationTextBackgroundLayer.isHidden = true
@@ -668,12 +671,41 @@ final class macOSCanvasViewportView: NSView {
         rotationTextLayer.truncationMode = .none
     }
 
+    private func applyEditHandleVisualStyle(
+        to handleLayer: CAShapeLayer,
+        kind: CanvasEditHandleKind,
+        visualState: CanvasEditHandleVisualState,
+        lineWidth: CGFloat
+    ) {
+        let style = CanvasEditHandleVisualStyleResolver.resolve(
+            kind: kind,
+            visualState: visualState
+        )
+        handleLayer.fillColor = style.fillColor
+        handleLayer.strokeColor = style.strokeColor
+        handleLayer.lineWidth = lineWidth
+    }
+
+    private func applyEditHandleVisualStyle(
+        to handleLayer: CAShapeLayer,
+        for handle: CanvasEditHandleGeometry,
+        lineWidth: CGFloat
+    ) {
+        let style = CanvasEditHandleVisualStyleResolver.resolve(for: handle)
+        handleLayer.fillColor = style.fillColor
+        handleLayer.strokeColor = style.strokeColor
+        handleLayer.lineWidth = lineWidth
+    }
+
     private func configureSelectionHandleLayers() {
         for role in CanvasSelectionHandleRole.allCases {
             let handleLayer = CAShapeLayer()
-            handleLayer.fillColor = Self.selectionHandleFillColor
-            handleLayer.strokeColor = Self.selectionStrokeColor
-            handleLayer.lineWidth = Self.selectionHandleLineWidth
+            applyEditHandleVisualStyle(
+                to: handleLayer,
+                kind: .selectionResize(role),
+                visualState: .normal,
+                lineWidth: Self.selectionHandleLineWidth
+            )
             handleLayer.isHidden = true
             overlayLayer.addSublayer(handleLayer)
             selectionHandleLayers[role] = handleLayer
@@ -683,9 +715,12 @@ final class macOSCanvasViewportView: NSView {
     private func configureArrowEndpointHandleLayers() {
         for role in CanvasArrowEndpointRole.allCases {
             let handleLayer = CAShapeLayer()
-            handleLayer.fillColor = Self.selectionHandleFillColor
-            handleLayer.strokeColor = Self.selectionStrokeColor
-            handleLayer.lineWidth = Self.selectionHandleLineWidth
+            applyEditHandleVisualStyle(
+                to: handleLayer,
+                kind: .arrowEndpoint(role),
+                visualState: .normal,
+                lineWidth: Self.selectionHandleLineWidth
+            )
             handleLayer.isHidden = true
             overlayLayer.addSublayer(handleLayer)
             arrowEndpointHandleLayers[role] = handleLayer
@@ -708,9 +743,12 @@ final class macOSCanvasViewportView: NSView {
     private func configureCropHandleLayers() {
         for role in CanvasCropHandleRole.allCases {
             let handleLayer = CAShapeLayer()
-            handleLayer.fillColor = Self.cropHandleFillColor
-            handleLayer.strokeColor = Self.cropOutlineStrokeColor
-            handleLayer.lineWidth = Self.cropHandleLineWidth
+            applyEditHandleVisualStyle(
+                to: handleLayer,
+                kind: .cropResize(role),
+                visualState: .normal,
+                lineWidth: Self.cropHandleLineWidth
+            )
             handleLayer.isHidden = true
             overlayLayer.addSublayer(handleLayer)
             cropHandleLayers[role] = handleLayer
@@ -726,9 +764,12 @@ final class macOSCanvasViewportView: NSView {
     }
 
     private func configureRotateHandleLayer() {
-        rotateHandleLayer.fillColor = Self.selectionHandleFillColor
-        rotateHandleLayer.strokeColor = Self.selectionStrokeColor
-        rotateHandleLayer.lineWidth = Self.rotateHandleLineWidth
+        applyEditHandleVisualStyle(
+            to: rotateHandleLayer,
+            kind: .rotate,
+            visualState: .normal,
+            lineWidth: Self.rotateHandleLineWidth
+        )
         rotateHandleLayer.isHidden = true
     }
 
@@ -893,6 +934,11 @@ final class macOSCanvasViewportView: NSView {
                 continue
             }
 
+            applyEditHandleVisualStyle(
+                to: handleLayer,
+                for: handle,
+                lineWidth: Self.selectionHandleLineWidth
+            )
             handleLayer.frame = bounds
             handleLayer.path = Self.selectionHandlePath(
                 for: role,
@@ -960,6 +1006,11 @@ final class macOSCanvasViewportView: NSView {
                 continue
             }
 
+            applyEditHandleVisualStyle(
+                to: handleLayer,
+                for: handle,
+                lineWidth: Self.cropHandleLineWidth
+            )
             handleLayer.frame = bounds
             handleLayer.path = Self.cropHandlePath(
                 centeredAt: handle.screenCenter,
@@ -999,6 +1050,11 @@ final class macOSCanvasViewportView: NSView {
                 continue
             }
 
+            applyEditHandleVisualStyle(
+                to: handleLayer,
+                for: handle,
+                lineWidth: Self.selectionHandleLineWidth
+            )
             handleLayer.frame = bounds
             handleLayer.path = Self.selectionHandlePath(
                 for: role,
@@ -1022,6 +1078,11 @@ final class macOSCanvasViewportView: NSView {
                 continue
             }
 
+            applyEditHandleVisualStyle(
+                to: handleLayer,
+                for: handle,
+                lineWidth: Self.selectionHandleLineWidth
+            )
             handleLayer.frame = bounds
             handleLayer.path = Self.arrowEndpointHandlePath(
                 centeredAt: handle.screenCenter
@@ -1064,6 +1125,11 @@ final class macOSCanvasViewportView: NSView {
         rotateGuideLayer.isHidden = false
         rotateGuideLayer.contentsScale = currentContentsScale
 
+        applyEditHandleVisualStyle(
+            to: rotateHandleLayer,
+            for: rotateAffordance.handle,
+            lineWidth: Self.rotateHandleLineWidth
+        )
         let handleRect = Self.rotateHandleRect(centeredAt: rotateAffordance.handle.screenCenter)
         rotateHandleLayer.frame = handleRect
         rotateHandleLayer.path = CGPath(
