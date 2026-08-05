@@ -143,6 +143,269 @@ final class CanvasImportedMediaPlacementTests: XCTestCase {
         )
     }
 
+    func testAppendImportedMediaAutomaticSingleItemUsesCameraCenter() throws {
+        let session = makeImportPlacementTestSession()
+        let cameraCenter = CGPoint(x: -240, y: 360)
+        session.camera = CanvasCamera(
+            center: cameraCenter,
+            zoomScale: 2,
+            viewportSize: CGSize(width: 900, height: 700)
+        )
+        let image = try makeImportPlacementTestResolvedImage(
+            width: 120,
+            height: 80
+        )
+
+        let importedItems = session.appendImportedMedia([.image(image)])
+
+        XCTAssertEqual(importedItems.count, 1)
+        XCTAssertEqual(importedItems[0].center, cameraCenter)
+    }
+
+    func testAppendImportedMediaAutomaticVideoBatchUsesCameraCenteredGrid() throws {
+        let session = makeImportPlacementTestSession()
+        let importCenter = CGPoint(x: 320, y: -180)
+        session.camera = CanvasCamera(
+            center: importCenter,
+            zoomScale: 1.5,
+            viewportSize: CGSize(width: 1200, height: 800)
+        )
+        let videos = try (0..<5).map { index in
+            try makeImportPlacementTestVideo(
+                width: 160,
+                height: 90,
+                filename: "video-\(index).mov",
+                posterTimeSeconds: Double(index) + 0.25
+            )
+        }
+
+        let importedItems = session.appendImportedMedia(
+            videos.map(CanvasImportItem.video)
+        )
+
+        XCTAssertEqual(importedItems.count, videos.count)
+        XCTAssertTrue(importedItems.allSatisfy(\.isVideo))
+        XCTAssertEqual(
+            importedItems.compactMap(\.sourceVideoFilename),
+            videos.map(\.videoSource.sourceVideoFilename)
+        )
+        XCTAssertEqual(
+            importedItems.compactMap(\.posterTimeSeconds),
+            videos.map(\.posterTimeSeconds)
+        )
+
+        let gridConfiguration = CanvasBatchImportLayoutConfiguration.current.grid
+        let horizontalPitch =
+            importedItems[0].size.width
+            + gridConfiguration.horizontalSpacing
+        let verticalPitch =
+            importedItems[0].size.height
+            + gridConfiguration.verticalSpacing
+        XCTAssertEqual(
+            importedItems[3].center,
+            CGPoint(
+                x: importedItems[0].center.x + 3 * horizontalPitch,
+                y: importedItems[0].center.y
+            )
+        )
+        XCTAssertEqual(
+            importedItems[4].center,
+            CGPoint(
+                x: importedItems[0].center.x,
+                y: importedItems[0].center.y + verticalPitch
+            )
+        )
+        XCTAssertEqual(
+            (importedItems[0].center.x + importedItems[3].center.x) / 2,
+            importCenter.x
+        )
+        XCTAssertEqual(
+            (importedItems[0].center.y + importedItems[4].center.y) / 2,
+            importCenter.y
+        )
+    }
+
+    func testAppendImportedMediaAutomaticMixedBatchPreservesOrderAndZIndexes() throws {
+        let session = makeImportPlacementTestSession()
+        let portraitImage = try makeImportPlacementTestResolvedImage(
+            width: 60,
+            height: 120
+        )
+        let squareImage = try makeImportPlacementTestResolvedImage(
+            width: 100,
+            height: 100
+        )
+        let firstVideo = try makeImportPlacementTestVideo(
+            width: 160,
+            height: 90,
+            filename: "mixed-first.mov",
+            posterTimeSeconds: 1.25
+        )
+        let secondVideo = try makeImportPlacementTestVideo(
+            width: 90,
+            height: 160,
+            filename: "mixed-second.mov",
+            posterTimeSeconds: 2.5
+        )
+        let importItems: [CanvasImportItem] = [
+            .image(portraitImage),
+            .video(firstVideo),
+            .image(squareImage),
+            .video(secondVideo),
+            .image(portraitImage)
+        ]
+        let importCenter = CGPoint(x: 75, y: 125)
+
+        let importedItems = session.appendImportedMedia(
+            importItems,
+            placement: .worldPoint(importCenter)
+        )
+
+        XCTAssertEqual(
+            importedItems.map(\.isVideo),
+            [false, true, false, true, false]
+        )
+        XCTAssertEqual(
+            importedItems.compactMap(\.sourceVideoFilename),
+            ["mixed-first.mov", "mixed-second.mov"]
+        )
+        XCTAssertEqual(
+            importedItems.map(\.zIndex),
+            [0, 1, 2, 3, 4]
+        )
+        XCTAssertEqual(
+            session.scene.orderedItems().map(\.id),
+            importedItems.map(\.id)
+        )
+
+        let gridConfiguration = CanvasBatchImportLayoutConfiguration.current.grid
+        let cellWidth = importedItems.map(\.size.width).max() ?? 0
+        let cellHeight = importedItems.map(\.size.height).max() ?? 0
+        let horizontalPitch = cellWidth + gridConfiguration.horizontalSpacing
+        let verticalPitch = cellHeight + gridConfiguration.verticalSpacing
+        XCTAssertEqual(
+            importedItems[3].center,
+            CGPoint(
+                x: importedItems[0].center.x + 3 * horizontalPitch,
+                y: importedItems[0].center.y
+            )
+        )
+        XCTAssertEqual(
+            importedItems[4].center,
+            CGPoint(
+                x: importedItems[0].center.x,
+                y: importedItems[0].center.y + verticalPitch
+            )
+        )
+        XCTAssertEqual(
+            (importedItems[0].center.x + importedItems[3].center.x) / 2,
+            importCenter.x
+        )
+        XCTAssertEqual(
+            (importedItems[0].center.y + importedItems[4].center.y) / 2,
+            importCenter.y
+        )
+        assertImportPlacementItemsDoNotOverlap(importedItems)
+    }
+
+    func testAppendImportedMediaGridUsesRotatedBoundingSizeWithoutOverlap() throws {
+        let session = makeImportPlacementTestSession()
+        let image = try makeImportPlacementTestResolvedImage(
+            width: 220,
+            height: 100
+        )
+        let rotationRadians = CGFloat.pi / 4
+        let spacing: CGFloat = 18
+        let template = CanvasImportPresentationTemplate(
+            size: CGSize(width: 220, height: 100),
+            rotationPolicy: .fixed(rotationRadians)
+        )
+
+        let importedItems = session.appendImportedMedia(
+            [.image(image), .image(image)],
+            placement: .worldPoint(.zero),
+            layout: .grid(
+                columns: 2,
+                horizontalSpacing: spacing,
+                verticalSpacing: 0
+            ),
+            presentationTemplate: template
+        )
+
+        XCTAssertEqual(importedItems.count, 2)
+        let expectedBoundingWidth =
+            template.size.width * abs(cos(rotationRadians))
+            + template.size.height * abs(sin(rotationRadians))
+        XCTAssertEqual(
+            importedItems[1].center.x - importedItems[0].center.x,
+            expectedBoundingWidth + spacing,
+            accuracy: 0.0001
+        )
+        assertImportPlacementItemsDoNotOverlap(importedItems)
+    }
+
+    func testAppendImportedMediaExpandsBoardToContainEntireGrid() throws {
+        let session = makeImportPlacementTestSession()
+        let initialBoardState = CanvasBoardState(
+            baseSize: CGSize(width: 100, height: 100),
+            centeredAt: .zero
+        )
+        session.boardState = initialBoardState
+        let image = try makeImportPlacementTestResolvedImage(
+            width: 80,
+            height: 80
+        )
+
+        let importedItems = session.appendImportedMedia(
+            Array(repeating: .image(image), count: 5),
+            placement: .worldPoint(CGPoint(x: 500, y: -400))
+        )
+
+        let expandedBoardState = try XCTUnwrap(session.boardState)
+        XCTAssertGreaterThan(
+            expandedBoardState.worldRect.width,
+            initialBoardState.worldRect.width
+        )
+        XCTAssertGreaterThan(
+            expandedBoardState.worldRect.height,
+            initialBoardState.worldRect.height
+        )
+        for item in importedItems {
+            XCTAssertTrue(
+                expandedBoardState.worldRect.contains(item.worldBounds)
+            )
+        }
+    }
+
+    func testAppendImportedMediaBatchUsesSingleUndoAndRedoHistoryStep() throws {
+        let session = makeImportPlacementTestSession()
+        session.resetHistory()
+        let image = try makeImportPlacementTestResolvedImage(
+            width: 80,
+            height: 80
+        )
+
+        let importedItems = session.appendImportedMedia(
+            Array(repeating: .image(image), count: 5),
+            placement: .worldPoint(CGPoint(x: 100, y: 200))
+        )
+        let importedItemIDs = importedItems.map(\.id)
+        XCTAssertEqual(session.scene.orderedItems().count, 5)
+
+        let undoSnapshot = try XCTUnwrap(session.undoHistorySnapshot())
+        session.applyBoardHistorySnapshot(undoSnapshot)
+        XCTAssertTrue(session.scene.orderedItems().isEmpty)
+        XCTAssertNil(session.undoHistorySnapshot())
+
+        let redoSnapshot = try XCTUnwrap(session.redoHistorySnapshot())
+        session.applyBoardHistorySnapshot(redoSnapshot)
+        XCTAssertEqual(
+            session.scene.orderedItems().map(\.id),
+            importedItemIDs
+        )
+        XCTAssertNil(session.redoHistorySnapshot())
+    }
+
     func testCommandExecutorForwardsPresentationTemplateFromImportRequest() throws {
         let session = makeImportPlacementTestSession()
         let executor = CanvasCommandExecutor(session: session)
@@ -251,6 +514,46 @@ private func makeImportPlacementTestResolvedImage(
         throw CanvasImportedMediaPlacementTestError.invalidBitmapContext
     }
     return image
+}
+
+private func makeImportPlacementTestVideo(
+    width: Int,
+    height: Int,
+    filename: String,
+    posterTimeSeconds: Double
+) throws -> CanvasImportedVideoAsset {
+    let posterImage = try makeImportPlacementTestImage(
+        width: width,
+        height: height
+    )
+    return CanvasImportedVideoAsset(
+        asset: CanvasImageAsset.transientStaticImage(
+            cgImage: posterImage
+        ),
+        videoSource: CanvasVideoSource(
+            assetReference: .persisted(filename: filename)
+        ),
+        posterTimeSeconds: posterTimeSeconds
+    )
+}
+
+private func assertImportPlacementItemsDoNotOverlap(
+    _ items: [CanvasImageItem],
+    file: StaticString = #filePath,
+    line: UInt = #line
+) {
+    for firstIndex in items.indices {
+        for secondIndex in items.indices where secondIndex > firstIndex {
+            XCTAssertFalse(
+                items[firstIndex].worldBounds.intersects(
+                    items[secondIndex].worldBounds
+                ),
+                "Items \(firstIndex) and \(secondIndex) overlap.",
+                file: file,
+                line: line
+            )
+        }
+    }
 }
 
 private func makeImportPlacementTestPNGData(

@@ -154,6 +154,45 @@ final class CanvasGIFFrameImportBuilderTests: XCTestCase {
             0,
             accuracy: 0.0001
         )
+
+        let session = makeGIFFrameImportTestSession()
+        let executor = CanvasCommandExecutor(session: session)
+        CanvasGIFFrameImportBuilderTestRetainer.executors.append(executor)
+        XCTAssertNotNil(executor.execute(.importMedia(request)))
+
+        let importedItems = session.scene.orderedItems()
+        XCTAssertEqual(importedItems.count, importedImages.count)
+        let expectedFirstFrameCenter = CGPoint(
+            x: sourceItem.worldBounds.minX
+                + 12
+                + sourceItem.size.width / 2,
+            y: sourceItem.worldBounds.maxY
+                + 18
+                + sourceItem.size.height / 2
+        )
+        XCTAssertEqual(importedItems[0].center, expectedFirstFrameCenter)
+        XCTAssertEqual(
+            importedItems[1].center,
+            CGPoint(
+                x: expectedFirstFrameCenter.x + sourceItem.size.width + 30,
+                y: expectedFirstFrameCenter.y
+            )
+        )
+        XCTAssertEqual(
+            importedItems[2].center,
+            CGPoint(
+                x: expectedFirstFrameCenter.x,
+                y: expectedFirstFrameCenter.y + sourceItem.size.height + 40
+            )
+        )
+        XCTAssertTrue(
+            importedItems.allSatisfy {
+                $0.size == sourceItem.size
+                    && $0.cropRectNormalized == cropRect
+                    && abs($0.rotationRadians) < 0.0001
+                    && $0.isVideo == false
+            }
+        )
     }
 
     func testSessionGIFFrameImportRequestUsesTransientPayloadSourceData() throws {
@@ -462,6 +501,7 @@ private enum CanvasGIFFrameImportBuilderTestError: Error {
 
 private enum CanvasGIFFrameImportBuilderTestRetainer {
     static var sessions: [CanvasEditorSession] = []
+    static var executors: [CanvasCommandExecutor] = []
 }
 
 private struct GIFFrameImportTestSpec {
