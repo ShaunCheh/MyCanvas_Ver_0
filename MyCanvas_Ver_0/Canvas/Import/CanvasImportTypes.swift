@@ -286,6 +286,18 @@ struct CanvasImportGridConfiguration: Equatable {
     }
 }
 
+struct CanvasBatchImportLayoutConfiguration: Equatable {
+    static let current = CanvasBatchImportLayoutConfiguration(
+        grid: CanvasImportGridConfiguration(
+            columns: 4,
+            horizontalSpacing: 24,
+            verticalSpacing: 24
+        )
+    )
+
+    let grid: CanvasImportGridConfiguration
+}
+
 enum CanvasImportRotationPolicy: Equatable {
     case useAssetDefault
     case fixed(CGFloat)
@@ -343,7 +355,7 @@ struct CanvasImportPresentationTemplate: Equatable {
 enum CanvasImportLayout: Equatable {
     case automatic
     case stacked
-    case staggered(stepInWorld: CGPoint)
+    case diagonal(stepInWorld: CGPoint)
     case grid(
         columns: Int,
         horizontalSpacing: CGFloat,

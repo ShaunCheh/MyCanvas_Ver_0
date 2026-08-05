@@ -3129,11 +3129,11 @@ Write here.
                 return .stacked
             }
 
-            return .staggered(stepInWorld: duplicateOffsetInWorld())
+            return .diagonal(stepInWorld: duplicateOffsetInWorld())
         case .stacked:
             return .stacked
-        case let .staggered(stepInWorld):
-            return .staggered(stepInWorld: stepInWorld)
+        case let .diagonal(stepInWorld):
+            return .diagonal(stepInWorld: stepInWorld)
         case let .grid(columns, horizontalSpacing, verticalSpacing):
             let gridConfiguration = CanvasImportGridConfiguration(
                 columns: columns,
@@ -3156,7 +3156,7 @@ Write here.
         switch layout {
         case .automatic, .stacked:
             return .zero
-        case let .staggered(stepInWorld):
+        case let .diagonal(stepInWorld):
             let multiplier = CGFloat(index)
             return CGPoint(
                 x: stepInWorld.x * multiplier,

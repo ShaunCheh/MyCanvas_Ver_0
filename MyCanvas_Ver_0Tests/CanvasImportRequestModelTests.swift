@@ -16,6 +16,28 @@ final class CanvasImportRequestModelTests: XCTestCase {
         XCTAssertEqual(gridConfiguration.verticalSpacing, 0)
     }
 
+    func testBatchImportLayoutConfigurationUsesFourColumnGrid() {
+        let gridConfiguration = CanvasBatchImportLayoutConfiguration.current.grid
+
+        XCTAssertEqual(gridConfiguration.columns, 4)
+        XCTAssertEqual(gridConfiguration.horizontalSpacing, 24)
+        XCTAssertEqual(gridConfiguration.verticalSpacing, 24)
+    }
+
+    func testDiagonalLayoutPreservesConfiguredWorldStep() {
+        let expectedStep = CGPoint(x: 18, y: 26)
+        let layout = CanvasImportLayout.diagonal(
+            stepInWorld: expectedStep
+        )
+
+        guard case let .diagonal(actualStep) = layout else {
+            return XCTFail("Expected diagonal import layout.")
+        }
+
+        XCTAssertEqual(actualStep, expectedStep)
+        XCTAssertNil(layout.gridConfiguration)
+    }
+
     func testPresentationTemplateSanitizesSizeAndResolvesRotationPolicy() {
         let cropRect = CanvasImageCropRect(
             CGRect(x: 0.1, y: 0.2, width: 0.6, height: 0.5)
