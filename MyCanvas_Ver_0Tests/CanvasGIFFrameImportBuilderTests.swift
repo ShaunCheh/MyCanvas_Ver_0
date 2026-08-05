@@ -72,16 +72,17 @@ final class CanvasGIFFrameImportBuilderTests: XCTestCase {
         let request = try CanvasGIFFrameImportBuilder.makeImportRequest(
             from: sourceItem,
             gifData: gifData,
-            selectedFrameIndices: [2, 0, 2],
+            selectedFrameIndices: [2, 0, 1, 2],
             configuration: configuration
         )
 
         let importedImages = try request.resolvedImagesForTesting()
-        XCTAssertEqual(importedImages.count, 2)
+        XCTAssertEqual(importedImages.count, 3)
         XCTAssertEqual(importedImages[0].assetKind, .staticImage)
         XCTAssertNil(importedImages[0].importedSource)
         XCTAssertNil(importedImages[0].animatedMetadata)
         XCTAssertEqual(importedImages[1].assetKind, .staticImage)
+        XCTAssertEqual(importedImages[2].assetKind, .staticImage)
 
         let firstPixel = try sampleGIFFrameImportPixelColor(
             in: importedImages[0].cgImage
@@ -89,19 +90,53 @@ final class CanvasGIFFrameImportBuilderTests: XCTestCase {
         let secondPixel = try sampleGIFFrameImportPixelColor(
             in: importedImages[1].cgImage
         )
+        let thirdPixel = try sampleGIFFrameImportPixelColor(
+            in: importedImages[2].cgImage
+        )
         XCTAssertGreaterThan(firstPixel.red, firstPixel.green)
         XCTAssertGreaterThan(firstPixel.red, firstPixel.blue)
-        XCTAssertGreaterThan(secondPixel.blue, secondPixel.red)
-        XCTAssertGreaterThan(secondPixel.blue, secondPixel.green)
+        XCTAssertGreaterThan(secondPixel.green, secondPixel.red)
+        XCTAssertGreaterThan(secondPixel.green, secondPixel.blue)
+        XCTAssertGreaterThan(thirdPixel.blue, thirdPixel.red)
+        XCTAssertGreaterThan(thirdPixel.blue, thirdPixel.green)
 
+        let expectedGridSize = CGSize(
+            width: sourceItem.size.width * 2 + 30,
+            height: sourceItem.size.height * 2 + 40
+        )
         let expectedPlacement = CGPoint(
-            x: sourceItem.worldBounds.minX + 12 + sourceItem.size.width / 2,
-            y: sourceItem.worldBounds.maxY + 18 + sourceItem.size.height / 2
+            x: sourceItem.worldBounds.minX + 12 + expectedGridSize.width / 2,
+            y: sourceItem.worldBounds.maxY + 18 + expectedGridSize.height / 2
         )
         guard case let .worldPoint(actualPlacement) = request.placement else {
             return XCTFail("Expected worldPoint placement.")
         }
         XCTAssertEqual(actualPlacement, expectedPlacement)
+
+        let resolvedLayout = CanvasImportLayoutSolver().resolve(
+            requestedLayout: request.layout,
+            itemBoundingSizes: Array(
+                repeating: sourceItem.size,
+                count: importedImages.count
+            )
+        )
+        let firstFrameOffset = try XCTUnwrap(
+            resolvedLayout.itemOffsets.first
+        )
+        XCTAssertEqual(
+            CGPoint(
+                x: actualPlacement.x + firstFrameOffset.x,
+                y: actualPlacement.y + firstFrameOffset.y
+            ),
+            CGPoint(
+                x: sourceItem.worldBounds.minX
+                    + 12
+                    + sourceItem.size.width / 2,
+                y: sourceItem.worldBounds.maxY
+                    + 18
+                    + sourceItem.size.height / 2
+            )
+        )
 
         let gridConfiguration = try XCTUnwrap(request.layout.gridConfiguration)
         XCTAssertEqual(gridConfiguration.columns, 2)

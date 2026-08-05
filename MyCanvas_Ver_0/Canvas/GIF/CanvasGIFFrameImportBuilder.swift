@@ -76,8 +76,9 @@ enum CanvasGIFFrameImportBuilder {
         return CanvasImportRequest(
             images: importedImages,
             placement: .worldPoint(
-                gridOrigin(
+                gridCenter(
                     for: sourceItem,
+                    itemCount: importedImages.count,
                     presentationSize: presentationTemplate.size,
                     gridConfiguration: boardPlacementGrid
                 )
@@ -138,19 +139,31 @@ enum CanvasGIFFrameImportBuilder {
         )
     }
 
-    private static func gridOrigin(
+    private static func gridCenter(
         for sourceItem: CanvasImageItem,
+        itemCount: Int,
         presentationSize: CGSize,
         gridConfiguration: CanvasGIFFrameImportGridConfiguration
     ) -> CGPoint {
+        let resolvedLayout = CanvasImportLayoutSolver().resolve(
+            requestedLayout: .grid(
+                columns: gridConfiguration.columns,
+                horizontalSpacing: gridConfiguration.horizontalSpacing,
+                verticalSpacing: gridConfiguration.verticalSpacing
+            ),
+            itemBoundingSizes: Array(
+                repeating: presentationSize,
+                count: itemCount
+            )
+        )
         let sourceBounds = sourceItem.worldBounds
         return CGPoint(
             x: sourceBounds.minX
                 + gridConfiguration.contentInsets.leading
-                + presentationSize.width / 2,
+                + resolvedLayout.contentSize.width / 2,
             y: sourceBounds.maxY
                 + gridConfiguration.contentInsets.top
-                + presentationSize.height / 2
+                + resolvedLayout.contentSize.height / 2
         )
     }
 }
