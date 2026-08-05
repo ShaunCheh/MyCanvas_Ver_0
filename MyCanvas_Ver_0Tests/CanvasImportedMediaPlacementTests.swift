@@ -36,7 +36,7 @@ final class CanvasImportedMediaPlacementTests: XCTestCase {
         XCTAssertEqual(importedItem.rotationRadians, 0.45, accuracy: 0.0001)
     }
 
-    func testAppendImportedMediaGridUsesMaxResolvedItemSizeForCellSpacing() throws {
+    func testAppendImportedMediaGridCentersUsingMaxResolvedItemSizeForCellSpacing() throws {
         let session = makeImportPlacementTestSession()
         let portraitImage = try makeImportPlacementTestResolvedImage(
             width: 50,
@@ -65,15 +65,81 @@ final class CanvasImportedMediaPlacementTests: XCTestCase {
 
         let expectedCellWidth = importedItems.map(\.size.width).max() ?? 0
         let expectedCellHeight = importedItems.map(\.size.height).max() ?? 0
+        let expectedHorizontalPitch = expectedCellWidth + 24
+        let expectedVerticalPitch = expectedCellHeight + 16
+        let expectedFirstCenter = CGPoint(
+            x: 10 - expectedHorizontalPitch / 2,
+            y: 20 - expectedVerticalPitch / 2
+        )
 
-        XCTAssertEqual(importedItems[0].center, CGPoint(x: 10, y: 20))
+        XCTAssertEqual(importedItems[0].center, expectedFirstCenter)
         XCTAssertEqual(
             importedItems[1].center,
-            CGPoint(x: 10 + expectedCellWidth + 24, y: 20)
+            CGPoint(
+                x: expectedFirstCenter.x + expectedHorizontalPitch,
+                y: expectedFirstCenter.y
+            )
         )
         XCTAssertEqual(
             importedItems[2].center,
-            CGPoint(x: 10, y: 20 + expectedCellHeight + 16)
+            CGPoint(
+                x: expectedFirstCenter.x,
+                y: expectedFirstCenter.y + expectedVerticalPitch
+            )
+        )
+    }
+
+    func testAppendImportedMediaAutomaticUsesConfiguredFourColumnGrid() throws {
+        let session = makeImportPlacementTestSession()
+        let image = try makeImportPlacementTestResolvedImage(
+            width: 80,
+            height: 80
+        )
+        let importCenter = CGPoint(x: 100, y: 200)
+
+        let importedItems = session.appendImportedMedia(
+            Array(repeating: .image(image), count: 5),
+            placement: .worldPoint(importCenter)
+        )
+
+        XCTAssertEqual(importedItems.count, 5)
+
+        let gridConfiguration = CanvasBatchImportLayoutConfiguration.current.grid
+        let horizontalPitch =
+            importedItems[0].size.width
+            + gridConfiguration.horizontalSpacing
+        let verticalPitch =
+            importedItems[0].size.height
+            + gridConfiguration.verticalSpacing
+
+        XCTAssertEqual(
+            importedItems[1].center,
+            CGPoint(
+                x: importedItems[0].center.x + horizontalPitch,
+                y: importedItems[0].center.y
+            )
+        )
+        XCTAssertEqual(
+            importedItems[3].center,
+            CGPoint(
+                x: importedItems[0].center.x + 3 * horizontalPitch,
+                y: importedItems[0].center.y
+            )
+        )
+        XCTAssertEqual(
+            importedItems[4].center,
+            CGPoint(
+                x: importedItems[0].center.x,
+                y: importedItems[0].center.y + verticalPitch
+            )
+        )
+        XCTAssertEqual(
+            (importedItems[0].center.x + importedItems[3].center.x) / 2,
+            importCenter.x
+        )
+        XCTAssertEqual(
+            (importedItems[0].center.y + importedItems[4].center.y) / 2,
+            importCenter.y
         )
     }
 

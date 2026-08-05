@@ -59,6 +59,17 @@ private struct CanvasPreparedImportItem {
     let size: CGSize
     let cropRectNormalized: CanvasImageCropRect
     let rotationRadians: CGFloat
+
+    var layoutBoundingSize: CGSize {
+        let absoluteCosine = abs(cos(rotationRadians))
+        let absoluteSine = abs(sin(rotationRadians))
+        return CGSize(
+            width: size.width * absoluteCosine
+                + size.height * absoluteSine,
+            height: size.width * absoluteSine
+                + size.height * absoluteCosine
+        )
+    }
 }
 
 final class CanvasEditorSession {
@@ -100,6 +111,7 @@ Write here.
     private let renderer = CanvasRenderer()
     private let miniMapRenderer = CanvasMiniMapRenderer()
     private let contextResolver = CanvasContextResolver()
+    private let importLayoutSolver = CanvasImportLayoutSolver()
     private let userDefaults: UserDefaults
     private let saveCoordinator: BoardSaveCoordinator
     private let historyController = BoardHistoryController()
@@ -3119,70 +3131,6 @@ Write here.
         }
     }
 
-    private func resolvedImportLayout(
-        _ layout: CanvasImportLayout,
-        itemCount: Int
-    ) -> CanvasImportLayout {
-        switch layout {
-        case .automatic:
-            if itemCount <= 1 {
-                return .stacked
-            }
-
-            return .diagonal(stepInWorld: duplicateOffsetInWorld())
-        case .stacked:
-            return .stacked
-        case let .diagonal(stepInWorld):
-            return .diagonal(stepInWorld: stepInWorld)
-        case let .grid(columns, horizontalSpacing, verticalSpacing):
-            let gridConfiguration = CanvasImportGridConfiguration(
-                columns: columns,
-                horizontalSpacing: horizontalSpacing,
-                verticalSpacing: verticalSpacing
-            )
-            return .grid(
-                columns: gridConfiguration.columns,
-                horizontalSpacing: gridConfiguration.horizontalSpacing,
-                verticalSpacing: gridConfiguration.verticalSpacing
-            )
-        }
-    }
-
-    private func importOffset(
-        forItemAt index: Int,
-        layout: CanvasImportLayout,
-        gridCellSize: CGSize? = nil
-    ) -> CGPoint {
-        switch layout {
-        case .automatic, .stacked:
-            return .zero
-        case let .diagonal(stepInWorld):
-            let multiplier = CGFloat(index)
-            return CGPoint(
-                x: stepInWorld.x * multiplier,
-                y: stepInWorld.y * multiplier
-            )
-        case .grid:
-            guard
-                let gridConfiguration = layout.gridConfiguration,
-                let gridCellSize
-            else {
-                return .zero
-            }
-
-            let columnIndex = index % gridConfiguration.columns
-            let rowIndex = index / gridConfiguration.columns
-            return CGPoint(
-                x: CGFloat(columnIndex) * (
-                    gridCellSize.width + gridConfiguration.horizontalSpacing
-                ),
-                y: CGFloat(rowIndex) * (
-                    gridCellSize.height + gridConfiguration.verticalSpacing
-                )
-            )
-        }
-    }
-
     private func resolvedImportPresentationTemplate(
         _ presentationTemplate: CanvasImportPresentationTemplate?,
         defaultSize: CGSize
@@ -3234,22 +3182,6 @@ Write here.
                 )
             )
         }
-    }
-
-    private func gridCellSize(
-        for preparedItems: [CanvasPreparedImportItem],
-        layout: CanvasImportLayout
-    ) -> CGSize? {
-        guard layout.gridConfiguration != nil else {
-            return nil
-        }
-
-        let maxWidth = preparedItems.map(\.size.width).max() ?? 1
-        let maxHeight = preparedItems.map(\.size.height).max() ?? 1
-        return CGSize(
-            width: max(maxWidth, 1),
-            height: max(maxHeight, 1)
-        )
     }
 
     private func importedMediaChangeReason(for itemCount: Int) -> String {
@@ -3753,10 +3685,6 @@ Write here.
 
         let beforeSnapshot = currentBoardHistorySnapshot()
         let importCenter = resolvedImportCenter(for: placement)
-        let resolvedLayout = resolvedImportLayout(
-            layout,
-            itemCount: items.count
-        )
         let startingZIndex = nextImageZIndex()
         let preparedItems = items.map { item in
             preparedImportItem(
@@ -3764,19 +3692,15 @@ Write here.
                 presentationTemplate: presentationTemplate
             )
         }
-        let resolvedGridCellSize = gridCellSize(
-            for: preparedItems,
-            layout: resolvedLayout
+        let resolvedLayout = importLayoutSolver.resolve(
+            requestedLayout: layout,
+            itemBoundingSizes: preparedItems.map(\.layoutBoundingSize)
         )
         var importedItems: [CanvasImageItem] = []
         importedItems.reserveCapacity(items.count)
 
         for (index, preparedItem) in preparedItems.enumerated() {
-            let offset = importOffset(
-                forItemAt: index,
-                layout: resolvedLayout,
-                gridCellSize: resolvedGridCellSize
-            )
+            let offset = resolvedLayout.itemOffsets[index]
             if let payload = preparedItem.transientPayload {
                 transientImageAssetPayloads[payload.assetReference] = payload
             }
