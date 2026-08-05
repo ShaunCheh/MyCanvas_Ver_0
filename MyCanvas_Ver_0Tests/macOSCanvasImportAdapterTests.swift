@@ -256,6 +256,194 @@ final class macOSCanvasImportAdapterTests: XCTestCase {
         }
     }
 
+    func testAutomaticGridPersistsGeometryZIndexesAndVideoSourcesAcrossReload() throws {
+        try withmacOSImportAdapterTestBoardWorkspace {
+            directoryURL,
+            userDefaults in
+            let imageURL = directoryURL.appendingPathComponent(
+                "persistence.png"
+            )
+            let videoURL = directoryURL.appendingPathComponent(
+                "persistence.mov"
+            )
+            let gifURL = directoryURL.appendingPathComponent(
+                "persistence.gif"
+            )
+            try writemacOSImportAdapterTestPNG(to: imageURL)
+            try writemacOSImportAdapterTestVideo(to: videoURL)
+            try writemacOSImportAdapterTestGIF(to: gifURL)
+
+            let session = CanvasEditorSession(
+                saveQueueLabel:
+                    "macOSCanvasImportAdapterTests.Persistence.Source",
+                logPrefix:
+                    "[macOSCanvasImportAdapterTests][Persistence][Source]",
+                userDefaults: userDefaults
+            )
+            macOSCanvasImportAdapterTestRetainer.sessions.append(session)
+            session.startNewBoard(
+                now: Date(timeIntervalSince1970: 1_730_000_000)
+            )
+            let boardID = try XCTUnwrap(session.activeBoardID)
+            let cameraCenter = CGPoint(x: 280, y: -160)
+            session.camera = CanvasCamera(
+                center: cameraCenter,
+                zoomScale: 2.25,
+                viewportSize: CGSize(width: 1200, height: 800)
+            )
+
+            let transferRequest = try XCTUnwrap(
+                macOSCanvasImportAdapter.transferRequest(
+                    from: [
+                        imageURL,
+                        videoURL,
+                        gifURL,
+                        videoURL,
+                        imageURL
+                    ],
+                    sourceDescription: "persistence acceptance batch"
+                )
+            )
+            let importRequest = try XCTUnwrap(
+                CanvasMediaImportService.makeImportRequest(
+                    from: transferRequest,
+                    boardID: boardID,
+                    userDefaults: userDefaults
+                )
+            )
+
+            XCTAssertEqual(importRequest.placement, .cameraCenter)
+            XCTAssertEqual(importRequest.layout, .automatic)
+            let importedItems = session.appendImportedMedia(
+                importRequest.items,
+                placement: importRequest.placement,
+                layout: importRequest.layout,
+                presentationTemplate: importRequest.presentationTemplate
+            )
+
+            XCTAssertEqual(importedItems.count, 5)
+            XCTAssertEqual(
+                importedItems.map(\.isVideo),
+                [false, true, false, true, false]
+            )
+            XCTAssertEqual(
+                importedItems.map(\.zIndex),
+                [0, 1, 2, 3, 4]
+            )
+            XCTAssertEqual(
+                Set(importedItems.compactMap(\.sourceVideoFilename)).count,
+                2
+            )
+            assertmacOSImportAdapterItemsDoNotOverlap(importedItems)
+
+            let saveExpectation = expectation(
+                description: "Persist automatic import batch"
+            )
+            var saveError: Error?
+            session.saveBoardNow(reason: "persistence acceptance batch") {
+                result in
+                if case let .failure(error) = result {
+                    saveError = error
+                }
+                saveExpectation.fulfill()
+            }
+            wait(for: [saveExpectation], timeout: 10)
+            if let saveError {
+                throw saveError
+            }
+
+            let persistedEntry = try XCTUnwrap(
+                BoardStore.loadBoardDocumentEntry(
+                    id: boardID,
+                    userDefaults: userDefaults
+                )
+            )
+            XCTAssertEqual(
+                persistedEntry.document.formatVersion,
+                BoardDocument.currentFormatVersion
+            )
+            let persistedRecords = persistedEntry.document.imageItemRecords
+            XCTAssertEqual(
+                persistedRecords.map(\.id),
+                importedItems.map(\.id)
+            )
+            for (importedItem, persistedRecord) in zip(
+                importedItems,
+                persistedRecords
+            ) {
+                XCTAssertEqual(
+                    persistedRecord.center.cgPoint,
+                    importedItem.center
+                )
+                XCTAssertEqual(
+                    persistedRecord.size.cgSize,
+                    importedItem.size
+                )
+                XCTAssertEqual(
+                    persistedRecord.zIndex,
+                    Double(importedItem.zIndex)
+                )
+                XCTAssertEqual(
+                    persistedRecord.sourceVideoFilename,
+                    importedItem.sourceVideoFilename
+                )
+                XCTAssertTrue(
+                    FileManager.default.fileExists(
+                        atPath: persistedEntry.assetsDirectoryURL
+                            .appendingPathComponent(
+                                persistedRecord.posterImageFilename
+                            )
+                            .path
+                    )
+                )
+                if let sourceVideoFilename =
+                    persistedRecord.sourceVideoFilename
+                {
+                    XCTAssertTrue(
+                        FileManager.default.fileExists(
+                            atPath: persistedEntry.assetsDirectoryURL
+                                .appendingPathComponent(sourceVideoFilename)
+                                .path
+                        )
+                    )
+                }
+            }
+
+            let reopenedSession = CanvasEditorSession(
+                saveQueueLabel:
+                    "macOSCanvasImportAdapterTests.Persistence.Reopened",
+                logPrefix:
+                    "[macOSCanvasImportAdapterTests][Persistence][Reopened]",
+                userDefaults: userDefaults
+            )
+            macOSCanvasImportAdapterTestRetainer.sessions.append(
+                reopenedSession
+            )
+            try reopenedSession.loadBoard(id: boardID)
+            let reopenedItems = reopenedSession.scene.orderedItems()
+
+            XCTAssertEqual(
+                reopenedItems.map(\.id),
+                importedItems.map(\.id)
+            )
+            for (importedItem, reopenedItem) in zip(
+                importedItems,
+                reopenedItems
+            ) {
+                XCTAssertEqual(reopenedItem.center, importedItem.center)
+                XCTAssertEqual(reopenedItem.size, importedItem.size)
+                XCTAssertEqual(reopenedItem.zIndex, importedItem.zIndex)
+                XCTAssertEqual(
+                    reopenedItem.sourceVideoFilename,
+                    importedItem.sourceVideoFilename
+                )
+            }
+            XCTAssertEqual(reopenedSession.camera.center, cameraCenter)
+            XCTAssertEqual(reopenedSession.camera.zoomScale, 2.25)
+            assertmacOSImportAdapterItemsDoNotOverlap(reopenedItems)
+        }
+    }
+
     func testAdapterPreservesExplicitProgrammaticDiagonalLayout() throws {
         try withmacOSImportAdapterTestDirectory { directoryURL in
             let imageURL = directoryURL.appendingPathComponent(

@@ -143,6 +143,122 @@ final class CanvasImportedMediaPlacementTests: XCTestCase {
         )
     }
 
+    func testAutomaticGridCountsRemainCenteredAndNonOverlappingAcrossZoomLevels() throws {
+        let image = try makeImportPlacementTestResolvedImage(
+            width: 80,
+            height: 60
+        )
+        let itemCounts = [1, 2, 4, 5, 8, 9]
+        let zoomScales: [CGFloat] = [0.5, 1, 2.5]
+        let importCenter = CGPoint(x: 135, y: -215)
+        let gridConfiguration = CanvasBatchImportLayoutConfiguration.current.grid
+        var baselineCentersByItemCount: [Int: [CGPoint]] = [:]
+
+        for zoomScale in zoomScales {
+            for itemCount in itemCounts {
+                let session = makeImportPlacementTestSession()
+                session.camera = CanvasCamera(
+                    center: importCenter,
+                    zoomScale: zoomScale,
+                    viewportSize: CGSize(width: 1200, height: 800)
+                )
+
+                let importedItems = session.appendImportedMedia(
+                    Array(repeating: .image(image), count: itemCount)
+                )
+
+                XCTAssertEqual(importedItems.count, itemCount)
+                let cellWidth = importedItems.map(\.size.width).max() ?? 0
+                let cellHeight = importedItems.map(\.size.height).max() ?? 0
+                let horizontalPitch =
+                    cellWidth + gridConfiguration.horizontalSpacing
+                let verticalPitch =
+                    cellHeight + gridConfiguration.verticalSpacing
+                let usedColumnCount = min(
+                    gridConfiguration.columns,
+                    itemCount
+                )
+                let rowCount =
+                    ((itemCount - 1) / gridConfiguration.columns) + 1
+                let expectedFirstCenter = CGPoint(
+                    x: importCenter.x
+                        - CGFloat(usedColumnCount - 1) * horizontalPitch / 2,
+                    y: importCenter.y
+                        - CGFloat(rowCount - 1) * verticalPitch / 2
+                )
+
+                for (index, importedItem) in importedItems.enumerated() {
+                    XCTAssertEqual(
+                        importedItem.center,
+                        CGPoint(
+                            x: expectedFirstCenter.x
+                                + CGFloat(index % gridConfiguration.columns)
+                                * horizontalPitch,
+                            y: expectedFirstCenter.y
+                                + CGFloat(index / gridConfiguration.columns)
+                                * verticalPitch
+                        )
+                    )
+                }
+                assertImportPlacementItemsDoNotOverlap(importedItems)
+
+                let centers = importedItems.map(\.center)
+                if let baselineCenters = baselineCentersByItemCount[itemCount] {
+                    XCTAssertEqual(centers, baselineCenters)
+                } else {
+                    baselineCentersByItemCount[itemCount] = centers
+                }
+            }
+        }
+    }
+
+    func testExplicitDiagonalUsingDuplicateOffsetKeepsTwentyFourPointViewportStep() throws {
+        let image = try makeImportPlacementTestResolvedImage(
+            width: 80,
+            height: 60
+        )
+
+        for zoomScale: CGFloat in [0.5, 1, 2.5, 4] {
+            let session = makeImportPlacementTestSession()
+            session.camera = CanvasCamera(
+                center: CGPoint(x: 40, y: -60),
+                zoomScale: zoomScale,
+                viewportSize: CGSize(width: 1000, height: 700)
+            )
+            let diagonalStep = session.duplicateOffsetInWorld()
+
+            let importedItems = session.appendImportedMedia(
+                Array(repeating: .image(image), count: 3),
+                layout: .diagonal(stepInWorld: diagonalStep)
+            )
+            let viewportCenters = importedItems.map {
+                session.camera.worldToViewport($0.center)
+            }
+
+            XCTAssertEqual(importedItems.count, 3)
+            XCTAssertEqual(
+                viewportCenters[1].x - viewportCenters[0].x,
+                24,
+                accuracy: 0.0001
+            )
+            XCTAssertEqual(
+                viewportCenters[1].y - viewportCenters[0].y,
+                24,
+                accuracy: 0.0001
+            )
+            XCTAssertEqual(
+                viewportCenters[2].x - viewportCenters[1].x,
+                24,
+                accuracy: 0.0001
+            )
+            XCTAssertEqual(
+                viewportCenters[2].y - viewportCenters[1].y,
+                24,
+                accuracy: 0.0001
+            )
+        }
+    }
+
     func testAppendImportedMediaAutomaticSingleItemUsesCameraCenter() throws {
         let session = makeImportPlacementTestSession()
         let cameraCenter = CGPoint(x: -240, y: 360)
