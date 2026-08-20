@@ -198,6 +198,24 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         case scroll
     }
 
+    private enum CanvasRefreshDelivery {
+        case synchronous
+        case coalescedPinchCameraFrame
+    }
+
+    private struct CanvasRefreshMetrics {
+        let refreshID: UInt64
+        let reason: String
+        let sceneItemCount: Int
+        let visibleItemCount: Int
+        let snapshotMs: TimeInterval
+        let viewportApplyMs: TimeInterval
+        let miniMapMs: TimeInterval
+        let selectionAccessoryMs: TimeInterval
+        let totalMs: TimeInterval
+        let viewportApply: CanvasViewportApplyMetrics
+    }
+
     private enum OverlayEditorPresentationState: Equatable {
         case none
         case videoDisplayFrame
@@ -456,8 +474,12 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     private var editingGroupTitleID: CanvasItemGroupID?
     private var groupListNavigationDisplayLink: CADisplayLink?
     private var groupListNavigationAnimationState: CameraCenterAnimationState?
+    private var pinchRefreshCoalescer = CanvasRefreshFrameCoalescer()
+    private var pinchRefreshDisplayLink: CADisplayLink?
+    private var canvasPresentationGeneration: UInt64 = 0
     private var lastPinchDispatchTimestamp: TimeInterval?
-    private var lastZoomRefreshTimestamp: TimeInterval?
+    private var lastCameraGestureRefreshTimestamp: TimeInterval?
+    private var nextCanvasRefreshID: UInt64 = 0
     private var didMutateCameraDuringPinchGesture = false
     private var lastContinuousRawInputObservationByKind: [ContinuousRawInputKind: Date] = [:]
     private var hasObservedCurrentPinchRawInput = false
@@ -480,6 +502,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
 
     deinit {
         cancelGroupListNavigationAnimation()
+        cancelPendingPinchRefresh()
     }
 
     private var scene: CanvasScene {
@@ -648,6 +671,9 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         transitionInteractionShieldView.isHidden = isTransitionInteractionFrozen == false
         textEditorOverlayView.isUserInteractionEnabled = isTransitionInteractionFrozen == false
         if isTransitionInteractionFrozen {
+            flushPendingPinchRefreshIfNeeded(
+                reasonPrefix: "transition freeze"
+            )
             dismissContextMenu()
             handlePrimaryPointerCancel()
         }
@@ -2618,7 +2644,10 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
 
         didMutateCameraDuringPinchGesture = true
         let refreshReason = "zoom scaleDelta=\(String(format: "%.4f", scaleDelta)) anchor=\(describe(point: anchor))"
-        requestCanvasRefresh(reason: refreshReason)
+        requestCanvasRefresh(
+            reason: refreshReason,
+            delivery: .coalescedPinchCameraFrame
+        )
         let afterRefresh = ProcessInfo.processInfo.systemUptime
         let afterAutosave = afterRefresh
 
@@ -2640,7 +2669,9 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         syncCameraViewportSizeFromCurrentBoundsIfPossible()
         guard hasRenderableViewportSize else {
             logIgnoredCanvasInput(
-                "direct touch transform translation=\(describe(point: delta.translationInViewport)) " +
+                "direct touch transform sessionID=\(delta.pinchSessionID) " +
+                    "seq=\(delta.eventSequence) " +
+                    "translation=\(describe(point: delta.translationInViewport)) " +
                     "scaleDelta=\(String(format: "%.4f", delta.scaleDelta)) " +
                     "anchor=\(describe(point: delta.anchorInViewport))"
             )
@@ -2672,15 +2703,22 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
 
         didMutateCameraDuringPinchGesture = true
         let refreshReason =
-            "direct touch transform translation=\(describe(point: delta.translationInViewport)) " +
+            "direct touch transform sessionID=\(delta.pinchSessionID) " +
+            "seq=\(delta.eventSequence) " +
+            "translation=\(describe(point: delta.translationInViewport)) " +
             "scaleDelta=\(String(format: "%.4f", delta.scaleDelta)) " +
             "anchor=\(describe(point: delta.anchorInViewport))"
-        requestCanvasRefresh(reason: refreshReason)
+        requestCanvasRefresh(
+            reason: refreshReason,
+            delivery: .coalescedPinchCameraFrame
+        )
         let afterRefresh = ProcessInfo.processInfo.systemUptime
         let afterAutosave = afterRefresh
 
         logDirectTouchTransformDispatch(
             eventTime: eventTime,
+            pinchSessionID: delta.pinchSessionID,
+            eventSequence: delta.eventSequence,
             translation: delta.translationInViewport,
             scaleDelta: delta.scaleDelta,
             anchor: delta.anchorInViewport,
@@ -2695,9 +2733,13 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         )
     }
 
-    private func requestCanvasRefresh(reason: String) {
+    private func requestCanvasRefresh(
+        reason: String,
+        delivery: CanvasRefreshDelivery = .synchronous
+    ) {
         syncCameraViewportSizeFromCurrentBoundsIfPossible()
         guard hasRenderableViewportSize else {
+            cancelPendingPinchRefresh()
             pendingRefreshReason = reason
             logDeferredCanvasRefresh(
                 reason: reason,
@@ -2707,7 +2749,88 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         }
 
         pendingRefreshReason = nil
-        performCanvasRefresh(reason: reason)
+        switch delivery {
+        case .synchronous:
+            cancelPendingPinchRefresh()
+            performCanvasRefresh(reason: reason)
+        case .coalescedPinchCameraFrame:
+            let needsSchedule = pinchRefreshCoalescer.request(
+                reason: reason,
+                generation: canvasPresentationGeneration
+            )
+            if needsSchedule {
+                schedulePinchRefreshDisplayLink()
+            }
+        }
+    }
+
+    private func schedulePinchRefreshDisplayLink() {
+        guard pinchRefreshDisplayLink == nil else {
+            return
+        }
+
+        let displayLink = CADisplayLink(
+            target: self,
+            selector: #selector(handlePinchRefreshDisplayLink(_:))
+        )
+        pinchRefreshDisplayLink = displayLink
+        displayLink.add(to: .main, forMode: .common)
+    }
+
+    @objc
+    private func handlePinchRefreshDisplayLink(_ displayLink: CADisplayLink) {
+        displayLink.invalidate()
+        pinchRefreshDisplayLink = nil
+        guard let pending = pinchRefreshCoalescer.takePending(
+            currentGeneration: canvasPresentationGeneration
+        ) else {
+            return
+        }
+
+        syncCameraViewportSizeFromCurrentBoundsIfPossible()
+        guard hasRenderableViewportSize else {
+            pendingRefreshReason = pending.reason
+            logDeferredCanvasRefresh(
+                reason: pending.reason,
+                actualViewportSize: canvasViewportView.bounds.size
+            )
+            return
+        }
+
+        pendingRefreshReason = nil
+        performCanvasRefresh(reason: pending.reason)
+    }
+
+    private func flushPendingPinchRefreshIfNeeded(reasonPrefix: String) {
+        pinchRefreshDisplayLink?.invalidate()
+        pinchRefreshDisplayLink = nil
+        guard let pending = pinchRefreshCoalescer.takePending(
+            currentGeneration: canvasPresentationGeneration
+        ) else {
+            return
+        }
+
+        syncCameraViewportSizeFromCurrentBoundsIfPossible()
+        guard hasRenderableViewportSize else {
+            pendingRefreshReason = pending.reason
+            return
+        }
+
+        pendingRefreshReason = nil
+        performCanvasRefresh(
+            reason: "\(reasonPrefix) \(pending.reason)"
+        )
+    }
+
+    private func cancelPendingPinchRefresh() {
+        pinchRefreshDisplayLink?.invalidate()
+        pinchRefreshDisplayLink = nil
+        pinchRefreshCoalescer.cancel()
+    }
+
+    private func advanceCanvasPresentationGeneration() {
+        cancelPendingPinchRefresh()
+        canvasPresentationGeneration &+= 1
     }
 
     private func syncCameraViewportSizeFromCurrentBoundsIfPossible() {
@@ -2724,22 +2847,33 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     }
 
     private func performCanvasRefresh(reason: String) {
+        nextCanvasRefreshID &+= 1
+        let refreshID = nextCanvasRefreshID
         let refreshStart = ProcessInfo.processInfo.systemUptime
         let snapshot = editorSession.makeCanvasSnapshot()
         let afterSnapshotBuild = ProcessInfo.processInfo.systemUptime
-        canvasViewportView.apply(snapshot)
+        let viewportApplyMetrics = canvasViewportView.apply(snapshot)
         let afterViewportApply = ProcessInfo.processInfo.systemUptime
         refreshMiniMap()
-        syncSelectionAccessoryPresentation()
         let afterMiniMapRefresh = ProcessInfo.processInfo.systemUptime
+        syncSelectionAccessoryPresentation()
+        let afterSelectionAccessorySync = ProcessInfo.processInfo.systemUptime
 
-        logZoomRefreshIfNeeded(
-            reason: reason,
-            refreshStart: refreshStart,
-            afterSnapshotBuild: afterSnapshotBuild,
-            afterViewportApply: afterViewportApply,
-            afterMiniMapRefresh: afterMiniMapRefresh,
-            visibleItemCount: snapshot.items.count
+        logCameraGestureRefreshIfNeeded(
+            CanvasRefreshMetrics(
+                refreshID: refreshID,
+                reason: reason,
+                sceneItemCount: scene.items.count,
+                visibleItemCount: snapshot.items.count,
+                snapshotMs: (afterSnapshotBuild - refreshStart) * 1000,
+                viewportApplyMs: (afterViewportApply - afterSnapshotBuild) * 1000,
+                miniMapMs: (afterMiniMapRefresh - afterViewportApply) * 1000,
+                selectionAccessoryMs:
+                    (afterSelectionAccessorySync - afterMiniMapRefresh) * 1000,
+                totalMs: (afterSelectionAccessorySync - refreshStart) * 1000,
+                viewportApply: viewportApplyMetrics
+            ),
+            refreshStart: refreshStart
         )
         logCanvasState(reason: reason, snapshot: snapshot)
     }
@@ -6116,6 +6250,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     }
 
     private func restoreBoard(withID boardID: UUID) {
+        advanceCanvasPresentationGeneration()
         editingGroupTitleID = nil
         do {
             try editorSession.loadBoard(id: boardID)
@@ -6134,6 +6269,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     }
 
     private func startNewBoard() {
+        advanceCanvasPresentationGeneration()
         editingGroupTitleID = nil
         editorSession.startNewBoard()
         resetPointerInteractionForBoundary()
@@ -6143,6 +6279,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     }
 
     private func restorePersistedBoardIfPossible() {
+        advanceCanvasPresentationGeneration()
         editingGroupTitleID = nil
         editorSession.restorePersistedBoardIfPossible()
         resetPointerInteractionForBoundary()
@@ -6152,6 +6289,7 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
     }
 
     private func applyBoardRuntimeState(_ runtimeState: BoardRuntimeState) {
+        advanceCanvasPresentationGeneration()
         cancelRotationInteractionIfNeeded(resetPointerDragState: true)
         editingGroupTitleID = nil
         editorSession.applyBoardRuntimeState(runtimeState)
@@ -6690,6 +6828,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
 
     private func logDirectTouchTransformDispatch(
         eventTime: TimeInterval,
+        pinchSessionID: UInt64,
+        eventSequence: UInt64,
         translation: CGPoint,
         scaleDelta: CGFloat,
         anchor: CGPoint,
@@ -6714,6 +6854,8 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
             "[Canvas iOS][ControllerPinchTransform] " +
             "t=\(String(format: "%.6f", eventTime)) " +
             "dtMs=\(String(format: "%.3f", deltaSinceLastEventMs)) " +
+            "sessionID=\(pinchSessionID) " +
+            "seq=\(eventSequence) " +
             "translation=\(describe(point: translation)) " +
             "scaleDelta=\(String(format: "%.6f", scaleDelta)) " +
             "anchor=\(describe(point: anchor)) " +
@@ -6762,37 +6904,43 @@ final class iOSViewController: UIViewController, PHPickerViewControllerDelegate,
         )
     }
 
-    private func logZoomRefreshIfNeeded(
-        reason: String,
-        refreshStart: TimeInterval,
-        afterSnapshotBuild: TimeInterval,
-        afterViewportApply: TimeInterval,
-        afterMiniMapRefresh: TimeInterval,
-        visibleItemCount: Int
+    private func logCameraGestureRefreshIfNeeded(
+        _ metrics: CanvasRefreshMetrics,
+        refreshStart: TimeInterval
     ) {
+        let isCameraGestureRefresh =
+            metrics.reason.contains("zoom scaleDelta=") ||
+            metrics.reason.contains("direct touch transform")
         guard
             Self.isPinchZoomDiagnosticLoggingEnabled,
-            reason.hasPrefix("zoom scaleDelta=")
+            isCameraGestureRefresh
         else {
             return
         }
 
-        let deltaSinceLastRefreshMs = lastZoomRefreshTimestamp.map {
+        let deltaSinceLastRefreshMs = lastCameraGestureRefreshTimestamp.map {
             (refreshStart - $0) * 1000
         } ?? 0
-        lastZoomRefreshTimestamp = refreshStart
+        lastCameraGestureRefreshTimestamp = refreshStart
 
         print(
-            "[Canvas iOS][RenderZoom] " +
+            "[Canvas iOS][CameraGestureRefresh] " +
+            "refreshID=\(metrics.refreshID) " +
             "t=\(String(format: "%.6f", refreshStart)) " +
             "dtMs=\(String(format: "%.3f", deltaSinceLastRefreshMs)) " +
-            "snapshotMs=\(String(format: "%.3f", (afterSnapshotBuild - refreshStart) * 1000)) " +
-            "applyMs=\(String(format: "%.3f", (afterViewportApply - afterSnapshotBuild) * 1000)) " +
-            "miniMapMs=\(String(format: "%.3f", (afterMiniMapRefresh - afterViewportApply) * 1000)) " +
-            "totalMs=\(String(format: "%.3f", (afterMiniMapRefresh - refreshStart) * 1000)) " +
+            "snapshotMs=\(String(format: "%.3f", metrics.snapshotMs)) " +
+            "applyMs=\(String(format: "%.3f", metrics.viewportApplyMs)) " +
+            "itemLayerMs=\(String(format: "%.3f", metrics.viewportApply.itemLayerRefreshMs)) " +
+            "miniMapMs=\(String(format: "%.3f", metrics.miniMapMs)) " +
+            "accessoryMs=\(String(format: "%.3f", metrics.selectionAccessoryMs)) " +
+            "totalMs=\(String(format: "%.3f", metrics.totalMs)) " +
             "zoom=\(String(format: "%.6f", camera.zoomScale)) " +
-            "visibleItems=\(visibleItemCount) " +
-            "reason=\(reason)"
+            "sceneItems=\(metrics.sceneItemCount) " +
+            "visibleItems=\(metrics.visibleItemCount) " +
+            "createdLayers=\(metrics.viewportApply.createdItemLayerCount) " +
+            "removedLayers=\(metrics.viewportApply.removedItemLayerCount) " +
+            "updatedLayers=\(metrics.viewportApply.updatedItemLayerCount) " +
+            "reason=\(metrics.reason)"
         )
     }
 
